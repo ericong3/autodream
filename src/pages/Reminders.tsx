@@ -466,7 +466,7 @@ export default function Instructions() {
         {tab === 'secondary' && (
           <button
             onClick={() => {
-              setReqForm({ title: '', message: '', requestCategory: 'purchase', amount: '' });
+              setReqForm({ title: '', message: '', requestCategory: 'purchase', requestTarget: 'company', amount: '' });
               setReqErrors({});
               setShowModal(true);
             }}

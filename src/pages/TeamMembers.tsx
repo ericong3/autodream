@@ -41,7 +41,7 @@ const emptyForm = {
   username: '',
   password: '',
   phone: '',
-  role: 'salesperson' as 'director' | 'salesperson',
+  role: 'salesperson' as 'director' | 'salesperson' | 'mechanic',
   monthlyTarget: 4,
 };
 
@@ -216,7 +216,7 @@ export default function TeamMembers() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filteredUsers.map((member) => {
-            const cfg = ROLE_CONFIG[member.role];
+            const cfg = ROLE_CONFIG[member.role as keyof typeof ROLE_CONFIG];
             const soldCount = getCarsSoldByPerson(member.id);
             const commission = soldCount * COMMISSION_PER_CAR;
             const isSelf = member.id === currentUser?.id;

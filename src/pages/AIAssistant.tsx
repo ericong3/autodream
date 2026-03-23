@@ -19,7 +19,7 @@ function generateResponse(
     isDirector: boolean;
   }
 ): string {
-  const { cars, users, repairs, isDirector } = context;
+  const { cars, repairs, isDirector } = context;
   const q = query.toLowerCase().trim();
 
   // --- Inventory queries ---
