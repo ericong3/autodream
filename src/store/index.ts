@@ -303,11 +303,41 @@ export const useStore = create<StoreState>()(
       deleteCar: (id) =>
         set((s) => ({ cars: s.cars.filter((c) => c.id !== id) })),
 
-      addRepair: (repair) => set((s) => ({ repairs: [...s.repairs, repair] })),
-      updateRepair: (id, repair) =>
-        set((s) => ({
-          repairs: s.repairs.map((r) => (r.id === id ? { ...r, ...repair } : r)),
-        })),
+      addRepair: (repair) => set((s) => {
+        const updatedCars = repair.location && repair.status !== 'queued'
+          ? s.cars.map((c) =>
+              c.id === repair.carId
+                ? { ...c, currentLocation: repair.location, status: 'in_workshop' as Car['status'] }
+                : c
+            )
+          : s.cars;
+        return { repairs: [...s.repairs, repair], cars: updatedCars };
+      }),
+      updateRepair: (id, repair) => set((s) => {
+        const existing = s.repairs.find((r) => r.id === id);
+        const updatedRepairs = s.repairs.map((r) => (r.id === id ? { ...r, ...repair } : r));
+        let updatedCars = s.cars;
+        if (existing) {
+          if (repair.status === 'done') {
+            updatedCars = s.cars.map((c) =>
+              c.id === existing.carId ? { ...c, currentLocation: 'Showroom' } : c
+            );
+          } else if (repair.status === 'pending' && existing.status === 'queued') {
+            // Queued → Sent Out: update car location to this repair's location
+            const location = repair.location ?? existing.location;
+            if (location) {
+              updatedCars = s.cars.map((c) =>
+                c.id === existing.carId ? { ...c, currentLocation: location, status: 'in_workshop' as Car['status'] } : c
+              );
+            }
+          } else if (repair.location) {
+            updatedCars = s.cars.map((c) =>
+              c.id === existing.carId ? { ...c, currentLocation: repair.location } : c
+            );
+          }
+        }
+        return { repairs: updatedRepairs, cars: updatedCars };
+      }),
       deleteRepair: (id) =>
         set((s) => ({ repairs: s.repairs.filter((r) => r.id !== id) })),
 

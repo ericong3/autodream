@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Wrench, Trash2, Edit, AlertCircle } from 'lucide-react';
+import { Plus, Wrench, Trash2, Edit, AlertCircle, MapPin } from 'lucide-react';
 import { useStore } from '../store';
 import { RepairJob } from '../types';
 import Modal from '../components/Modal';
@@ -21,14 +21,23 @@ function FormField({ label, children, error, className }: { label: string; child
 }
 
 const REPAIR_STATUS_BADGE: Record<string, string> = {
+  queued: 'bg-gray-500/20 text-gray-400',
   pending: 'bg-yellow-500/20 text-yellow-400',
   in_progress: 'bg-blue-500/20 text-blue-400',
   done: 'bg-green-500/20 text-green-400',
 };
 
+const REPAIR_STATUS_LABEL: Record<string, string> = {
+  queued: 'Pending',
+  pending: 'Sent Out',
+  in_progress: 'In Progress',
+  done: 'Collected',
+};
+
 const emptyRepairForm = {
   carId: '',
   typeOfRepair: '',
+  location: '',
   parts: [{ name: '', cost: 0 }],
   labourCost: 0,
   status: 'pending' as RepairJob['status'],
@@ -44,6 +53,8 @@ export default function Workshop() {
   const deleteRepair = useStore((s) => s.deleteRepair);
 
   const isDirector = currentUser?.role === 'director';
+  const isMechanic = currentUser?.role === 'mechanic';
+  const canManageRepairs = isDirector || isMechanic;
 
   const [showModal, setShowModal] = useState(false);
   const [editTarget, setEditTarget] = useState<RepairJob | null>(null);
@@ -71,10 +82,16 @@ export default function Workshop() {
     const partsTotal = validParts.reduce((sum, p) => sum + p.cost, 0);
     const total = partsTotal + form.labourCost;
 
+    setShowModal(false);
+    setEditTarget(null);
+    setForm(emptyRepairForm);
+    setErrors({});
+
     if (editTarget) {
       updateRepair(editTarget.id, {
         carId: form.carId,
         typeOfRepair: form.typeOfRepair,
+        location: form.location || undefined,
         parts: validParts,
         labourCost: form.labourCost,
         totalCost: total,
@@ -86,6 +103,7 @@ export default function Workshop() {
         id: generateId(),
         carId: form.carId,
         typeOfRepair: form.typeOfRepair,
+        location: form.location || undefined,
         parts: validParts,
         labourCost: form.labourCost,
         totalCost: total,
@@ -94,10 +112,6 @@ export default function Workshop() {
         createdAt: new Date().toISOString(),
       });
     }
-    setShowModal(false);
-    setEditTarget(null);
-    setForm(emptyRepairForm);
-    setErrors({});
   };
 
   const openEdit = (r: RepairJob) => {
@@ -105,6 +119,7 @@ export default function Workshop() {
     setForm({
       carId: r.carId,
       typeOfRepair: r.typeOfRepair,
+      location: r.location ?? '',
       parts: r.parts.length > 0 ? [...r.parts] : [{ name: '', cost: 0 }],
       labourCost: r.labourCost,
       status: r.status,
@@ -165,7 +180,7 @@ export default function Workshop() {
         <p className="text-gray-400 text-sm">
           <span className="text-white font-medium">{repairs.length}</span> repair job{repairs.length !== 1 ? 's' : ''}
         </p>
-        {isDirector && (
+        {canManageRepairs && (
           <button
             onClick={openAdd}
             className="flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-cyan-500/20"
@@ -190,12 +205,13 @@ export default function Workshop() {
                 <tr className="text-gray-500 text-xs border-b border-[#1a2a4a] bg-[#111d35]">
                   <th className="text-left px-5 py-3 font-medium">Car</th>
                   <th className="text-left px-5 py-3 font-medium">Type of Repair</th>
+                  <th className="text-left px-5 py-3 font-medium">Location</th>
                   <th className="text-right px-5 py-3 font-medium">Parts Cost</th>
                   <th className="text-right px-5 py-3 font-medium">Labour</th>
                   <th className="text-right px-5 py-3 font-medium">Total</th>
                   <th className="text-left px-5 py-3 font-medium">Status</th>
                   <th className="text-left px-5 py-3 font-medium">Date</th>
-                  {isDirector && <th className="text-left px-5 py-3 font-medium">Actions</th>}
+                  {canManageRepairs && <th className="text-left px-5 py-3 font-medium">Actions</th>}
                 </tr>
               </thead>
               <tbody>
@@ -215,26 +231,38 @@ export default function Workshop() {
                         )}
                       </td>
                       <td className="px-5 py-3 text-gray-300">{r.typeOfRepair}</td>
+                      <td className="px-5 py-3">
+                        {r.location ? (
+                          <div className="flex items-center gap-1 text-gray-400">
+                            <MapPin size={12} className="text-gray-500 flex-shrink-0" />
+                            <span className="text-xs">{r.location}</span>
+                          </div>
+                        ) : (
+                          <span className="text-gray-600 text-xs">—</span>
+                        )}
+                      </td>
                       <td className="px-5 py-3 text-gray-400 text-right">{formatRM(partsSum)}</td>
                       <td className="px-5 py-3 text-gray-400 text-right">{formatRM(r.labourCost)}</td>
                       <td className="px-5 py-3 text-orange-400 font-semibold text-right">{formatRM(r.totalCost)}</td>
                       <td className="px-5 py-3">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${REPAIR_STATUS_BADGE[r.status]}`}>
-                          {r.status.replace('_', ' ')}
+                          {REPAIR_STATUS_LABEL[r.status] ?? r.status}
                         </span>
                       </td>
                       <td className="px-5 py-3 text-gray-500 text-xs">
                         {new Date(r.createdAt).toLocaleDateString('en-MY')}
                       </td>
-                      {isDirector && (
+                      {canManageRepairs && (
                         <td className="px-5 py-3">
                           <div className="flex items-center gap-2">
                             <button onClick={() => openEdit(r)} className="p-1.5 text-gray-400 hover:text-cyan-400 hover:bg-[#1a2a4a] rounded-lg transition-colors">
                               <Edit size={14} />
                             </button>
-                            <button onClick={() => { if (window.confirm('Delete this repair job?')) deleteRepair(r.id); }} className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">
-                              <Trash2 size={14} />
-                            </button>
+                            {isDirector && (
+                              <button onClick={() => { if (window.confirm('Delete this repair job?')) deleteRepair(r.id); }} className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">
+                                <Trash2 size={14} />
+                              </button>
+                            )}
                           </div>
                         </td>
                       )}
@@ -259,6 +287,10 @@ export default function Workshop() {
 
           <FormField label="Type of Repair" error={errors.typeOfRepair}>
             <input className={inputCls(errors.typeOfRepair)} value={form.typeOfRepair} onChange={(e) => setForm({ ...form, typeOfRepair: e.target.value })} placeholder="e.g. Brake pad replacement" />
+          </FormField>
+
+          <FormField label="Location (garage / workshop)">
+            <input className={inputCls()} value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="e.g. Kai Fa Auto Spray Garage" />
           </FormField>
 
           <div>
@@ -287,9 +319,10 @@ export default function Workshop() {
             </FormField>
             <FormField label="Status">
               <select className={inputCls()} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as RepairJob['status'] })}>
-                <option value="pending">Pending</option>
+                <option value="queued">Pending (Queued)</option>
+                <option value="pending">Sent Out</option>
                 <option value="in_progress">In Progress</option>
-                <option value="done">Done</option>
+                <option value="done">Collected</option>
               </select>
             </FormField>
           </div>

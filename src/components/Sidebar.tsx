@@ -5,11 +5,11 @@ import {
   Car,
   FileText,
   TrendingUp,
-  Users,
   UsersRound,
   ClipboardList,
   Bot,
   Zap,
+  History,
 } from 'lucide-react';
 import { useStore } from '../store';
 
@@ -25,9 +25,9 @@ const navItems: NavItem[] = [
   { to: '/inventory', icon: Car, label: 'Inventory' },
   { to: '/quotations', icon: FileText, label: 'Quotations' },
   { to: '/finance', icon: TrendingUp, label: 'Accounting', directorOnly: true },
-  { to: '/salespeople', icon: Users, label: 'Salespeople', directorOnly: true },
-  { to: '/team', icon: UsersRound, label: 'Team Members' },
+  { to: '/team', icon: UsersRound, label: 'Team Members', directorOnly: true },
   { to: '/reminders', icon: ClipboardList, label: 'Instructions' },
+  { to: '/history', icon: History, label: 'History', directorOnly: true },
   { to: '/ai-assistant', icon: Bot, label: 'AI Assistant' },
 ];
 

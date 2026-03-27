@@ -13,6 +13,7 @@
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
     "date-fns": "^3.0.6",
     "lucide-react": "^0.303.0",
     "react": "^18.2.0",

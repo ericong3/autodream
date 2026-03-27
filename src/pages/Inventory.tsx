@@ -13,23 +13,36 @@ import {
   X,
   FileText,
   Upload,
+  MapPin,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { Car } from '../types';
 import Modal from '../components/Modal';
 import { formatRM, formatMileage, generateId } from '../utils/format';
 
-const CONDITION_BADGE: Record<string, string> = {
-  excellent: 'bg-green-500/20 text-green-400 border border-green-500/30',
-  good: 'bg-blue-500/20 text-blue-400 border border-blue-500/30',
-  fair: 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30',
-  poor: 'bg-red-500/20 text-red-400 border border-red-500/30',
-};
 
 const STATUS_BADGE: Record<string, string> = {
+  coming_soon: 'bg-purple-500/20 text-purple-400',
+  in_workshop: 'bg-orange-500/20 text-orange-400',
+  ready: 'bg-cyan-500/20 text-cyan-400',
+  photo_complete: 'bg-blue-500/20 text-blue-400',
+  submitted: 'bg-indigo-500/20 text-indigo-400',
+  deal_pending: 'bg-yellow-500/20 text-yellow-400',
   available: 'bg-green-500/20 text-green-400',
   reserved: 'bg-yellow-500/20 text-yellow-400',
   sold: 'bg-gray-500/20 text-gray-400',
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  coming_soon: 'Coming Soon',
+  in_workshop: 'In Workshop',
+  ready: 'Ready',
+  photo_complete: 'Photo Complete',
+  submitted: 'Submitted',
+  deal_pending: 'Deal Pending',
+  available: 'Available',
+  reserved: 'Reserved',
+  sold: 'Sold',
 };
 
 const CAR_MAKES = ['All', 'Perodua', 'Proton', 'Honda', 'Toyota', 'Nissan', 'Other'];
@@ -50,6 +63,7 @@ const emptyForm: Omit<Car, 'id' | 'dateAdded'> = {
   greenCard: '',
   assignedSalesperson: '',
   notes: '',
+  currentLocation: 'Showroom',
 };
 
 export default function Inventory() {
@@ -62,6 +76,7 @@ export default function Inventory() {
   const navigate = useNavigate();
 
   const isDirector = currentUser?.role === 'director';
+  const canAddCar = currentUser?.role === 'director' || currentUser?.role === 'salesperson';
   const viewKey = `${currentUser?.id}-inventory`;
   const view = viewPreference[viewKey] ?? 'grid';
 
@@ -108,7 +123,7 @@ export default function Inventory() {
   };
 
   const filtered = useMemo(() => {
-    let result = [...cars];
+    let result = cars.filter((c) => c.status !== 'sold');
 
     if (search) {
       const q = search.toLowerCase();
@@ -146,31 +161,33 @@ export default function Inventory() {
     return result;
   }, [cars, search, filterMake, filterTransmission, filterStatus, sortBy]);
 
-  const validate = () => {
-    const e: Record<string, string> = {};
-    if (!form.make.trim()) e.make = 'Make is required';
-    if (!form.model.trim()) e.model = 'Model is required';
-    if (!form.year || form.year < 1990 || form.year > 2030)
-      e.year = 'Enter a valid year';
-    if (!form.colour.trim()) e.colour = 'Colour is required';
-    if (form.mileage < 0) e.mileage = 'Mileage must be 0 or more';
-    if (form.purchasePrice <= 0) e.purchasePrice = 'Purchase price is required';
-    if (form.sellingPrice <= 0) e.sellingPrice = 'Selling price is required';
-    if (!form.photos || form.photos.length < 4)
-      e.photos = `At least 4 photos required (${form.photos?.length ?? 0}/4 uploaded)`;
-    if (!form.greenCard) e.greenCard = 'Green card is required';
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  };
+  const isComingSoon = form.status === 'coming_soon';
 
   const handleSubmit = () => {
-    if (!validate()) return;
+    const newErrors: Record<string, string> = {};
+
+    if (!form.make.trim()) newErrors.make = 'Make is required';
+    if (!form.model.trim()) newErrors.model = 'Model is required';
+    if (!form.colour.trim()) newErrors.colour = 'Colour is required';
+    if (!isComingSoon && (form.photos?.length ?? 0) < 4) {
+      newErrors.photos = 'Please upload at least 4 photos';
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+
     const newCar: Car = {
       ...form,
       id: generateId(),
       dateAdded: new Date().toISOString().split('T')[0],
     };
-    addCar(newCar);
+    try {
+      addCar(newCar);
+    } catch (e) {
+      console.error('Failed to save car:', e);
+    }
     setShowModal(false);
     setForm(emptyForm);
     setErrors({});
@@ -206,7 +223,8 @@ export default function Inventory() {
         <Select
           value={filterStatus}
           onChange={setFilterStatus}
-          options={['All', 'available', 'reserved', 'sold']}
+          options={['All', 'coming_soon', 'in_workshop', 'ready', 'photo_complete', 'submitted', 'deal_pending', 'available', 'reserved']}
+          labels={['All Status', 'Coming Soon', 'In Workshop', 'Ready', 'Photo Complete', 'Submitted', 'Deal Pending', 'Available', 'Reserved']}
           placeholder="Status"
         />
         <Select
@@ -233,7 +251,7 @@ export default function Inventory() {
           </button>
         </div>
 
-        {isDirector && (
+        {canAddCar && (
           <button
             onClick={() => { setForm(emptyForm); setErrors({}); setShowModal(true); }}
             className="flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-cyan-500/20"
@@ -274,8 +292,8 @@ export default function Inventory() {
                 ) : (
                   <CarIcon size={40} className="text-gray-700 group-hover:text-gray-600 transition-colors" />
                 )}
-                <span className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[car.status]}`}>
-                  {car.status}
+                <span className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[car.status] ?? 'bg-gray-500/20 text-gray-400'}`}>
+                  {STATUS_LABEL[car.status] ?? car.status}
                 </span>
               </div>
 
@@ -288,9 +306,10 @@ export default function Inventory() {
                     </h3>
                     <p className="text-gray-500 text-xs mt-0.5">{car.colour} · {car.transmission}</p>
                   </div>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${CONDITION_BADGE[car.condition]}`}>
-                    {car.condition}
-                  </span>
+                </div>
+                <div className="flex items-center gap-1 mt-1">
+                  <MapPin size={11} className="text-gray-500 flex-shrink-0" />
+                  <span className="text-gray-400 text-xs truncate">{car.currentLocation ?? 'Showroom'}</span>
                 </div>
 
                 <p className="text-gray-400 text-xs mt-2">{formatMileage(car.mileage)}</p>
@@ -327,7 +346,7 @@ export default function Inventory() {
                   <th className="text-left px-4 py-3 font-medium">Colour</th>
                   <th className="text-left px-4 py-3 font-medium">Mileage</th>
                   <th className="text-left px-4 py-3 font-medium">Transmission</th>
-                  <th className="text-left px-4 py-3 font-medium">Condition</th>
+                  <th className="text-left px-4 py-3 font-medium">Location</th>
                   <th className="text-left px-4 py-3 font-medium">Status</th>
                   <th className="text-right px-4 py-3 font-medium">Selling Price</th>
                   {isDirector && <th className="text-right px-4 py-3 font-medium">Profit</th>}
@@ -354,13 +373,14 @@ export default function Inventory() {
                     <td className="px-4 py-3 text-gray-400">{formatMileage(car.mileage)}</td>
                     <td className="px-4 py-3 text-gray-400 capitalize">{car.transmission}</td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${CONDITION_BADGE[car.condition]}`}>
-                        {car.condition}
-                      </span>
+                      <div className="flex items-center gap-1">
+                        <MapPin size={11} className="text-gray-500 flex-shrink-0" />
+                        <span className="text-gray-400 text-xs">{car.currentLocation ?? 'Showroom'}</span>
+                      </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[car.status]}`}>
-                        {car.status}
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[car.status] ?? 'bg-gray-500/20 text-gray-400'}`}>
+                        {STATUS_LABEL[car.status] ?? car.status}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-cyan-400 font-semibold text-right">{formatRM(car.sellingPrice)}</td>
@@ -429,12 +449,15 @@ export default function Inventory() {
               onChange={(e) => setForm({ ...form, purchasePrice: Number(e.target.value) })}
             />
           </FormField>
-          <FormField label="Selling Price (RM)" error={errors.sellingPrice}>
+          <FormField label={isDirector ? 'Selling Price (RM)' : 'Selling Price (RM) — Director only'} error={errors.sellingPrice}>
             <input
               type="number"
               className={inputCls(errors.sellingPrice)}
               value={form.sellingPrice}
-              onChange={(e) => setForm({ ...form, sellingPrice: Number(e.target.value) })}
+              onChange={(e) => isDirector && setForm({ ...form, sellingPrice: Number(e.target.value) })}
+              readOnly={!isDirector}
+              placeholder={isDirector ? '' : 'Set by Director'}
+              style={!isDirector ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
             />
           </FormField>
           <FormField label="Transmission">
@@ -447,17 +470,21 @@ export default function Inventory() {
               <option value="manual">Manual</option>
             </select>
           </FormField>
-          <FormField label="Status">
-            <select
-              className={inputCls()}
-              value={form.status}
-              onChange={(e) => setForm({ ...form, status: e.target.value as Car['status'] })}
+          <div className="flex items-center col-span-2">
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, status: isComingSoon ? 'available' : 'coming_soon' })}
+              className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${isComingSoon ? 'bg-purple-500/10 border-purple-500/40 text-purple-300' : 'bg-[#111d35] border-[#1a2a4a] text-gray-400 hover:border-cyan-500/40'}`}
             >
-              <option value="available">Available</option>
-              <option value="reserved">Reserved</option>
-              <option value="sold">Sold</option>
-            </select>
-          </FormField>
+              <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${isComingSoon ? 'bg-purple-500 border-purple-500' : 'border-gray-600'}`}>
+                {isComingSoon && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+              </div>
+              <div>
+                <p className="text-sm font-medium">Coming Soon</p>
+                <p className="text-xs opacity-60 mt-0.5">Car is confirmed but not yet in the shop</p>
+              </div>
+            </button>
+          </div>
           <FormField label="Notes" className="col-span-2">
             <textarea
               className={`${inputCls()} h-20 resize-none`}
@@ -467,8 +494,8 @@ export default function Inventory() {
             />
           </FormField>
 
-          {/* Car Photos */}
-          <div className="col-span-2">
+          {/* Car Photos — not required for Coming Soon */}
+          {!isComingSoon && <div className="col-span-2">
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-gray-300 text-xs font-medium">
                 Car Photos
@@ -524,10 +551,10 @@ export default function Inventory() {
                 <AlertCircle size={12} /> {errors.photos}
               </p>
             )}
-          </div>
+          </div>}
 
           {/* Green Card */}
-          <div className="col-span-2">
+          {!isComingSoon && <div className="col-span-2">
             <label className="block text-gray-300 text-xs font-medium mb-1.5">
               Green Card
               <span className="ml-1.5 text-gray-500 font-normal">(JPG, PNG or PDF)</span>
@@ -588,7 +615,7 @@ export default function Inventory() {
                 <AlertCircle size={12} /> {errors.greenCard}
               </p>
             )}
-          </div>
+          </div>}
         </div>
 
         <div className="flex gap-3 mt-6">

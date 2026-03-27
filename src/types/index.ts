@@ -9,6 +9,37 @@ export interface User {
   carsInMonth: number;
 }
 
+export interface ChecklistItem {
+  id: string;
+  label: string;
+  checked: boolean;
+  checkedBy?: string;
+  checkedAt?: string;
+}
+
+export interface LoanSubmission {
+  id: string;
+  bank: string;
+  customerName: string;
+  customerPhone: string;
+  submittedBy: string;
+  submittedAt: string;
+  status: 'submitted' | 'approved' | 'rejected';
+  notes?: string;
+}
+
+export interface FinalDeal {
+  submittedBy: string;
+  submittedAt: string;
+  dealPrice: number;
+  bank: string;
+  notes?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  approvalStatus?: 'pending' | 'approved' | 'rejected';
+  rejectionNotes?: string;
+}
+
 export interface Car {
   id: string;
   make: string;
@@ -20,15 +51,22 @@ export interface Car {
   purchasePrice: number;
   sellingPrice: number;
   transmission: 'auto' | 'manual';
-  status: 'available' | 'reserved' | 'sold';
+  status: 'coming_soon' | 'in_workshop' | 'ready' | 'photo_complete' | 'submitted' | 'deal_pending' | 'sold' | 'available' | 'reserved';
   photo?: string;
   photos?: string[];
   greenCard?: string;
   assignedSalesperson?: string;
   dateAdded: string;
   notes?: string;
+  // Workshop & status tracking
+  currentLocation?: string;
+  checklistItems?: ChecklistItem[];
+  photoTakenBy?: string[];
+  loanSubmissions?: LoanSubmission[];
+  finalDeal?: FinalDeal;
+  deliveryPhoto?: string;
+  deliveryCollected?: boolean;
 }
-
 
 export interface RepairJob {
   id: string;
@@ -37,7 +75,11 @@ export interface RepairJob {
   parts: { name: string; cost: number }[];
   labourCost: number;
   totalCost: number;
-  status: 'pending' | 'in_progress' | 'done';
+  status: 'queued' | 'pending' | 'in_progress' | 'done';
+  location?: string;
+  receiptPhoto?: string;
+  actualCost?: number;
+  completedAt?: string;
   notes?: string;
   createdAt: string;
 }
@@ -79,3 +121,45 @@ export type CarStatus = Car['status'];
 export type CarCondition = Car['condition'];
 export type QuotationStatus = Quotation['status'];
 export type RepairStatus = RepairJob['status'];
+
+export const BANKS = ['Aeon', 'Chailease', 'CIMB', 'HLB', 'Maybank', 'Public', 'Toyota Capital'] as const;
+export type Bank = typeof BANKS[number];
+
+export const REPAIR_TYPES = [
+  'Spray Paint',
+  'Panel Beating',
+  'Full Detailing',
+  'Polishing',
+  'Interior Cleaning',
+  'Engine Repair',
+  'Brake Service',
+  'Tyre Replacement',
+  'Air Conditioning',
+  'Electrical',
+  'Transmission Service',
+  'Suspension / Steering',
+  'Glass / Windscreen',
+  'Others',
+] as const;
+
+export const REPAIR_LOCATIONS = [
+  'Workshop A',
+  'Workshop B',
+  'Spray Shop',
+  'Panel Shop',
+  'Tyre Shop',
+  'Electrical Workshop',
+  'AC Workshop',
+  'Glass Shop',
+] as const;
+
+export const DEFAULT_CHECKLIST_LABELS = [
+  'Body & Paint Inspection',
+  'Tyre Condition',
+  'Engine Bay Check',
+  'Air Conditioning',
+  'Interior Cleaning',
+  'Electrical & Lights',
+  'Brake Test',
+  'Test Drive Completed',
+];

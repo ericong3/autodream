@@ -1,0 +1,1 @@
+{"name":"AutoDream","short_name":"AutoDream","description":"Car Dealership Management","start_url":"/","display":"standalone","background_color":"#0a0f1e","theme_color":"#0a0f1e","lang":"en","scope":"/autodream/","orientation":"portrait","icons":[{"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]}

@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  BrowserRouter,
+  HashRouter,
   Routes,
   Route,
   Navigate,
@@ -14,9 +14,9 @@ import CarDetail from './pages/CarDetail';
 import Quotations from './pages/Quotations';
 import Workshop from './pages/Workshop';
 import Finance from './pages/Finance';
-import Salespeople from './pages/Salespeople';
 import TeamMembers from './pages/TeamMembers';
 import Reminders from './pages/Reminders';
+import History from './pages/History';
 import AIAssistant from './pages/AIAssistant';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -36,7 +36,7 @@ export default function App() {
   const currentUser = useStore((s) => s.currentUser);
 
   return (
-    <BrowserRouter>
+    <HashRouter>
       <Routes>
         <Route
           path="/login"
@@ -107,16 +107,6 @@ export default function App() {
           }
         />
         <Route
-          path="/salespeople"
-          element={
-            <RequireDirector>
-              <Layout>
-                <Salespeople />
-              </Layout>
-            </RequireDirector>
-          }
-        />
-        <Route
           path="/team"
           element={
             <RequireDirector>
@@ -137,6 +127,16 @@ export default function App() {
           }
         />
         <Route
+          path="/history"
+          element={
+            <RequireDirector>
+              <Layout>
+                <History />
+              </Layout>
+            </RequireDirector>
+          }
+        />
+        <Route
           path="/ai-assistant"
           element={
             <RequireAuth>
@@ -148,6 +148,6 @@ export default function App() {
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </BrowserRouter>
+    </HashRouter>
   );
 }

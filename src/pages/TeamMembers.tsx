@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Edit, Trash2, Users, AlertCircle, Shield, UserCheck } from 'lucide-react';
+import { Plus, Edit, Trash2, Users, AlertCircle, Shield, UserCheck, Wrench } from 'lucide-react';
 import { useStore } from '../store';
 import { User } from '../types';
 import Modal from '../components/Modal';
@@ -51,14 +51,18 @@ const ROLE_CONFIG = {
     icon: Shield,
     badgeBg: 'bg-purple-500/20 border-purple-500/30 text-purple-400',
     avatarBg: 'bg-purple-500/20 border-purple-500/30 text-purple-400',
-    dot: 'bg-purple-400',
   },
   salesperson: {
     label: 'Salesperson',
     icon: UserCheck,
     badgeBg: 'bg-cyan-500/20 border-cyan-500/30 text-cyan-400',
     avatarBg: 'bg-cyan-500/20 border-cyan-500/30 text-cyan-400',
-    dot: 'bg-cyan-400',
+  },
+  mechanic: {
+    label: 'Mechanic',
+    icon: Wrench,
+    badgeBg: 'bg-orange-500/20 border-orange-500/30 text-orange-400',
+    avatarBg: 'bg-orange-500/20 border-orange-500/30 text-orange-400',
   },
 };
 
@@ -76,7 +80,7 @@ export default function TeamMembers() {
   const [editTarget, setEditTarget] = useState<User | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [filterRole, setFilterRole] = useState<'all' | 'director' | 'salesperson'>('all');
+  const [filterRole, setFilterRole] = useState<'all' | 'director' | 'salesperson' | 'mechanic'>('all');
 
   const getCarsSoldByPerson = (userId: string) =>
     soldCars.filter((c) => c.assignedSalesperson === userId).length;
@@ -99,13 +103,18 @@ export default function TeamMembers() {
 
   const handleSubmit = () => {
     if (!validate()) return;
-    if (editTarget) {
-      updateUser(editTarget.id, {
+    const target = editTarget;
+    setShowModal(false);
+    setEditTarget(null);
+    setForm(emptyForm);
+    setErrors({});
+    if (target) {
+      updateUser(target.id, {
         name: form.name,
         username: form.username,
         phone: form.phone,
         role: form.role,
-        monthlyTarget: form.role === 'salesperson' ? form.monthlyTarget : editTarget.monthlyTarget,
+        monthlyTarget: form.role === 'salesperson' ? form.monthlyTarget : target.monthlyTarget,
         ...(form.password ? { password: form.password } : {}),
       });
     } else {
@@ -120,10 +129,6 @@ export default function TeamMembers() {
         carsInMonth: 0,
       });
     }
-    setShowModal(false);
-    setEditTarget(null);
-    setForm(emptyForm);
-    setErrors({});
   };
 
   const openEdit = (user: User) => {
@@ -153,6 +158,7 @@ export default function TeamMembers() {
 
   const directorCount = users.filter((u) => u.role === 'director').length;
   const salespersonCount = users.filter((u) => u.role === 'salesperson').length;
+  const mechanicCount = users.filter((u) => u.role === 'mechanic').length;
 
   return (
     <div className="space-y-6">
@@ -161,13 +167,15 @@ export default function TeamMembers() {
         <div className="flex items-center gap-4">
           {/* Summary pills */}
           <div className="flex items-center gap-2">
-            {(['all', 'director', 'salesperson'] as const).map((role) => {
+            {(['all', 'director', 'salesperson', 'mechanic'] as const).map((role) => {
               const count =
                 role === 'all'
                   ? users.length
                   : role === 'director'
                   ? directorCount
-                  : salespersonCount;
+                  : role === 'salesperson'
+                  ? salespersonCount
+                  : mechanicCount;
               const active = filterRole === role;
               return (
                 <button
@@ -179,7 +187,7 @@ export default function TeamMembers() {
                       : 'border-[#1a2a4a] text-gray-500 hover:text-gray-300 hover:border-gray-600'
                   }`}
                 >
-                  {role === 'all' ? 'All' : role === 'director' ? 'Directors' : 'Salespeople'}{' '}
+                  {role === 'all' ? 'All' : role === 'director' ? 'Directors' : role === 'salesperson' ? 'Salespeople' : 'Mechanics'}{' '}
                   <span
                     className={`ml-1 px-1.5 py-0.5 rounded text-xs ${
                       active ? 'bg-cyan-500/30 text-cyan-300' : 'bg-[#1a2a4a] text-gray-500'
@@ -378,10 +386,15 @@ export default function TeamMembers() {
 
           {/* Role selector */}
           <FormField label="Role">
-            <div className="grid grid-cols-2 gap-2">
-              {(['salesperson', 'director'] as const).map((role) => {
+            <div className="grid grid-cols-3 gap-2">
+              {(['salesperson', 'mechanic', 'director'] as const).map((role) => {
                 const cfg = ROLE_CONFIG[role];
                 const selected = form.role === role;
+                const selectedStyle = role === 'director'
+                  ? 'bg-purple-500/20 border-purple-500/50 text-purple-300'
+                  : role === 'mechanic'
+                  ? 'bg-orange-500/20 border-orange-500/50 text-orange-300'
+                  : 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300';
                 return (
                   <button
                     key={role}
@@ -389,9 +402,7 @@ export default function TeamMembers() {
                     onClick={() => setForm({ ...form, role })}
                     className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
                       selected
-                        ? role === 'director'
-                          ? 'bg-purple-500/20 border-purple-500/50 text-purple-300'
-                          : 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300'
+                        ? selectedStyle
                         : 'bg-[#111d35] border-[#1a2a4a] text-gray-400 hover:text-gray-200 hover:border-gray-600'
                     }`}
                   >
