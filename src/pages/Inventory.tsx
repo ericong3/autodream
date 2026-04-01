@@ -51,6 +51,7 @@ const emptyForm: Omit<Car, 'id' | 'dateAdded'> = {
   make: '',
   model: '',
   year: new Date().getFullYear(),
+  carPlate: '',
   colour: '',
   mileage: 0,
   condition: 'good',
@@ -132,7 +133,8 @@ export default function Inventory() {
           c.make.toLowerCase().includes(q) ||
           c.model.toLowerCase().includes(q) ||
           c.colour.toLowerCase().includes(q) ||
-          String(c.year).includes(q)
+          String(c.year).includes(q) ||
+          (c.carPlate ?? '').toLowerCase().includes(q)
       );
     }
     if (filterMake !== 'All') result = result.filter((c) => c.make === filterMake);
@@ -300,12 +302,17 @@ export default function Inventory() {
               {/* Info */}
               <div className="p-4">
                 <div className="flex items-start justify-between">
-                  <div>
+                  <div className="min-w-0">
                     <h3 className="text-white font-semibold text-sm group-hover:text-cyan-400 transition-colors">
                       {car.year} {car.make} {car.model}
                     </h3>
                     <p className="text-gray-500 text-xs mt-0.5">{car.colour} · {car.transmission}</p>
                   </div>
+                  {car.carPlate && (
+                    <span className="ml-2 shrink-0 text-xs font-mono font-semibold px-2 py-0.5 rounded bg-[#1a2a4a] text-cyan-300 border border-[#2a3a5a] tracking-wider">
+                      {car.carPlate}
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-1 mt-1">
                   <MapPin size={11} className="text-gray-500 flex-shrink-0" />
@@ -342,6 +349,7 @@ export default function Inventory() {
               <thead>
                 <tr className="text-gray-500 text-xs border-b border-[#1a2a4a] bg-[#111d35]">
                   <th className="text-left px-4 py-3 font-medium">Car</th>
+                  <th className="text-left px-4 py-3 font-medium">Plate</th>
                   <th className="text-left px-4 py-3 font-medium">Year</th>
                   <th className="text-left px-4 py-3 font-medium">Colour</th>
                   <th className="text-left px-4 py-3 font-medium">Mileage</th>
@@ -367,6 +375,12 @@ export default function Inventory() {
                         </div>
                         <span className="text-white font-medium">{car.make} {car.model}</span>
                       </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {car.carPlate
+                        ? <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-[#1a2a4a] text-cyan-300 border border-[#2a3a5a] tracking-wider">{car.carPlate}</span>
+                        : <span className="text-gray-600 text-xs">—</span>
+                      }
                     </td>
                     <td className="px-4 py-3 text-gray-400">{car.year}</td>
                     <td className="px-4 py-3 text-gray-400">{car.colour}</td>
@@ -423,6 +437,14 @@ export default function Inventory() {
               className={inputCls(errors.year)}
               value={form.year}
               onChange={(e) => setForm({ ...form, year: Number(e.target.value) })}
+            />
+          </FormField>
+          <FormField label="Car Plate">
+            <input
+              className={inputCls()}
+              value={form.carPlate ?? ''}
+              onChange={(e) => setForm({ ...form, carPlate: e.target.value.toUpperCase() })}
+              placeholder="e.g. WXX 1234"
             />
           </FormField>
           <FormField label="Colour" error={errors.colour}>

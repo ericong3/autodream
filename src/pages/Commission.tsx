@@ -1,0 +1,292 @@
+import { useState, useMemo } from 'react';
+import { Car, Plus, CheckCircle, Circle, Trash2, Bell } from 'lucide-react';
+import { useStore } from '../store';
+import Modal from '../components/Modal';
+import { formatRM, generateId } from '../utils/format';
+
+const COMMISSION_PER_CAR = 500;
+
+export default function Commission() {
+  const cars = useStore((s) => s.cars);
+  const currentUser = useStore((s) => s.currentUser);
+  const users = useStore((s) => s.users);
+  const personalReminders = useStore((s) => s.personalReminders);
+  const addPersonalReminder = useStore((s) => s.addPersonalReminder);
+  const updatePersonalReminder = useStore((s) => s.updatePersonalReminder);
+  const deletePersonalReminder = useStore((s) => s.deletePersonalReminder);
+
+  const isDirector = currentUser?.role === 'director';
+  const [tab, setTab] = useState<'commission' | 'reminders'>('commission');
+  const [salesFilter, setSalesFilter] = useState<string>(isDirector ? '' : (currentUser?.id ?? ''));
+  const [monthFilter, setMonthFilter] = useState<string>(new Date().toISOString().slice(0, 7));
+  const [showReminderModal, setShowReminderModal] = useState(false);
+  const [reminderForm, setReminderForm] = useState({ title: '', dueAt: '' });
+
+  const salespeople = users.filter(u => u.role === 'salesperson');
+
+  const allSoldCars = cars.filter(c => c.status === 'sold');
+
+  const filteredSoldCars = useMemo(() => allSoldCars.filter(c => {
+    const matchSales = !salesFilter || c.assignedSalesperson === salesFilter;
+    const matchMonth = !monthFilter || c.dateAdded.startsWith(monthFilter);
+    return matchSales && matchMonth;
+  }), [allSoldCars, salesFilter, monthFilter]);
+
+  const totalSoldAll = allSoldCars.filter(c => !salesFilter || c.assignedSalesperson === salesFilter).length;
+  const totalCommissionAll = totalSoldAll * COMMISSION_PER_CAR;
+  const monthSold = filteredSoldCars.length;
+  const monthCommission = monthSold * COMMISSION_PER_CAR;
+
+  const getSalesName = (id?: string) => {
+    if (!id) return 'Unassigned';
+    return users.find(u => u.id === id)?.name ?? id;
+  };
+
+  const myReminders = useMemo(() =>
+    personalReminders.filter(r => r.userId === currentUser?.id),
+    [personalReminders, currentUser]
+  );
+
+  const activeReminders = myReminders.filter(r => !r.isCompleted);
+  const completedReminders = myReminders.filter(r => r.isCompleted);
+
+  const handleAddReminder = () => {
+    if (!reminderForm.title.trim() || !reminderForm.dueAt) return;
+    addPersonalReminder({
+      id: generateId(),
+      userId: currentUser?.id ?? '',
+      title: reminderForm.title,
+      dueAt: reminderForm.dueAt,
+      isCompleted: false,
+      createdAt: new Date().toISOString(),
+    });
+    setReminderForm({ title: '', dueAt: '' });
+    setShowReminderModal(false);
+  };
+
+  const getDueStatus = (dueAt: string) => {
+    const today = new Date().toISOString().split('T')[0];
+    if (dueAt < today) return 'overdue';
+    if (dueAt === today) return 'today';
+    return 'upcoming';
+  };
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-white text-xl font-bold">Commission & Reminders</h1>
+        <p className="text-gray-500 text-sm mt-0.5">RM{COMMISSION_PER_CAR} commission per car sold</p>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex bg-[#0d1526] border border-[#1a2a4a] rounded-lg p-1 gap-1 w-fit">
+        {(['commission', 'reminders'] as const).map(t => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors capitalize flex items-center gap-2 ${tab === t ? 'bg-cyan-500 text-white' : 'text-gray-400 hover:text-white'}`}
+          >
+            {t === 'reminders' ? 'My Reminders' : 'Commission'}
+            {t === 'reminders' && activeReminders.length > 0 && (
+              <span className="text-xs bg-red-500 text-white px-1.5 py-0.5 rounded-full leading-none">{activeReminders.length}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'commission' && (
+        <>
+          {/* Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: 'Total Cars Sold', value: totalSoldAll, sub: 'all time', color: 'text-cyan-400' },
+              { label: 'Total Earned', value: formatRM(totalCommissionAll), sub: 'all time', color: 'text-green-400' },
+              { label: 'This Month Sold', value: monthSold, sub: monthFilter, color: 'text-yellow-400' },
+              { label: 'This Month Earned', value: formatRM(monthCommission), sub: monthFilter, color: 'text-purple-400' },
+            ].map(s => (
+              <div key={s.label} className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl p-4">
+                <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+                <p className="text-gray-400 text-xs mt-1">{s.label}</p>
+                <p className="text-gray-600 text-xs">{s.sub}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Filters */}
+          <div className="flex gap-3 flex-wrap">
+            {isDirector && (
+              <select
+                value={salesFilter}
+                onChange={e => setSalesFilter(e.target.value)}
+                className="bg-[#0d1526] border border-[#1a2a4a] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500"
+              >
+                <option value="">All Salespeople</option>
+                {salespeople.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            )}
+            <input
+              type="month"
+              value={monthFilter}
+              onChange={e => setMonthFilter(e.target.value)}
+              className="bg-[#0d1526] border border-[#1a2a4a] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500"
+            />
+            {monthFilter && (
+              <button
+                onClick={() => setMonthFilter('')}
+                className="text-gray-500 hover:text-white text-sm px-3 py-2 border border-[#1a2a4a] rounded-lg transition-colors"
+              >
+                Show All
+              </button>
+            )}
+          </div>
+
+          {/* Table */}
+          {filteredSoldCars.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 bg-[#0d1526] border border-[#1a2a4a] rounded-xl">
+              <Car size={36} className="text-gray-600 mb-3" />
+              <p className="text-gray-400">No sold cars in this period</p>
+            </div>
+          ) : (
+            <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-gray-500 text-xs border-b border-[#1a2a4a] bg-[#111d35]">
+                    <th className="text-left px-5 py-3 font-medium">Vehicle</th>
+                    <th className="text-left px-5 py-3 font-medium">Date Added</th>
+                    {isDirector && <th className="text-left px-5 py-3 font-medium">Salesperson</th>}
+                    <th className="text-right px-5 py-3 font-medium">Deal Price</th>
+                    <th className="text-right px-5 py-3 font-medium">Commission</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredSoldCars.map((c, i) => (
+                    <tr key={c.id} className={`border-b border-[#1a2a4a]/50 ${i % 2 !== 0 ? 'bg-[#0a0f1e]/50' : ''} hover:bg-[#111d35] transition-colors`}>
+                      <td className="px-5 py-3">
+                        <p className="text-white font-medium">{c.year} {c.make} {c.model}</p>
+                        <p className="text-gray-500 text-xs capitalize">{c.colour} · {c.transmission}</p>
+                      </td>
+                      <td className="px-5 py-3 text-gray-400">{new Date(c.dateAdded).toLocaleDateString('en-MY')}</td>
+                      {isDirector && <td className="px-5 py-3 text-gray-400">{getSalesName(c.assignedSalesperson)}</td>}
+                      <td className="px-5 py-3 text-right text-cyan-400 font-semibold">
+                        {formatRM(c.finalDeal?.dealPrice ?? c.sellingPrice)}
+                      </td>
+                      <td className="px-5 py-3 text-right text-green-400 font-semibold">{formatRM(COMMISSION_PER_CAR)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-[#1a2a4a] bg-[#111d35]">
+                    <td colSpan={isDirector ? 3 : 2} className="px-5 py-3 text-gray-400 text-xs font-medium">
+                      Total ({filteredSoldCars.length} cars)
+                    </td>
+                    <td className="px-5 py-3 text-right text-cyan-400 font-bold">
+                      {formatRM(filteredSoldCars.reduce((sum, c) => sum + (c.finalDeal?.dealPrice ?? c.sellingPrice), 0))}
+                    </td>
+                    <td className="px-5 py-3 text-right text-green-400 font-bold">
+                      {formatRM(filteredSoldCars.length * COMMISSION_PER_CAR)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === 'reminders' && (
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <button
+              onClick={() => setShowReminderModal(true)}
+              className="flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-cyan-500/20"
+            >
+              <Plus size={16} />Add Reminder
+            </button>
+          </div>
+
+          {myReminders.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 bg-[#0d1526] border border-[#1a2a4a] rounded-xl">
+              <Bell size={36} className="text-gray-600 mb-3" />
+              <p className="text-gray-400">No reminders yet. Add one to stay on track.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {[...activeReminders, ...completedReminders].map(r => {
+                const dueStatus = getDueStatus(r.dueAt);
+                return (
+                  <div
+                    key={r.id}
+                    className={`bg-[#0d1526] border rounded-xl px-4 py-3 flex items-center gap-3 transition-colors ${
+                      r.isCompleted ? 'border-[#1a2a4a] opacity-50' :
+                      dueStatus === 'overdue' ? 'border-red-500/30' :
+                      dueStatus === 'today' ? 'border-yellow-500/30' : 'border-[#1a2a4a]'
+                    }`}
+                  >
+                    <button
+                      onClick={() => updatePersonalReminder(r.id, { isCompleted: !r.isCompleted })}
+                      className={r.isCompleted ? 'text-green-400' : 'text-gray-600 hover:text-green-400 transition-colors'}
+                    >
+                      {r.isCompleted ? <CheckCircle size={18} /> : <Circle size={18} />}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm ${r.isCompleted ? 'line-through text-gray-500' : 'text-white'}`}>{r.title}</p>
+                      <p className={`text-xs mt-0.5 ${
+                        r.isCompleted ? 'text-gray-600' :
+                        dueStatus === 'overdue' ? 'text-red-400' :
+                        dueStatus === 'today' ? 'text-yellow-400' : 'text-gray-500'
+                      }`}>
+                        {!r.isCompleted && dueStatus === 'overdue' ? 'Overdue · ' : ''}
+                        {!r.isCompleted && dueStatus === 'today' ? 'Due today · ' : ''}
+                        {new Date(r.dueAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => deletePersonalReminder(r.id)}
+                      className="text-gray-600 hover:text-red-400 transition-colors p-1"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <Modal isOpen={showReminderModal} onClose={() => setShowReminderModal(false)} title="Add Reminder" maxWidth="max-w-sm">
+            <div className="space-y-4">
+              <div>
+                <label className="block text-gray-300 text-xs font-medium mb-1.5">What to remember?</label>
+                <input
+                  className="w-full bg-[#111d35] border border-[#1a2a4a] text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 transition-colors"
+                  value={reminderForm.title}
+                  onChange={e => setReminderForm({ ...reminderForm, title: e.target.value })}
+                  placeholder="e.g. Follow up with Ahmad about loan"
+                  onKeyDown={e => { if (e.key === 'Enter') handleAddReminder(); }}
+                />
+              </div>
+              <div>
+                <label className="block text-gray-300 text-xs font-medium mb-1.5">Due Date</label>
+                <input
+                  type="date"
+                  className="w-full bg-[#111d35] border border-[#1a2a4a] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 transition-colors"
+                  value={reminderForm.dueAt}
+                  onChange={e => setReminderForm({ ...reminderForm, dueAt: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button onClick={() => setShowReminderModal(false)} className="flex-1 px-4 py-2.5 border border-[#1a2a4a] text-gray-400 hover:text-white rounded-lg text-sm transition-colors">Cancel</button>
+              <button
+                onClick={handleAddReminder}
+                disabled={!reminderForm.title.trim() || !reminderForm.dueAt}
+                className="flex-1 bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+              >
+                Save
+              </button>
+            </div>
+          </Modal>
+        </div>
+      )}
+    </div>
+  );
+}

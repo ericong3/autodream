@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { User, Car, RepairJob, Quotation, Instruction } from '../types';
+import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder } from '../types';
 
 interface StoreState {
   currentUser: User | null;
@@ -9,6 +9,9 @@ interface StoreState {
   repairs: RepairJob[];
   quotations: Quotation[];
   instructions: Instruction[];
+  customers: Customer[];
+  testDrives: TestDrive[];
+  personalReminders: PersonalReminder[];
   viewPreference: Record<string, 'grid' | 'list'>;
 
   // Auth
@@ -39,6 +42,21 @@ interface StoreState {
   addUser: (user: User) => void;
   updateUser: (id: string, user: Partial<User>) => void;
   deleteUser: (id: string) => void;
+
+  // Customers
+  addCustomer: (customer: Customer) => void;
+  updateCustomer: (id: string, customer: Partial<Customer>) => void;
+  deleteCustomer: (id: string) => void;
+
+  // Test Drives
+  addTestDrive: (testDrive: TestDrive) => void;
+  updateTestDrive: (id: string, testDrive: Partial<TestDrive>) => void;
+  deleteTestDrive: (id: string) => void;
+
+  // Personal Reminders
+  addPersonalReminder: (reminder: PersonalReminder) => void;
+  updatePersonalReminder: (id: string, reminder: Partial<PersonalReminder>) => void;
+  deletePersonalReminder: (id: string) => void;
 
   // View preference
   setViewPreference: (userId: string, page: string, view: 'grid' | 'list') => void;
@@ -236,6 +254,132 @@ const seedQuotations: Quotation[] = [
   },
 ];
 
+const seedCustomers: Customer[] = [
+  {
+    id: 'cust-1',
+    name: 'Zahra Binti Azlan',
+    ic: '920315-10-5678',
+    phone: '+60123334455',
+    email: 'zahra@gmail.com',
+    employer: 'Maybank',
+    monthlySalary: 4500,
+    source: 'walk_in',
+    leadStatus: 'follow_up',
+    interestedCarId: 'car-1',
+    assignedSalesId: 'user-2',
+    notes: 'Very interested, came twice to view the Myvi. Wants to negotiate price.',
+    followUpDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+    dealPrice: 36500,
+    loanStatus: 'not_started',
+    createdAt: new Date(Date.now() - 7 * 86400000).toISOString(),
+  },
+  {
+    id: 'cust-2',
+    name: 'Hafiz Bin Kamal',
+    ic: '880920-14-3456',
+    phone: '+60198887766',
+    employer: 'Petronas',
+    monthlySalary: 7000,
+    source: 'referral',
+    leadStatus: 'follow_up',
+    interestedCarId: 'car-2',
+    assignedSalesId: 'user-2',
+    notes: 'Referred by previous customer. Loan submitted to CIMB.',
+    followUpDate: new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0],
+    dealPrice: 75000,
+    loanStatus: 'submitted',
+    loanBankSubmitted: 'CIMB',
+    createdAt: new Date(Date.now() - 14 * 86400000).toISOString(),
+  },
+  {
+    id: 'cust-3',
+    name: 'Priya Raj',
+    phone: '+60174445566',
+    email: 'priya.raj@hotmail.com',
+    employer: 'Grab',
+    monthlySalary: 3800,
+    source: 'online',
+    leadStatus: 'test_drive',
+    interestedCarId: 'car-3',
+    assignedSalesId: 'user-3',
+    notes: 'Contacted via Facebook. Wants test drive this weekend.',
+    followUpDate: new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0],
+    loanStatus: 'not_started',
+    createdAt: new Date(Date.now() - 3 * 86400000).toISOString(),
+  },
+  {
+    id: 'cust-4',
+    name: 'David Tan Wei Liang',
+    ic: '951105-07-1234',
+    phone: '+60165556677',
+    employer: 'HSBC',
+    monthlySalary: 5500,
+    source: 'online',
+    leadStatus: 'follow_up',
+    interestedCarId: 'car-4',
+    assignedSalesId: 'user-3',
+    dealPrice: 44000,
+    loanStatus: 'approved',
+    loanBankSubmitted: 'Public',
+    createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
+  },
+  {
+    id: 'cust-5',
+    name: 'Nurul Ain Binti Hamid',
+    phone: '+60112223344',
+    employer: 'Shopee',
+    monthlySalary: 3200,
+    source: 'online',
+    leadStatus: 'contacted',
+    interestedCarId: 'car-5',
+    assignedSalesId: 'user-2',
+    notes: 'Enquired about Almera via WhatsApp. Follow up needed.',
+    followUpDate: new Date().toISOString().split('T')[0],
+    loanStatus: 'not_started',
+    createdAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+  },
+];
+
+const seedTestDrives: TestDrive[] = [
+  {
+    id: 'td-1',
+    customerId: 'cust-3',
+    carId: 'car-3',
+    scheduledAt: new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 16),
+    status: 'scheduled',
+    notes: 'Customer wants morning slot, weekday preferred',
+    salesId: 'user-3',
+    createdAt: new Date(Date.now() - 86400000).toISOString(),
+  },
+];
+
+const seedPersonalReminders: PersonalReminder[] = [
+  {
+    id: 'prem-1',
+    userId: 'user-2',
+    title: 'Follow up with Zahra on Myvi deal',
+    dueAt: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+    isCompleted: false,
+    createdAt: new Date(Date.now() - 86400000).toISOString(),
+  },
+  {
+    id: 'prem-2',
+    userId: 'user-2',
+    title: 'Submit CIMB loan documents for Hafiz',
+    dueAt: new Date().toISOString().split('T')[0],
+    isCompleted: false,
+    createdAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+  },
+  {
+    id: 'prem-3',
+    userId: 'user-3',
+    title: 'Confirm test drive appointment with Priya',
+    dueAt: new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0],
+    isCompleted: false,
+    createdAt: new Date(Date.now() - 86400000).toISOString(),
+  },
+];
+
 const seedInstructions: Instruction[] = [
   {
     id: 'instr-1',
@@ -280,6 +424,9 @@ export const useStore = create<StoreState>()(
       repairs: seedRepairs,
       quotations: seedQuotations,
       instructions: seedInstructions,
+      customers: seedCustomers,
+      testDrives: seedTestDrives,
+      personalReminders: seedPersonalReminders,
       viewPreference: {},
 
       login: (username, password) => {
@@ -374,6 +521,24 @@ export const useStore = create<StoreState>()(
         })),
       deleteUser: (id) =>
         set((s) => ({ users: s.users.filter((u) => u.id !== id) })),
+
+      addCustomer: (customer) => set((s) => ({ customers: [...s.customers, customer] })),
+      updateCustomer: (id, customer) =>
+        set((s) => ({ customers: s.customers.map((c) => (c.id === id ? { ...c, ...customer } : c)) })),
+      deleteCustomer: (id) =>
+        set((s) => ({ customers: s.customers.filter((c) => c.id !== id) })),
+
+      addTestDrive: (testDrive) => set((s) => ({ testDrives: [...s.testDrives, testDrive] })),
+      updateTestDrive: (id, testDrive) =>
+        set((s) => ({ testDrives: s.testDrives.map((t) => (t.id === id ? { ...t, ...testDrive } : t)) })),
+      deleteTestDrive: (id) =>
+        set((s) => ({ testDrives: s.testDrives.filter((t) => t.id !== id) })),
+
+      addPersonalReminder: (reminder) => set((s) => ({ personalReminders: [...s.personalReminders, reminder] })),
+      updatePersonalReminder: (id, reminder) =>
+        set((s) => ({ personalReminders: s.personalReminders.map((r) => (r.id === id ? { ...r, ...reminder } : r)) })),
+      deletePersonalReminder: (id) =>
+        set((s) => ({ personalReminders: s.personalReminders.filter((r) => r.id !== id) })),
 
       setViewPreference: (userId, page, view) =>
         set((s) => ({

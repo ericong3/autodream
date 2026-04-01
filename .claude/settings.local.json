@@ -7,7 +7,8 @@
       "Bash(npm run:*)",
       "Bash(echo \"EXIT_CODE: $?\")",
       "WebFetch(domain:ericong3.github.io)",
-      "Bash(npm list:*)"
+      "Bash(npm list:*)",
+      "Bash(git add:*)"
     ]
   }
 }

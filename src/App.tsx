@@ -18,6 +18,13 @@ import TeamMembers from './pages/TeamMembers';
 import Reminders from './pages/Reminders';
 import History from './pages/History';
 import AIAssistant from './pages/AIAssistant';
+import Customers from './pages/Customers';
+import SalesPipeline from './pages/SalesPipeline';
+import Commission from './pages/Commission';
+import LoanCalculator from './pages/LoanCalculator';
+import CarCompare from './pages/CarCompare';
+import SalesDashboard from './pages/SalesDashboard';
+import Calendar from './pages/Calendar';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
@@ -29,6 +36,13 @@ function RequireDirector({ children }: { children: React.ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
   if (!currentUser) return <Navigate to="/login" replace />;
   if (currentUser.role !== 'director') return <Navigate to="/inventory" replace />;
+  return <>{children}</>;
+}
+
+function RequireSalesOrDirector({ children }: { children: React.ReactNode }) {
+  const currentUser = useStore((s) => s.currentUser);
+  if (!currentUser) return <Navigate to="/login" replace />;
+  if (currentUser.role !== 'director' && currentUser.role !== 'salesperson') return <Navigate to="/inventory" replace />;
   return <>{children}</>;
 }
 
@@ -144,6 +158,76 @@ export default function App() {
                 <AIAssistant />
               </Layout>
             </RequireAuth>
+          }
+        />
+        <Route
+          path="/sales-dashboard"
+          element={
+            <RequireSalesOrDirector>
+              <Layout>
+                <SalesDashboard />
+              </Layout>
+            </RequireSalesOrDirector>
+          }
+        />
+        <Route
+          path="/customers"
+          element={
+            <RequireSalesOrDirector>
+              <Layout>
+                <Customers />
+              </Layout>
+            </RequireSalesOrDirector>
+          }
+        />
+        <Route
+          path="/pipeline"
+          element={
+            <RequireSalesOrDirector>
+              <Layout>
+                <SalesPipeline />
+              </Layout>
+            </RequireSalesOrDirector>
+          }
+        />
+        <Route
+          path="/commission"
+          element={
+            <RequireSalesOrDirector>
+              <Layout>
+                <Commission />
+              </Layout>
+            </RequireSalesOrDirector>
+          }
+        />
+        <Route
+          path="/loan-calculator"
+          element={
+            <RequireSalesOrDirector>
+              <Layout>
+                <LoanCalculator />
+              </Layout>
+            </RequireSalesOrDirector>
+          }
+        />
+        <Route
+          path="/car-compare"
+          element={
+            <RequireSalesOrDirector>
+              <Layout>
+                <CarCompare />
+              </Layout>
+            </RequireSalesOrDirector>
+          }
+        />
+        <Route
+          path="/calendar"
+          element={
+            <RequireSalesOrDirector>
+              <Layout>
+                <Calendar />
+              </Layout>
+            </RequireSalesOrDirector>
           }
         />
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -17,6 +17,12 @@ export interface ChecklistItem {
   checkedAt?: string;
 }
 
+export interface LoanApplication {
+  bank: string;
+  status: 'submitted' | 'approved' | 'rejected';
+  rejectionReason?: string;
+}
+
 export interface LoanSubmission {
   id: string;
   bank: string;
@@ -45,6 +51,7 @@ export interface Car {
   make: string;
   model: string;
   year: number;
+  carPlate?: string;
   colour: string;
   mileage: number;
   condition: 'excellent' | 'good' | 'fair' | 'poor';
@@ -163,3 +170,44 @@ export const DEFAULT_CHECKLIST_LABELS = [
   'Brake Test',
   'Test Drive Completed',
 ];
+
+export interface Customer {
+  id: string;
+  name: string;
+  ic?: string;
+  phone: string;
+  email?: string;
+  employer?: string;
+  monthlySalary?: number;
+  source: 'walk_in' | 'referral' | 'online' | 'repeat' | 'fb_marketplace' | 'mudah' | 'fb_page';
+  leadStatus: 'contacted' | 'test_drive' | 'follow_up' | 'loan_submitted';
+  interestedCarId?: string;
+  assignedSalesId: string;
+  notes?: string;
+  followUpDate?: string;
+  dealPrice?: number;
+  loanStatus?: 'not_started' | 'submitted' | 'approved' | 'rejected';
+  loanBankSubmitted?: string;
+  loanApplications?: LoanApplication[];
+  createdAt: string;
+}
+
+export interface TestDrive {
+  id: string;
+  customerId: string;
+  carId: string;
+  scheduledAt: string;
+  status: 'scheduled' | 'completed' | 'cancelled';
+  notes?: string;
+  salesId: string;
+  createdAt: string;
+}
+
+export interface PersonalReminder {
+  id: string;
+  userId: string;
+  title: string;
+  dueAt: string;
+  isCompleted: boolean;
+  createdAt: string;
+}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, FileText, Trash2, Edit, ArrowRight, AlertCircle } from 'lucide-react';
+import { Plus, FileText, Trash2, Edit, ArrowRight, AlertCircle, MessageCircle } from 'lucide-react';
 import { useStore } from '../store';
 import { Quotation, Car } from '../types';
 import Modal from '../components/Modal';
@@ -156,7 +156,7 @@ export default function Quotations() {
           ))}
         </div>
 
-        {isDirector && (
+        {(isDirector || currentUser?.role === 'salesperson') && (
           <button
             onClick={openAdd}
             className="flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-cyan-500/20"
@@ -193,7 +193,23 @@ export default function Quotations() {
                   <tr key={q.id} className={`border-b border-[#1a2a4a]/50 ${i % 2 === 0 ? 'bg-[#0d1526]' : 'bg-[#0a0f1e]/50'} hover:bg-[#111d35] transition-colors`}>
                     <td className="px-5 py-3">
                       <p className="text-white font-medium">{q.contactName}</p>
-                      <p className="text-gray-500 text-xs">{q.phone}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <p className="text-gray-500 text-xs">{q.phone}</p>
+                        <button
+                          onClick={() => {
+                            const clean = q.phone.replace(/[\s\-+]/g, '');
+                            const vehicle = `${q.year} ${q.make} ${q.model}`;
+                            const msg = q.type === 'outbound'
+                              ? encodeURIComponent(`Hi ${q.contactName}, here is your quotation from AutoDream:\n\nVehicle: ${vehicle}\nMileage: ${q.mileage.toLocaleString()} km\nQuoted Price: RM ${q.offeredPrice.toLocaleString()}\nValid until: ${new Date(q.expiryDate).toLocaleDateString('en-MY')}\n\nPlease contact us for more details.`)
+                              : encodeURIComponent(`Hi ${q.contactName}, this is AutoDream. We are interested in your ${vehicle}. Please contact us at your convenience.`);
+                            window.open(`https://wa.me/${clean}?text=${msg}`, '_blank');
+                          }}
+                          className="text-green-500 hover:text-green-400 transition-colors"
+                          title="WhatsApp"
+                        >
+                          <MessageCircle size={13} />
+                        </button>
+                      </div>
                     </td>
                     <td className="px-5 py-3">
                       <p className="text-gray-300">{q.year} {q.make} {q.model}</p>
