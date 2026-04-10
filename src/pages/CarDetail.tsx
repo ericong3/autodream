@@ -171,10 +171,26 @@ export default function CarDetail() {
     return () => window.removeEventListener('keydown', handler);
   }, [showGallery, allPhotos.length]);
 
+  const compressImage = (file: File, maxWidth = 1280, quality = 0.82): Promise<Blob> =>
+    new Promise((resolve) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const scale = Math.min(1, maxWidth / img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        canvas.toBlob((blob) => resolve(blob ?? file), 'image/jpeg', quality);
+      };
+      img.src = url;
+    });
+
   const uploadToStorage = async (file: File, folder: string): Promise<string> => {
-    const ext = file.name.split('.').pop() ?? 'jpg';
-    const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const { error } = await supabase.storage.from('car-photos').upload(path, file);
+    const compressed = await compressImage(file);
+    const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+    const { error } = await supabase.storage.from('car-photos').upload(path, compressed, { contentType: 'image/jpeg' });
     if (error) throw new Error(error.message);
     const { data } = supabase.storage.from('car-photos').getPublicUrl(path);
     return data.publicUrl;
