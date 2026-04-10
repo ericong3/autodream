@@ -173,7 +173,7 @@ export default function CarDetail() {
 
   const compressImage = (file: File, maxWidth = 1280, quality = 0.82): Promise<Blob> =>
     new Promise((resolve) => {
-      const img = new Image();
+      const img = document.createElement('img');
       const url = URL.createObjectURL(file);
       img.onload = () => {
         const scale = Math.min(1, maxWidth / img.width);
