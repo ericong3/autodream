@@ -23,6 +23,7 @@ import {
   Image,
 } from 'lucide-react';
 import { useStore } from '../store';
+import { supabase } from '../lib/supabase';
 import { Car, RepairJob, ChecklistItem, REPAIR_TYPES, REPAIR_LOCATIONS, DEFAULT_CHECKLIST_LABELS } from '../types';
 import Modal from '../components/Modal';
 import { formatRM, formatMileage, generateId } from '../utils/format';
@@ -170,13 +171,14 @@ export default function CarDetail() {
     return () => window.removeEventListener('keydown', handler);
   }, [showGallery, allPhotos.length]);
 
-  const readFileAsBase64 = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
+  const uploadToStorage = async (file: File, folder: string): Promise<string> => {
+    const ext = file.name.split('.').pop() ?? 'jpg';
+    const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const { error } = await supabase.storage.from('car-photos').upload(path, file);
+    if (error) throw new Error(error.message);
+    const { data } = supabase.storage.from('car-photos').getPublicUrl(path);
+    return data.publicUrl;
+  };
 
   if (!car) {
     return (
@@ -818,8 +820,8 @@ export default function CarDetail() {
             )}
             <input ref={receiptRef} type="file" accept="image/*" className="hidden" onChange={async (e) => {
               if (e.target.files?.[0]) {
-                const b64 = await readFileAsBase64(e.target.files[0]);
-                setCompleteForm({ ...completeForm, receiptPhoto: b64 });
+                const url = await uploadToStorage(e.target.files[0], 'receipts');
+                setCompleteForm({ ...completeForm, receiptPhoto: url });
               }
             }} />
           </div>
@@ -916,8 +918,8 @@ export default function CarDetail() {
             )}
             <input ref={deliveryRef} type="file" accept="image/*" className="hidden" onChange={async (e) => {
               if (e.target.files?.[0]) {
-                const b64 = await readFileAsBase64(e.target.files[0]);
-                setDeliveryPhoto(b64);
+                const url = await uploadToStorage(e.target.files[0], 'delivery');
+                setDeliveryPhoto(url);
               }
             }} />
           </div>

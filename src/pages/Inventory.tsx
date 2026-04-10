@@ -16,6 +16,7 @@ import {
   MapPin,
 } from 'lucide-react';
 import { useStore } from '../store';
+import { supabase } from '../lib/supabase';
 import { Car } from '../types';
 import Modal from '../components/Modal';
 import { formatRM, formatMileage, generateId } from '../utils/format';
@@ -94,19 +95,20 @@ export default function Inventory() {
   const dragIndexRef = useRef<number | null>(null);
 
 
-  const readFileAsBase64 = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
+  const uploadToStorage = async (file: File, folder: string): Promise<string> => {
+    const ext = file.name.split('.').pop() ?? 'jpg';
+    const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const { error } = await supabase.storage.from('car-photos').upload(path, file);
+    if (error) throw new Error(error.message);
+    const { data } = supabase.storage.from('car-photos').getPublicUrl(path);
+    return data.publicUrl;
+  };
 
   const handlePhotoFiles = async (files: FileList | null) => {
     if (!files) return;
     const valid = Array.from(files).filter((f) => f.type.startsWith('image/'));
-    const b64s = await Promise.all(valid.map(readFileAsBase64));
-    const updated = [...(form.photos ?? []), ...b64s].slice(0, 20);
+    const urls = await Promise.all(valid.map((f) => uploadToStorage(f, 'cars')));
+    const updated = [...(form.photos ?? []), ...urls].slice(0, 20);
     setForm((prev) => ({ ...prev, photos: updated, photo: updated[0] ?? prev.photo }));
     setErrors((prev) => ({ ...prev, photos: '' }));
   };
@@ -119,8 +121,8 @@ export default function Inventory() {
   const handleGreenCard = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const file = files[0];
-    const b64 = await readFileAsBase64(file);
-    setForm((prev) => ({ ...prev, greenCard: b64 }));
+    const url = await uploadToStorage(file, 'greencards');
+    setForm((prev) => ({ ...prev, greenCard: url }));
     setErrors((prev) => ({ ...prev, greenCard: '' }));
   };
 

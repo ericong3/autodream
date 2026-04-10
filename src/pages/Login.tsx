@@ -19,7 +19,7 @@ export default function Login() {
     if (!password) { setError('Password is required'); return; }
     setLoading(true);
     await new Promise((r) => setTimeout(r, 400));
-    const success = login(username.trim(), password);
+    const success = await login(username.trim(), password);
     setLoading(false);
     if (success) { navigate('/inventory'); }
     else { setError('Invalid username or password'); }

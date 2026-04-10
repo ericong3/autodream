@@ -49,7 +49,6 @@ function RequireSalesOrDirector({ children }: { children: React.ReactNode }) {
 export default function App() {
   const currentUser = useStore((s) => s.currentUser);
   const loadAll = useStore((s) => s.loadAll);
-  const loaded = useStore((s) => s.loaded);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
