@@ -15,7 +15,7 @@ const BANK_RATES = [
 ];
 
 function inputCls() {
-  return 'w-full bg-[#111d35] border border-[#1a2a4a] text-white placeholder-gray-600 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-cyan-500 transition-colors';
+  return 'w-full bg-obsidian-700/60 border border-obsidian-400/60 text-white placeholder-gray-600 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors';
 }
 
 export default function LoanCalculator() {
@@ -42,7 +42,7 @@ export default function LoanCalculator() {
     <div className="space-y-5 max-w-3xl">
       <div>
         <h1 className="text-white text-xl font-bold flex items-center gap-2">
-          <Calculator size={22} className="text-cyan-400" />
+          <Calculator size={22} className="text-gold-400" />
           Loan Calculator
         </h1>
         <p className="text-gray-500 text-sm mt-0.5">Malaysian hire purchase — flat rate method</p>
@@ -50,7 +50,7 @@ export default function LoanCalculator() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         {/* Inputs */}
-        <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl p-5 space-y-5">
+        <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-5 space-y-5">
           <h2 className="text-white font-semibold text-sm">Loan Details</h2>
 
           <div>
@@ -66,7 +66,7 @@ export default function LoanCalculator() {
 
           <div>
             <label className="block text-gray-300 text-xs font-medium mb-2">
-              Down Payment: <span className="text-cyan-400">{downPaymentPct}%</span> = <span className="text-white">{formatRM(downPaymentRM)}</span>
+              Down Payment: <span className="text-gold-400">{downPaymentPct}%</span> = <span className="text-white">{formatRM(downPaymentRM)}</span>
             </label>
             <input
               type="range"
@@ -96,7 +96,7 @@ export default function LoanCalculator() {
                   key={r}
                   onClick={() => setInterestRate(r)}
                   className={`px-2.5 py-1 text-xs rounded-lg border transition-colors ${
-                    interestRate === r ? 'bg-cyan-500 border-cyan-500 text-white' : 'border-[#1a2a4a] text-gray-500 hover:text-white hover:border-[#2a3a5a]'
+                    interestRate === r ? 'bg-gold-500 border-gold-500 text-white' : 'border-obsidian-400/60 text-gray-500 hover:text-white hover:border-[#3C321E]'
                   }`}
                 >
                   {r}%
@@ -113,7 +113,7 @@ export default function LoanCalculator() {
                   key={t}
                   onClick={() => setTenure(t)}
                   className={`flex-1 py-2.5 text-sm rounded-lg border font-medium transition-colors ${
-                    tenure === t ? 'bg-cyan-500 border-cyan-500 text-white' : 'bg-[#111d35] border-[#1a2a4a] text-gray-400 hover:text-white hover:border-[#2a3a5a]'
+                    tenure === t ? 'bg-gold-500 border-gold-500 text-white' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:text-white hover:border-[#3C321E]'
                   }`}
                 >
                   {t} yrs
@@ -127,13 +127,13 @@ export default function LoanCalculator() {
         <div className="space-y-3">
           {results ? (
             <>
-              <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-xl p-5 text-center">
+              <div className="bg-gold-500/10 border border-gold-500/30 rounded-xl p-5 text-center">
                 <p className="text-gray-400 text-xs mb-1">Monthly Instalment</p>
-                <p className="text-4xl font-bold text-cyan-400">{formatRM(Math.round(results.monthly))}</p>
+                <p className="text-4xl font-bold text-gold-400">{formatRM(Math.round(results.monthly))}</p>
                 <p className="text-gray-500 text-xs mt-1">per month · {tenure} years · {tenure * 12} payments</p>
               </div>
 
-              <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl p-4 space-y-3">
+              <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-4 space-y-3">
                 {[
                   { label: 'Car Price', value: formatRM(carPrice) },
                   { label: 'Down Payment', value: formatRM(Math.round(results.downPayment)), sub: `${downPaymentPct}%` },
@@ -141,7 +141,7 @@ export default function LoanCalculator() {
                   { label: 'Total Interest', value: formatRM(Math.round(results.totalInterest)), color: 'text-orange-400' },
                   { label: 'Total Payable', value: formatRM(Math.round(results.totalPayable)), color: 'text-yellow-400', bold: true },
                 ].map(row => (
-                  <div key={row.label} className={`flex justify-between items-center ${row.bold ? 'border-t border-[#1a2a4a] pt-3 mt-1' : ''}`}>
+                  <div key={row.label} className={`flex justify-between items-center ${row.bold ? 'border-t border-obsidian-400/60 pt-3 mt-1' : ''}`}>
                     <span className="text-gray-400 text-sm">{row.label}</span>
                     <div className="text-right">
                       <span className={`text-sm font-semibold ${row.color ?? 'text-white'}`}>{row.value}</span>
@@ -152,7 +152,7 @@ export default function LoanCalculator() {
               </div>
 
               {/* Bank reference rates */}
-              <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl p-4">
+              <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-4">
                 <p className="text-gray-500 text-xs font-medium mb-3 flex items-center gap-1.5">
                   <Info size={12} />Typical Bank Rates (tap to apply)
                 </p>
@@ -167,8 +167,8 @@ export default function LoanCalculator() {
                         onClick={() => setInterestRate(b.rate)}
                         className={`text-left p-2.5 rounded-lg border transition-colors ${
                           interestRate === b.rate
-                            ? 'border-cyan-500/50 bg-cyan-500/10'
-                            : 'border-[#1a2a4a] hover:border-[#2a3a5a] bg-[#111d35]'
+                            ? 'border-gold-500/50 bg-gold-500/10'
+                            : 'border-obsidian-400/60 hover:border-[#3C321E] bg-[#161410]'
                         }`}
                       >
                         <p className="text-white text-xs font-medium">{b.bank}</p>
@@ -180,7 +180,7 @@ export default function LoanCalculator() {
               </div>
             </>
           ) : (
-            <div className="flex items-center justify-center h-48 text-gray-600 text-sm bg-[#0d1526] border border-[#1a2a4a] rounded-xl">
+            <div className="flex items-center justify-center h-48 text-gray-600 text-sm bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card">
               Enter valid loan details to see results
             </div>
           )}

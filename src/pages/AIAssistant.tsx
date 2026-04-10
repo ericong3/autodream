@@ -39,9 +39,9 @@ const MODE_CONFIG: Record<Mode, {
   dealership: {
     label: 'Dealership',
     icon: Building2,
-    accent: 'text-cyan-400',
-    border: 'border-cyan-500',
-    badge: 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400',
+    accent: 'text-gold-400',
+    border: 'border-gold-500',
+    badge: 'bg-gold-500/10 border-gold-500/30 text-gold-400',
     description: 'Inventory & workshop queries',
     placeholder: 'Ask about inventory, cars, workshop...',
     greeting: (name) => `Hi ${name}! I can help you query inventory, check car statuses, and workshop information. What would you like to know?`,
@@ -301,7 +301,7 @@ function MessageBubble({ msg, accent }: { msg: Message; accent: string }) {
   return (
     <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
       <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-        isUser ? 'bg-slate-600' : 'bg-[#1a2a4a] border border-[#1a2a4a]'
+        isUser ? 'bg-slate-600' : 'bg-[#2C2415] border border-obsidian-400/60'
       }`}>
         {isUser
           ? <User size={15} className="text-white" />
@@ -310,7 +310,7 @@ function MessageBubble({ msg, accent }: { msg: Message; accent: string }) {
       <div className={`max-w-[78%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
         isUser
           ? 'bg-slate-700 text-white rounded-tr-sm'
-          : 'bg-[#111d35] border border-[#1a2a4a] text-gray-200 rounded-tl-sm'
+          : 'bg-obsidian-700/60 border border-obsidian-400/60 text-gray-200 rounded-tl-sm'
       }`}>
         {lines.map((line, i) => {
           if (!line) return <div key={i} className="h-1" />;
@@ -346,7 +346,7 @@ function ApiKeyPanel({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl p-4 space-y-3">
+    <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Settings size={14} className="text-gray-400" />
@@ -363,7 +363,7 @@ function ApiKeyPanel({ onClose }: { onClose: () => void }) {
           value={key}
           onChange={(e) => setKey(e.target.value)}
           placeholder="sk-ant-..."
-          className="w-full bg-[#111d35] border border-[#1a2a4a] text-white text-sm rounded-lg px-3 py-2.5 pr-10 focus:outline-none focus:border-cyan-500 transition-colors"
+          className="w-full bg-obsidian-700/60 border border-obsidian-400/60 text-white text-sm rounded-lg px-3 py-2.5 pr-10 focus:outline-none focus:border-gold-500 transition-colors"
         />
         <button
           onClick={() => setShow((v) => !v)}
@@ -375,7 +375,7 @@ function ApiKeyPanel({ onClose }: { onClose: () => void }) {
       <div className="flex gap-2">
         <button
           onClick={save}
-          className="flex-1 bg-cyan-500 hover:bg-cyan-400 text-white text-sm font-medium py-2 rounded-lg transition-colors"
+          className="flex-1 btn-gold text-white text-sm font-medium py-2 rounded-lg transition-colors"
         >
           Save Key
         </button>
@@ -523,13 +523,13 @@ export default function AIAssistant() {
     <div className="flex flex-col h-[calc(100vh-8rem)] max-w-3xl mx-auto">
 
       {/* ── Header ── */}
-      <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-t-xl p-4">
+      <div className="bg-[#0F0E0C] border border-obsidian-400/60 rounded-t-xl p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
             <div className={`w-10 h-10 rounded-full flex items-center justify-center border ${
               mode === 'finance' ? 'bg-emerald-500/20 border-emerald-500/30'
               : mode === 'mechanic' ? 'bg-orange-500/20 border-orange-500/30'
-              : 'bg-cyan-500/20 border-cyan-500/30'
+              : 'bg-gold-500/20 border-gold-500/30'
             }`}>
               {React.createElement(cfg.icon, { size: 18, className: cfg.accent })}
             </div>
@@ -545,7 +545,7 @@ export default function AIAssistant() {
             <Sparkles size={14} className={cfg.accent} />
             <button
               onClick={() => setShowSettings((v) => !v)}
-              className={`p-1.5 rounded-lg transition-colors ${showSettings ? 'text-cyan-400 bg-cyan-500/10' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}
+              className={`p-1.5 rounded-lg transition-colors ${showSettings ? 'text-gold-400 bg-gold-500/10' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}
             >
               <Settings size={15} />
             </button>
@@ -553,7 +553,7 @@ export default function AIAssistant() {
         </div>
 
         {/* Mode tabs */}
-        <div className="flex gap-1 bg-[#111d35] rounded-lg p-1">
+        <div className="flex gap-1 bg-obsidian-700/60 rounded-lg p-1">
           {(Object.keys(MODE_CONFIG) as Mode[]).map((m) => {
             const mc = MODE_CONFIG[m];
             const Icon = mc.icon;
@@ -578,14 +578,14 @@ export default function AIAssistant() {
 
       {/* Settings panel */}
       {showSettings && (
-        <div className="border-x border-[#1a2a4a] px-4 pt-3 bg-[#0a0f1e]">
+        <div className="border-x border-obsidian-400/60 px-4 pt-3 bg-[#080808]">
           <ApiKeyPanel onClose={() => setShowSettings(false)} />
         </div>
       )}
 
       {/* API error banner */}
       {apiError && (
-        <div className="border-x border-[#1a2a4a] px-4 pt-3 bg-[#0a0f1e]">
+        <div className="border-x border-obsidian-400/60 px-4 pt-3 bg-[#080808]">
           <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2.5 text-xs text-red-400">
             <AlertCircle size={13} className="shrink-0 mt-0.5" />
             <span>{apiError}</span>
@@ -597,17 +597,17 @@ export default function AIAssistant() {
       )}
 
       {/* ── Messages ── */}
-      <div className="flex-1 bg-[#0a0f1e] border-x border-[#1a2a4a] p-4 overflow-y-auto space-y-4">
+      <div className="flex-1 bg-[#080808] border-x border-obsidian-400/60 p-4 overflow-y-auto space-y-4">
         {histories[mode].map((msg) => (
           <MessageBubble key={msg.id} msg={msg} accent={cfg.accent} />
         ))}
 
         {isTyping && (
           <div className="flex gap-3">
-            <div className="w-8 h-8 rounded-full bg-[#1a2a4a] border border-[#1a2a4a] flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 rounded-full bg-[#2C2415] border border-obsidian-400/60 flex items-center justify-center shrink-0">
               {React.createElement(cfg.icon, { size: 15, className: cfg.accent })}
             </div>
-            <div className="bg-[#111d35] border border-[#1a2a4a] rounded-2xl rounded-tl-sm px-4 py-3">
+            <div className="bg-obsidian-700/60 border border-obsidian-400/60 rounded-2xl rounded-tl-sm px-4 py-3">
               <div className="flex gap-1 items-center">
                 <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
                 <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -620,16 +620,16 @@ export default function AIAssistant() {
       </div>
 
       {/* ── Suggestions ── */}
-      <div className="bg-[#0d1526] border-x border-[#1a2a4a] px-4 py-2 flex gap-2 overflow-x-auto">
+      <div className="bg-[#0F0E0C] border-x border-obsidian-400/60 px-4 py-2 flex gap-2 overflow-x-auto">
         {cfg.suggestions.map((s) => (
           <button
             key={s}
             onClick={() => sendMessage(s)}
             disabled={isTyping}
-            className={`shrink-0 text-xs bg-[#111d35] border border-[#1a2a4a] px-3 py-1.5 rounded-full transition-colors whitespace-nowrap disabled:opacity-40 text-gray-400 hover:border-opacity-60 ${
+            className={`shrink-0 text-xs bg-obsidian-700/60 border border-obsidian-400/60 px-3 py-1.5 rounded-full transition-colors whitespace-nowrap disabled:opacity-40 text-gray-400 hover:border-opacity-60 ${
               mode === 'finance' ? 'hover:text-emerald-400 hover:border-emerald-500/40'
               : mode === 'mechanic' ? 'hover:text-orange-400 hover:border-orange-500/40'
-              : 'hover:text-cyan-400 hover:border-cyan-500/40'
+              : 'hover:text-gold-400 hover:border-gold-500/40'
             }`}
           >
             {s}
@@ -638,7 +638,7 @@ export default function AIAssistant() {
       </div>
 
       {/* ── Input ── */}
-      <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-b-xl p-4">
+      <div className="bg-[#0F0E0C] border border-obsidian-400/60 rounded-b-xl p-4">
         {(mode === 'finance' || mode === 'mechanic') && !localStorage.getItem('autodream_api_key') && (
           <div className="flex items-center gap-2 mb-3 text-xs text-amber-400/80">
             <AlertCircle size={12} />
@@ -655,10 +655,10 @@ export default function AIAssistant() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={cfg.placeholder}
-            className={`flex-1 bg-[#111d35] border border-[#1a2a4a] text-white placeholder-gray-600 rounded-xl px-4 py-3 text-sm focus:outline-none transition-colors ${
+            className={`flex-1 bg-obsidian-700/60 border border-obsidian-400/60 text-white placeholder-gray-600 rounded-xl px-4 py-3 text-sm focus:outline-none transition-colors ${
               mode === 'finance' ? 'focus:border-emerald-500'
               : mode === 'mechanic' ? 'focus:border-orange-500'
-              : 'focus:border-cyan-500'
+              : 'focus:border-gold-500'
             }`}
           />
           <button
@@ -669,7 +669,7 @@ export default function AIAssistant() {
                 ? 'bg-emerald-500 hover:bg-emerald-400 shadow-emerald-500/20'
                 : mode === 'mechanic'
                 ? 'bg-orange-500 hover:bg-orange-400 shadow-orange-500/20'
-                : 'bg-cyan-500 hover:bg-cyan-400 shadow-cyan-500/20'
+                : 'btn-gold shadow-gold-500/20'
             }`}
           >
             <Send size={17} />

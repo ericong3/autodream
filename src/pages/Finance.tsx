@@ -91,16 +91,16 @@ export default function Finance() {
       <div className="flex items-center gap-3">
         <button
           onClick={prevMonth}
-          className="p-2 rounded-lg border border-[#1a2a4a] text-gray-400 hover:text-white hover:border-gray-600 transition-colors"
+          className="p-2 rounded-lg border border-obsidian-400/60 text-gray-400 hover:text-white hover:border-gray-600 transition-colors"
         >
           <ChevronLeft size={16} />
         </button>
-        <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-lg px-5 py-2 text-white font-semibold min-w-[160px] text-center">
+        <div className="bg-[#0F0E0C] border border-obsidian-400/60 rounded-lg px-5 py-2 text-white font-semibold min-w-[160px] text-center">
           {MONTH_NAMES[selectedMonth]} {selectedYear}
         </div>
         <button
           onClick={nextMonth}
-          className="p-2 rounded-lg border border-[#1a2a4a] text-gray-400 hover:text-white hover:border-gray-600 transition-colors"
+          className="p-2 rounded-lg border border-obsidian-400/60 text-gray-400 hover:text-white hover:border-gray-600 transition-colors"
         >
           <ChevronRight size={16} />
         </button>
@@ -132,8 +132,8 @@ export default function Finance() {
           title="Avg Profit/Car"
           value={formatRM(avgProfitPerCar)}
           icon={Car}
-          borderColor="border-l-cyan-400"
-          iconColor="text-cyan-400"
+          borderColor="border-l-gold-400"
+          iconColor="text-gold-400"
         />
         <StatCard
           title="Repair & Workshop"
@@ -155,7 +155,7 @@ export default function Finance() {
 
       {/* P&L Summary */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl p-5">
+        <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-5">
           <h3 className="text-white font-semibold mb-1">P&L Summary</h3>
           <p className="text-gray-500 text-xs mb-4">{MONTH_NAMES[selectedMonth]} {selectedYear}</p>
           <div className="space-y-3">
@@ -163,7 +163,7 @@ export default function Finance() {
             <PLRow label="Purchase Costs" value={-totalPurchaseCosts} />
             <PLRow label="Repair & Workshop" value={-totalRepairCosts} />
             <PLRow label="Commission Paid" value={-totalCommission} />
-            <div className="border-t border-[#1a2a4a] pt-3">
+            <div className="border-t border-obsidian-400/60 pt-3">
               <div className="flex justify-between items-center">
                 <span className="text-white font-semibold">Net Profit</span>
                 <span className={`text-xl font-bold ${netProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
@@ -178,7 +178,7 @@ export default function Finance() {
         </div>
 
         {/* Commission by salesperson */}
-        <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl p-5">
+        <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-5">
           <h3 className="text-white font-semibold mb-1">Commission by Salesperson</h3>
           <p className="text-gray-500 text-xs mb-4">{MONTH_NAMES[selectedMonth]} {selectedYear}</p>
           {commissionBySalesperson.length === 0 ? (
@@ -186,9 +186,9 @@ export default function Finance() {
           ) : (
             <div className="space-y-3">
               {commissionBySalesperson.map(({ sp, soldCount, commission }) => (
-                <div key={sp.id} className="flex items-center justify-between p-3 bg-[#111d35] rounded-lg border border-[#1a2a4a]">
+                <div key={sp.id} className="flex items-center justify-between p-3 bg-obsidian-700/60 rounded-lg border border-obsidian-400/60">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-cyan-500/20 rounded-full flex items-center justify-center text-cyan-400 font-bold text-sm uppercase">
+                    <div className="w-8 h-8 bg-gold-500/20 rounded-full flex items-center justify-center text-gold-400 font-bold text-sm uppercase">
                       {sp.name.charAt(0)}
                     </div>
                     <div>
@@ -204,7 +204,7 @@ export default function Finance() {
         </div>
 
         {/* Cost breakdown */}
-        <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl p-5">
+        <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-5">
           <h3 className="text-white font-semibold mb-1">Cost Breakdown</h3>
           <p className="text-gray-500 text-xs mb-4">{MONTH_NAMES[selectedMonth]} {selectedYear}</p>
           <div className="space-y-3">
@@ -219,7 +219,7 @@ export default function Finance() {
                   <span className="text-gray-400">{label}</span>
                   <span className="text-gray-300">{formatRM(value)} ({pct.toFixed(1)}%)</span>
                 </div>
-                <div className="h-1.5 bg-[#111d35] rounded-full">
+                <div className="h-1.5 bg-obsidian-700/60 rounded-full">
                   <div className={`h-1.5 rounded-full ${color} transition-all`} style={{ width: `${Math.min(100, pct)}%` }} />
                 </div>
               </div>
@@ -229,8 +229,8 @@ export default function Finance() {
       </div>
 
       {/* Workshop Expenses Table */}
-      <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl">
-        <div className="p-5 border-b border-[#1a2a4a] flex items-center justify-between">
+      <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card">
+        <div className="p-5 border-b border-obsidian-400/60 flex items-center justify-between">
           <div>
             <h3 className="text-white font-semibold">Repair & Workshop Expenses</h3>
             <p className="text-gray-500 text-xs mt-0.5">For cars sold in {MONTH_NAMES[selectedMonth]} {selectedYear}</p>
@@ -243,7 +243,7 @@ export default function Finance() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-gray-500 text-xs border-b border-[#1a2a4a] bg-[#111d35]">
+                <tr className="text-gray-500 text-xs border-b border-obsidian-400/60 bg-[#161410]">
                   <th className="text-left px-5 py-3 font-medium">Car</th>
                   <th className="text-left px-5 py-3 font-medium">Repair Type</th>
                   <th className="text-left px-5 py-3 font-medium">Location</th>
@@ -255,7 +255,7 @@ export default function Finance() {
                 {workshopRepairs.map((r, i) => {
                   const car = cars.find((c) => c.id === r.carId);
                   return (
-                    <tr key={r.id} className={`border-b border-[#1a2a4a]/50 ${i % 2 === 0 ? 'bg-[#0d1526]' : 'bg-[#0a0f1e]/50'}`}>
+                    <tr key={r.id} className={`border-b border-obsidian-400/60/50 ${i % 2 === 0 ? 'bg-[#0F0E0C]' : 'bg-obsidian-950/30'}`}>
                       <td className="px-5 py-3">
                         {car ? (
                           <div>
@@ -277,7 +277,7 @@ export default function Finance() {
                 })}
               </tbody>
               <tfoot>
-                <tr className="bg-[#111d35] border-t border-[#1a2a4a]">
+                <tr className="bg-obsidian-700/60 border-t border-obsidian-400/60">
                   <td colSpan={4} className="px-5 py-3 text-white font-semibold">Total</td>
                   <td className="px-5 py-3 text-orange-400 font-bold text-right">{formatRM(totalRepairCosts)}</td>
                 </tr>
@@ -288,8 +288,8 @@ export default function Finance() {
       </div>
 
       {/* Sold Cars Table */}
-      <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl">
-        <div className="p-5 border-b border-[#1a2a4a]">
+      <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card">
+        <div className="p-5 border-b border-obsidian-400/60">
           <h3 className="text-white font-semibold">Sold Cars Detail</h3>
           <p className="text-gray-500 text-xs mt-0.5">{MONTH_NAMES[selectedMonth]} {selectedYear}</p>
         </div>
@@ -299,7 +299,7 @@ export default function Finance() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-gray-500 text-xs border-b border-[#1a2a4a] bg-[#111d35]">
+                <tr className="text-gray-500 text-xs border-b border-obsidian-400/60 bg-[#161410]">
                   <th className="text-left px-5 py-3 font-medium">Car</th>
                   <th className="text-right px-5 py-3 font-medium">Deal Price</th>
                   <th className="text-right px-5 py-3 font-medium">Buy Price</th>
@@ -311,12 +311,12 @@ export default function Finance() {
               </thead>
               <tbody>
                 {carData.map(({ car, dealPrice, repairCosts, commission, profit, sp }, i) => (
-                  <tr key={car.id} className={`border-b border-[#1a2a4a]/50 ${i % 2 === 0 ? 'bg-[#0d1526]' : 'bg-[#0a0f1e]/50'} hover:bg-[#111d35] transition-colors`}>
+                  <tr key={car.id} className={`border-b border-obsidian-400/60/50 ${i % 2 === 0 ? 'bg-[#0F0E0C]' : 'bg-obsidian-950/30'} hover:bg-obsidian-700/50 transition-colors`}>
                     <td className="px-5 py-3">
                       <p className="text-white font-medium">{car.make} {car.model}</p>
                       <p className="text-gray-500 text-xs">{car.year} · {car.colour}</p>
                     </td>
-                    <td className="px-5 py-3 text-cyan-400 font-semibold text-right">{formatRM(dealPrice)}</td>
+                    <td className="px-5 py-3 text-gold-400 font-semibold text-right">{formatRM(dealPrice)}</td>
                     <td className="px-5 py-3 text-gray-400 text-right">{formatRM(car.purchasePrice)}</td>
                     <td className="px-5 py-3 text-orange-400 text-right">{formatRM(repairCosts)}</td>
                     <td className="px-5 py-3 text-purple-400 text-right">{formatRM(commission)}</td>
@@ -328,9 +328,9 @@ export default function Finance() {
                 ))}
               </tbody>
               <tfoot>
-                <tr className="bg-[#111d35] border-t border-[#1a2a4a]">
+                <tr className="bg-obsidian-700/60 border-t border-obsidian-400/60">
                   <td className="px-5 py-3 text-white font-semibold">Totals</td>
-                  <td className="px-5 py-3 text-cyan-400 font-bold text-right">{formatRM(totalRevenue)}</td>
+                  <td className="px-5 py-3 text-gold-400 font-bold text-right">{formatRM(totalRevenue)}</td>
                   <td className="px-5 py-3 text-gray-400 font-bold text-right">{formatRM(totalPurchaseCosts)}</td>
                   <td className="px-5 py-3 text-orange-400 font-bold text-right">{formatRM(totalRepairCosts)}</td>
                   <td className="px-5 py-3 text-purple-400 font-bold text-right">{formatRM(totalCommission)}</td>
@@ -351,7 +351,7 @@ export default function Finance() {
 function PLRow({ label, value, positive }: { label: string; value: number; positive?: boolean }) {
   const isPos = value >= 0 || positive;
   return (
-    <div className="flex justify-between items-center py-1.5 border-b border-[#1a2a4a]/50">
+    <div className="flex justify-between items-center py-1.5 border-b border-obsidian-400/60/50">
       <span className="text-gray-300 text-sm">{label}</span>
       <span className={`text-sm font-semibold ${isPos ? 'text-green-400' : 'text-red-400'}`}>
         {value < 0 ? `-${formatRM(Math.abs(value))}` : formatRM(value)}

@@ -50,8 +50,8 @@ export default function History() {
           title="Total Revenue"
           value={formatRM(totalRevenue)}
           icon={DollarSign}
-          borderColor="border-l-cyan-400"
-          iconColor="text-cyan-400"
+          borderColor="border-l-gold-400"
+          iconColor="text-gold-400"
         />
         <StatCard
           title="Total Profit"
@@ -70,7 +70,7 @@ export default function History() {
           placeholder="Search sold cars..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full bg-[#0d1526] border border-[#1a2a4a] text-white placeholder-gray-600 rounded-lg pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:border-cyan-500 transition-colors"
+          className="w-full input rounded-lg pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors"
         />
       </div>
 
@@ -89,11 +89,11 @@ export default function History() {
 
       {/* Table */}
       {soldCars.length > 0 && (
-        <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl overflow-hidden">
+        <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-gray-500 text-xs border-b border-[#1a2a4a] bg-[#111d35]">
+                <tr className="text-gray-500 text-xs border-b border-obsidian-400/60 bg-[#161410]">
                   <th className="text-left px-4 py-3 font-medium">Car</th>
                   <th className="text-left px-4 py-3 font-medium">Year</th>
                   <th className="text-left px-4 py-3 font-medium">Colour</th>
@@ -113,14 +113,14 @@ export default function History() {
                     <tr
                       key={car.id}
                       onClick={() => navigate(`/inventory/${car.id}`)}
-                      className={`border-b border-[#1a2a4a]/50 cursor-pointer hover:bg-[#111d35] transition-colors ${i % 2 === 0 ? 'bg-[#0d1526]' : 'bg-[#0a0f1e]/50'}`}
+                      className={`border-b border-obsidian-400/60/50 cursor-pointer hover:bg-obsidian-700/50 transition-colors ${i % 2 === 0 ? 'bg-[#0F0E0C]' : 'bg-obsidian-950/30'}`}
                     >
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           {car.photo ? (
                             <img src={car.photo} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
                           ) : (
-                            <div className="w-9 h-9 bg-[#111d35] rounded-lg flex items-center justify-center flex-shrink-0">
+                            <div className="w-9 h-9 bg-obsidian-700/60 rounded-lg flex items-center justify-center flex-shrink-0">
                               <CarIcon size={14} className="text-gray-500" />
                             </div>
                           )}
@@ -132,7 +132,7 @@ export default function History() {
                       <td className="px-4 py-3 text-gray-400">{formatMileage(car.mileage)}</td>
                       <td className="px-4 py-3 text-gray-400">{getSalesperson(car.assignedSalesperson)}</td>
                       <td className="px-4 py-3 text-gray-400 text-right">{formatRM(car.purchasePrice)}</td>
-                      <td className="px-4 py-3 text-cyan-400 font-semibold text-right">{formatRM(dealPrice)}</td>
+                      <td className="px-4 py-3 text-gold-400 font-semibold text-right">{formatRM(dealPrice)}</td>
                       <td className={`px-4 py-3 font-semibold text-right ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                         {formatRM(profit)}
                       </td>

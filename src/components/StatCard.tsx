@@ -23,20 +23,31 @@ export default function StatCard({
 }: StatCardProps) {
   return (
     <div
-      className={`bg-[#0d1526] rounded-xl p-5 border border-[#1a2a4a] border-l-4 ${borderColor} flex items-start gap-4`}
+      className={`relative rounded-xl p-5 border border-l-4 ${borderColor} border-obsidian-400 flex items-start gap-4 overflow-hidden
+        bg-card-gradient shadow-card
+        hover:border-obsidian-300 hover:shadow-card-lg transition-all duration-200 group`}
     >
-      <div className={`p-2.5 rounded-lg bg-[#111d35] ${iconColor}`}>
+      {/* Ambient corner glow */}
+      <div className="absolute -top-6 -left-6 w-28 h-28 rounded-full blur-2xl opacity-[0.07] bg-gold-300 pointer-events-none" />
+
+      <div className={`relative p-2.5 rounded-lg bg-obsidian-700 ${iconColor}
+        group-hover:scale-110 transition-transform duration-200
+        shadow-[0_2px_8px_rgba(0,0,0,0.4)]`}>
         <Icon size={22} />
       </div>
+
       <div className="flex-1 min-w-0">
-        <p className="text-gray-400 text-sm font-medium">{title}</p>
-        <p className="text-white text-2xl font-bold mt-0.5 truncate">{value}</p>
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-obsidian-300/80 mb-1">
+          {title}
+        </p>
+        <p className="text-white text-2xl font-bold truncate leading-none">{value}</p>
         {subtitle && (
-          <p className="text-gray-500 text-xs mt-0.5">{subtitle}</p>
+          <p className="text-obsidian-300/60 text-xs mt-1">{subtitle}</p>
         )}
         {trend && (
-          <p className={`text-xs mt-1 font-medium ${trendUp ? 'text-green-400' : 'text-red-400'}`}>
-            {trendUp ? '↑' : '↓'} {trend}
+          <p className={`text-xs mt-1.5 font-semibold flex items-center gap-0.5 ${trendUp ? 'text-emerald-400' : 'text-red-400'}`}>
+            <span>{trendUp ? '▲' : '▼'}</span>
+            {trend}
           </p>
         )}
       </div>

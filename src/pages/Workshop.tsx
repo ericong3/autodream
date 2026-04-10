@@ -7,7 +7,7 @@ import StatCard from '../components/StatCard';
 import { formatRM, generateId } from '../utils/format';
 
 function inputCls(error?: string) {
-  return `w-full bg-[#111d35] border ${error ? 'border-red-500/50' : 'border-[#1a2a4a]'} text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 transition-colors`;
+  return `w-full bg-obsidian-700/60 border ${error ? 'border-red-500/50' : 'border-obsidian-400/60'} text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500 transition-colors`;
 }
 
 function FormField({ label, children, error, className }: { label: string; children: React.ReactNode; error?: string; className?: string }) {
@@ -183,7 +183,7 @@ export default function Workshop() {
         {canManageRepairs && (
           <button
             onClick={openAdd}
-            className="flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-cyan-500/20"
+            className="flex items-center gap-2 btn-gold px-4 py-2.5 rounded-lg text-sm"
           >
             <Plus size={16} />
             Add Repair Job
@@ -198,11 +198,11 @@ export default function Workshop() {
           <p className="text-gray-400">No repair jobs yet</p>
         </div>
       ) : (
-        <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl overflow-hidden">
+        <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-gray-500 text-xs border-b border-[#1a2a4a] bg-[#111d35]">
+                <tr className="text-gray-500 text-xs border-b border-obsidian-400/60 bg-[#161410]">
                   <th className="text-left px-5 py-3 font-medium">Car</th>
                   <th className="text-left px-5 py-3 font-medium">Type of Repair</th>
                   <th className="text-left px-5 py-3 font-medium">Location</th>
@@ -219,7 +219,7 @@ export default function Workshop() {
                   const car = getCar(r.carId);
                   const partsSum = r.parts.reduce((s, p) => s + p.cost, 0);
                   return (
-                    <tr key={r.id} className={`border-b border-[#1a2a4a]/50 hover:bg-[#111d35] transition-colors ${i % 2 === 0 ? 'bg-[#0d1526]' : 'bg-[#0a0f1e]/50'}`}>
+                    <tr key={r.id} className={`border-b border-obsidian-400/60/50 hover:bg-obsidian-700/50 transition-colors ${i % 2 === 0 ? 'bg-[#0F0E0C]' : 'bg-obsidian-950/30'}`}>
                       <td className="px-5 py-3">
                         {car ? (
                           <div>
@@ -255,7 +255,7 @@ export default function Workshop() {
                       {canManageRepairs && (
                         <td className="px-5 py-3">
                           <div className="flex items-center gap-2">
-                            <button onClick={() => openEdit(r)} className="p-1.5 text-gray-400 hover:text-cyan-400 hover:bg-[#1a2a4a] rounded-lg transition-colors">
+                            <button onClick={() => openEdit(r)} className="p-1.5 text-gray-400 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors">
                               <Edit size={14} />
                             </button>
                             {isDirector && (
@@ -299,7 +299,7 @@ export default function Workshop() {
               {form.parts.map((part, i) => (
                 <div key={i} className="flex gap-2">
                   <input className={`flex-1 ${inputCls()}`} placeholder="Part name" value={part.name} onChange={(e) => updatePart(i, 'name', e.target.value)} />
-                  <input type="number" className="w-28 bg-[#111d35] border border-[#1a2a4a] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500" placeholder="RM" value={part.cost} onChange={(e) => updatePart(i, 'cost', Number(e.target.value))} />
+                  <input type="number" className="w-28 bg-obsidian-700/60 border border-obsidian-400/60 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500" placeholder="RM" value={part.cost} onChange={(e) => updatePart(i, 'cost', Number(e.target.value))} />
                   {form.parts.length > 1 && (
                     <button onClick={() => removePart(i)} className="text-red-400 hover:text-red-300 px-1 transition-colors">
                       <Trash2 size={15} />
@@ -308,7 +308,7 @@ export default function Workshop() {
                 </div>
               ))}
             </div>
-            <button onClick={addPartRow} className="text-cyan-400 text-xs mt-2 flex items-center gap-1 hover:text-cyan-300 transition-colors">
+            <button onClick={addPartRow} className="text-gold-400 text-xs mt-2 flex items-center gap-1 hover:text-gold-300 transition-colors">
               <Plus size={13} /> Add part
             </button>
           </div>
@@ -331,14 +331,14 @@ export default function Workshop() {
             <textarea className={`${inputCls()} h-20 resize-none`} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           </FormField>
 
-          <div className="bg-[#111d35] rounded-lg p-3 border border-[#1a2a4a] space-y-1">
+          <div className="bg-obsidian-700/60 rounded-lg p-3 border border-obsidian-400/60 space-y-1">
             <div className="flex justify-between text-xs text-gray-400">
               <span>Parts Total</span><span>{formatRM(partsTotal)}</span>
             </div>
             <div className="flex justify-between text-xs text-gray-400">
               <span>Labour</span><span>{formatRM(form.labourCost)}</span>
             </div>
-            <div className="flex justify-between font-bold text-sm pt-1 border-t border-[#1a2a4a]">
+            <div className="flex justify-between font-bold text-sm pt-1 border-t border-obsidian-400/60">
               <span className="text-gray-300">Total</span>
               <span className="text-orange-400">{formatRM(computedTotal)}</span>
             </div>
@@ -346,8 +346,8 @@ export default function Workshop() {
         </div>
 
         <div className="flex gap-3 mt-5">
-          <button onClick={() => { setShowModal(false); setEditTarget(null); }} className="flex-1 px-4 py-2.5 border border-[#1a2a4a] text-gray-400 hover:text-white rounded-lg text-sm transition-colors">Cancel</button>
-          <button onClick={handleSubmit} className="flex-1 bg-cyan-500 hover:bg-cyan-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
+          <button onClick={() => { setShowModal(false); setEditTarget(null); }} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
+          <button onClick={handleSubmit} className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm">
             {editTarget ? 'Save Changes' : 'Add Repair Job'}
           </button>
         </div>

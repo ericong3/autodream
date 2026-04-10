@@ -6,7 +6,7 @@ import Modal from '../components/Modal';
 import { formatRM, formatMileage, generateId } from '../utils/format';
 
 function inputCls(error?: string) {
-  return `w-full bg-[#111d35] border ${error ? 'border-red-500/50' : 'border-[#1a2a4a]'} text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 transition-colors`;
+  return `w-full bg-obsidian-700/60 border ${error ? 'border-red-500/50' : 'border-obsidian-400/60'} text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500 transition-colors`;
 }
 
 function FormField({ label, children, error, className }: { label: string; children: React.ReactNode; error?: string; className?: string }) {
@@ -141,15 +141,15 @@ export default function Quotations() {
     <div className="space-y-5">
       {/* Tabs */}
       <div className="flex items-center justify-between">
-        <div className="flex bg-[#0d1526] border border-[#1a2a4a] rounded-lg p-1 gap-1">
+        <div className="flex bg-[#0F0E0C] border border-obsidian-400/60 rounded-lg p-1 gap-1">
           {(['inbound', 'outbound'] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors capitalize ${tab === t ? 'bg-cyan-500 text-white' : 'text-gray-400 hover:text-white'}`}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors capitalize ${tab === t ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
             >
               {t}
-              <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${tab === t ? 'bg-white/20' : 'bg-[#1a2a4a]'}`}>
+              <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${tab === t ? 'bg-white/20' : 'bg-[#2C2415]'}`}>
                 {quotations.filter((q) => q.type === t).length}
               </span>
             </button>
@@ -159,7 +159,7 @@ export default function Quotations() {
         {(isDirector || currentUser?.role === 'salesperson') && (
           <button
             onClick={openAdd}
-            className="flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-cyan-500/20"
+            className="flex items-center gap-2 btn-gold px-4 py-2.5 rounded-lg text-sm"
           >
             <Plus size={16} />
             New Quotation
@@ -174,11 +174,11 @@ export default function Quotations() {
           <p className="text-gray-400">No {tab} quotations yet</p>
         </div>
       ) : (
-        <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl overflow-hidden">
+        <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-gray-500 text-xs border-b border-[#1a2a4a] bg-[#111d35]">
+                <tr className="text-gray-500 text-xs border-b border-obsidian-400/60 bg-[#161410]">
                   <th className="text-left px-5 py-3 font-medium">Contact</th>
                   <th className="text-left px-5 py-3 font-medium">Vehicle</th>
                   <th className="text-left px-5 py-3 font-medium">Mileage</th>
@@ -190,7 +190,7 @@ export default function Quotations() {
               </thead>
               <tbody>
                 {filtered.map((q, i) => (
-                  <tr key={q.id} className={`border-b border-[#1a2a4a]/50 ${i % 2 === 0 ? 'bg-[#0d1526]' : 'bg-[#0a0f1e]/50'} hover:bg-[#111d35] transition-colors`}>
+                  <tr key={q.id} className={`border-b border-obsidian-400/60/50 ${i % 2 === 0 ? 'bg-[#0F0E0C]' : 'bg-obsidian-950/30'} hover:bg-obsidian-700/50 transition-colors`}>
                     <td className="px-5 py-3">
                       <p className="text-white font-medium">{q.contactName}</p>
                       <div className="flex items-center gap-2 mt-0.5">
@@ -215,7 +215,7 @@ export default function Quotations() {
                       <p className="text-gray-300">{q.year} {q.make} {q.model}</p>
                     </td>
                     <td className="px-5 py-3 text-gray-400">{formatMileage(q.mileage)}</td>
-                    <td className="px-5 py-3 text-cyan-400 font-semibold text-right">{formatRM(q.offeredPrice)}</td>
+                    <td className="px-5 py-3 text-gold-400 font-semibold text-right">{formatRM(q.offeredPrice)}</td>
                     <td className="px-5 py-3 text-gray-400">
                       {new Date(q.expiryDate).toLocaleDateString('en-MY')}
                     </td>
@@ -227,7 +227,7 @@ export default function Quotations() {
                     {isDirector && (
                       <td className="px-5 py-3">
                         <div className="flex items-center gap-2">
-                          <button onClick={() => openEdit(q)} className="p-1.5 text-gray-400 hover:text-cyan-400 hover:bg-[#1a2a4a] rounded-lg transition-colors">
+                          <button onClick={() => openEdit(q)} className="p-1.5 text-gray-400 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors">
                             <Edit size={14} />
                           </button>
                           <button onClick={() => handleDelete(q.id)} className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">
@@ -244,7 +244,7 @@ export default function Quotations() {
                           {q.type === 'inbound' && q.status === 'pending' && (
                             <button
                               onClick={() => handleConvertToInventory(q)}
-                              className="flex items-center gap-1 text-xs bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 px-2 py-1 rounded-lg transition-colors"
+                              className="flex items-center gap-1 text-xs bg-gold-500/20 text-gold-400 hover:bg-gold-500/30 px-2 py-1 rounded-lg transition-colors"
                             >
                               <ArrowRight size={12} /> Convert
                             </button>
@@ -306,8 +306,8 @@ export default function Quotations() {
           </FormField>
         </div>
         <div className="flex gap-3 mt-5">
-          <button onClick={() => { setShowModal(false); setEditTarget(null); }} className="flex-1 px-4 py-2.5 border border-[#1a2a4a] text-gray-400 hover:text-white rounded-lg text-sm transition-colors">Cancel</button>
-          <button onClick={handleSubmit} className="flex-1 bg-cyan-500 hover:bg-cyan-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
+          <button onClick={() => { setShowModal(false); setEditTarget(null); }} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
+          <button onClick={handleSubmit} className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm">
             {editTarget ? 'Save Changes' : 'Create Quotation'}
           </button>
         </div>

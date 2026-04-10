@@ -16,7 +16,7 @@ import Modal from '../components/Modal';
 import { generateId } from '../utils/format';
 
 function inputCls(error?: string) {
-  return `w-full bg-[#111d35] border ${error ? 'border-red-500/50' : 'border-[#1a2a4a]'} text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 transition-colors`;
+  return `w-full bg-obsidian-700/60 border ${error ? 'border-red-500/50' : 'border-obsidian-400/60'} text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500 transition-colors`;
 }
 
 function FormField({
@@ -57,7 +57,7 @@ const CATEGORY_LABEL: Record<string, string> = {
 };
 
 const TARGET_BADGE: Record<string, string> = {
-  company: 'bg-cyan-500/20 text-cyan-400',
+  company: 'bg-gold-500/20 text-gold-400',
   salesman: 'bg-blue-500/20 text-blue-400',
   mechanic: 'bg-orange-500/20 text-orange-400',
   admin: 'bg-purple-500/20 text-purple-400',
@@ -199,16 +199,16 @@ export default function Instructions() {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <div className="flex bg-[#0d1526] border border-[#1a2a4a] rounded-lg p-1 gap-1">
+          <div className="flex bg-[#0F0E0C] border border-obsidian-400/60 rounded-lg p-1 gap-1">
             <button
               onClick={() => setTab('main')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${tab === 'main' ? 'bg-cyan-500 text-white' : 'text-gray-400 hover:text-white'}`}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${tab === 'main' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
             >
               Instructions Sent
             </button>
             <button
               onClick={() => setTab('secondary')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${tab === 'secondary' ? 'bg-cyan-500 text-white' : 'text-gray-400 hover:text-white'}`}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${tab === 'secondary' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
             >
               Staff Requests
               {pendingRequests > 0 && (
@@ -225,7 +225,7 @@ export default function Instructions() {
                 setInstrErrors({});
                 setShowModal(true);
               }}
-              className="flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-cyan-500/20"
+              className="flex items-center gap-2 btn-gold px-4 py-2.5 rounded-lg text-sm"
             >
               <Plus size={16} />
               New Instruction
@@ -245,7 +245,7 @@ export default function Instructions() {
               allInstructions.map((instr) => (
                 <div
                   key={instr.id}
-                  className="bg-[#0d1526] border border-[#1a2a4a] border-l-4 border-l-cyan-500 rounded-xl p-4"
+                  className="bg-[#0F0E0C] border border-obsidian-400/60 border-l-4 border-l-gold-500 rounded-xl p-4"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
@@ -299,7 +299,7 @@ export default function Instructions() {
               allRequests.map((req) => (
                 <div
                   key={req.id}
-                  className="bg-[#0d1526] border border-[#1a2a4a] border-l-4 border-l-purple-500 rounded-xl p-4"
+                  className="bg-[#0F0E0C] border border-obsidian-400/60 border-l-4 border-l-purple-500 rounded-xl p-4"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
@@ -309,7 +309,7 @@ export default function Instructions() {
                           {req.status}
                         </span>
                         {req.requestCategory && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-[#111d35] text-gray-400">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-obsidian-700/60 text-gray-400">
                             {CATEGORY_LABEL[req.requestCategory]}
                           </span>
                         )}
@@ -321,7 +321,7 @@ export default function Instructions() {
                       </div>
                       <p className="text-gray-400 text-sm">{req.message}</p>
                       {req.amount && (
-                        <p className="text-cyan-400 text-sm font-medium mt-1">
+                        <p className="text-gold-400 text-sm font-medium mt-1">
                           Amount: RM {req.amount.toLocaleString()}
                         </p>
                       )}
@@ -383,7 +383,7 @@ export default function Instructions() {
             )}
             {instrForm.toType === 'individual' && (
               <FormField label="Select Staff" error={instrErrors.toIds}>
-                <div className="space-y-2 bg-[#111d35] border border-[#1a2a4a] rounded-lg p-3">
+                <div className="space-y-2 bg-obsidian-700/60 border border-obsidian-400/60 rounded-lg p-3">
                   {staffForSelect.map((u) => (
                     <label key={u.id} className="flex items-center gap-2 cursor-pointer">
                       <input
@@ -424,13 +424,13 @@ export default function Instructions() {
           <div className="flex gap-3 mt-5">
             <button
               onClick={() => setShowModal(false)}
-              className="flex-1 px-4 py-2.5 border border-[#1a2a4a] text-gray-400 hover:text-white rounded-lg text-sm transition-colors"
+              className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm"
             >
               Cancel
             </button>
             <button
               onClick={submitInstruction}
-              className="flex-1 bg-cyan-500 hover:bg-cyan-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+              className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm flex items-center justify-center gap-2"
             >
               <Send size={14} /> Send
             </button>
@@ -444,10 +444,10 @@ export default function Instructions() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div className="flex bg-[#0d1526] border border-[#1a2a4a] rounded-lg p-1 gap-1">
+        <div className="flex bg-[#0F0E0C] border border-obsidian-400/60 rounded-lg p-1 gap-1">
           <button
             onClick={() => setTab('main')}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${tab === 'main' ? 'bg-cyan-500 text-white' : 'text-gray-400 hover:text-white'}`}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${tab === 'main' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
           >
             My Instructions
             {pendingInstructions > 0 && (
@@ -458,7 +458,7 @@ export default function Instructions() {
           </button>
           <button
             onClick={() => setTab('secondary')}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${tab === 'secondary' ? 'bg-cyan-500 text-white' : 'text-gray-400 hover:text-white'}`}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${tab === 'secondary' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
           >
             My Requests
           </button>
@@ -470,7 +470,7 @@ export default function Instructions() {
               setReqErrors({});
               setShowModal(true);
             }}
-            className="flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-cyan-500/20"
+            className="flex items-center gap-2 btn-gold px-4 py-2.5 rounded-lg text-sm"
           >
             <Plus size={16} />
             New Request
@@ -490,7 +490,7 @@ export default function Instructions() {
             myInstructions.map((instr) => (
               <div
                 key={instr.id}
-                className="bg-[#0d1526] border border-[#1a2a4a] border-l-4 border-l-cyan-500 rounded-xl p-4"
+                className="bg-[#0F0E0C] border border-obsidian-400/60 border-l-4 border-l-gold-500 rounded-xl p-4"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1">
@@ -531,7 +531,7 @@ export default function Instructions() {
             myRequests.map((req) => (
               <div
                 key={req.id}
-                className="bg-[#0d1526] border border-[#1a2a4a] border-l-4 border-l-purple-500 rounded-xl p-4"
+                className="bg-[#0F0E0C] border border-obsidian-400/60 border-l-4 border-l-purple-500 rounded-xl p-4"
               >
                 <div className="flex items-start gap-4">
                   <div className="flex-1">
@@ -541,7 +541,7 @@ export default function Instructions() {
                         {req.status}
                       </span>
                       {req.requestCategory && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-[#111d35] text-gray-400">
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-obsidian-700/60 text-gray-400">
                           {CATEGORY_LABEL[req.requestCategory]}
                         </span>
                       )}
@@ -553,7 +553,7 @@ export default function Instructions() {
                     </div>
                     <p className="text-gray-400 text-sm">{req.message}</p>
                     {req.amount && (
-                      <p className="text-cyan-400 text-sm font-medium mt-1">
+                      <p className="text-gold-400 text-sm font-medium mt-1">
                         Amount: RM {req.amount.toLocaleString()}
                       </p>
                     )}
@@ -621,13 +621,13 @@ export default function Instructions() {
         <div className="flex gap-3 mt-5">
           <button
             onClick={() => setShowModal(false)}
-            className="flex-1 px-4 py-2.5 border border-[#1a2a4a] text-gray-400 hover:text-white rounded-lg text-sm transition-colors"
+            className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm"
           >
             Cancel
           </button>
           <button
             onClick={submitRequest}
-            className="flex-1 bg-cyan-500 hover:bg-cyan-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+            className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm flex items-center justify-center gap-2"
           >
             <Send size={14} /> Submit
           </button>

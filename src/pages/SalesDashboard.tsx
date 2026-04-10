@@ -95,7 +95,7 @@ export default function SalesDashboard() {
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard icon={Users} label="Active Leads" value={activeLeads.length} color="text-cyan-400" iconBg="bg-cyan-500/10" />
+        <StatCard icon={Users} label="Active Leads" value={activeLeads.length} color="text-gold-400" iconBg="bg-gold-500/10" />
         <StatCard
           icon={AlertCircle}
           label="Follow-ups Today"
@@ -111,7 +111,7 @@ export default function SalesDashboard() {
       {/* Follow-ups & Test drives row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Overdue / Today follow-ups */}
-        <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl p-4 space-y-3">
+        <div className="card-surface rounded-xl p-4 space-y-3">
           <h2 className="text-white font-semibold text-sm flex items-center gap-2">
             <Calendar size={15} className="text-yellow-400" />
             Follow-ups Due
@@ -138,7 +138,7 @@ export default function SalesDashboard() {
         </div>
 
         {/* Upcoming test drives */}
-        <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl p-4 space-y-3">
+        <div className="card-surface rounded-xl p-4 space-y-3">
           <h2 className="text-white font-semibold text-sm flex items-center gap-2">
             <Car size={15} className="text-purple-400" />
             Upcoming Test Drives
@@ -167,10 +167,10 @@ export default function SalesDashboard() {
       </div>
 
       {/* Reminders */}
-      <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl p-4 space-y-3">
+      <div className="card-surface rounded-xl p-4 space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-white font-semibold text-sm flex items-center gap-2">
-            <Bell size={15} className="text-cyan-400" />
+            <Bell size={15} className="text-gold-400" />
             My Reminders
             {activeReminders.length > 0 && (
               <span className="text-xs bg-red-500 text-white px-1.5 py-0.5 rounded-full leading-none">{activeReminders.length}</span>
@@ -178,7 +178,7 @@ export default function SalesDashboard() {
           </h2>
           <button
             onClick={() => setShowReminderModal(true)}
-            className="flex items-center gap-1 text-xs text-cyan-400 hover:text-cyan-300 transition-colors"
+            className="flex items-center gap-1 text-xs text-gold-400 hover:text-gold-300 transition-colors"
           >
             <Plus size={13} />Add
           </button>
@@ -217,10 +217,10 @@ export default function SalesDashboard() {
       </div>
 
       {/* Commission toggle section */}
-      <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl overflow-hidden">
+      <div className="card-surface rounded-xl overflow-hidden">
         <button
           onClick={() => setShowCommission(v => !v)}
-          className="w-full flex items-center justify-between px-5 py-4 hover:bg-[#111d35] transition-colors"
+          className="w-full flex items-center justify-between px-5 py-4 hover:bg-obsidian-700/50 transition-colors"
         >
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-green-500/10 rounded-lg flex items-center justify-center">
@@ -243,15 +243,15 @@ export default function SalesDashboard() {
         </button>
 
         {showCommission && (
-          <div className="border-t border-[#1a2a4a] p-5 space-y-4">
+          <div className="border-t border-obsidian-400/60 p-5 space-y-4">
             {/* Mini stats */}
             <div className="grid grid-cols-3 gap-3">
               {[
-                { label: 'Total Sold', value: mySoldCars.length, color: 'text-cyan-400' },
+                { label: 'Total Sold', value: mySoldCars.length, color: 'text-gold-400' },
                 { label: 'Total Earned', value: formatRM(totalCommission), color: 'text-green-400' },
                 { label: 'This Month', value: formatRM(monthCommission), color: 'text-yellow-400' },
               ].map(s => (
-                <div key={s.label} className="bg-[#111d35] rounded-lg p-3 text-center">
+                <div key={s.label} className="bg-obsidian-700/60 rounded-xl p-3 text-center border border-obsidian-400/50">
                   <p className={`text-lg font-bold ${s.color}`}>{s.value}</p>
                   <p className="text-gray-500 text-xs mt-0.5">{s.label}</p>
                 </div>
@@ -264,7 +264,7 @@ export default function SalesDashboard() {
                 type="month"
                 value={monthFilter}
                 onChange={e => setMonthFilter(e.target.value)}
-                className="bg-[#111d35] border border-[#1a2a4a] text-white rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-cyan-500"
+                className="input py-1.5"
               />
               {monthFilter && (
                 <button onClick={() => setMonthFilter('')} className="text-gray-500 hover:text-white text-xs transition-colors">
@@ -277,10 +277,10 @@ export default function SalesDashboard() {
             {soldThisMonth.length === 0 ? (
               <p className="text-gray-600 text-sm text-center py-4">No sold cars in this period</p>
             ) : (
-              <div className="border border-[#1a2a4a] rounded-xl overflow-hidden">
+              <div className="border border-obsidian-400/60 rounded-xl overflow-hidden">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-gray-500 text-xs border-b border-[#1a2a4a] bg-[#111d35]">
+                    <tr className="text-obsidian-300/50 text-xs border-b border-obsidian-400/60 bg-obsidian-700/60">
                       <th className="text-left px-4 py-2.5 font-medium">Vehicle</th>
                       <th className="text-left px-4 py-2.5 font-medium">Date</th>
                       <th className="text-right px-4 py-2.5 font-medium">Deal Price</th>
@@ -289,21 +289,21 @@ export default function SalesDashboard() {
                   </thead>
                   <tbody>
                     {soldThisMonth.map((c, i) => (
-                      <tr key={c.id} className={`border-b border-[#1a2a4a]/50 ${i % 2 !== 0 ? 'bg-[#0a0f1e]/50' : ''}`}>
+                      <tr key={c.id} className={`border-b border-obsidian-400/30 ${i % 2 !== 0 ? 'bg-obsidian-950/30' : ''}`}>
                         <td className="px-4 py-2.5">
                           <p className="text-white font-medium">{c.year} {c.make} {c.model}</p>
                           <p className="text-gray-500 text-xs capitalize">{c.colour}</p>
                         </td>
                         <td className="px-4 py-2.5 text-gray-400 text-xs">{new Date(c.dateAdded).toLocaleDateString('en-MY')}</td>
-                        <td className="px-4 py-2.5 text-right text-cyan-400 font-semibold">{formatRM(c.finalDeal?.dealPrice ?? c.sellingPrice)}</td>
+                        <td className="px-4 py-2.5 text-right text-gold-400 font-semibold">{formatRM(c.finalDeal?.dealPrice ?? c.sellingPrice)}</td>
                         <td className="px-4 py-2.5 text-right text-green-400 font-semibold">{formatRM(COMMISSION_PER_CAR)}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
-                    <tr className="border-t border-[#1a2a4a] bg-[#111d35]">
+                    <tr className="border-t border-obsidian-400/60 bg-obsidian-700/60">
                       <td colSpan={2} className="px-4 py-2.5 text-gray-500 text-xs">Total ({soldThisMonth.length} cars)</td>
-                      <td className="px-4 py-2.5 text-right text-cyan-400 font-bold">{formatRM(soldThisMonth.reduce((s, c) => s + (c.finalDeal?.dealPrice ?? c.sellingPrice), 0))}</td>
+                      <td className="px-4 py-2.5 text-right text-gold-400 font-bold">{formatRM(soldThisMonth.reduce((s, c) => s + (c.finalDeal?.dealPrice ?? c.sellingPrice), 0))}</td>
                       <td className="px-4 py-2.5 text-right text-green-400 font-bold">{formatRM(soldThisMonth.length * COMMISSION_PER_CAR)}</td>
                     </tr>
                   </tfoot>
@@ -320,7 +320,7 @@ export default function SalesDashboard() {
           <div>
             <label className="block text-gray-300 text-xs font-medium mb-1.5">What to remember?</label>
             <input
-              className="w-full bg-[#111d35] border border-[#1a2a4a] text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 transition-colors"
+              className="input"
               value={reminderForm.title}
               onChange={e => setReminderForm({ ...reminderForm, title: e.target.value })}
               placeholder="e.g. Follow up with Ahmad about loan"
@@ -332,18 +332,18 @@ export default function SalesDashboard() {
             <label className="block text-gray-300 text-xs font-medium mb-1.5">Due Date</label>
             <input
               type="date"
-              className="w-full bg-[#111d35] border border-[#1a2a4a] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 transition-colors"
+              className="input"
               value={reminderForm.dueAt}
               onChange={e => setReminderForm({ ...reminderForm, dueAt: e.target.value })}
             />
           </div>
         </div>
         <div className="flex gap-3 mt-5">
-          <button onClick={() => setShowReminderModal(false)} className="flex-1 px-4 py-2.5 border border-[#1a2a4a] text-gray-400 hover:text-white rounded-lg text-sm transition-colors">Cancel</button>
+          <button onClick={() => setShowReminderModal(false)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
           <button
             onClick={handleAddReminder}
             disabled={!reminderForm.title.trim() || !reminderForm.dueAt}
-            className="flex-1 bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+            className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm"
           >
             Save
           </button>
@@ -362,7 +362,7 @@ function StatCard({ icon: Icon, label, value, color, iconBg, sub }: {
   sub?: string;
 }) {
   return (
-    <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl p-4 flex items-start gap-3">
+    <div className="card-surface rounded-xl p-4 flex items-start gap-3">
       <div className={`w-9 h-9 ${iconBg} rounded-lg flex items-center justify-center shrink-0`}>
         <Icon size={17} className={color} />
       </div>

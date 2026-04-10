@@ -13,22 +13,35 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = 'ma
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-        onClick={onClose}
-      />
-      <div className={`relative w-full ${maxWidth} bg-[#0d1526] border border-[#1a2a4a] rounded-xl shadow-2xl max-h-[90vh] flex flex-col`}>
-        <div className="flex items-center justify-between p-5 border-b border-[#1a2a4a]">
-          <h2 className="text-lg font-semibold text-white">{title}</h2>
+    <div className="fixed inset-0 z-50 flex flex-col justify-end md:items-center md:justify-center">
+      <div className="absolute inset-0 bg-black/85 backdrop-blur-sm" onClick={onClose} />
+
+      <div className={`relative w-full ${maxWidth} flex flex-col
+        bg-gradient-to-b from-obsidian-700 to-obsidian-800
+        border border-obsidian-400/80
+        shadow-[0_20px_80px_rgba(0,0,0,0.8),0_0_0_1px_rgba(42,35,22,0.8)]
+        rounded-t-2xl md:rounded-xl
+        max-h-[92vh] md:max-h-[90vh] overflow-hidden`}>
+
+        {/* Gold top accent line */}
+        <div className="absolute top-0 left-0 right-0 h-[2px] rounded-t-2xl md:rounded-t-xl
+          bg-gold-gradient opacity-80" />
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4
+          border-b border-obsidian-400/60 shrink-0
+          bg-gradient-to-r from-obsidian-600/50 to-transparent">
+          <h2 className="font-display text-white font-semibold text-sm tracking-wide">{title}</h2>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-[#1a2a4a] transition-colors"
+            className="p-1.5 rounded-lg text-obsidian-300/50 hover:text-white
+              hover:bg-obsidian-500/60 transition-colors"
           >
-            <X size={18} />
+            <X size={17} />
           </button>
         </div>
-        <div className="overflow-y-auto p-5 flex-1">{children}</div>
+
+        <div className="overflow-y-auto p-5 flex-1 pb-safe">{children}</div>
       </div>
     </div>
   );

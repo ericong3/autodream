@@ -6,7 +6,7 @@ import Modal from '../components/Modal';
 import { formatRM, generateId } from '../utils/format';
 
 function inputCls(error?: string) {
-  return `w-full bg-[#111d35] border ${error ? 'border-red-500/50' : 'border-[#1a2a4a]'} text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 transition-colors`;
+  return `w-full bg-obsidian-700/60 border ${error ? 'border-red-500/50' : 'border-obsidian-400/60'} text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500 transition-colors`;
 }
 
 function FormField({ label, children, error, className }: { label: string; children: React.ReactNode; error?: string; className?: string }) {
@@ -121,7 +121,7 @@ export default function Salespeople() {
         </p>
         <button
           onClick={() => { setEditTarget(null); setForm(emptyForm); setErrors({}); setShowModal(true); }}
-          className="flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-cyan-500/20"
+          className="flex items-center gap-2 btn-gold px-4 py-2.5 rounded-lg text-sm"
         >
           <Plus size={16} />
           Add Salesperson
@@ -141,10 +141,10 @@ export default function Salespeople() {
             const progress = Math.min(100, (sp.carsInMonth / sp.monthlyTarget) * 100);
 
             return (
-              <div key={sp.id} className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl p-5 hover:border-cyan-500/30 transition-colors">
+              <div key={sp.id} className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-5 hover:border-gold-500/30 transition-colors">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 bg-cyan-500/20 border border-cyan-500/30 rounded-full flex items-center justify-center text-cyan-400 font-bold text-lg uppercase">
+                    <div className="w-11 h-11 bg-gold-500/20 border border-gold-500/30 rounded-full flex items-center justify-center text-gold-400 font-bold text-lg uppercase">
                       {sp.name.charAt(0)}
                     </div>
                     <div>
@@ -153,7 +153,7 @@ export default function Salespeople() {
                     </div>
                   </div>
                   <div className="flex gap-1">
-                    <button onClick={() => openEdit(sp)} className="p-1.5 text-gray-400 hover:text-cyan-400 hover:bg-[#1a2a4a] rounded-lg transition-colors">
+                    <button onClick={() => openEdit(sp)} className="p-1.5 text-gray-400 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors">
                       <Edit size={14} />
                     </button>
                     <button onClick={() => handleDelete(sp.id)} className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">
@@ -176,9 +176,9 @@ export default function Salespeople() {
                         {sp.carsInMonth} / {sp.monthlyTarget} cars
                       </span>
                     </div>
-                    <div className="h-2 bg-[#111d35] rounded-full overflow-hidden">
+                    <div className="h-2 bg-obsidian-700/60 rounded-full overflow-hidden">
                       <div
-                        className={`h-2 rounded-full transition-all ${progress >= 100 ? 'bg-green-500' : progress >= 50 ? 'bg-cyan-500' : 'bg-yellow-500'}`}
+                        className={`h-2 rounded-full transition-all ${progress >= 100 ? 'bg-green-500' : progress >= 50 ? 'bg-gold-500' : 'bg-yellow-500'}`}
                         style={{ width: `${progress}%` }}
                       />
                     </div>
@@ -187,11 +187,11 @@ export default function Salespeople() {
 
                   {/* Stats */}
                   <div className="grid grid-cols-2 gap-2 pt-1">
-                    <div className="bg-[#111d35] rounded-lg p-2.5 border border-[#1a2a4a]">
+                    <div className="bg-obsidian-700/60 rounded-lg p-2.5 border border-obsidian-400/60">
                       <p className="text-gray-500 text-xs">Total Cars Sold</p>
                       <p className="text-white font-bold text-lg">{soldCount}</p>
                     </div>
-                    <div className="bg-[#111d35] rounded-lg p-2.5 border border-[#1a2a4a]">
+                    <div className="bg-obsidian-700/60 rounded-lg p-2.5 border border-obsidian-400/60">
                       <p className="text-gray-500 text-xs">Commission Earned</p>
                       <p className="text-purple-400 font-bold">{formatRM(commission)}</p>
                     </div>
@@ -223,8 +223,8 @@ export default function Salespeople() {
           </FormField>
         </div>
         <div className="flex gap-3 mt-5">
-          <button onClick={() => { setShowModal(false); setEditTarget(null); }} className="flex-1 px-4 py-2.5 border border-[#1a2a4a] text-gray-400 hover:text-white rounded-lg text-sm transition-colors">Cancel</button>
-          <button onClick={handleSubmit} className="flex-1 bg-cyan-500 hover:bg-cyan-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
+          <button onClick={() => { setShowModal(false); setEditTarget(null); }} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
+          <button onClick={handleSubmit} className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm">
             {editTarget ? 'Save Changes' : 'Add Salesperson'}
           </button>
         </div>

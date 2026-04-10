@@ -37,7 +37,7 @@ const CONDITION_BADGE: Record<string, string> = {
 const STATUS_BADGE: Record<string, string> = {
   coming_soon: 'bg-purple-500/20 text-purple-400',
   in_workshop: 'bg-orange-500/20 text-orange-400',
-  ready: 'bg-cyan-500/20 text-cyan-400',
+  ready: 'bg-gold-500/20 text-gold-400',
   photo_complete: 'bg-blue-500/20 text-blue-400',
   submitted: 'bg-indigo-500/20 text-indigo-400',
   deal_pending: 'bg-yellow-500/20 text-yellow-400',
@@ -73,7 +73,7 @@ const REPAIR_STATUS_LABEL: Record<string, string> = {
 };
 
 function inputCls(error?: string) {
-  return `w-full bg-[#111d35] border ${error ? 'border-red-500/50' : 'border-[#1a2a4a]'} text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 transition-colors`;
+  return `w-full bg-obsidian-700/60 border ${error ? 'border-red-500/50' : 'border-obsidian-400/60'} text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500 transition-colors`;
 }
 
 function FormField({ label, children, error, className }: { label: string; children: React.ReactNode; error?: string; className?: string }) {
@@ -86,13 +86,13 @@ function FormField({ label, children, error, className }: { label: string; child
   );
 }
 
-function SectionHeader({ icon: Icon, title, count, color = 'text-cyan-400' }: { icon: React.ElementType; title: string; count?: number; color?: string }) {
+function SectionHeader({ icon: Icon, title, count, color = 'text-gold-400' }: { icon: React.ElementType; title: string; count?: number; color?: string }) {
   return (
-    <div className="flex items-center gap-2 p-5 border-b border-[#1a2a4a]">
+    <div className="flex items-center gap-2 p-5 border-b border-obsidian-400/60">
       <Icon size={18} className={color} />
       <h3 className="text-white font-semibold">{title}</h3>
       {count !== undefined && (
-        <span className="bg-[#111d35] text-gray-400 text-xs px-2 py-0.5 rounded-full">{count}</span>
+        <span className="bg-obsidian-700/60 text-gray-400 text-xs px-2 py-0.5 rounded-full">{count}</span>
       )}
     </div>
   );
@@ -183,7 +183,7 @@ export default function CarDetail() {
       <div className="flex flex-col items-center justify-center py-20">
         <CarIcon size={40} className="text-gray-600 mb-3" />
         <p className="text-gray-400">Car not found</p>
-        <button onClick={() => navigate('/inventory')} className="text-cyan-400 text-sm mt-3 hover:underline">
+        <button onClick={() => navigate('/inventory')} className="text-gold-400 text-sm mt-3 hover:underline">
           Back to Inventory
         </button>
       </div>
@@ -337,7 +337,7 @@ export default function CarDetail() {
           {(isMechanic || isDirector) && (
             <button
               onClick={openAddRepair}
-              className="flex items-center gap-2 bg-[#111d35] hover:bg-[#1a2a4a] border border-[#1a2a4a] text-gray-300 hover:text-white px-4 py-2 rounded-lg text-sm transition-colors"
+              className="flex items-center gap-2 bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/60 text-gray-300 hover:text-white px-4 py-2 rounded-lg text-sm transition-colors"
             >
               <Plus size={15} />
               Add Repair
@@ -346,7 +346,7 @@ export default function CarDetail() {
           {isDirector && (
             <button
               onClick={openEdit}
-              className="flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              className="flex items-center gap-2 btn-gold text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
             >
               <Edit size={15} />
               Edit Car
@@ -356,10 +356,10 @@ export default function CarDetail() {
       </div>
 
       {/* Main info */}
-      <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl overflow-hidden">
+      <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card overflow-hidden">
         <div className="flex flex-col md:flex-row">
           <div
-            className={`w-full md:w-72 h-52 md:h-auto bg-[#111d35] flex items-center justify-center flex-shrink-0 relative group ${allPhotos.length > 0 ? 'cursor-pointer' : ''}`}
+            className={`w-full md:w-72 h-52 md:h-auto bg-obsidian-700/60 flex items-center justify-center flex-shrink-0 relative group ${allPhotos.length > 0 ? 'cursor-pointer' : ''}`}
             onClick={() => allPhotos.length > 0 && openGallery(0)}
           >
             {car.photo ? (
@@ -402,12 +402,12 @@ export default function CarDetail() {
             )}
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-5">
-              <InfoItem label="Car Plate" value={car.carPlate || '—'} valueClass={car.carPlate ? 'font-mono font-bold text-cyan-300 tracking-wider' : 'text-gray-600'} />
+              <InfoItem label="Car Plate" value={car.carPlate || '—'} valueClass={car.carPlate ? 'font-mono font-bold text-gold-300 tracking-wider' : 'text-gray-600'} />
               <InfoItem label="Mileage" value={formatMileage(car.mileage)} />
               <InfoItem label="Year" value={String(car.year)} />
               <InfoItem label="Transmission" value={car.transmission === 'auto' ? 'Automatic' : 'Manual'} />
               <InfoItem label="Date Added" value={car.dateAdded} />
-              <InfoItem label="Selling Price" value={car.sellingPrice > 0 ? formatRM(car.sellingPrice) : 'TBD'} valueClass="text-cyan-400 font-bold" />
+              <InfoItem label="Selling Price" value={car.sellingPrice > 0 ? formatRM(car.sellingPrice) : 'TBD'} valueClass="text-gold-400 font-bold" />
               {isDirector && (
                 <>
                   <InfoItem label="Purchase Price" value={formatRM(car.purchasePrice)} />
@@ -419,7 +419,7 @@ export default function CarDetail() {
             </div>
 
             {car.notes && (
-              <div className="mt-4 p-3 bg-[#111d35] rounded-lg border border-[#1a2a4a]">
+              <div className="mt-4 p-3 bg-obsidian-700/60 rounded-lg border border-obsidian-400/60">
                 <p className="text-gray-500 text-xs font-medium mb-1">Notes</p>
                 <p className="text-gray-300 text-sm">{car.notes}</p>
               </div>
@@ -429,18 +429,18 @@ export default function CarDetail() {
       </div>
 
       {/* ── Repair History ── */}
-      <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl">
+      <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card">
         <SectionHeader icon={Wrench} title="Repair Jobs" count={carRepairs.length} color="text-orange-400" />
         {carRepairs.length === 0 ? (
           <div className="text-center py-10 text-gray-600 text-sm">No repair jobs recorded</div>
         ) : (
-          <div className="divide-y divide-[#1a2a4a]/50">
+          <div className="divide-y divide-obsidian-400/60/50">
             {carRepairs.map((r, i) => {
               const partsTotal = r.parts.reduce((sum, p) => sum + p.cost, 0);
               const isActive = r.status === 'pending' || r.status === 'in_progress';
               const isQueued = r.status === 'queued';
               return (
-                <div key={r.id} className={`p-5 ${i % 2 === 0 ? 'bg-[#0d1526]' : 'bg-[#0a0f1e]/30'}`}>
+                <div key={r.id} className={`p-5 ${i % 2 === 0 ? 'bg-[#0F0E0C]' : 'bg-[#080808]/30'}`}>
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -479,7 +479,7 @@ export default function CarDetail() {
                         </p>
                       )}
                       {r.receiptPhoto && (
-                        <a href={r.receiptPhoto} target="_blank" rel="noopener noreferrer" className="text-xs text-cyan-400 hover:underline mt-1 inline-block">
+                        <a href={r.receiptPhoto} target="_blank" rel="noopener noreferrer" className="text-xs text-gold-400 hover:underline mt-1 inline-block">
                           View Receipt
                         </a>
                       )}
@@ -500,7 +500,7 @@ export default function CarDetail() {
                           onClick={() => handleProceedRepair(r)}
                           disabled={hasSentOutRepair}
                           title={hasSentOutRepair ? 'Complete the current active job first' : 'Send this job out'}
-                          className="flex items-center gap-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          className="flex items-center gap-1.5 bg-gold-500/10 hover:bg-gold-500/20 border border-gold-500/30 text-gold-400 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           <Check size={12} />
                           Proceed
@@ -532,7 +532,7 @@ export default function CarDetail() {
           </div>
         )}
         {isDirector && carRepairs.length > 0 && (
-          <div className="px-5 py-3 border-t border-[#1a2a4a] text-right">
+          <div className="px-5 py-3 border-t border-obsidian-400/60 text-right">
             <p className="text-sm text-gray-400">
               Total Repair Cost: <span className="text-orange-400 font-semibold">{formatRM(totalRepairCost)}</span>
             </p>
@@ -542,17 +542,17 @@ export default function CarDetail() {
 
       {/* ── Mechanic Checklist ── (visible to mechanic and director) */}
       {(isMechanic || isDirector) && (car.status === 'in_workshop' || car.status === 'ready') && (
-        <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl">
-          <SectionHeader icon={CheckSquare} title="Pre-Ready Checklist" color="text-cyan-400" />
+        <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card">
+          <SectionHeader icon={CheckSquare} title="Pre-Ready Checklist" color="text-gold-400" />
           <div className="p-5 space-y-3">
             {checklist.map((item, i) => (
               <button
                 key={item.id}
                 onClick={() => (isMechanic || isDirector) ? toggleChecklistItem(i) : undefined}
-                className="w-full flex items-center gap-3 group hover:bg-[#111d35] px-3 py-2 rounded-lg transition-colors text-left"
+                className="w-full flex items-center gap-3 group hover:bg-obsidian-700/50 px-3 py-2 rounded-lg transition-colors text-left"
               >
                 {item.checked ? (
-                  <CheckSquare size={18} className="text-cyan-400 flex-shrink-0" />
+                  <CheckSquare size={18} className="text-gold-400 flex-shrink-0" />
                 ) : (
                   <Square size={18} className="text-gray-600 flex-shrink-0 group-hover:text-gray-400 transition-colors" />
                 )}
@@ -570,14 +570,14 @@ export default function CarDetail() {
             {allChecked && !hasActiveRepair && car.status !== 'ready' && (
               <button
                 onClick={markCarReady}
-                className="w-full mt-4 bg-cyan-500 hover:bg-cyan-400 text-white py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                className="w-full mt-4 btn-gold text-white py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
               >
                 <Check size={16} />
                 Mark Car as Ready
               </button>
             )}
             {car.status === 'ready' && (
-              <div className="flex items-center gap-2 text-cyan-400 text-sm font-medium mt-2">
+              <div className="flex items-center gap-2 text-gold-400 text-sm font-medium mt-2">
                 <Check size={16} />
                 Car marked as ready
               </div>
@@ -588,7 +588,7 @@ export default function CarDetail() {
 
       {/* ── Photo Section ── (visible to salesperson and director when car is ready/photo_complete) */}
       {(isSalesperson || isDirector) && (car.status === 'ready' || car.status === 'photo_complete') && (
-        <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl">
+        <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card">
           <SectionHeader icon={Camera} title="Car Photos" color="text-blue-400" />
           <div className="p-5 space-y-4">
             <p className="text-gray-400 text-sm">
@@ -600,7 +600,7 @@ export default function CarDetail() {
               {salespeople.map((sp) => {
                 const done = photoTakenBy.includes(sp.id);
                 return (
-                  <div key={sp.id} className="flex items-center justify-between bg-[#111d35] rounded-lg px-4 py-3 border border-[#1a2a4a]">
+                  <div key={sp.id} className="flex items-center justify-between bg-obsidian-700/60 rounded-lg px-4 py-3 border border-obsidian-400/60">
                     <span className="text-gray-300 text-sm">{sp.name}</span>
                     {done ? (
                       <span className="flex items-center gap-1.5 text-green-400 text-xs font-medium">
@@ -630,7 +630,7 @@ export default function CarDetail() {
               <p className="text-green-400 text-sm text-center">You have marked your photos as done.</p>
             )}
             {allSalespeoplePhotosDone && (
-              <p className="text-cyan-400 text-sm font-medium text-center">All photos complete.</p>
+              <p className="text-gold-400 text-sm font-medium text-center">All photos complete.</p>
             )}
           </div>
         </div>
@@ -638,7 +638,7 @@ export default function CarDetail() {
 
       {/* ── Delivery ── (salesperson when deal approved / sold) */}
       {(isSalesperson || isDirector) && car.status === 'sold' && (
-        <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl">
+        <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card">
           <SectionHeader icon={Truck} title="Delivery" color="text-green-400" />
           <div className="p-5 space-y-4">
             {!car.deliveryCollected ? (
@@ -662,7 +662,7 @@ export default function CarDetail() {
                 </div>
                 {car.deliveryPhoto && (
                   <a href={car.deliveryPhoto} target="_blank" rel="noopener noreferrer">
-                    <img src={car.deliveryPhoto} alt="Delivery" className="w-48 h-32 object-cover rounded-lg border border-[#1a2a4a] hover:opacity-80 transition-opacity" />
+                    <img src={car.deliveryPhoto} alt="Delivery" className="w-48 h-32 object-cover rounded-lg border border-obsidian-400/60 hover:opacity-80 transition-opacity" />
                   </a>
                 )}
               </div>
@@ -731,8 +731,8 @@ export default function CarDetail() {
           </FormField>
         </div>
         <div className="flex gap-3 mt-6">
-          <button onClick={() => setShowEditModal(false)} className="flex-1 px-4 py-2.5 border border-[#1a2a4a] text-gray-400 hover:text-white rounded-lg text-sm transition-colors">Cancel</button>
-          <button onClick={handleEditSubmit} className="flex-1 bg-cyan-500 hover:bg-cyan-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">Save Changes</button>
+          <button onClick={() => setShowEditModal(false)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
+          <button onClick={handleEditSubmit} className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm">Save Changes</button>
         </div>
       </Modal>
 
@@ -759,14 +759,14 @@ export default function CarDetail() {
               {repairForm.parts.map((part, i) => (
                 <div key={i} className="flex gap-2">
                   <input className={`flex-1 ${inputCls()}`} placeholder="Part name" value={part.name} onChange={(e) => updatePart(i, 'name', e.target.value)} />
-                  <input type="number" className="w-28 bg-[#111d35] border border-[#1a2a4a] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500" placeholder="RM" value={part.cost} onChange={(e) => updatePart(i, 'cost', Number(e.target.value))} />
+                  <input type="number" className="w-28 bg-obsidian-700/60 border border-obsidian-400/60 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500" placeholder="RM" value={part.cost} onChange={(e) => updatePart(i, 'cost', Number(e.target.value))} />
                   {repairForm.parts.length > 1 && (
                     <button onClick={() => removePart(i)} className="text-red-400 hover:text-red-300 transition-colors px-1"><Trash2 size={15} /></button>
                   )}
                 </div>
               ))}
             </div>
-            <button onClick={addPartRow} className="text-cyan-400 text-xs mt-2 flex items-center gap-1 hover:text-cyan-300 transition-colors">
+            <button onClick={addPartRow} className="text-gold-400 text-xs mt-2 flex items-center gap-1 hover:text-gold-300 transition-colors">
               <Plus size={13} /> Add part
             </button>
           </div>
@@ -784,8 +784,8 @@ export default function CarDetail() {
           </div>
         </div>
         <div className="flex gap-3 mt-5">
-          <button onClick={() => setShowRepairModal(false)} className="flex-1 px-4 py-2.5 border border-[#1a2a4a] text-gray-400 hover:text-white rounded-lg text-sm transition-colors">Cancel</button>
-          <button onClick={handleRepairSubmit} className="flex-1 bg-orange-500 hover:bg-orange-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">Send Out for Repair</button>
+          <button onClick={() => setShowRepairModal(false)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
+          <button onClick={handleRepairSubmit} className="flex-1 bg-orange-500 hover:bg-orange-400 px-4 py-2.5 rounded-lg text-sm">Send Out for Repair</button>
         </div>
       </Modal>
 
@@ -802,7 +802,7 @@ export default function CarDetail() {
             <label className="block text-gray-300 text-xs font-medium mb-1.5">Receipt Photo (optional)</label>
             {completeForm.receiptPhoto ? (
               <div className="relative inline-block">
-                <img src={completeForm.receiptPhoto} alt="Receipt" className="w-32 h-24 object-cover rounded-lg border border-[#1a2a4a]" />
+                <img src={completeForm.receiptPhoto} alt="Receipt" className="w-32 h-24 object-cover rounded-lg border border-obsidian-400/60" />
                 <button onClick={() => setCompleteForm({ ...completeForm, receiptPhoto: '' })} className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-0.5">
                   <X size={12} />
                 </button>
@@ -810,7 +810,7 @@ export default function CarDetail() {
             ) : (
               <button
                 onClick={() => receiptRef.current?.click()}
-                className="w-full border-2 border-dashed border-[#1a2a4a] hover:border-cyan-500/50 rounded-lg p-4 flex flex-col items-center gap-2 text-gray-600 hover:text-cyan-400 transition-colors"
+                className="w-full border-2 border-dashed border-obsidian-400/60 hover:border-gold-500/50 rounded-lg p-4 flex flex-col items-center gap-2 text-gray-600 hover:text-gold-400 transition-colors"
               >
                 <Upload size={18} />
                 <span className="text-xs">Upload receipt photo</span>
@@ -825,8 +825,8 @@ export default function CarDetail() {
           </div>
         </div>
         <div className="flex gap-3 mt-5">
-          <button onClick={() => setShowCompleteModal(false)} className="flex-1 px-4 py-2.5 border border-[#1a2a4a] text-gray-400 hover:text-white rounded-lg text-sm transition-colors">Cancel</button>
-          <button onClick={handleCompleteRepair} className="flex-1 bg-green-500 hover:bg-green-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">Confirm Done</button>
+          <button onClick={() => setShowCompleteModal(false)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
+          <button onClick={handleCompleteRepair} className="flex-1 bg-green-500 hover:bg-green-400 px-4 py-2.5 rounded-lg text-sm">Confirm Done</button>
         </div>
       </Modal>
 
@@ -840,7 +840,7 @@ export default function CarDetail() {
               <span className="text-gray-400 text-sm">{galleryIndex + 1} / {allPhotos.length}</span>
               <button
                 onClick={() => downloadPhoto(allPhotos[galleryIndex], galleryIndex)}
-                className="flex items-center gap-1.5 bg-cyan-500 hover:bg-cyan-400 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                className="flex items-center gap-1.5 btn-gold text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
               >
                 <Download size={15} /> Download
               </button>
@@ -882,7 +882,7 @@ export default function CarDetail() {
                 <button
                   key={i}
                   onClick={() => setGalleryIndex(i)}
-                  className={`flex-shrink-0 w-16 h-12 rounded-lg overflow-hidden border-2 transition-colors ${i === galleryIndex ? 'border-cyan-400' : 'border-transparent opacity-50 hover:opacity-80'}`}
+                  className={`flex-shrink-0 w-16 h-12 rounded-lg overflow-hidden border-2 transition-colors ${i === galleryIndex ? 'border-gold-400' : 'border-transparent opacity-50 hover:opacity-80'}`}
                 >
                   <img src={src} alt={`thumb-${i}`} className="w-full h-full object-cover" />
                 </button>
@@ -900,7 +900,7 @@ export default function CarDetail() {
             <label className="block text-gray-300 text-xs font-medium mb-1.5">Delivery Photo (optional)</label>
             {deliveryPhoto ? (
               <div className="relative inline-block">
-                <img src={deliveryPhoto} alt="Delivery" className="w-full h-40 object-cover rounded-lg border border-[#1a2a4a]" />
+                <img src={deliveryPhoto} alt="Delivery" className="w-full h-40 object-cover rounded-lg border border-obsidian-400/60" />
                 <button onClick={() => setDeliveryPhoto('')} className="absolute top-2 right-2 bg-black/60 text-white rounded-full p-0.5">
                   <X size={12} />
                 </button>
@@ -908,7 +908,7 @@ export default function CarDetail() {
             ) : (
               <button
                 onClick={() => deliveryRef.current?.click()}
-                className="w-full border-2 border-dashed border-[#1a2a4a] hover:border-green-500/50 rounded-lg p-4 flex flex-col items-center gap-2 text-gray-600 hover:text-green-400 transition-colors"
+                className="w-full border-2 border-dashed border-obsidian-400/60 hover:border-green-500/50 rounded-lg p-4 flex flex-col items-center gap-2 text-gray-600 hover:text-green-400 transition-colors"
               >
                 <Upload size={18} />
                 <span className="text-xs">Upload delivery photo</span>
@@ -923,8 +923,8 @@ export default function CarDetail() {
           </div>
         </div>
         <div className="flex gap-3 mt-5">
-          <button onClick={() => setShowDeliveryModal(false)} className="flex-1 px-4 py-2.5 border border-[#1a2a4a] text-gray-400 hover:text-white rounded-lg text-sm transition-colors">Cancel</button>
-          <button onClick={handleDeliverySubmit} className="flex-1 bg-green-500 hover:bg-green-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
+          <button onClick={() => setShowDeliveryModal(false)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
+          <button onClick={handleDeliverySubmit} className="flex-1 bg-green-500 hover:bg-green-400 px-4 py-2.5 rounded-lg text-sm">
             Confirm Delivered
           </button>
         </div>

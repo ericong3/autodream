@@ -7,7 +7,7 @@ const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 const STATUS_STYLE: Record<TestDrive['status'], { bg: string; text: string; icon: typeof Circle }> = {
-  scheduled: { bg: 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300',   text: 'text-cyan-400',   icon: Clock },
+  scheduled: { bg: 'bg-gold-500/20 border-gold-500/40 text-gold-300',   text: 'text-gold-400',   icon: Clock },
   completed: { bg: 'bg-green-500/20 border-green-500/40 text-green-300', text: 'text-green-400', icon: CheckCircle },
   cancelled: { bg: 'bg-red-500/20 border-red-500/40 text-red-300',       text: 'text-red-400',   icon: XCircle },
 };
@@ -108,7 +108,7 @@ export default function Calendar() {
             <select
               value={salesFilter}
               onChange={e => setSalesFilter(e.target.value)}
-              className="bg-[#0d1526] border border-[#1a2a4a] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500"
+              className="input rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500"
             >
               <option value="all">All Salespeople</option>
               {salespeople.map(u => (
@@ -118,7 +118,7 @@ export default function Calendar() {
           )}
           <button
             onClick={goToday}
-            className="px-3 py-2 text-sm border border-[#1a2a4a] text-gray-400 hover:text-white hover:border-[#2a3a5a] rounded-lg transition-colors"
+            className="px-3 py-2 text-sm border border-obsidian-400/60 text-gray-400 hover:text-white hover:border-[#3C321E] rounded-lg transition-colors"
           >
             Today
           </button>
@@ -127,16 +127,16 @@ export default function Calendar() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Calendar grid */}
-        <div className="lg:col-span-2 bg-[#0d1526] border border-[#1a2a4a] rounded-xl p-4">
+        <div className="lg:col-span-2 bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-4">
           {/* Month navigation */}
           <div className="flex items-center justify-between mb-4">
-            <button onClick={prevMonth} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-[#1a2a4a] transition-colors">
+            <button onClick={prevMonth} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-obsidian-600/60 transition-colors">
               <ChevronLeft size={18} />
             </button>
             <h2 className="text-white font-semibold text-base">
               {MONTHS[month]} {year}
             </h2>
-            <button onClick={nextMonth} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-[#1a2a4a] transition-colors">
+            <button onClick={nextMonth} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-obsidian-600/60 transition-colors">
               <ChevronRight size={18} />
             </button>
           </div>
@@ -167,18 +167,18 @@ export default function Calendar() {
                   key={d}
                   onClick={() => setSelectedDay(isSelected ? null : d)}
                   className={`aspect-square rounded-lg flex flex-col items-center justify-start pt-1.5 px-1 transition-all relative
-                    ${isSelected ? 'bg-cyan-500/20 border border-cyan-500/50' : 'hover:bg-[#111d35] border border-transparent'}
-                    ${isTodayDay && !isSelected ? 'border border-cyan-500/30' : ''}
+                    ${isSelected ? 'bg-gold-500/20 border border-gold-500/50' : 'hover:bg-obsidian-700/50 border border-transparent'}
+                    ${isTodayDay && !isSelected ? 'border border-gold-500/30' : ''}
                   `}
                 >
                   <span className={`text-xs font-medium leading-none
-                    ${isTodayDay ? 'text-cyan-400' : isSelected ? 'text-white' : 'text-gray-400'}
+                    ${isTodayDay ? 'text-gold-400' : isSelected ? 'text-white' : 'text-gray-400'}
                   `}>
                     {d}
                   </span>
                   {dayDrives.length > 0 && (
                     <div className="flex gap-0.5 mt-1 flex-wrap justify-center">
-                      {hasScheduled && <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />}
+                      {hasScheduled && <span className="w-1.5 h-1.5 rounded-full bg-gold-400" />}
                       {hasCompleted && <span className="w-1.5 h-1.5 rounded-full bg-green-400" />}
                       {hasCancelled && <span className="w-1.5 h-1.5 rounded-full bg-red-400" />}
                     </div>
@@ -189,9 +189,9 @@ export default function Calendar() {
           </div>
 
           {/* Legend */}
-          <div className="flex items-center gap-4 mt-4 pt-3 border-t border-[#1a2a4a]">
+          <div className="flex items-center gap-4 mt-4 pt-3 border-t border-obsidian-400/60">
             <span className="flex items-center gap-1.5 text-xs text-gray-500">
-              <span className="w-2 h-2 rounded-full bg-cyan-400" /> Scheduled
+              <span className="w-2 h-2 rounded-full bg-gold-400" /> Scheduled
             </span>
             <span className="flex items-center gap-1.5 text-xs text-gray-500">
               <span className="w-2 h-2 rounded-full bg-green-400" /> Completed
@@ -203,9 +203,9 @@ export default function Calendar() {
         </div>
 
         {/* Day detail panel */}
-        <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl p-4 flex flex-col">
+        <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-4 flex flex-col">
           <div className="flex items-center gap-2 mb-4">
-            <CalIcon size={16} className="text-cyan-400" />
+            <CalIcon size={16} className="text-gold-400" />
             <h3 className="text-white font-medium text-sm">
               {selectedDay
                 ? `${MONTHS[month]} ${selectedDay}, ${year}`

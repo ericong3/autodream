@@ -28,7 +28,6 @@ interface NavItem {
   label: string;
 }
 
-// Items always shown flat (non-sales)
 const directorItems: NavItem[] = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/inventory', icon: Car, label: 'Inventory' },
@@ -42,9 +41,8 @@ const directorBottomItems: NavItem[] = [
   { to: '/ai-assistant', icon: Bot, label: 'AI Assistant' },
 ];
 
-// Sales group items (shown under collapsible "Sales" for director)
 const salesGroupItems: NavItem[] = [
-  { to: '/customers', icon: Users, label: 'Leads' },
+  { to: '/customers', icon: Users, label: 'Leads & Loan' },
   { to: '/pipeline', icon: GitBranch, label: 'Sales Pipeline' },
   { to: '/quotations', icon: FileText, label: 'Quotations' },
   { to: '/commission', icon: Banknote, label: 'Commission' },
@@ -53,11 +51,10 @@ const salesGroupItems: NavItem[] = [
   { to: '/calendar', icon: CalendarDays, label: 'Calendar' },
 ];
 
-// Salesperson flat items
 const salespersonItems: NavItem[] = [
   { to: '/sales-dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/inventory', icon: Car, label: 'Inventory' },
-  { to: '/customers', icon: Users, label: 'Leads' },
+  { to: '/customers', icon: Users, label: 'Leads & Loan' },
   { to: '/pipeline', icon: GitBranch, label: 'Sales Pipeline' },
   { to: '/quotations', icon: FileText, label: 'Quotations' },
   { to: '/loan-calculator', icon: Calculator, label: 'Loan Calculator' },
@@ -67,7 +64,6 @@ const salespersonItems: NavItem[] = [
   { to: '/ai-assistant', icon: Bot, label: 'AI Assistant' },
 ];
 
-// Mechanic flat items
 const mechanicItems: NavItem[] = [
   { to: '/inventory', icon: Car, label: 'Inventory' },
   { to: '/reminders', icon: ClipboardList, label: 'Instructions' },
@@ -81,12 +77,12 @@ function NavItemLink({ item, indent = false }: { item: NavItem; indent?: boolean
     <NavLink
       to={item.to}
       className={({ isActive }) =>
-        `flex items-center gap-3 rounded-lg text-sm font-medium transition-all group ${
+        `flex items-center gap-3 rounded-lg text-sm font-medium transition-all duration-150 group ${
           indent ? 'px-3 py-2 ml-3' : 'px-3 py-2.5'
         } ${
           isActive
-            ? 'text-cyan-400 bg-cyan-400/10 border-l-2 border-cyan-400 pl-[10px]'
-            : 'text-gray-400 hover:text-white hover:bg-[#1a2a4a]'
+            ? 'text-gold-300 bg-gradient-to-r from-gold-500/[0.14] to-transparent border-l-2 border-gold-400 pl-[10px] shadow-[inset_0_0_20px_rgba(234,184,32,0.04)]'
+            : 'text-white/60 hover:text-white hover:bg-obsidian-600/60'
         }`
       }
     >
@@ -94,9 +90,13 @@ function NavItemLink({ item, indent = false }: { item: NavItem; indent?: boolean
         <>
           <item.icon
             size={indent ? 15 : 18}
-            className={isActive ? 'text-cyan-400' : 'text-gray-500 group-hover:text-gray-300'}
+            className={
+              isActive
+                ? 'text-gold-300 drop-shadow-[0_0_6px_rgba(234,184,32,0.5)]'
+                : 'text-white/40 group-hover:text-white/80 transition-colors'
+            }
           />
-          {item.label}
+          <span className={isActive ? 'font-semibold' : ''}>{item.label}</span>
         </>
       )}
     </NavLink>
@@ -116,40 +116,46 @@ export default function Sidebar() {
 
   if (isDirector) {
     return (
-      <aside className="w-64 min-h-screen bg-[#111d35] border-r border-[#1a2a4a] flex flex-col">
+      <aside className="hidden md:flex flex-col w-64 min-h-screen bg-sidebar-gradient border-r border-obsidian-400/80">
         <SidebarLogo />
-        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+        <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
           {directorItems.map(item => <NavItemLink key={item.to} item={item} />)}
 
-          {/* Sales collapsible group */}
           <div>
             <button
               onClick={() => setSalesOpen(v => !v)}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all group ${
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group ${
                 isSalesRouteActive
-                  ? 'text-cyan-400 bg-cyan-400/10'
-                  : 'text-gray-400 hover:text-white hover:bg-[#1a2a4a]'
+                  ? 'text-gold-300 bg-gradient-to-r from-gold-500/[0.14] to-transparent'
+                  : 'text-white/60 hover:text-white hover:bg-obsidian-600/60'
               }`}
             >
               <div className="flex items-center gap-3">
                 <ShoppingBag
                   size={18}
-                  className={isSalesRouteActive ? 'text-cyan-400' : 'text-gray-500 group-hover:text-gray-300'}
+                  className={
+                    isSalesRouteActive
+                      ? 'text-gold-300 drop-shadow-[0_0_6px_rgba(234,184,32,0.5)]'
+                      : 'text-white/40 group-hover:text-white/80 transition-colors'
+                  }
                 />
-                Sales
+                <span className={isSalesRouteActive ? 'font-semibold' : ''}>Sales</span>
               </div>
               {showSalesItems
-                ? <ChevronDown size={14} className="text-gray-500" />
-                : <ChevronRight size={14} className="text-gray-500" />
+                ? <ChevronDown size={13} className="text-white/40" />
+                : <ChevronRight size={13} className="text-white/40" />
               }
             </button>
 
             {showSalesItems && (
-              <div className="mt-1 space-y-0.5 border-l border-[#1a2a4a] ml-5">
+              <div className="mt-1 space-y-0.5 border-l border-obsidian-400/60 ml-5">
                 {salesGroupItems.map(item => <NavItemLink key={item.to} item={item} indent />)}
               </div>
             )}
           </div>
+
+          {/* Subtle divider before bottom items */}
+          <div className="divider-gold my-2 mx-1" />
 
           {directorBottomItems.map(item => <NavItemLink key={item.to} item={item} />)}
         </nav>
@@ -161,9 +167,9 @@ export default function Sidebar() {
   const flatItems = isSalesperson ? salespersonItems : mechanicItems;
 
   return (
-    <aside className="w-64 min-h-screen bg-[#111d35] border-r border-[#1a2a4a] flex flex-col">
+    <aside className="hidden md:flex flex-col w-64 min-h-screen bg-sidebar-gradient border-r border-obsidian-400/80">
       <SidebarLogo />
-      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+      <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
         {flatItems.map(item => <NavItemLink key={item.to} item={item} />)}
       </nav>
       <SidebarFooter />
@@ -173,14 +179,17 @@ export default function Sidebar() {
 
 function SidebarLogo() {
   return (
-    <div className="p-6 border-b border-[#1a2a4a]">
+    <div className="px-4 py-5 border-b border-obsidian-400/80">
       <div className="flex items-center gap-3">
-        <div className="w-9 h-9 bg-cyan-500 rounded-lg flex items-center justify-center">
-          <Zap size={20} className="text-white" />
+        <div className="relative w-10 h-10 rounded-xl flex items-center justify-center
+          bg-gold-gradient shadow-gold-sm shrink-0">
+          <Zap size={20} className="text-obsidian-950 relative z-10" strokeWidth={2.5} />
         </div>
         <div>
-          <h1 className="text-white font-bold text-lg leading-none">AutoDream</h1>
-          <p className="text-cyan-400 text-xs mt-0.5">Car Dealership</p>
+          <h1 className="font-display text-white font-bold text-base leading-none tracking-wide">AutoDream</h1>
+          <p className="text-[10px] mt-0.5 tracking-[0.2em] uppercase font-medium text-gold-500">
+            Car Dealership
+          </p>
         </div>
       </div>
     </div>
@@ -190,14 +199,15 @@ function SidebarLogo() {
 function SidebarFooter() {
   const currentUser = useStore((s) => s.currentUser);
   return (
-    <div className="p-4 border-t border-[#1a2a4a]">
-      <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-full bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 font-bold text-sm uppercase">
+    <div className="p-3 border-t border-obsidian-400/80">
+      <div className="flex items-center gap-3 px-2 py-2 rounded-lg bg-obsidian-700/50">
+        <div className="w-8 h-8 rounded-full bg-gold-gradient flex items-center justify-center
+          text-obsidian-950 font-bold text-sm uppercase shadow-gold-sm shrink-0">
           {currentUser?.name?.charAt(0) ?? '?'}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-white text-sm font-medium truncate">{currentUser?.name}</p>
-          <p className="text-gray-500 text-xs capitalize">{currentUser?.role}</p>
+          <p className="text-white text-sm font-semibold truncate leading-none">{currentUser?.name}</p>
+          <p className="text-white/50 text-[11px] capitalize mt-0.5">{currentUser?.role}</p>
         </div>
       </div>
     </div>

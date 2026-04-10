@@ -24,7 +24,7 @@ import { formatRM, formatMileage, generateId } from '../utils/format';
 const STATUS_BADGE: Record<string, string> = {
   coming_soon: 'bg-purple-500/20 text-purple-400',
   in_workshop: 'bg-orange-500/20 text-orange-400',
-  ready: 'bg-cyan-500/20 text-cyan-400',
+  ready: 'bg-gold-500/20 text-gold-400',
   photo_complete: 'bg-blue-500/20 text-blue-400',
   submitted: 'bg-indigo-500/20 text-indigo-400',
   deal_pending: 'bg-yellow-500/20 text-yellow-400',
@@ -91,6 +91,7 @@ export default function Inventory() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const photoInputRef = useRef<HTMLInputElement>(null);
   const greenCardInputRef = useRef<HTMLInputElement>(null);
+  const dragIndexRef = useRef<number | null>(null);
 
 
   const readFileAsBase64 = (file: File): Promise<string> =>
@@ -210,7 +211,7 @@ export default function Inventory() {
             placeholder="Search cars..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-[#0d1526] border border-[#1a2a4a] text-white placeholder-gray-600 rounded-lg pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:border-cyan-500 transition-colors"
+            className="input pl-9 pr-4 py-2.5"
           />
         </div>
 
@@ -238,16 +239,16 @@ export default function Inventory() {
         />
 
         {/* View toggle */}
-        <div className="flex bg-[#0d1526] border border-[#1a2a4a] rounded-lg p-1 gap-1">
+        <div className="flex border border-obsidian-400/60 rounded-lg p-1 gap-1" style={{background:'#0E0D0B'}}>
           <button
             onClick={() => setViewPreference(currentUser!.id, 'inventory', 'grid')}
-            className={`p-1.5 rounded-md transition-colors ${view === 'grid' ? 'bg-cyan-500 text-white' : 'text-gray-400 hover:text-white'}`}
+            className={`p-1.5 rounded-md transition-colors ${view === 'grid' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
           >
             <LayoutGrid size={16} />
           </button>
           <button
             onClick={() => setViewPreference(currentUser!.id, 'inventory', 'list')}
-            className={`p-1.5 rounded-md transition-colors ${view === 'list' ? 'bg-cyan-500 text-white' : 'text-gray-400 hover:text-white'}`}
+            className={`p-1.5 rounded-md transition-colors ${view === 'list' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
           >
             <List size={16} />
           </button>
@@ -256,7 +257,7 @@ export default function Inventory() {
         {canAddCar && (
           <button
             onClick={() => { setForm(emptyForm); setErrors({}); setShowModal(true); }}
-            className="flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-cyan-500/20"
+            className="flex items-center gap-2 btn-gold px-4 py-2.5 rounded-lg text-sm"
           >
             <Plus size={16} />
             Add Car
@@ -285,10 +286,10 @@ export default function Inventory() {
             <div
               key={car.id}
               onClick={() => navigate(`/inventory/${car.id}`)}
-              className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl overflow-hidden cursor-pointer hover:border-cyan-500/40 hover:shadow-xl hover:shadow-cyan-500/10 transition-all group"
+              className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card overflow-hidden cursor-pointer hover:border-gold-500/40 hover:shadow-xl hover:shadow-gold-500/10 transition-all group"
             >
               {/* Photo */}
-              <div className="h-36 bg-[#111d35] flex items-center justify-center relative">
+              <div className="h-36 bg-obsidian-700/60 flex items-center justify-center relative">
                 {car.photo ? (
                   <img src={car.photo} alt={`${car.make} ${car.model}`} className="w-full h-full object-cover" />
                 ) : (
@@ -303,13 +304,13 @@ export default function Inventory() {
               <div className="p-4">
                 <div className="flex items-start justify-between">
                   <div className="min-w-0">
-                    <h3 className="text-white font-semibold text-sm group-hover:text-cyan-400 transition-colors">
+                    <h3 className="text-white font-semibold text-sm group-hover:text-gold-400 transition-colors">
                       {car.year} {car.make} {car.model}
                     </h3>
                     <p className="text-gray-500 text-xs mt-0.5">{car.colour} · {car.transmission}</p>
                   </div>
                   {car.carPlate && (
-                    <span className="ml-2 shrink-0 text-xs font-mono font-semibold px-2 py-0.5 rounded bg-[#1a2a4a] text-cyan-300 border border-[#2a3a5a] tracking-wider">
+                    <span className="ml-2 shrink-0 text-xs font-mono font-semibold px-2 py-0.5 rounded bg-[#2C2415] text-gold-300 border border-[#3C321E] tracking-wider">
                       {car.carPlate}
                     </span>
                   )}
@@ -323,7 +324,7 @@ export default function Inventory() {
 
                 <div className="mt-3 flex items-end justify-between">
                   <div>
-                    <p className="text-cyan-400 text-lg font-bold">{formatRM(car.sellingPrice)}</p>
+                    <p className="text-gold-400 text-lg font-bold">{formatRM(car.sellingPrice)}</p>
                     {isDirector && (
                       <p className="text-green-400 text-xs font-medium mt-0.5">
                         Profit: {formatRM(car.sellingPrice - car.purchasePrice)}
@@ -343,11 +344,11 @@ export default function Inventory() {
 
       {/* List view */}
       {view === 'list' && filtered.length > 0 && (
-        <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl overflow-hidden">
+        <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-gray-500 text-xs border-b border-[#1a2a4a] bg-[#111d35]">
+                <tr className="text-obsidian-300/50 text-xs border-b border-obsidian-400/60 bg-obsidian-700/60">
                   <th className="text-left px-4 py-3 font-medium">Car</th>
                   <th className="text-left px-4 py-3 font-medium">Plate</th>
                   <th className="text-left px-4 py-3 font-medium">Year</th>
@@ -366,11 +367,11 @@ export default function Inventory() {
                   <tr
                     key={car.id}
                     onClick={() => navigate(`/inventory/${car.id}`)}
-                    className={`border-b border-[#1a2a4a]/50 cursor-pointer hover:bg-[#111d35] transition-colors ${i % 2 === 0 ? 'bg-[#0d1526]' : 'bg-[#0a0f1e]/50'}`}
+                    className={`border-b border-obsidian-400/60/50 cursor-pointer hover:bg-obsidian-700/50 transition-colors ${i % 2 === 0 ? 'bg-card-gradient' : 'bg-obsidian-950/30'}`}
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-[#111d35] rounded-lg flex items-center justify-center">
+                        <div className="w-8 h-8 bg-obsidian-700/60 rounded-lg flex items-center justify-center">
                           <CarIcon size={14} className="text-gray-500" />
                         </div>
                         <span className="text-white font-medium">{car.make} {car.model}</span>
@@ -378,7 +379,7 @@ export default function Inventory() {
                     </td>
                     <td className="px-4 py-3">
                       {car.carPlate
-                        ? <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-[#1a2a4a] text-cyan-300 border border-[#2a3a5a] tracking-wider">{car.carPlate}</span>
+                        ? <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-[#2C2415] text-gold-300 border border-[#3C321E] tracking-wider">{car.carPlate}</span>
                         : <span className="text-gray-600 text-xs">—</span>
                       }
                     </td>
@@ -397,7 +398,7 @@ export default function Inventory() {
                         {STATUS_LABEL[car.status] ?? car.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-cyan-400 font-semibold text-right">{formatRM(car.sellingPrice)}</td>
+                    <td className="px-4 py-3 text-gold-400 font-semibold text-right">{formatRM(car.sellingPrice)}</td>
                     {isDirector && (
                       <td className="px-4 py-3 text-green-400 text-right">
                         {formatRM(car.sellingPrice - car.purchasePrice)}
@@ -496,7 +497,7 @@ export default function Inventory() {
             <button
               type="button"
               onClick={() => setForm({ ...form, status: isComingSoon ? 'available' : 'coming_soon' })}
-              className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${isComingSoon ? 'bg-purple-500/10 border-purple-500/40 text-purple-300' : 'bg-[#111d35] border-[#1a2a4a] text-gray-400 hover:border-cyan-500/40'}`}
+              className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${isComingSoon ? 'bg-purple-500/10 border-purple-500/40 text-purple-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
             >
               <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${isComingSoon ? 'bg-purple-500 border-purple-500' : 'border-gray-600'}`}>
                 {isComingSoon && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
@@ -528,20 +529,36 @@ export default function Inventory() {
               </span>
             </div>
 
-            {/* Thumbnail grid */}
+            {/* Thumbnail grid — drag to reorder */}
             <div className="flex flex-wrap gap-2 mb-2">
               {(form.photos ?? []).map((src, idx) => (
-                <div key={idx} className="relative w-20 h-20 rounded-lg overflow-hidden border border-[#1a2a4a] group">
-                  <img src={src} alt={`car-${idx + 1}`} className="w-full h-full object-cover" />
+                <div
+                  key={idx}
+                  draggable
+                  onDragStart={() => { dragIndexRef.current = idx; }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    const from = dragIndexRef.current;
+                    if (from === null || from === idx) return;
+                    const updated = [...(form.photos ?? [])];
+                    const [moved] = updated.splice(from, 1);
+                    updated.splice(idx, 0, moved);
+                    dragIndexRef.current = idx;
+                    setForm((prev) => ({ ...prev, photos: updated, photo: updated[0] ?? '' }));
+                  }}
+                  onDragEnd={() => { dragIndexRef.current = null; }}
+                  className="relative w-20 h-20 rounded-lg overflow-hidden border border-obsidian-400/60 group cursor-grab active:cursor-grabbing"
+                >
+                  <img src={src} alt={`car-${idx + 1}`} className="w-full h-full object-cover pointer-events-none" />
                   <button
                     type="button"
                     onClick={() => removePhoto(idx)}
-                    className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
+                    className="absolute top-1 right-1 bg-black/70 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10"
                   >
-                    <X size={16} className="text-white" />
+                    <X size={12} className="text-white" />
                   </button>
                   {idx === 0 && (
-                    <span className="absolute bottom-0 left-0 right-0 bg-cyan-500/80 text-white text-[9px] text-center py-0.5">
+                    <span className="absolute bottom-0 left-0 right-0 bg-gold-500/80 text-white text-[9px] text-center py-0.5">
                       Cover
                     </span>
                   )}
@@ -552,7 +569,7 @@ export default function Inventory() {
               <button
                 type="button"
                 onClick={() => photoInputRef.current?.click()}
-                className="w-20 h-20 rounded-lg border-2 border-dashed border-[#1a2a4a] hover:border-cyan-500/50 flex flex-col items-center justify-center gap-1 text-gray-600 hover:text-cyan-400 transition-colors"
+                className="w-20 h-20 rounded-lg border-2 border-dashed border-obsidian-400/60 hover:border-gold-500/50 flex flex-col items-center justify-center gap-1 text-gray-600 hover:text-gold-400 transition-colors"
               >
                 <ImagePlus size={18} />
                 <span className="text-[10px]">Add</span>
@@ -583,9 +600,9 @@ export default function Inventory() {
             </label>
 
             {form.greenCard ? (
-              <div className="flex items-center gap-3 bg-[#111d35] border border-[#1a2a4a] rounded-lg p-3">
+              <div className="flex items-center gap-3 bg-obsidian-700/60 border border-obsidian-400/60 rounded-lg p-3">
                 {form.greenCard.startsWith('data:image') ? (
-                  <img src={form.greenCard} alt="green card" className="w-16 h-12 object-cover rounded border border-[#1a2a4a]" />
+                  <img src={form.greenCard} alt="green card" className="w-16 h-12 object-cover rounded border border-obsidian-400/60" />
                 ) : (
                   <div className="w-16 h-12 bg-green-500/10 border border-green-500/30 rounded flex items-center justify-center">
                     <FileText size={20} className="text-green-400" />
@@ -599,7 +616,7 @@ export default function Inventory() {
                   <button
                     type="button"
                     onClick={() => greenCardInputRef.current?.click()}
-                    className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors"
+                    className="text-xs text-gold-400 hover:text-gold-300 transition-colors"
                   >
                     Replace
                   </button>
@@ -616,7 +633,7 @@ export default function Inventory() {
               <button
                 type="button"
                 onClick={() => greenCardInputRef.current?.click()}
-                className={`w-full border-2 border-dashed ${errors.greenCard ? 'border-red-500/50' : 'border-[#1a2a4a] hover:border-cyan-500/50'} rounded-lg p-5 flex flex-col items-center gap-2 text-gray-600 hover:text-cyan-400 transition-colors`}
+                className={`w-full border-2 border-dashed ${errors.greenCard ? 'border-red-500/50' : 'border-obsidian-400/60 hover:border-gold-500/50'} rounded-lg p-5 flex flex-col items-center gap-2 text-gray-600 hover:text-gold-400 transition-colors`}
               >
                 <Upload size={20} />
                 <span className="text-xs">Click to upload green card</span>
@@ -643,13 +660,13 @@ export default function Inventory() {
         <div className="flex gap-3 mt-6">
           <button
             onClick={() => setShowModal(false)}
-            className="flex-1 px-4 py-2.5 border border-[#1a2a4a] text-gray-400 hover:text-white rounded-lg text-sm transition-colors"
+            className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
-            className="flex-1 bg-cyan-500 hover:bg-cyan-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+            className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm"
           >
             Add Car
           </button>
@@ -677,7 +694,7 @@ function Select({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="appearance-none bg-[#0d1526] border border-[#1a2a4a] text-gray-300 rounded-lg pl-3 pr-8 py-2.5 text-sm focus:outline-none focus:border-cyan-500 transition-colors cursor-pointer"
+        className="input appearance-none pl-3 pr-8 py-2.5 cursor-pointer"
       >
         {options.map((opt, i) => (
           <option key={opt} value={opt}>
@@ -715,7 +732,7 @@ function FormField({
 }
 
 function inputCls(error?: string) {
-  return `w-full bg-[#111d35] border ${error ? 'border-red-500/50' : 'border-[#1a2a4a]'} text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 transition-colors`;
+  return `input ${error ? '!border-red-500/50' : ''}`;
 }
 
 // Export Filter icon for use

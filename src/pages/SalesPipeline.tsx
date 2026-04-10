@@ -7,7 +7,7 @@ import { formatRM } from '../utils/format';
 const PIPELINE_STAGES: { key: Customer['leadStatus']; label: string; color: string; bg: string; border: string }[] = [
   { key: 'contacted',      label: 'Contacted',      color: 'text-blue-400',   bg: 'bg-blue-500/10',   border: 'border-blue-500/30' },
   { key: 'test_drive',     label: 'Test Drive',     color: 'text-yellow-400', bg: 'bg-yellow-500/10', border: 'border-yellow-500/30' },
-  { key: 'follow_up',      label: 'Follow Up',      color: 'text-cyan-400',   bg: 'bg-cyan-500/10',   border: 'border-cyan-500/30' },
+  { key: 'follow_up',      label: 'Follow Up',      color: 'text-gold-400',   bg: 'bg-gold-500/10',   border: 'border-gold-500/30' },
   { key: 'loan_submitted', label: 'Loan Submitted', color: 'text-green-400',  bg: 'bg-green-500/10',  border: 'border-green-500/30' },
 ];
 
@@ -72,7 +72,7 @@ export default function SalesPipeline() {
           <select
             value={salesFilter}
             onChange={e => setSalesFilter(e.target.value)}
-            className="bg-[#0d1526] border border-[#1a2a4a] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500"
+            className="input py-2"
           >
             <option value="all">All Salespeople</option>
             {salespeople.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
@@ -83,11 +83,11 @@ export default function SalesPipeline() {
       {/* Stats */}
       <div className="grid grid-cols-4 gap-3">
         {[
-          { label: 'Total Leads',     value: activeCount,      color: 'text-cyan-400' },
-          { label: 'Follow Up',       value: inFollowUp,       color: 'text-cyan-400' },
+          { label: 'Total Leads',     value: activeCount,      color: 'text-gold-400' },
+          { label: 'Follow Up',       value: inFollowUp,       color: 'text-gold-400' },
           { label: 'Loan Submitted',  value: inLoanSubmitted,  color: 'text-green-400' },
         ].map(s => (
-          <div key={s.label} className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl p-4 text-center">
+          <div key={s.label} className="card-surface rounded-xl p-4 text-center">
             <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
             <p className="text-gray-500 text-xs mt-1">{s.label}</p>
           </div>
@@ -109,14 +109,14 @@ export default function SalesPipeline() {
               </div>
               <div className="space-y-2">
                 {stageCustomers.length === 0 ? (
-                  <div className="border border-dashed border-[#1a2a4a] rounded-xl p-4 text-center text-gray-600 text-xs">
+                  <div className="border border-dashed border-obsidian-400/40 rounded-xl p-4 text-center text-obsidian-300/30 text-xs">
                     No leads
                   </div>
                 ) : stageCustomers.map(c => {
                   const carName = getCarName(c.interestedCarId);
                   const fuStatus = getFollowUpStatus(c.followUpDate);
                   return (
-                    <div key={c.id} className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl p-3 space-y-2 hover:border-[#2a3a5a] transition-colors">
+                    <div key={c.id} className="bg-card-gradient border border-obsidian-400/70 rounded-xl p-3 space-y-2 hover:border-obsidian-300/60 hover:shadow-card transition-all">
                       <div>
                         <p className="text-white text-sm font-medium truncate">{c.name}</p>
                         <p className="text-gray-500 text-xs flex items-center gap-1 mt-0.5">
@@ -124,7 +124,7 @@ export default function SalesPipeline() {
                         </p>
                       </div>
                       {carName && (
-                        <p className="text-cyan-400 text-xs flex items-center gap-1 truncate">
+                        <p className="text-gold-400 text-xs flex items-center gap-1 truncate">
                           <Car size={10} />{carName}
                         </p>
                       )}
@@ -153,7 +153,7 @@ export default function SalesPipeline() {
                       {canAdvance && (
                         <button
                           onClick={() => advanceStage(c)}
-                          className="w-full flex items-center justify-center gap-1 text-xs text-gray-600 hover:text-cyan-400 hover:bg-cyan-500/10 py-1 rounded-lg transition-colors border border-[#1a2a4a] hover:border-cyan-500/30"
+                          className="w-full flex items-center justify-center gap-1 text-xs text-gray-600 hover:text-gold-400 hover:bg-gold-500/10 py-1 rounded-lg transition-colors border border-[#2C2415] hover:border-gold-500/30"
                         >
                           Advance <ChevronRight size={11} />
                         </button>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   HashRouter,
   Routes,
@@ -48,6 +48,21 @@ function RequireSalesOrDirector({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   const currentUser = useStore((s) => s.currentUser);
+  const loadAll = useStore((s) => s.loadAll);
+  const loaded = useStore((s) => s.loaded);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadAll().finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#0a0a0a', color: '#c9a84c', fontFamily: 'sans-serif', fontSize: 18 }}>
+        Loading...
+      </div>
+    );
+  }
 
   return (
     <HashRouter>

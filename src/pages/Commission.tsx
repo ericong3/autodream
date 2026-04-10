@@ -79,12 +79,12 @@ export default function Commission() {
       </div>
 
       {/* Tabs */}
-      <div className="flex bg-[#0d1526] border border-[#1a2a4a] rounded-lg p-1 gap-1 w-fit">
+      <div className="flex bg-[#0F0E0C] border border-obsidian-400/60 rounded-lg p-1 gap-1 w-fit">
         {(['commission', 'reminders'] as const).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors capitalize flex items-center gap-2 ${tab === t ? 'bg-cyan-500 text-white' : 'text-gray-400 hover:text-white'}`}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors capitalize flex items-center gap-2 ${tab === t ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
           >
             {t === 'reminders' ? 'My Reminders' : 'Commission'}
             {t === 'reminders' && activeReminders.length > 0 && (
@@ -99,12 +99,12 @@ export default function Commission() {
           {/* Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
-              { label: 'Total Cars Sold', value: totalSoldAll, sub: 'all time', color: 'text-cyan-400' },
+              { label: 'Total Cars Sold', value: totalSoldAll, sub: 'all time', color: 'text-gold-400' },
               { label: 'Total Earned', value: formatRM(totalCommissionAll), sub: 'all time', color: 'text-green-400' },
               { label: 'This Month Sold', value: monthSold, sub: monthFilter, color: 'text-yellow-400' },
               { label: 'This Month Earned', value: formatRM(monthCommission), sub: monthFilter, color: 'text-purple-400' },
             ].map(s => (
-              <div key={s.label} className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl p-4">
+              <div key={s.label} className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-4">
                 <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
                 <p className="text-gray-400 text-xs mt-1">{s.label}</p>
                 <p className="text-gray-600 text-xs">{s.sub}</p>
@@ -118,7 +118,7 @@ export default function Commission() {
               <select
                 value={salesFilter}
                 onChange={e => setSalesFilter(e.target.value)}
-                className="bg-[#0d1526] border border-[#1a2a4a] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500"
+                className="input rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500"
               >
                 <option value="">All Salespeople</option>
                 {salespeople.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
@@ -128,12 +128,12 @@ export default function Commission() {
               type="month"
               value={monthFilter}
               onChange={e => setMonthFilter(e.target.value)}
-              className="bg-[#0d1526] border border-[#1a2a4a] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500"
+              className="input rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500"
             />
             {monthFilter && (
               <button
                 onClick={() => setMonthFilter('')}
-                className="text-gray-500 hover:text-white text-sm px-3 py-2 border border-[#1a2a4a] rounded-lg transition-colors"
+                className="text-gray-500 hover:text-white text-sm px-3 py-2 border border-obsidian-400/60 rounded-lg transition-colors"
               >
                 Show All
               </button>
@@ -142,15 +142,15 @@ export default function Commission() {
 
           {/* Table */}
           {filteredSoldCars.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 bg-[#0d1526] border border-[#1a2a4a] rounded-xl">
+            <div className="flex flex-col items-center justify-center py-16 bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card">
               <Car size={36} className="text-gray-600 mb-3" />
               <p className="text-gray-400">No sold cars in this period</p>
             </div>
           ) : (
-            <div className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl overflow-hidden">
+            <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card overflow-hidden">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-gray-500 text-xs border-b border-[#1a2a4a] bg-[#111d35]">
+                  <tr className="text-gray-500 text-xs border-b border-obsidian-400/60 bg-[#161410]">
                     <th className="text-left px-5 py-3 font-medium">Vehicle</th>
                     <th className="text-left px-5 py-3 font-medium">Date Added</th>
                     {isDirector && <th className="text-left px-5 py-3 font-medium">Salesperson</th>}
@@ -160,14 +160,14 @@ export default function Commission() {
                 </thead>
                 <tbody>
                   {filteredSoldCars.map((c, i) => (
-                    <tr key={c.id} className={`border-b border-[#1a2a4a]/50 ${i % 2 !== 0 ? 'bg-[#0a0f1e]/50' : ''} hover:bg-[#111d35] transition-colors`}>
+                    <tr key={c.id} className={`border-b border-obsidian-400/60/50 ${i % 2 !== 0 ? 'bg-obsidian-950/30' : ''} hover:bg-obsidian-700/50 transition-colors`}>
                       <td className="px-5 py-3">
                         <p className="text-white font-medium">{c.year} {c.make} {c.model}</p>
                         <p className="text-gray-500 text-xs capitalize">{c.colour} · {c.transmission}</p>
                       </td>
                       <td className="px-5 py-3 text-gray-400">{new Date(c.dateAdded).toLocaleDateString('en-MY')}</td>
                       {isDirector && <td className="px-5 py-3 text-gray-400">{getSalesName(c.assignedSalesperson)}</td>}
-                      <td className="px-5 py-3 text-right text-cyan-400 font-semibold">
+                      <td className="px-5 py-3 text-right text-gold-400 font-semibold">
                         {formatRM(c.finalDeal?.dealPrice ?? c.sellingPrice)}
                       </td>
                       <td className="px-5 py-3 text-right text-green-400 font-semibold">{formatRM(COMMISSION_PER_CAR)}</td>
@@ -175,11 +175,11 @@ export default function Commission() {
                   ))}
                 </tbody>
                 <tfoot>
-                  <tr className="border-t border-[#1a2a4a] bg-[#111d35]">
+                  <tr className="border-t border-obsidian-400/60 bg-[#161410]">
                     <td colSpan={isDirector ? 3 : 2} className="px-5 py-3 text-gray-400 text-xs font-medium">
                       Total ({filteredSoldCars.length} cars)
                     </td>
-                    <td className="px-5 py-3 text-right text-cyan-400 font-bold">
+                    <td className="px-5 py-3 text-right text-gold-400 font-bold">
                       {formatRM(filteredSoldCars.reduce((sum, c) => sum + (c.finalDeal?.dealPrice ?? c.sellingPrice), 0))}
                     </td>
                     <td className="px-5 py-3 text-right text-green-400 font-bold">
@@ -198,14 +198,14 @@ export default function Commission() {
           <div className="flex justify-end">
             <button
               onClick={() => setShowReminderModal(true)}
-              className="flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-cyan-500/20"
+              className="flex items-center gap-2 btn-gold px-4 py-2.5 rounded-lg text-sm"
             >
               <Plus size={16} />Add Reminder
             </button>
           </div>
 
           {myReminders.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 bg-[#0d1526] border border-[#1a2a4a] rounded-xl">
+            <div className="flex flex-col items-center justify-center py-16 bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card">
               <Bell size={36} className="text-gray-600 mb-3" />
               <p className="text-gray-400">No reminders yet. Add one to stay on track.</p>
             </div>
@@ -216,10 +216,10 @@ export default function Commission() {
                 return (
                   <div
                     key={r.id}
-                    className={`bg-[#0d1526] border rounded-xl px-4 py-3 flex items-center gap-3 transition-colors ${
-                      r.isCompleted ? 'border-[#1a2a4a] opacity-50' :
+                    className={`bg-[#0F0E0C] border rounded-xl px-4 py-3 flex items-center gap-3 transition-colors ${
+                      r.isCompleted ? 'border-obsidian-400/60 opacity-50' :
                       dueStatus === 'overdue' ? 'border-red-500/30' :
-                      dueStatus === 'today' ? 'border-yellow-500/30' : 'border-[#1a2a4a]'
+                      dueStatus === 'today' ? 'border-yellow-500/30' : 'border-obsidian-400/60'
                     }`}
                   >
                     <button
@@ -257,7 +257,7 @@ export default function Commission() {
               <div>
                 <label className="block text-gray-300 text-xs font-medium mb-1.5">What to remember?</label>
                 <input
-                  className="w-full bg-[#111d35] border border-[#1a2a4a] text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 transition-colors"
+                  className="w-full bg-obsidian-700/60 border border-obsidian-400/60 text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500 transition-colors"
                   value={reminderForm.title}
                   onChange={e => setReminderForm({ ...reminderForm, title: e.target.value })}
                   placeholder="e.g. Follow up with Ahmad about loan"
@@ -268,18 +268,18 @@ export default function Commission() {
                 <label className="block text-gray-300 text-xs font-medium mb-1.5">Due Date</label>
                 <input
                   type="date"
-                  className="w-full bg-[#111d35] border border-[#1a2a4a] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 transition-colors"
+                  className="w-full bg-obsidian-700/60 border border-obsidian-400/60 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500 transition-colors"
                   value={reminderForm.dueAt}
                   onChange={e => setReminderForm({ ...reminderForm, dueAt: e.target.value })}
                 />
               </div>
             </div>
             <div className="flex gap-3 mt-5">
-              <button onClick={() => setShowReminderModal(false)} className="flex-1 px-4 py-2.5 border border-[#1a2a4a] text-gray-400 hover:text-white rounded-lg text-sm transition-colors">Cancel</button>
+              <button onClick={() => setShowReminderModal(false)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
               <button
                 onClick={handleAddReminder}
                 disabled={!reminderForm.title.trim() || !reminderForm.dueAt}
-                className="flex-1 bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                className="flex-1 btn-gold disabled:opacity-50 px-4 py-2.5 rounded-lg text-sm"
               >
                 Save
               </button>

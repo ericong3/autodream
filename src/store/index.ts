@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { supabase } from '../lib/supabase';
 import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder } from '../types';
 
 interface StoreState {
@@ -13,543 +13,569 @@ interface StoreState {
   testDrives: TestDrive[];
   personalReminders: PersonalReminder[];
   viewPreference: Record<string, 'grid' | 'list'>;
+  loaded: boolean;
+
+  // Init
+  loadAll: () => Promise<void>;
 
   // Auth
-  login: (username: string, password: string) => boolean;
+  login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
 
   // Cars
-  addCar: (car: Car) => void;
-  updateCar: (id: string, car: Partial<Car>) => void;
-  deleteCar: (id: string) => void;
+  addCar: (car: Car) => Promise<void>;
+  updateCar: (id: string, car: Partial<Car>) => Promise<void>;
+  deleteCar: (id: string) => Promise<void>;
 
   // Repairs
-  addRepair: (repair: RepairJob) => void;
-  updateRepair: (id: string, repair: Partial<RepairJob>) => void;
-  deleteRepair: (id: string) => void;
+  addRepair: (repair: RepairJob) => Promise<void>;
+  updateRepair: (id: string, repair: Partial<RepairJob>) => Promise<void>;
+  deleteRepair: (id: string) => Promise<void>;
 
   // Quotations
-  addQuotation: (quotation: Quotation) => void;
-  updateQuotation: (id: string, quotation: Partial<Quotation>) => void;
-  deleteQuotation: (id: string) => void;
+  addQuotation: (quotation: Quotation) => Promise<void>;
+  updateQuotation: (id: string, quotation: Partial<Quotation>) => Promise<void>;
+  deleteQuotation: (id: string) => Promise<void>;
 
   // Instructions
-  addInstruction: (instruction: Instruction) => void;
-  updateInstruction: (id: string, instruction: Partial<Instruction>) => void;
-  deleteInstruction: (id: string) => void;
+  addInstruction: (instruction: Instruction) => Promise<void>;
+  updateInstruction: (id: string, instruction: Partial<Instruction>) => Promise<void>;
+  deleteInstruction: (id: string) => Promise<void>;
 
   // Users
-  addUser: (user: User) => void;
-  updateUser: (id: string, user: Partial<User>) => void;
-  deleteUser: (id: string) => void;
+  addUser: (user: User) => Promise<void>;
+  updateUser: (id: string, user: Partial<User>) => Promise<void>;
+  deleteUser: (id: string) => Promise<void>;
 
   // Customers
-  addCustomer: (customer: Customer) => void;
-  updateCustomer: (id: string, customer: Partial<Customer>) => void;
-  deleteCustomer: (id: string) => void;
+  addCustomer: (customer: Customer) => Promise<void>;
+  updateCustomer: (id: string, customer: Partial<Customer>) => Promise<void>;
+  deleteCustomer: (id: string) => Promise<void>;
 
   // Test Drives
-  addTestDrive: (testDrive: TestDrive) => void;
-  updateTestDrive: (id: string, testDrive: Partial<TestDrive>) => void;
-  deleteTestDrive: (id: string) => void;
+  addTestDrive: (testDrive: TestDrive) => Promise<void>;
+  updateTestDrive: (id: string, testDrive: Partial<TestDrive>) => Promise<void>;
+  deleteTestDrive: (id: string) => Promise<void>;
 
   // Personal Reminders
-  addPersonalReminder: (reminder: PersonalReminder) => void;
-  updatePersonalReminder: (id: string, reminder: Partial<PersonalReminder>) => void;
-  deletePersonalReminder: (id: string) => void;
+  addPersonalReminder: (reminder: PersonalReminder) => Promise<void>;
+  updatePersonalReminder: (id: string, reminder: Partial<PersonalReminder>) => Promise<void>;
+  deletePersonalReminder: (id: string) => Promise<void>;
 
   // View preference
   setViewPreference: (userId: string, page: string, view: 'grid' | 'list') => void;
 }
 
-const seedUsers: User[] = [
-  {
-    id: 'user-1',
-    name: 'Ahmad Director',
-    username: 'director',
-    password: 'admin123',
-    role: 'director',
-    phone: '+60123456789',
-    monthlyTarget: 8,
-    carsInMonth: 5,
-  },
-  {
-    id: 'user-2',
-    name: 'Ali Hassan',
-    username: 'ali',
-    password: 'pass123',
-    role: 'salesperson',
-    phone: '+60112345678',
-    monthlyTarget: 4,
-    carsInMonth: 3,
-  },
-  {
-    id: 'user-3',
-    name: 'Sarah Lim',
-    username: 'sarah',
-    password: 'pass123',
-    role: 'salesperson',
-    phone: '+60198765432',
-    monthlyTarget: 4,
-    carsInMonth: 2,
-  },
-  {
-    id: 'user-4',
-    name: 'Rajan Kumar',
-    username: 'rajan',
-    password: 'pass123',
-    role: 'mechanic',
-    phone: '+60134567890',
-    monthlyTarget: 0,
-    carsInMonth: 0,
-  },
-];
+// Map snake_case DB row to camelCase Car
+function rowToCar(r: any): Car {
+  return {
+    id: r.id,
+    make: r.make,
+    model: r.model,
+    year: r.year,
+    carPlate: r.car_plate,
+    colour: r.colour,
+    mileage: r.mileage,
+    condition: r.condition,
+    purchasePrice: r.purchase_price,
+    sellingPrice: r.selling_price,
+    transmission: r.transmission,
+    status: r.status,
+    photo: r.photo,
+    photos: r.photos ?? [],
+    greenCard: r.green_card,
+    assignedSalesperson: r.assigned_salesperson,
+    dateAdded: r.date_added,
+    notes: r.notes,
+    currentLocation: r.current_location,
+    checklistItems: r.checklist_items ?? [],
+    photoTakenBy: r.photo_taken_by ?? [],
+    loanSubmissions: r.loan_submissions ?? [],
+    finalDeal: r.final_deal,
+    deliveryPhoto: r.delivery_photo,
+    deliveryCollected: r.delivery_collected,
+  };
+}
 
-const seedCars: Car[] = [
-  {
-    id: 'car-1',
-    make: 'Perodua',
-    model: 'Myvi',
-    year: 2020,
-    colour: 'White',
-    mileage: 45000,
-    condition: 'good',
-    purchasePrice: 28000,
-    sellingPrice: 38000,
-    transmission: 'auto',
-    status: 'available',
-    assignedSalesperson: 'user-2',
-    dateAdded: '2024-01-10',
-    notes: 'Well maintained, one owner',
-  },
-  {
-    id: 'car-2',
-    make: 'Proton',
-    model: 'X70',
-    year: 2021,
-    colour: 'Grey',
-    mileage: 32000,
-    condition: 'excellent',
-    purchasePrice: 58000,
-    sellingPrice: 78000,
-    transmission: 'auto',
-    status: 'reserved',
-    assignedSalesperson: 'user-2',
-    dateAdded: '2024-01-15',
-    notes: 'Full service record, accident free',
-  },
-  {
-    id: 'car-3',
-    make: 'Honda',
-    model: 'City',
-    year: 2019,
-    colour: 'Silver',
-    mileage: 68000,
-    condition: 'good',
-    purchasePrice: 42000,
-    sellingPrice: 58000,
-    transmission: 'auto',
-    status: 'available',
-    assignedSalesperson: 'user-3',
-    dateAdded: '2024-01-20',
-    notes: 'Regular serviced at Honda dealer',
-  },
-  {
-    id: 'car-4',
-    make: 'Toyota',
-    model: 'Vios',
-    year: 2018,
-    colour: 'Blue',
-    mileage: 82000,
-    condition: 'fair',
-    purchasePrice: 32000,
-    sellingPrice: 44000,
-    transmission: 'auto',
-    status: 'sold',
-    assignedSalesperson: 'user-3',
-    dateAdded: '2024-01-05',
-    notes: 'Minor scratches on rear bumper',
-  },
-  {
-    id: 'car-5',
-    make: 'Nissan',
-    model: 'Almera',
-    year: 2022,
-    colour: 'Red',
-    mileage: 18000,
-    condition: 'excellent',
-    purchasePrice: 52000,
-    sellingPrice: 68000,
-    transmission: 'auto',
-    status: 'available',
-    assignedSalesperson: 'user-2',
-    dateAdded: '2024-02-01',
-    notes: 'Like new condition, under warranty',
-  },
-];
+function carToRow(c: Partial<Car>) {
+  const row: any = {};
+  if (c.id !== undefined) row.id = c.id;
+  if (c.make !== undefined) row.make = c.make;
+  if (c.model !== undefined) row.model = c.model;
+  if (c.year !== undefined) row.year = c.year;
+  if (c.carPlate !== undefined) row.car_plate = c.carPlate;
+  if (c.colour !== undefined) row.colour = c.colour;
+  if (c.mileage !== undefined) row.mileage = c.mileage;
+  if (c.condition !== undefined) row.condition = c.condition;
+  if (c.purchasePrice !== undefined) row.purchase_price = c.purchasePrice;
+  if (c.sellingPrice !== undefined) row.selling_price = c.sellingPrice;
+  if (c.transmission !== undefined) row.transmission = c.transmission;
+  if (c.status !== undefined) row.status = c.status;
+  if (c.photo !== undefined) row.photo = c.photo;
+  if (c.photos !== undefined) row.photos = c.photos;
+  if (c.greenCard !== undefined) row.green_card = c.greenCard;
+  if (c.assignedSalesperson !== undefined) row.assigned_salesperson = c.assignedSalesperson;
+  if (c.dateAdded !== undefined) row.date_added = c.dateAdded;
+  if (c.notes !== undefined) row.notes = c.notes;
+  if (c.currentLocation !== undefined) row.current_location = c.currentLocation;
+  if (c.checklistItems !== undefined) row.checklist_items = c.checklistItems;
+  if (c.photoTakenBy !== undefined) row.photo_taken_by = c.photoTakenBy;
+  if (c.loanSubmissions !== undefined) row.loan_submissions = c.loanSubmissions;
+  if (c.finalDeal !== undefined) row.final_deal = c.finalDeal;
+  if (c.deliveryPhoto !== undefined) row.delivery_photo = c.deliveryPhoto;
+  if (c.deliveryCollected !== undefined) row.delivery_collected = c.deliveryCollected;
+  return row;
+}
 
+function rowToRepair(r: any): RepairJob {
+  return {
+    id: r.id,
+    carId: r.car_id,
+    typeOfRepair: r.type_of_repair,
+    parts: r.parts ?? [],
+    labourCost: r.labour_cost,
+    totalCost: r.total_cost,
+    status: r.status,
+    location: r.location,
+    receiptPhoto: r.receipt_photo,
+    actualCost: r.actual_cost,
+    completedAt: r.completed_at,
+    notes: r.notes,
+    createdAt: r.created_at,
+  };
+}
 
-const seedRepairs: RepairJob[] = [
-  {
-    id: 'repair-1',
-    carId: 'car-1',
-    typeOfRepair: 'Full Detailing + Polishing',
-    parts: [
-      { name: 'Polish Compound', cost: 80 },
-      { name: 'Wax Coating', cost: 120 },
-    ],
-    labourCost: 250,
-    totalCost: 450,
-    status: 'done',
-    notes: 'Deep scratch removed, paint restored',
-    createdAt: '2024-01-12T10:00:00Z',
-  },
-  {
-    id: 'repair-2',
-    carId: 'car-3',
-    typeOfRepair: 'Brake Pad Replacement',
-    parts: [
-      { name: 'Front Brake Pads', cost: 180 },
-      { name: 'Rear Brake Pads', cost: 160 },
-      { name: 'Brake Fluid', cost: 35 },
-    ],
-    labourCost: 150,
-    totalCost: 525,
-    status: 'in_progress',
-    notes: 'Brake pads worn, replacing all four',
-    createdAt: '2024-02-15T08:00:00Z',
-  },
-];
+function repairToRow(r: Partial<RepairJob>) {
+  const row: any = {};
+  if (r.id !== undefined) row.id = r.id;
+  if (r.carId !== undefined) row.car_id = r.carId;
+  if (r.typeOfRepair !== undefined) row.type_of_repair = r.typeOfRepair;
+  if (r.parts !== undefined) row.parts = r.parts;
+  if (r.labourCost !== undefined) row.labour_cost = r.labourCost;
+  if (r.totalCost !== undefined) row.total_cost = r.totalCost;
+  if (r.status !== undefined) row.status = r.status;
+  if (r.location !== undefined) row.location = r.location;
+  if (r.receiptPhoto !== undefined) row.receipt_photo = r.receiptPhoto;
+  if (r.actualCost !== undefined) row.actual_cost = r.actualCost;
+  if (r.completedAt !== undefined) row.completed_at = r.completedAt;
+  if (r.notes !== undefined) row.notes = r.notes;
+  if (r.createdAt !== undefined) row.created_at = r.createdAt;
+  return row;
+}
 
-const seedQuotations: Quotation[] = [
-  {
-    id: 'quot-1',
-    type: 'inbound',
-    contactName: 'Farid Ismail',
-    phone: '+60153456789',
-    make: 'Perodua',
-    model: 'Ativa',
-    year: 2021,
-    mileage: 28000,
-    offeredPrice: 55000,
-    expiryDate: '2024-03-15',
-    status: 'pending',
-    notes: 'Owner willing to sell, car is in good condition',
-    createdAt: '2024-02-18T10:00:00Z',
-  },
-  {
-    id: 'quot-2',
-    type: 'outbound',
-    contactName: 'Melissa Chong',
-    phone: '+60178765432',
-    make: 'Toyota',
-    model: 'Camry',
-    year: 2020,
-    mileage: 41000,
-    offeredPrice: 115000,
-    expiryDate: '2024-03-10',
-    status: 'accepted',
-    notes: 'Customer interested in Camry, offered price accepted',
-    createdAt: '2024-02-10T14:00:00Z',
-  },
-];
+function rowToQuotation(r: any): Quotation {
+  return {
+    id: r.id,
+    type: r.type,
+    contactName: r.contact_name,
+    phone: r.phone,
+    make: r.make,
+    model: r.model,
+    year: r.year,
+    mileage: r.mileage,
+    offeredPrice: r.offered_price,
+    expiryDate: r.expiry_date,
+    status: r.status,
+    photo: r.photo,
+    notes: r.notes,
+    createdAt: r.created_at,
+  };
+}
 
-const seedCustomers: Customer[] = [
-  {
-    id: 'cust-1',
-    name: 'Zahra Binti Azlan',
-    ic: '920315-10-5678',
-    phone: '+60123334455',
-    email: 'zahra@gmail.com',
-    employer: 'Maybank',
-    monthlySalary: 4500,
-    source: 'walk_in',
-    leadStatus: 'follow_up',
-    interestedCarId: 'car-1',
-    assignedSalesId: 'user-2',
-    notes: 'Very interested, came twice to view the Myvi. Wants to negotiate price.',
-    followUpDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
-    dealPrice: 36500,
-    loanStatus: 'not_started',
-    createdAt: new Date(Date.now() - 7 * 86400000).toISOString(),
-  },
-  {
-    id: 'cust-2',
-    name: 'Hafiz Bin Kamal',
-    ic: '880920-14-3456',
-    phone: '+60198887766',
-    employer: 'Petronas',
-    monthlySalary: 7000,
-    source: 'referral',
-    leadStatus: 'follow_up',
-    interestedCarId: 'car-2',
-    assignedSalesId: 'user-2',
-    notes: 'Referred by previous customer. Loan submitted to CIMB.',
-    followUpDate: new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0],
-    dealPrice: 75000,
-    loanStatus: 'submitted',
-    loanBankSubmitted: 'CIMB',
-    createdAt: new Date(Date.now() - 14 * 86400000).toISOString(),
-  },
-  {
-    id: 'cust-3',
-    name: 'Priya Raj',
-    phone: '+60174445566',
-    email: 'priya.raj@hotmail.com',
-    employer: 'Grab',
-    monthlySalary: 3800,
-    source: 'online',
-    leadStatus: 'test_drive',
-    interestedCarId: 'car-3',
-    assignedSalesId: 'user-3',
-    notes: 'Contacted via Facebook. Wants test drive this weekend.',
-    followUpDate: new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0],
-    loanStatus: 'not_started',
-    createdAt: new Date(Date.now() - 3 * 86400000).toISOString(),
-  },
-  {
-    id: 'cust-4',
-    name: 'David Tan Wei Liang',
-    ic: '951105-07-1234',
-    phone: '+60165556677',
-    employer: 'HSBC',
-    monthlySalary: 5500,
-    source: 'online',
-    leadStatus: 'follow_up',
-    interestedCarId: 'car-4',
-    assignedSalesId: 'user-3',
-    dealPrice: 44000,
-    loanStatus: 'approved',
-    loanBankSubmitted: 'Public',
-    createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
-  },
-  {
-    id: 'cust-5',
-    name: 'Nurul Ain Binti Hamid',
-    phone: '+60112223344',
-    employer: 'Shopee',
-    monthlySalary: 3200,
-    source: 'online',
-    leadStatus: 'contacted',
-    interestedCarId: 'car-5',
-    assignedSalesId: 'user-2',
-    notes: 'Enquired about Almera via WhatsApp. Follow up needed.',
-    followUpDate: new Date().toISOString().split('T')[0],
-    loanStatus: 'not_started',
-    createdAt: new Date(Date.now() - 2 * 86400000).toISOString(),
-  },
-];
+function quotationToRow(q: Partial<Quotation>) {
+  const row: any = {};
+  if (q.id !== undefined) row.id = q.id;
+  if (q.type !== undefined) row.type = q.type;
+  if (q.contactName !== undefined) row.contact_name = q.contactName;
+  if (q.phone !== undefined) row.phone = q.phone;
+  if (q.make !== undefined) row.make = q.make;
+  if (q.model !== undefined) row.model = q.model;
+  if (q.year !== undefined) row.year = q.year;
+  if (q.mileage !== undefined) row.mileage = q.mileage;
+  if (q.offeredPrice !== undefined) row.offered_price = q.offeredPrice;
+  if (q.expiryDate !== undefined) row.expiry_date = q.expiryDate;
+  if (q.status !== undefined) row.status = q.status;
+  if (q.photo !== undefined) row.photo = q.photo;
+  if (q.notes !== undefined) row.notes = q.notes;
+  if (q.createdAt !== undefined) row.created_at = q.createdAt;
+  return row;
+}
 
-const seedTestDrives: TestDrive[] = [
-  {
-    id: 'td-1',
-    customerId: 'cust-3',
-    carId: 'car-3',
-    scheduledAt: new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 16),
-    status: 'scheduled',
-    notes: 'Customer wants morning slot, weekday preferred',
-    salesId: 'user-3',
-    createdAt: new Date(Date.now() - 86400000).toISOString(),
-  },
-];
+function rowToInstruction(r: any): Instruction {
+  return {
+    id: r.id,
+    type: r.type,
+    fromId: r.from_id,
+    toType: r.to_type,
+    toDepartment: r.to_department,
+    toIds: r.to_ids ?? [],
+    title: r.title,
+    message: r.message,
+    status: r.status,
+    requestCategory: r.request_category,
+    requestTarget: r.request_target,
+    amount: r.amount,
+    createdAt: r.created_at,
+  };
+}
 
-const seedPersonalReminders: PersonalReminder[] = [
-  {
-    id: 'prem-1',
-    userId: 'user-2',
-    title: 'Follow up with Zahra on Myvi deal',
-    dueAt: new Date(Date.now() + 86400000).toISOString().split('T')[0],
-    isCompleted: false,
-    createdAt: new Date(Date.now() - 86400000).toISOString(),
-  },
-  {
-    id: 'prem-2',
-    userId: 'user-2',
-    title: 'Submit CIMB loan documents for Hafiz',
-    dueAt: new Date().toISOString().split('T')[0],
-    isCompleted: false,
-    createdAt: new Date(Date.now() - 2 * 86400000).toISOString(),
-  },
-  {
-    id: 'prem-3',
-    userId: 'user-3',
-    title: 'Confirm test drive appointment with Priya',
-    dueAt: new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0],
-    isCompleted: false,
-    createdAt: new Date(Date.now() - 86400000).toISOString(),
-  },
-];
+function instructionToRow(i: Partial<Instruction>) {
+  const row: any = {};
+  if (i.id !== undefined) row.id = i.id;
+  if (i.type !== undefined) row.type = i.type;
+  if (i.fromId !== undefined) row.from_id = i.fromId;
+  if (i.toType !== undefined) row.to_type = i.toType;
+  if (i.toDepartment !== undefined) row.to_department = i.toDepartment;
+  if (i.toIds !== undefined) row.to_ids = i.toIds;
+  if (i.title !== undefined) row.title = i.title;
+  if (i.message !== undefined) row.message = i.message;
+  if (i.status !== undefined) row.status = i.status;
+  if (i.requestCategory !== undefined) row.request_category = i.requestCategory;
+  if (i.requestTarget !== undefined) row.request_target = i.requestTarget;
+  if (i.amount !== undefined) row.amount = i.amount;
+  if (i.createdAt !== undefined) row.created_at = i.createdAt;
+  return row;
+}
 
-const seedInstructions: Instruction[] = [
-  {
-    id: 'instr-1',
-    type: 'instruction',
-    fromId: 'user-1',
-    toType: 'all',
-    title: 'Monthly Sales Target Reminder',
-    message: 'Please ensure all pending quotations are followed up before end of month. Update the system with latest customer status.',
-    status: 'pending',
-    createdAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+function rowToCustomer(r: any): Customer {
+  return {
+    id: r.id,
+    name: r.name,
+    ic: r.ic,
+    phone: r.phone,
+    email: r.email,
+    employer: r.employer,
+    monthlySalary: r.monthly_salary,
+    source: r.source,
+    leadStatus: r.lead_status,
+    interestedCarId: r.interested_car_id,
+    assignedSalesId: r.assigned_sales_id,
+    notes: r.notes,
+    followUpDate: r.follow_up_date,
+    dealPrice: r.deal_price,
+    loanStatus: r.loan_status,
+    loanBankSubmitted: r.loan_bank_submitted,
+    loanApplications: r.loan_applications ?? [],
+    createdAt: r.created_at,
+  };
+}
+
+function customerToRow(c: Partial<Customer>) {
+  const row: any = {};
+  if (c.id !== undefined) row.id = c.id;
+  if (c.name !== undefined) row.name = c.name;
+  if (c.ic !== undefined) row.ic = c.ic;
+  if (c.phone !== undefined) row.phone = c.phone;
+  if (c.email !== undefined) row.email = c.email;
+  if (c.employer !== undefined) row.employer = c.employer;
+  if (c.monthlySalary !== undefined) row.monthly_salary = c.monthlySalary;
+  if (c.source !== undefined) row.source = c.source;
+  if (c.leadStatus !== undefined) row.lead_status = c.leadStatus;
+  if (c.interestedCarId !== undefined) row.interested_car_id = c.interestedCarId;
+  if (c.assignedSalesId !== undefined) row.assigned_sales_id = c.assignedSalesId;
+  if (c.notes !== undefined) row.notes = c.notes;
+  if (c.followUpDate !== undefined) row.follow_up_date = c.followUpDate;
+  if (c.dealPrice !== undefined) row.deal_price = c.dealPrice;
+  if (c.loanStatus !== undefined) row.loan_status = c.loanStatus;
+  if (c.loanBankSubmitted !== undefined) row.loan_bank_submitted = c.loanBankSubmitted;
+  if (c.loanApplications !== undefined) row.loan_applications = c.loanApplications;
+  if (c.createdAt !== undefined) row.created_at = c.createdAt;
+  return row;
+}
+
+function rowToTestDrive(r: any): TestDrive {
+  return {
+    id: r.id,
+    customerId: r.customer_id,
+    carId: r.car_id,
+    scheduledAt: r.scheduled_at,
+    status: r.status,
+    notes: r.notes,
+    salesId: r.sales_id,
+    createdAt: r.created_at,
+  };
+}
+
+function testDriveToRow(t: Partial<TestDrive>) {
+  const row: any = {};
+  if (t.id !== undefined) row.id = t.id;
+  if (t.customerId !== undefined) row.customer_id = t.customerId;
+  if (t.carId !== undefined) row.car_id = t.carId;
+  if (t.scheduledAt !== undefined) row.scheduled_at = t.scheduledAt;
+  if (t.status !== undefined) row.status = t.status;
+  if (t.notes !== undefined) row.notes = t.notes;
+  if (t.salesId !== undefined) row.sales_id = t.salesId;
+  if (t.createdAt !== undefined) row.created_at = t.createdAt;
+  return row;
+}
+
+function rowToUser(r: any): User {
+  return {
+    id: r.id,
+    name: r.name,
+    username: r.username,
+    password: r.password,
+    role: r.role,
+    phone: r.phone,
+    monthlyTarget: r.monthly_target,
+    carsInMonth: r.cars_in_month,
+  };
+}
+
+function userToRow(u: Partial<User>) {
+  const row: any = {};
+  if (u.id !== undefined) row.id = u.id;
+  if (u.name !== undefined) row.name = u.name;
+  if (u.username !== undefined) row.username = u.username;
+  if (u.password !== undefined) row.password = u.password;
+  if (u.role !== undefined) row.role = u.role;
+  if (u.phone !== undefined) row.phone = u.phone;
+  if (u.monthlyTarget !== undefined) row.monthly_target = u.monthlyTarget;
+  if (u.carsInMonth !== undefined) row.cars_in_month = u.carsInMonth;
+  return row;
+}
+
+function rowToReminder(r: any): PersonalReminder {
+  return {
+    id: r.id,
+    userId: r.user_id,
+    title: r.title,
+    dueAt: r.due_at,
+    isCompleted: r.is_completed,
+    createdAt: r.created_at,
+  };
+}
+
+function reminderToRow(r: Partial<PersonalReminder>) {
+  const row: any = {};
+  if (r.id !== undefined) row.id = r.id;
+  if (r.userId !== undefined) row.user_id = r.userId;
+  if (r.title !== undefined) row.title = r.title;
+  if (r.dueAt !== undefined) row.due_at = r.dueAt;
+  if (r.isCompleted !== undefined) row.is_completed = r.isCompleted;
+  if (r.createdAt !== undefined) row.created_at = r.createdAt;
+  return row;
+}
+
+export const useStore = create<StoreState>()((set, get) => ({
+  currentUser: null,
+  users: [],
+  cars: [],
+  repairs: [],
+  quotations: [],
+  instructions: [],
+  customers: [],
+  testDrives: [],
+  personalReminders: [],
+  viewPreference: {},
+  loaded: false,
+
+  loadAll: async () => {
+    const [users, cars, repairs, quotations, instructions, customers, testDrives, reminders] =
+      await Promise.all([
+        supabase.from('users').select('*'),
+        supabase.from('cars').select('*'),
+        supabase.from('repairs').select('*'),
+        supabase.from('quotations').select('*'),
+        supabase.from('instructions').select('*'),
+        supabase.from('customers').select('*'),
+        supabase.from('test_drives').select('*'),
+        supabase.from('personal_reminders').select('*'),
+      ]);
+
+    set({
+      users: (users.data ?? []).map(rowToUser),
+      cars: (cars.data ?? []).map(rowToCar),
+      repairs: (repairs.data ?? []).map(rowToRepair),
+      quotations: (quotations.data ?? []).map(rowToQuotation),
+      instructions: (instructions.data ?? []).map(rowToInstruction),
+      customers: (customers.data ?? []).map(rowToCustomer),
+      testDrives: (testDrives.data ?? []).map(rowToTestDrive),
+      personalReminders: (reminders.data ?? []).map(rowToReminder),
+      loaded: true,
+    });
   },
-  {
-    id: 'instr-2',
-    type: 'instruction',
-    fromId: 'user-1',
-    toType: 'department',
-    toDepartment: 'mechanic',
-    title: 'Workshop Safety Inspection',
-    message: 'Conduct a full safety inspection of all tools and equipment this week. Report any issues immediately.',
-    status: 'acknowledged',
-    createdAt: new Date(Date.now() - 5 * 86400000).toISOString(),
+
+  login: async (username, password) => {
+    const { data } = await supabase
+      .from('users')
+      .select('*')
+      .eq('username', username)
+      .eq('password', password)
+      .single();
+    if (data) {
+      set({ currentUser: rowToUser(data) });
+      return true;
+    }
+    return false;
   },
-  {
-    id: 'req-1',
-    type: 'request',
-    fromId: 'user-2',
-    title: 'Request to Purchase Polish Supplies',
-    message: 'We are running low on polish compound and microfibre cloths. Requesting approval to purchase from AutoCare supplier.',
-    requestCategory: 'purchase',
-    amount: 350,
-    status: 'pending',
-    createdAt: new Date(Date.now() - 86400000).toISOString(),
+
+  logout: () => set({ currentUser: null }),
+
+  // Cars
+  addCar: async (car) => {
+    set((s) => ({ cars: [...s.cars, car] }));
+    const { error } = await supabase.from('cars').insert(carToRow(car));
+    if (error) console.error('addCar failed:', error.message);
   },
-];
+  updateCar: async (id, car) => {
+    set((s) => ({ cars: s.cars.map((c) => (c.id === id ? { ...c, ...car } : c)) }));
+    const { error } = await supabase.from('cars').update(carToRow(car)).eq('id', id);
+    if (error) console.error('updateCar failed:', error.message);
+  },
+  deleteCar: async (id) => {
+    set((s) => ({ cars: s.cars.filter((c) => c.id !== id) }));
+    const { error } = await supabase.from('cars').delete().eq('id', id);
+    if (error) console.error('deleteCar failed:', error.message);
+  },
 
-export const useStore = create<StoreState>()(
-  persist(
-    (set, get) => ({
-      currentUser: null,
-      users: seedUsers,
-      cars: seedCars,
-      repairs: seedRepairs,
-      quotations: seedQuotations,
-      instructions: seedInstructions,
-      customers: seedCustomers,
-      testDrives: seedTestDrives,
-      personalReminders: seedPersonalReminders,
-      viewPreference: {},
-
-      login: (username, password) => {
-        const user = get().users.find(
-          (u) => u.username === username && u.password === password
-        );
-        if (user) {
-          set({ currentUser: user });
-          return true;
-        }
-        return false;
-      },
-
-      logout: () => set({ currentUser: null }),
-
-      addCar: (car) => set((s) => ({ cars: [...s.cars, car] })),
-      updateCar: (id, car) =>
-        set((s) => ({
-          cars: s.cars.map((c) => (c.id === id ? { ...c, ...car } : c)),
-        })),
-      deleteCar: (id) =>
-        set((s) => ({ cars: s.cars.filter((c) => c.id !== id) })),
-
-      addRepair: (repair) => set((s) => {
-        const updatedCars = repair.location && repair.status !== 'queued'
-          ? s.cars.map((c) =>
-              c.id === repair.carId
-                ? { ...c, currentLocation: repair.location, status: 'in_workshop' as Car['status'] }
-                : c
-            )
-          : s.cars;
-        return { repairs: [...s.repairs, repair], cars: updatedCars };
-      }),
-      updateRepair: (id, repair) => set((s) => {
-        const existing = s.repairs.find((r) => r.id === id);
-        const updatedRepairs = s.repairs.map((r) => (r.id === id ? { ...r, ...repair } : r));
-        let updatedCars = s.cars;
-        if (existing) {
-          if (repair.status === 'done') {
+  // Repairs
+  addRepair: async (repair) => {
+    const updatedCars = repair.location && repair.status !== 'queued'
+      ? get().cars.map((c) =>
+          c.id === repair.carId
+            ? { ...c, currentLocation: repair.location, status: 'in_workshop' as Car['status'] }
+            : c
+        )
+      : get().cars;
+    set((s) => ({ repairs: [...s.repairs, repair], cars: updatedCars }));
+    const { error } = await supabase.from('repairs').insert(repairToRow(repair));
+    if (error) console.error('addRepair failed:', error.message);
+    if (repair.location && repair.status !== 'queued') {
+      await supabase.from('cars').update({ current_location: repair.location, status: 'in_workshop' }).eq('id', repair.carId);
+    }
+  },
+  updateRepair: async (id, repair) => {
+    const existing = get().repairs.find((r) => r.id === id);
+    const { error: repErr } = await supabase.from('repairs').update(repairToRow(repair)).eq('id', id);
+    if (repErr) console.error('updateRepair failed:', repErr.message);
+    set((s) => {
+      const updatedRepairs = s.repairs.map((r) => (r.id === id ? { ...r, ...repair } : r));
+      let updatedCars = s.cars;
+      if (existing) {
+        if (repair.status === 'done') {
+          updatedCars = s.cars.map((c) =>
+            c.id === existing.carId ? { ...c, currentLocation: 'Showroom' } : c
+          );
+        } else if (repair.status === 'pending' && existing.status === 'queued') {
+          const location = repair.location ?? existing.location;
+          if (location) {
             updatedCars = s.cars.map((c) =>
-              c.id === existing.carId ? { ...c, currentLocation: 'Showroom' } : c
-            );
-          } else if (repair.status === 'pending' && existing.status === 'queued') {
-            // Queued → Sent Out: update car location to this repair's location
-            const location = repair.location ?? existing.location;
-            if (location) {
-              updatedCars = s.cars.map((c) =>
-                c.id === existing.carId ? { ...c, currentLocation: location, status: 'in_workshop' as Car['status'] } : c
-              );
-            }
-          } else if (repair.location) {
-            updatedCars = s.cars.map((c) =>
-              c.id === existing.carId ? { ...c, currentLocation: repair.location } : c
+              c.id === existing.carId ? { ...c, currentLocation: location, status: 'in_workshop' as Car['status'] } : c
             );
           }
+        } else if (repair.location) {
+          updatedCars = s.cars.map((c) =>
+            c.id === existing.carId ? { ...c, currentLocation: repair.location } : c
+          );
         }
-        return { repairs: updatedRepairs, cars: updatedCars };
-      }),
-      deleteRepair: (id) =>
-        set((s) => ({ repairs: s.repairs.filter((r) => r.id !== id) })),
+      }
+      return { repairs: updatedRepairs, cars: updatedCars };
+    });
+  },
+  deleteRepair: async (id) => {
+    set((s) => ({ repairs: s.repairs.filter((r) => r.id !== id) }));
+    await supabase.from('repairs').delete().eq('id', id);
+  },
 
-      addQuotation: (quotation) =>
-        set((s) => ({ quotations: [...s.quotations, quotation] })),
-      updateQuotation: (id, quotation) =>
-        set((s) => ({
-          quotations: s.quotations.map((q) =>
-            q.id === id ? { ...q, ...quotation } : q
-          ),
-        })),
-      deleteQuotation: (id) =>
-        set((s) => ({ quotations: s.quotations.filter((q) => q.id !== id) })),
+  // Quotations
+  addQuotation: async (quotation) => {
+    set((s) => ({ quotations: [...s.quotations, quotation] }));
+    const { error } = await supabase.from('quotations').insert(quotationToRow(quotation));
+    if (error) console.error('addQuotation failed:', error.message);
+  },
+  updateQuotation: async (id, quotation) => {
+    set((s) => ({ quotations: s.quotations.map((q) => (q.id === id ? { ...q, ...quotation } : q)) }));
+    await supabase.from('quotations').update(quotationToRow(quotation)).eq('id', id);
+  },
+  deleteQuotation: async (id) => {
+    set((s) => ({ quotations: s.quotations.filter((q) => q.id !== id) }));
+    await supabase.from('quotations').delete().eq('id', id);
+  },
 
-      addInstruction: (instruction) =>
-        set((s) => ({ instructions: [...s.instructions, instruction] })),
-      updateInstruction: (id, instruction) =>
-        set((s) => ({
-          instructions: s.instructions.map((i) =>
-            i.id === id ? { ...i, ...instruction } : i
-          ),
-        })),
-      deleteInstruction: (id) =>
-        set((s) => ({ instructions: s.instructions.filter((i) => i.id !== id) })),
+  // Instructions
+  addInstruction: async (instruction) => {
+    set((s) => ({ instructions: [...s.instructions, instruction] }));
+    const { error } = await supabase.from('instructions').insert(instructionToRow(instruction));
+    if (error) console.error('addInstruction failed:', error.message);
+  },
+  updateInstruction: async (id, instruction) => {
+    set((s) => ({ instructions: s.instructions.map((i) => (i.id === id ? { ...i, ...instruction } : i)) }));
+    await supabase.from('instructions').update(instructionToRow(instruction)).eq('id', id);
+  },
+  deleteInstruction: async (id) => {
+    set((s) => ({ instructions: s.instructions.filter((i) => i.id !== id) }));
+    await supabase.from('instructions').delete().eq('id', id);
+  },
 
-      addUser: (user) => set((s) => ({ users: [...s.users, user] })),
-      updateUser: (id, user) =>
-        set((s) => ({
-          users: s.users.map((u) => (u.id === id ? { ...u, ...user } : u)),
-          currentUser:
-            s.currentUser?.id === id
-              ? { ...s.currentUser, ...user }
-              : s.currentUser,
-        })),
-      deleteUser: (id) =>
-        set((s) => ({ users: s.users.filter((u) => u.id !== id) })),
+  // Users
+  addUser: async (user) => {
+    set((s) => ({ users: [...s.users, user] }));
+    const { error } = await supabase.from('users').insert(userToRow(user));
+    if (error) console.error('addUser failed:', error.message);
+  },
+  updateUser: async (id, user) => {
+    set((s) => ({
+      users: s.users.map((u) => (u.id === id ? { ...u, ...user } : u)),
+      currentUser: s.currentUser?.id === id ? { ...s.currentUser, ...user } : s.currentUser,
+    }));
+    await supabase.from('users').update(userToRow(user)).eq('id', id);
+  },
+  deleteUser: async (id) => {
+    set((s) => ({ users: s.users.filter((u) => u.id !== id) }));
+    await supabase.from('users').delete().eq('id', id);
+  },
 
-      addCustomer: (customer) => set((s) => ({ customers: [...s.customers, customer] })),
-      updateCustomer: (id, customer) =>
-        set((s) => ({ customers: s.customers.map((c) => (c.id === id ? { ...c, ...customer } : c)) })),
-      deleteCustomer: (id) =>
-        set((s) => ({ customers: s.customers.filter((c) => c.id !== id) })),
+  // Customers
+  addCustomer: async (customer) => {
+    set((s) => ({ customers: [...s.customers, customer] }));
+    const { error } = await supabase.from('customers').insert(customerToRow(customer));
+    if (error) console.error('addCustomer failed:', error.message);
+  },
+  updateCustomer: async (id, customer) => {
+    set((s) => ({ customers: s.customers.map((c) => (c.id === id ? { ...c, ...customer } : c)) }));
+    await supabase.from('customers').update(customerToRow(customer)).eq('id', id);
+  },
+  deleteCustomer: async (id) => {
+    set((s) => ({ customers: s.customers.filter((c) => c.id !== id) }));
+    await supabase.from('customers').delete().eq('id', id);
+  },
 
-      addTestDrive: (testDrive) => set((s) => ({ testDrives: [...s.testDrives, testDrive] })),
-      updateTestDrive: (id, testDrive) =>
-        set((s) => ({ testDrives: s.testDrives.map((t) => (t.id === id ? { ...t, ...testDrive } : t)) })),
-      deleteTestDrive: (id) =>
-        set((s) => ({ testDrives: s.testDrives.filter((t) => t.id !== id) })),
+  // Test Drives
+  addTestDrive: async (testDrive) => {
+    set((s) => ({ testDrives: [...s.testDrives, testDrive] }));
+    const { error } = await supabase.from('test_drives').insert(testDriveToRow(testDrive));
+    if (error) console.error('addTestDrive failed:', error.message);
+  },
+  updateTestDrive: async (id, testDrive) => {
+    set((s) => ({ testDrives: s.testDrives.map((t) => (t.id === id ? { ...t, ...testDrive } : t)) }));
+    await supabase.from('test_drives').update(testDriveToRow(testDrive)).eq('id', id);
+  },
+  deleteTestDrive: async (id) => {
+    set((s) => ({ testDrives: s.testDrives.filter((t) => t.id !== id) }));
+    await supabase.from('test_drives').delete().eq('id', id);
+  },
 
-      addPersonalReminder: (reminder) => set((s) => ({ personalReminders: [...s.personalReminders, reminder] })),
-      updatePersonalReminder: (id, reminder) =>
-        set((s) => ({ personalReminders: s.personalReminders.map((r) => (r.id === id ? { ...r, ...reminder } : r)) })),
-      deletePersonalReminder: (id) =>
-        set((s) => ({ personalReminders: s.personalReminders.filter((r) => r.id !== id) })),
+  // Personal Reminders
+  addPersonalReminder: async (reminder) => {
+    set((s) => ({ personalReminders: [...s.personalReminders, reminder] }));
+    const { error } = await supabase.from('personal_reminders').insert(reminderToRow(reminder));
+    if (error) console.error('addPersonalReminder failed:', error.message);
+  },
+  updatePersonalReminder: async (id, reminder) => {
+    set((s) => ({ personalReminders: s.personalReminders.map((r) => (r.id === id ? { ...r, ...reminder } : r)) }));
+    await supabase.from('personal_reminders').update(reminderToRow(reminder)).eq('id', id);
+  },
+  deletePersonalReminder: async (id) => {
+    set((s) => ({ personalReminders: s.personalReminders.filter((r) => r.id !== id) }));
+    await supabase.from('personal_reminders').delete().eq('id', id);
+  },
 
-      setViewPreference: (userId, page, view) =>
-        set((s) => ({
-          viewPreference: {
-            ...s.viewPreference,
-            [`${userId}-${page}`]: view,
-          },
-        })),
-    }),
-    {
-      name: 'autodream-storage',
-    }
-  )
-);
+  setViewPreference: (userId, page, view) =>
+    set((s) => ({
+      viewPreference: {
+        ...s.viewPreference,
+        [`${userId}-${page}`]: view,
+      },
+    })),
+}));

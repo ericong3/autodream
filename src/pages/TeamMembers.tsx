@@ -6,7 +6,7 @@ import Modal from '../components/Modal';
 import { formatRM, generateId } from '../utils/format';
 
 function inputCls(error?: string) {
-  return `w-full bg-[#111d35] border ${error ? 'border-red-500/50' : 'border-[#1a2a4a]'} text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 transition-colors`;
+  return `w-full bg-obsidian-700/60 border ${error ? 'border-red-500/50' : 'border-obsidian-400/60'} text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500 transition-colors`;
 }
 
 function FormField({
@@ -55,8 +55,8 @@ const ROLE_CONFIG = {
   salesperson: {
     label: 'Salesperson',
     icon: UserCheck,
-    badgeBg: 'bg-cyan-500/20 border-cyan-500/30 text-cyan-400',
-    avatarBg: 'bg-cyan-500/20 border-cyan-500/30 text-cyan-400',
+    badgeBg: 'bg-gold-500/20 border-gold-500/30 text-gold-400',
+    avatarBg: 'bg-gold-500/20 border-gold-500/30 text-gold-400',
   },
   mechanic: {
     label: 'Mechanic',
@@ -183,14 +183,14 @@ export default function TeamMembers() {
                   onClick={() => setFilterRole(role)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${
                     active
-                      ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400'
-                      : 'border-[#1a2a4a] text-gray-500 hover:text-gray-300 hover:border-gray-600'
+                      ? 'bg-gold-500/20 border-gold-500/40 text-gold-400'
+                      : 'border-obsidian-400/60 text-gray-500 hover:text-gray-300 hover:border-gray-600'
                   }`}
                 >
                   {role === 'all' ? 'All' : role === 'director' ? 'Directors' : role === 'salesperson' ? 'Salespeople' : 'Mechanics'}{' '}
                   <span
                     className={`ml-1 px-1.5 py-0.5 rounded text-xs ${
-                      active ? 'bg-cyan-500/30 text-cyan-300' : 'bg-[#1a2a4a] text-gray-500'
+                      active ? 'bg-gold-500/30 text-gold-300' : 'bg-[#2C2415] text-gray-500'
                     }`}
                   >
                     {count}
@@ -208,7 +208,7 @@ export default function TeamMembers() {
             setErrors({});
             setShowModal(true);
           }}
-          className="flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-cyan-500/20"
+          className="flex items-center gap-2 btn-gold px-4 py-2.5 rounded-lg text-sm"
         >
           <Plus size={16} />
           Add Member
@@ -232,7 +232,7 @@ export default function TeamMembers() {
             return (
               <div
                 key={member.id}
-                className="bg-[#0d1526] border border-[#1a2a4a] rounded-xl p-5 hover:border-cyan-500/30 transition-colors"
+                className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-5 hover:border-gold-500/30 transition-colors"
               >
                 {/* Card header */}
                 <div className="flex items-start justify-between mb-4">
@@ -257,7 +257,7 @@ export default function TeamMembers() {
                   <div className="flex gap-1">
                     <button
                       onClick={() => openEdit(member)}
-                      className="p-1.5 text-gray-400 hover:text-cyan-400 hover:bg-[#1a2a4a] rounded-lg transition-colors"
+                      className="p-1.5 text-gray-400 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors"
                     >
                       <Edit size={14} />
                     </button>
@@ -294,7 +294,7 @@ export default function TeamMembers() {
                           {member.carsInMonth} / {member.monthlyTarget} cars
                         </span>
                       </div>
-                      <div className="h-2 bg-[#111d35] rounded-full overflow-hidden">
+                      <div className="h-2 bg-obsidian-700/60 rounded-full overflow-hidden">
                         {(() => {
                           const pct = Math.min(
                             100,
@@ -306,7 +306,7 @@ export default function TeamMembers() {
                                 pct >= 100
                                   ? 'bg-green-500'
                                   : pct >= 50
-                                  ? 'bg-cyan-500'
+                                  ? 'bg-gold-500'
                                   : 'bg-yellow-500'
                               }`}
                               style={{ width: `${pct}%` }}
@@ -317,11 +317,11 @@ export default function TeamMembers() {
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
-                      <div className="bg-[#111d35] rounded-lg p-2.5 border border-[#1a2a4a]">
+                      <div className="bg-obsidian-700/60 rounded-lg p-2.5 border border-obsidian-400/60">
                         <p className="text-gray-500 text-xs">Cars Sold</p>
                         <p className="text-white font-bold text-lg">{soldCount}</p>
                       </div>
-                      <div className="bg-[#111d35] rounded-lg p-2.5 border border-[#1a2a4a]">
+                      <div className="bg-obsidian-700/60 rounded-lg p-2.5 border border-obsidian-400/60">
                         <p className="text-gray-500 text-xs">Commission</p>
                         <p className="text-purple-400 font-bold">{formatRM(commission)}</p>
                       </div>
@@ -394,7 +394,7 @@ export default function TeamMembers() {
                   ? 'bg-purple-500/20 border-purple-500/50 text-purple-300'
                   : role === 'mechanic'
                   ? 'bg-orange-500/20 border-orange-500/50 text-orange-300'
-                  : 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300';
+                  : 'bg-gold-500/20 border-gold-500/50 text-gold-300';
                 return (
                   <button
                     key={role}
@@ -403,7 +403,7 @@ export default function TeamMembers() {
                     className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
                       selected
                         ? selectedStyle
-                        : 'bg-[#111d35] border-[#1a2a4a] text-gray-400 hover:text-gray-200 hover:border-gray-600'
+                        : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:text-gray-200 hover:border-gray-600'
                     }`}
                   >
                     <cfg.icon size={15} />
@@ -434,13 +434,13 @@ export default function TeamMembers() {
               setShowModal(false);
               setEditTarget(null);
             }}
-            className="flex-1 px-4 py-2.5 border border-[#1a2a4a] text-gray-400 hover:text-white rounded-lg text-sm transition-colors"
+            className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
-            className="flex-1 bg-cyan-500 hover:bg-cyan-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+            className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm"
           >
             {editTarget ? 'Save Changes' : 'Add Member'}
           </button>

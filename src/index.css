@@ -1,10 +1,167 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Outfit:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 * { box-sizing: border-box; }
-body { background: #0a0f1e; color: white; font-family: 'Inter', system-ui, sans-serif; }
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #0d1526; }
-::-webkit-scrollbar-thumb { background: #1e3358; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #22d3ee; }
+
+body {
+  background: #050504;
+  color: white;
+  font-family: 'Outfit', system-ui, sans-serif;
+}
+
+/* ─── Scrollbar ───────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: #0A0906; }
+::-webkit-scrollbar-thumb { background: #2A2316; border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: #EAB820; }
+
+/* ─── Typography ──────────────────────────────────────────── */
+.font-display { font-family: 'Cinzel', serif; }
+
+.gold-text {
+  background: linear-gradient(135deg, #F7D96A 0%, #EAB820 50%, #D4A017 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── Section Headers ─────────────────────────────────────── */
+.section-title {
+  font-family: 'Cinzel', serif;
+  font-weight: 600;
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  background: linear-gradient(135deg, #F7D96A 0%, #EAB820 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── Cards ───────────────────────────────────────────────── */
+.card-surface {
+  background: linear-gradient(145deg, #141210 0%, #0E0D0B 100%);
+  border: 1px solid #2A2316;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+}
+
+.card-surface:hover {
+  border-color: #3D3420;
+  box-shadow: 0 4px 32px rgba(0,0,0,0.5);
+}
+
+/* ─── Buttons ─────────────────────────────────────────────── */
+.btn-gold {
+  background: linear-gradient(135deg, #EAB820 0%, #B8880A 100%);
+  color: #050504;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: 0 4px 18px rgba(234,184,32,0.28);
+  transition: all 0.2s ease;
+}
+.btn-gold:hover:not(:disabled) {
+  background: linear-gradient(135deg, #F7D96A 0%, #D4A017 100%);
+  box-shadow: 0 4px 28px rgba(234,184,32,0.42);
+  transform: translateY(-1px);
+}
+.btn-gold:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 2px 12px rgba(234,184,32,0.22);
+}
+.btn-gold:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  border: 1px solid #2A2316;
+  color: #9A9080;
+  transition: all 0.15s;
+}
+.btn-ghost:hover {
+  border-color: #3D3420;
+  color: white;
+  background: rgba(42,35,22,0.5);
+}
+
+/* ─── Inputs ──────────────────────────────────────────────── */
+.input {
+  background: #0E0D0B !important;
+  border: 1px solid #2A2316;
+  color: #F0EDE8 !important;
+  border-radius: 0.5rem;
+  padding: 0.5625rem 0.875rem;
+  font-size: 0.875rem;
+  font-family: 'Outfit', sans-serif;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  width: 100%;
+  -webkit-text-fill-color: #F0EDE8;
+  text-transform: capitalize;
+}
+.input[autocomplete="username"],
+.input[autocomplete="email"],
+.input[autocomplete="current-password"],
+.input[autocomplete="new-password"],
+.input[data-no-capitalize] {
+  text-transform: none;
+}
+.input::placeholder { color: #4A4030 !important; -webkit-text-fill-color: #4A4030; }
+.input:focus {
+  outline: none;
+  border-color: #EAB820 !important;
+  box-shadow: 0 0 0 3px rgba(234,184,32,0.12);
+}
+/* Autofill override */
+.input:-webkit-autofill,
+.input:-webkit-autofill:hover,
+.input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0px 1000px #0E0D0B inset !important;
+  -webkit-text-fill-color: #F0EDE8 !important;
+  caret-color: #F0EDE8;
+}
+/* Select option text */
+.input option {
+  background: #141210;
+  color: #F0EDE8;
+}
+
+/* ─── Gold glow utilities ─────────────────────────────────── */
+.glow-gold-sm { box-shadow: 0 0 10px rgba(234,184,32,0.18); }
+.glow-gold    { box-shadow: 0 0 24px rgba(234,184,32,0.28); }
+.glow-gold-lg { box-shadow: 0 0 44px rgba(234,184,32,0.38); }
+
+/* ─── Animated gold shimmer ───────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.shimmer-gold {
+  background: linear-gradient(90deg, #B8880A 0%, #F7D96A 40%, #EAB820 50%, #F7D96A 60%, #B8880A 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer 4s linear infinite;
+}
+
+/* ─── Gold divider ────────────────────────────────────────── */
+.divider-gold {
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, #2A2316 20%, #3D3420 50%, #2A2316 80%, transparent 100%);
+}
+
+/* ─── Active nav glow dot ─────────────────────────────────── */
+.nav-dot::after {
+  content: '';
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #EAB820;
+  box-shadow: 0 0 6px rgba(234,184,32,0.7);
+  margin: 2px auto 0;
+}
