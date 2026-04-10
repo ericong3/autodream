@@ -90,6 +90,7 @@ export default function Inventory() {
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const greenCardInputRef = useRef<HTMLInputElement>(null);
   const dragIndexRef = useRef<number | null>(null);
@@ -107,10 +108,17 @@ export default function Inventory() {
   const handlePhotoFiles = async (files: FileList | null) => {
     if (!files) return;
     const valid = Array.from(files).filter((f) => f.type.startsWith('image/'));
-    const urls = await Promise.all(valid.map((f) => uploadToStorage(f, 'cars')));
-    const updated = [...(form.photos ?? []), ...urls].slice(0, 20);
-    setForm((prev) => ({ ...prev, photos: updated, photo: updated[0] ?? prev.photo }));
-    setErrors((prev) => ({ ...prev, photos: '' }));
+    setUploadingPhotos(true);
+    try {
+      const urls = await Promise.all(valid.map((f) => uploadToStorage(f, 'cars')));
+      const updated = [...(form.photos ?? []), ...urls].slice(0, 20);
+      setForm((prev) => ({ ...prev, photos: updated, photo: updated[0] ?? prev.photo }));
+      setErrors((prev) => ({ ...prev, photos: '' }));
+    } catch (e) {
+      setErrors((prev) => ({ ...prev, photos: 'Failed to upload photos. Please try again.' }));
+    } finally {
+      setUploadingPhotos(false);
+    }
   };
 
   const removePhoto = (idx: number) => {
@@ -567,15 +575,28 @@ export default function Inventory() {
                 </div>
               ))}
 
+              {/* Uploading indicator */}
+              {uploadingPhotos && (
+                <div className="w-20 h-20 rounded-lg border border-obsidian-400/60 flex flex-col items-center justify-center gap-1 text-gold-400">
+                  <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                  <span className="text-[9px]">Uploading...</span>
+                </div>
+              )}
+
               {/* Add photo button */}
-              <button
-                type="button"
-                onClick={() => photoInputRef.current?.click()}
-                className="w-20 h-20 rounded-lg border-2 border-dashed border-obsidian-400/60 hover:border-gold-500/50 flex flex-col items-center justify-center gap-1 text-gray-600 hover:text-gold-400 transition-colors"
-              >
-                <ImagePlus size={18} />
-                <span className="text-[10px]">Add</span>
-              </button>
+              {!uploadingPhotos && (
+                <button
+                  type="button"
+                  onClick={() => photoInputRef.current?.click()}
+                  className="w-20 h-20 rounded-lg border-2 border-dashed border-obsidian-400/60 hover:border-gold-500/50 flex flex-col items-center justify-center gap-1 text-gray-600 hover:text-gold-400 transition-colors"
+                >
+                  <ImagePlus size={18} />
+                  <span className="text-[10px]">Add</span>
+                </button>
+              )}
             </div>
 
             <input
