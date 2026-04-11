@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
-import { Car, Consignment } from '../types';
+import { Car } from '../types';
 import Modal from '../components/Modal';
 import { formatRM, formatMileage, generateId } from '../utils/format';
 

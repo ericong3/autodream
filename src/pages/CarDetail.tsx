@@ -30,12 +30,6 @@ import { Car, RepairJob, ChecklistItem, REPAIR_TYPES, REPAIR_LOCATIONS, DEFAULT_
 import Modal from '../components/Modal';
 import { formatRM, formatMileage, generateId } from '../utils/format';
 
-const CONDITION_BADGE: Record<string, string> = {
-  excellent: 'bg-green-500/20 text-green-400 border border-green-500/30',
-  good: 'bg-blue-500/20 text-blue-400 border border-blue-500/30',
-  fair: 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30',
-  poor: 'bg-red-500/20 text-red-400 border border-red-500/30',
-};
 
 const STATUS_BADGE: Record<string, string> = {
   coming_soon: 'bg-purple-500/20 text-purple-400',
