@@ -94,6 +94,7 @@ function rowToCar(r: any): Car {
     finalDeal: r.final_deal,
     deliveryPhoto: r.delivery_photo,
     deliveryCollected: r.delivery_collected,
+    consignment: r.consignment ?? undefined,
   };
 }
 
@@ -124,6 +125,7 @@ function carToRow(c: Partial<Car>) {
   if (c.finalDeal !== undefined) row.final_deal = c.finalDeal;
   if (c.deliveryPhoto !== undefined) row.delivery_photo = c.deliveryPhoto;
   if (c.deliveryCollected !== undefined) row.delivery_collected = c.deliveryCollected;
+  if (c.consignment !== undefined) row.consignment = c.consignment;
   return row;
 }
 

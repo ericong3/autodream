@@ -8,7 +8,6 @@ import {
   UsersRound,
   ClipboardList,
   Bot,
-  Zap,
   History,
   Users,
   GitBranch,

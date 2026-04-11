@@ -46,6 +46,13 @@ export interface FinalDeal {
   rejectionNotes?: string;
 }
 
+export interface Consignment {
+  dealer: string;
+  terms: 'fixed_amount' | 'profit_split';
+  fixedAmount?: number;
+  splitPercent?: number;
+}
+
 export interface Car {
   id: string;
   make: string;
@@ -73,6 +80,7 @@ export interface Car {
   finalDeal?: FinalDeal;
   deliveryPhoto?: string;
   deliveryCollected?: boolean;
+  consignment?: Consignment;
 }
 
 export interface RepairJob {

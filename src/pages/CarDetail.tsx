@@ -22,6 +22,7 @@ import {
   Download,
   Image,
   FileText,
+  Building2,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
@@ -404,9 +405,6 @@ export default function CarDetail() {
                 <span className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_BADGE[car.status] ?? 'bg-gray-500/20 text-gray-400'}`}>
                   {STATUS_LABEL[car.status] ?? car.status}
                 </span>
-                <span className={`px-3 py-1 rounded-full text-sm font-medium ${CONDITION_BADGE[car.condition]}`}>
-                  {car.condition}
-                </span>
               </div>
             </div>
 
@@ -477,6 +475,43 @@ export default function CarDetail() {
                 Download Green Card
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Consignment ── */}
+      {car.consignment && isDirector && (
+        <div className="bg-card-gradient border border-blue-500/30 rounded-xl shadow-card">
+          <SectionHeader icon={Building2} title="Consignment" color="text-blue-400" />
+          <div className="p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-gray-500 text-sm">Dealer</span>
+              <span className="text-white font-medium">{car.consignment.dealer || '—'}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-gray-500 text-sm">Terms</span>
+              <span className="text-blue-300 font-medium">
+                {car.consignment.terms === 'fixed_amount' ? 'Fixed Amount' : 'Profit Split'}
+              </span>
+            </div>
+            {car.consignment.terms === 'fixed_amount' && (
+              <div className="flex items-center justify-between">
+                <span className="text-gray-500 text-sm">Dealer Takes Back</span>
+                <span className="text-white font-semibold">{formatRM(car.consignment.fixedAmount ?? 0)}</span>
+              </div>
+            )}
+            {car.consignment.terms === 'profit_split' && (
+              <>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500 text-sm">Dealer's Split</span>
+                  <span className="text-white font-semibold">{car.consignment.splitPercent ?? 50}%</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500 text-sm">Our Split</span>
+                  <span className="text-green-400 font-semibold">{100 - (car.consignment.splitPercent ?? 50)}%</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
