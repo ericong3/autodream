@@ -37,12 +37,12 @@ export default function StatCard({
       </div>
 
       <div className="flex-1 min-w-0">
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-obsidian-300/80 mb-1">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-white/50 mb-1">
           {title}
         </p>
         <p className="text-white text-2xl font-bold truncate leading-none">{value}</p>
         {subtitle && (
-          <p className="text-obsidian-300/60 text-xs mt-1">{subtitle}</p>
+          <p className="text-white/40 text-xs mt-1">{subtitle}</p>
         )}
         {trend && (
           <p className={`text-xs mt-1.5 font-semibold flex items-center gap-0.5 ${trendUp ? 'text-emerald-400' : 'text-red-400'}`}>

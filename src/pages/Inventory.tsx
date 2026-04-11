@@ -23,15 +23,15 @@ import { formatRM, formatMileage, generateId } from '../utils/format';
 
 
 const STATUS_BADGE: Record<string, string> = {
-  coming_soon: 'bg-purple-500/20 text-purple-400',
-  in_workshop: 'bg-orange-500/20 text-orange-400',
-  ready: 'bg-gold-500/20 text-gold-400',
-  photo_complete: 'bg-blue-500/20 text-blue-400',
-  submitted: 'bg-indigo-500/20 text-indigo-400',
-  deal_pending: 'bg-yellow-500/20 text-yellow-400',
-  available: 'bg-green-500/20 text-green-400',
-  reserved: 'bg-yellow-500/20 text-yellow-400',
-  sold: 'bg-gray-500/20 text-gray-400',
+  coming_soon: 'bg-purple-500/80 text-white',
+  in_workshop: 'bg-orange-500/80 text-white',
+  ready: 'bg-yellow-500/80 text-white',
+  photo_complete: 'bg-blue-500/80 text-white',
+  submitted: 'bg-indigo-500/80 text-white',
+  deal_pending: 'bg-yellow-600/80 text-white',
+  available: 'bg-green-500/80 text-white',
+  reserved: 'bg-yellow-500/80 text-white',
+  sold: 'bg-gray-500/80 text-white',
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -94,6 +94,22 @@ export default function Inventory() {
   const photoInputRef = useRef<HTMLInputElement>(null);
   const greenCardInputRef = useRef<HTMLInputElement>(null);
   const dragIndexRef = useRef<number | null>(null);
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (dragIndexRef.current === null) return;
+    const touch = e.touches[0];
+    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    const photoEl = el?.closest('[data-photo-idx]') as HTMLElement | null;
+    if (!photoEl) return;
+    const targetIdx = Number(photoEl.dataset.photoIdx);
+    const from = dragIndexRef.current;
+    if (from === targetIdx) return;
+    const updated = [...(form.photos ?? [])];
+    const [moved] = updated.splice(from, 1);
+    updated.splice(targetIdx, 0, moved);
+    dragIndexRef.current = targetIdx;
+    setForm((prev) => ({ ...prev, photos: updated, photo: updated[0] ?? '' }));
+  };
 
 
   const compressImage = (file: File, maxWidth = 1280, quality = 0.82): Promise<Blob> =>
@@ -324,6 +340,11 @@ export default function Inventory() {
                 <span className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[car.status] ?? 'bg-gray-500/20 text-gray-400'}`}>
                   {STATUS_LABEL[car.status] ?? car.status}
                 </span>
+                {!car.greenCard && car.status !== 'coming_soon' && (
+                  <span className="absolute top-2 left-2 flex items-center gap-1 bg-orange-500/80 border border-orange-400 text-white px-2 py-0.5 rounded-full text-[10px] font-medium">
+                    <AlertCircle size={10} /> No Green Card
+                  </span>
+                )}
               </div>
 
               {/* Info */}
@@ -420,9 +441,16 @@ export default function Inventory() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[car.status] ?? 'bg-gray-500/20 text-gray-400'}`}>
-                        {STATUS_LABEL[car.status] ?? car.status}
-                      </span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[car.status] ?? 'bg-gray-500/20 text-gray-400'}`}>
+                          {STATUS_LABEL[car.status] ?? car.status}
+                        </span>
+                        {!car.greenCard && car.status !== 'coming_soon' && (
+                          <span className="flex items-center gap-1 bg-orange-500/80 border border-orange-400 text-white px-2 py-0.5 rounded-full text-[10px] font-medium">
+                            <AlertCircle size={10} /> No Green Card
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-gold-400 font-semibold text-right">{formatRM(car.sellingPrice)}</td>
                     {isDirector && (
@@ -560,6 +588,7 @@ export default function Inventory() {
               {(form.photos ?? []).map((src, idx) => (
                 <div
                   key={idx}
+                  data-photo-idx={idx}
                   draggable
                   onDragStart={() => { dragIndexRef.current = idx; }}
                   onDragOver={(e) => {
@@ -573,6 +602,10 @@ export default function Inventory() {
                     setForm((prev) => ({ ...prev, photos: updated, photo: updated[0] ?? '' }));
                   }}
                   onDragEnd={() => { dragIndexRef.current = null; }}
+                  onTouchStart={() => { dragIndexRef.current = idx; }}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={() => { dragIndexRef.current = null; }}
+                  style={{ touchAction: 'none' }}
                   className="relative w-20 h-20 rounded-lg overflow-hidden border border-obsidian-400/60 group cursor-grab active:cursor-grabbing"
                 >
                   <img src={src} alt={`car-${idx + 1}`} className="w-full h-full object-cover pointer-events-none" />

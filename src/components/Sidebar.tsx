@@ -181,9 +181,8 @@ function SidebarLogo() {
   return (
     <div className="px-4 py-5 border-b border-obsidian-400/80">
       <div className="flex items-center gap-3">
-        <div className="relative w-10 h-10 rounded-xl flex items-center justify-center
-          bg-gold-gradient shadow-gold-sm shrink-0">
-          <Zap size={20} className="text-obsidian-950 relative z-10" strokeWidth={2.5} />
+        <div className="relative w-14 h-14 rounded-xl overflow-hidden shrink-0 shadow-gold-sm">
+          <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
         </div>
         <div>
           <h1 className="font-display text-white font-bold text-base leading-none tracking-wide">AutoDream</h1>

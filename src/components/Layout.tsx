@@ -109,7 +109,7 @@ export default function Layout({ children }: LayoutProps) {
           <div className="flex items-center gap-1">
             <button
               onClick={() => navigate('/reminders')}
-              className="relative p-2 rounded-lg text-obsidian-300/60 hover:text-white
+              className="relative p-2 rounded-lg text-gold-400 hover:text-gold-300
                 hover:bg-obsidian-600/60 transition-colors"
             >
               <Bell size={18} />
@@ -124,7 +124,7 @@ export default function Layout({ children }: LayoutProps) {
             <button
               onClick={handleLogout}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg
-                text-obsidian-300/60 hover:text-white hover:bg-obsidian-600/60
+                text-gold-400 hover:text-gold-300 hover:bg-obsidian-600/60
                 transition-colors text-sm"
             >
               <LogOut size={15} />

@@ -26,7 +26,20 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-obsidian-950 flex items-center justify-center p-4 relative overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-obsidian-950">
+
+      {/* Background video */}
+      <video
+        className="absolute inset-0 w-full h-full object-cover"
+        src="/background.mp4"
+        autoPlay
+        loop
+        muted
+        playsInline
+      />
+
+      {/* Dark overlay */}
+      <div className="absolute inset-0 bg-black/60 pointer-events-none" />
 
       {/* Background atmosphere */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
@@ -52,11 +65,8 @@ export default function Login() {
 
         {/* ── Brand header ────────────────────────── */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl
-            bg-gold-gradient shadow-gold-lg mb-5 relative">
-            <Zap size={36} className="text-obsidian-950 relative z-10" strokeWidth={2.5} />
-            {/* Glow ring */}
-            <div className="absolute inset-0 rounded-2xl bg-gold-gradient opacity-30 blur-lg scale-110" />
+          <div className="inline-flex items-center justify-center w-32 h-32 rounded-2xl overflow-hidden shadow-gold-lg mb-5">
+            <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
           </div>
           <h1 className="font-display text-4xl font-bold text-white tracking-wide">AutoDream</h1>
           <p className="text-white/50 text-sm mt-2 tracking-widest uppercase font-medium">

@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Download,
   Image,
+  FileText,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
@@ -445,6 +446,40 @@ export default function CarDetail() {
           </div>
         </div>
       </div>
+
+      {/* ── Green Card ── */}
+      {car.greenCard && (
+        <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card">
+          <SectionHeader icon={FileText} title="Green Card" color="text-green-400" />
+          <div className="p-5">
+            <div className="flex items-center gap-4">
+              {car.greenCard.startsWith('http') && (car.greenCard.includes('.jpg') || car.greenCard.includes('.jpeg') || car.greenCard.includes('.png') || car.greenCard.includes('.webp')) ? (
+                <img src={car.greenCard} alt="Green Card" className="w-32 h-24 object-cover rounded-lg border border-obsidian-400/60" />
+              ) : (
+                <div className="w-16 h-16 bg-green-500/10 border border-green-500/30 rounded-lg flex items-center justify-center">
+                  <FileText size={28} className="text-green-400" />
+                </div>
+              )}
+              <button
+                onClick={async () => {
+                  const res = await fetch(car.greenCard!);
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `${car.make}-${car.model}-${car.year}-greencard.jpg`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                className="flex items-center gap-2 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+              >
+                <Download size={15} />
+                Download Green Card
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Repair History ── */}
       <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card">

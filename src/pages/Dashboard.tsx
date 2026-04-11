@@ -79,7 +79,7 @@ export default function Dashboard() {
               <div className="w-1 h-4 rounded-full bg-gold-gradient" />
               <h3 className="text-white font-semibold text-sm">P&L Summary</h3>
             </div>
-            <p className="text-obsidian-300/50 text-xs mt-0.5 ml-3">Based on sold vehicles</p>
+            <p className="text-white/40 text-xs mt-0.5 ml-3">Based on sold vehicles</p>
           </div>
           <div className="p-5 space-y-1">
             <PLRow label="Total Revenue (Sales)" value={totalRevenue} positive />
@@ -124,7 +124,7 @@ export default function Dashboard() {
                 ? 'text-emerald-400'
                 : status === 'reserved'
                   ? 'text-yellow-400'
-                  : 'text-obsidian-300/60';
+                  : 'text-white/40';
               return (
                 <div key={status}>
                   <div className="flex justify-between items-center mb-1.5">
@@ -168,7 +168,7 @@ export default function Dashboard() {
             <div key={item.label}
               className="bg-obsidian-700/60 rounded-xl p-4 border border-obsidian-400/50
                 hover:border-obsidian-300/60 transition-colors">
-              <p className="text-obsidian-300/50 text-[11px] uppercase tracking-wider font-medium mb-2">{item.label}</p>
+              <p className="text-white/50 text-[11px] uppercase tracking-wider font-medium mb-2">{item.label}</p>
               <p className={`text-xl font-bold ${item.color}`}>{item.value}</p>
             </div>
           ))}
@@ -193,8 +193,8 @@ function PLRow({
   return (
     <div className="flex justify-between items-center py-2.5 border-b border-obsidian-400/30 last:border-0">
       <div>
-        <span className="text-obsidian-300/80 text-sm">{label}</span>
-        {subtitle && <p className="text-obsidian-300/40 text-xs mt-0.5">{subtitle}</p>}
+        <span className="text-white/65 text-sm">{label}</span>
+        {subtitle && <p className="text-white/35 text-xs mt-0.5">{subtitle}</p>}
       </div>
       <span className={`text-sm font-bold ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
         {value < 0 ? `-${formatRM(Math.abs(value))}` : formatRM(value)}

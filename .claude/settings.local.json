@@ -18,7 +18,8 @@
       "Bash(sed -i 's/flex bg-\\\\[#0F0E0C\\\\] border border-obsidian-400\\\\/60 rounded-lg/flex bg-obsidian-800 border border-obsidian-400\\\\/60 rounded-lg/g' src/pages/Inventory.tsx)",
       "Bash(sed -i 's/text-gray-500 text-xs border-b border-obsidian-400\\\\/60 bg-\\\\[#161410\\\\]/text-obsidian-300\\\\/50 text-xs border-b border-obsidian-400\\\\/60 bg-obsidian-700\\\\/60/g' src/pages/Inventory.tsx)",
       "Bash(sed -i 's/bg-\\\\[#0F0E0C\\\\]'\\\\'' : '\\\\''bg-obsidian-950/bg-card-gradient'\\\\'' : '\\\\''bg-obsidian-950/g' src/pages/Inventory.tsx)",
-      "Bash(sed -i 's/appearance-none bg-\\\\[#0F0E0C\\\\] border border-obsidian-400\\\\/60 text-gray-300 rounded-lg/appearance-none bg-obsidian-800 border border-obsidian-400\\\\/60 text-gray-200 rounded-lg/g' src/pages/Inventory.tsx)"
+      "Bash(sed -i 's/appearance-none bg-\\\\[#0F0E0C\\\\] border border-obsidian-400\\\\/60 text-gray-300 rounded-lg/appearance-none bg-obsidian-800 border border-obsidian-400\\\\/60 text-gray-200 rounded-lg/g' src/pages/Inventory.tsx)",
+      "Bash(ren:*)"
     ]
   }
 }
