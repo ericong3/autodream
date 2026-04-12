@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Car, Users, CalendarDays,
   FileText, Calculator, GitCompare,
   ClipboardList, Bot, TrendingUp, UsersRound,
-  History, Banknote, Zap,
+  History, Banknote,
 } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
@@ -91,9 +91,8 @@ export default function Layout({ children }: LayoutProps) {
 
           {/* Left: logo (mobile) + name */}
           <div className="flex items-center gap-2.5">
-            <div className="md:hidden w-8 h-8 rounded-lg flex items-center justify-center
-              bg-gold-gradient shadow-gold-sm shrink-0">
-              <Zap size={16} className="text-obsidian-950" strokeWidth={2.5} />
+            <div className="md:hidden shrink-0">
+              <img src="/logo.png" alt="AutoDream" className="h-8 w-auto" />
             </div>
             <div>
               <h2 className="text-white font-semibold text-sm md:text-base leading-none">
