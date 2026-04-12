@@ -101,6 +101,7 @@ export default function CarDetail() {
   const cars = useStore((s) => s.cars);
   const users = useStore((s) => s.users);
   const repairs = useStore((s) => s.repairs);
+  const workshops = useStore((s) => s.workshops);
   const currentUser = useStore((s) => s.currentUser);
   const updateCar = useStore((s) => s.updateCar);
   const addRepair = useStore((s) => s.addRepair);
@@ -144,9 +145,13 @@ export default function CarDetail() {
   // ── Photo Gallery ──
   const [showGallery, setShowGallery] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(0);
+  const [editingPhotos, setEditingPhotos] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const replacePhotoRef = useRef<HTMLInputElement>(null);
+  const addPhotoRef = useRef<HTMLInputElement>(null);
   const allPhotos = car?.photos?.length ? car.photos : (car?.photo ? [car.photo] : []);
 
-  const openGallery = (idx = 0) => { setGalleryIndex(idx); setShowGallery(true); };
+  const openGallery = (idx = 0) => { setGalleryIndex(idx); setShowGallery(true); setEditingPhotos(false); };
   const galleryPrev = () => setGalleryIndex((i) => (i - 1 + allPhotos.length) % allPhotos.length);
   const galleryNext = () => setGalleryIndex((i) => (i + 1) % allPhotos.length);
   const downloadPhoto = (src: string, idx: number) => {
@@ -154,6 +159,38 @@ export default function CarDetail() {
     a.href = src;
     a.download = `${car?.make}-${car?.model}-${car?.year}-photo-${idx + 1}.jpg`;
     a.click();
+  };
+
+  const handleReplacePhoto = async (files: FileList | null) => {
+    if (!files || !files[0] || !car) return;
+    setPhotoUploading(true);
+    try {
+      const url = await uploadToStorage(files[0], 'cars');
+      const updated = [...allPhotos];
+      updated[galleryIndex] = url;
+      await updateCar(car.id, { photos: updated, photo: updated[0] });
+    } catch (e) { console.error(e); }
+    finally { setPhotoUploading(false); }
+  };
+
+  const handleDeletePhoto = async () => {
+    if (!car || allPhotos.length === 0) return;
+    if (!window.confirm('Delete this photo?')) return;
+    const updated = allPhotos.filter((_, i) => i !== galleryIndex);
+    await updateCar(car.id, { photos: updated, photo: updated[0] ?? '' });
+    setGalleryIndex((i) => Math.min(i, updated.length - 1));
+    if (updated.length === 0) setShowGallery(false);
+  };
+
+  const handleAddPhotos = async (files: FileList | null) => {
+    if (!files || !car) return;
+    setPhotoUploading(true);
+    try {
+      const urls = await Promise.all(Array.from(files).map((f) => uploadToStorage(f, 'cars')));
+      const updated = [...allPhotos, ...urls];
+      await updateCar(car.id, { photos: updated, photo: updated[0] });
+    } catch (e) { console.error(e); }
+    finally { setPhotoUploading(false); }
   };
 
   useEffect(() => {
@@ -392,7 +429,7 @@ export default function CarDetail() {
           <div className="flex-1 p-6">
             <div className="flex items-start justify-between flex-wrap gap-3">
               <div>
-                <h1 className="text-2xl font-bold text-white">{car.year} {car.make} {car.model}</h1>
+                <h1 className="text-2xl font-bold text-white">{car.year} {car.make} {car.model}{car.variant ? ` ${car.variant}` : ''}</h1>
                 <p className="text-gray-400 mt-1">{car.colour} · {car.transmission === 'auto' ? 'Automatic' : 'Manual'}</p>
               </div>
               <div className="flex gap-2 flex-wrap">
@@ -828,11 +865,37 @@ export default function CarDetail() {
             </select>
           </FormField>
 
-          <FormField label="Send to Location" error={repairErrors.location}>
+          <FormField label="Send to Workshop" error={repairErrors.location}>
             <select className={inputCls(repairErrors.location)} value={repairForm.location} onChange={(e) => setRepairForm({ ...repairForm, location: e.target.value })}>
-              <option value="">Select location...</option>
-              {REPAIR_LOCATIONS.map((l) => <option key={l} value={l}>{l}</option>)}
+              <option value="">Select workshop...</option>
+              {workshops.length === 0 ? (
+                <option disabled>No workshops — add them in Data page</option>
+              ) : (
+                (() => {
+                  const categories = Array.from(new Set(workshops.map((w) => w.speciality).filter(Boolean)));
+                  const uncategorised = workshops.filter((w) => !w.speciality);
+                  return <>
+                    {categories.map((cat) => (
+                      <optgroup key={cat} label={cat as string}>
+                        {workshops.filter((w) => w.speciality === cat).map((w) => (
+                          <option key={w.id} value={w.name}>{w.name}</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                    {uncategorised.length > 0 && (
+                      <optgroup label="Other">
+                        {uncategorised.map((w) => (
+                          <option key={w.id} value={w.name}>{w.name}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </>;
+                })()
+              )}
             </select>
+            {workshops.length === 0 && (
+              <p className="text-xs text-gray-500 mt-1">Add workshops in <span className="text-gold-400">Data → Workshops</span></p>
+            )}
           </FormField>
 
           <div>
@@ -914,23 +977,69 @@ export default function CarDetail() {
 
       {/* ── Photo Gallery Modal ── */}
       {showGallery && allPhotos.length > 0 && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-black/95" onClick={() => setShowGallery(false)}>
+        <div className="fixed inset-0 z-50 flex flex-col bg-black/95" onClick={() => { setShowGallery(false); setEditingPhotos(false); }}>
           {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-            <span className="text-white font-semibold">{car.year} {car.make} {car.model}</span>
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between px-4 py-3 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+            <span className="text-white font-semibold text-sm">{car.year} {car.make} {car.model}</span>
+            <div className="flex items-center gap-2">
               <span className="text-gray-400 text-sm">{galleryIndex + 1} / {allPhotos.length}</span>
+              {(isDirector || isSalesperson) && (
+                <button
+                  onClick={() => setEditingPhotos((v) => !v)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${editingPhotos ? 'bg-gold-500 text-black' : 'bg-obsidian-700 text-gray-300 hover:text-white'}`}
+                >
+                  <Edit size={13} /> {editingPhotos ? 'Done' : 'Edit'}
+                </button>
+              )}
               <button
                 onClick={() => downloadPhoto(allPhotos[galleryIndex], galleryIndex)}
-                className="flex items-center gap-1.5 btn-gold text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                className="p-1.5 text-gray-400 hover:text-white transition-colors"
               >
-                <Download size={15} /> Download
+                <Download size={18} />
               </button>
-              <button onClick={() => setShowGallery(false)} className="p-1.5 text-gray-400 hover:text-white transition-colors">
+              <button onClick={() => { setShowGallery(false); setEditingPhotos(false); }} className="p-1.5 text-gray-400 hover:text-white transition-colors">
                 <X size={20} />
               </button>
             </div>
           </div>
+
+          {/* Edit toolbar */}
+          {editingPhotos && (
+            <div className="flex items-center gap-2 px-4 pb-3 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={() => replacePhotoRef.current?.click()}
+                disabled={photoUploading}
+                className="flex items-center gap-1.5 bg-blue-500/20 border border-blue-500/40 text-blue-300 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-blue-500/30 transition-colors disabled:opacity-50"
+              >
+                <Upload size={13} /> Replace
+              </button>
+              <button
+                onClick={() => addPhotoRef.current?.click()}
+                disabled={photoUploading}
+                className="flex items-center gap-1.5 bg-green-500/20 border border-green-500/40 text-green-300 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-green-500/30 transition-colors disabled:opacity-50"
+              >
+                <Plus size={13} /> Add Photos
+              </button>
+              <button
+                onClick={handleDeletePhoto}
+                disabled={photoUploading}
+                className="flex items-center gap-1.5 bg-red-500/20 border border-red-500/40 text-red-300 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-red-500/30 transition-colors disabled:opacity-50"
+              >
+                <Trash2 size={13} /> Delete
+              </button>
+              {photoUploading && (
+                <div className="flex items-center gap-1.5 text-gold-400 text-xs">
+                  <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                  Uploading...
+                </div>
+              )}
+              <input ref={replacePhotoRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleReplacePhoto(e.target.files)} />
+              <input ref={addPhotoRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleAddPhotos(e.target.files)} />
+            </div>
+          )}
 
           {/* Main image */}
           <div className="flex-1 flex items-center justify-center relative px-14 min-h-0" onClick={(e) => e.stopPropagation()}>

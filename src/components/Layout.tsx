@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   LogOut, Bell, MoreHorizontal, X,
   LayoutDashboard, Car, Users, CalendarDays,
-  GitBranch, FileText, Calculator, GitCompare,
+  FileText, Calculator, GitCompare,
   ClipboardList, Bot, TrendingUp, UsersRound,
   History, Banknote, Zap,
 } from 'lucide-react';
@@ -21,7 +21,6 @@ const SALESPERSON_PRIMARY = [
   { to: '/calendar',        icon: CalendarDays,    label: 'Calendar'   },
 ];
 const SALESPERSON_MORE = [
-  { to: '/pipeline',        icon: GitBranch,     label: 'Pipeline'        },
   { to: '/quotations',      icon: FileText,      label: 'Quotations'      },
   { to: '/loan-calculator', icon: Calculator,    label: 'Loan Calculator' },
   { to: '/car-compare',     icon: GitCompare,    label: 'Car Compare'     },
@@ -38,7 +37,6 @@ const DIRECTOR_PRIMARY = [
 const DIRECTOR_MORE = [
   { to: '/finance',         icon: TrendingUp,    label: 'Accounting'   },
   { to: '/team',            icon: UsersRound,    label: 'Team Members' },
-  { to: '/pipeline',        icon: GitBranch,     label: 'Pipeline'     },
   { to: '/quotations',      icon: FileText,      label: 'Quotations'   },
   { to: '/commission',      icon: Banknote,      label: 'Commission'   },
   { to: '/reminders',       icon: ClipboardList, label: 'Instructions' },
@@ -85,9 +83,11 @@ export default function Layout({ children }: LayoutProps) {
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
 
         {/* ── Topbar ─────────────────────────────────────────── */}
-        <header className="h-14 md:h-16 bg-header-gradient border-b border-obsidian-400/80
+        <header className="bg-header-gradient border-b border-obsidian-400/80
           flex items-center justify-between px-4 md:px-6 shrink-0
-          shadow-[0_2px_16px_rgba(0,0,0,0.5)]">
+          shadow-[0_2px_16px_rgba(0,0,0,0.5)]"
+          style={{ minHeight: '3.5rem' }}
+        >
 
           {/* Left: logo (mobile) + name */}
           <div className="flex items-center gap-2.5">
@@ -99,7 +99,7 @@ export default function Layout({ children }: LayoutProps) {
               <h2 className="text-white font-semibold text-sm md:text-base leading-none">
                 {currentUser?.name ?? 'AutoDream'}
               </h2>
-              <p className="text-[10px] text-gold-500 uppercase tracking-widest font-medium mt-0.5 hidden md:block capitalize">
+              <p className="text-[10px] text-gold-300 uppercase tracking-widest font-medium mt-0.5 hidden md:block capitalize">
                 {currentUser?.role}
               </p>
             </div>
@@ -134,21 +134,25 @@ export default function Layout({ children }: LayoutProps) {
         </header>
 
         {/* ── Main content ────────────────────────────────────── */}
-        <main className="flex-1 p-4 md:p-6 overflow-auto pb-24 md:pb-6">{children}</main>
+        <main className="flex-1 p-4 md:p-6 overflow-auto md:pb-6"
+          style={{ paddingBottom: 'calc(6rem + env(safe-area-inset-bottom))' }}
+        >{children}</main>
       </div>
 
       {/* ── Mobile Bottom Nav ───────────────────────────────────── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30
         bg-header-gradient border-t border-obsidian-400/80
-        flex items-center justify-around px-1 py-1
-        shadow-[0_-4px_20px_rgba(0,0,0,0.5)]">
+        flex items-center justify-around px-1
+        shadow-[0_-4px_20px_rgba(0,0,0,0.5)]"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)', paddingTop: '0.25rem' }}
+      >
         {primaryNav.map(item => (
           <NavLink
             key={item.to}
             to={item.to}
             className={({ isActive }) =>
               `flex flex-col items-center gap-0.5 px-2 py-2 rounded-xl transition-all ${
-                isActive ? 'text-gold-300' : 'text-obsidian-300/50'
+                isActive ? 'text-gold-300' : 'text-gray-400'
               }`
             }
           >
@@ -174,7 +178,7 @@ export default function Layout({ children }: LayoutProps) {
           <button
             onClick={() => setShowMore(true)}
             className={`flex flex-col items-center gap-0.5 px-2 py-2 rounded-xl transition-all ${
-              showMore ? 'text-gold-300' : 'text-obsidian-300/50'
+              showMore ? 'text-gold-300' : 'text-gray-400'
             }`}
           >
             <MoreHorizontal size={20} />
@@ -202,7 +206,7 @@ export default function Layout({ children }: LayoutProps) {
               <p className="font-display text-white font-semibold text-sm tracking-wide">More</p>
               <button
                 onClick={() => setShowMore(false)}
-                className="p-1.5 text-obsidian-300/50 hover:text-white rounded-lg transition-colors"
+                className="p-1.5 text-gray-400 hover:text-white rounded-lg transition-colors"
               >
                 <X size={18} />
               </button>
@@ -218,7 +222,7 @@ export default function Layout({ children }: LayoutProps) {
                     `flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all ${
                       isActive
                         ? 'bg-gradient-to-br from-gold-500/[0.15] to-transparent border-gold-400/50 text-gold-300 shadow-gold-sm'
-                        : 'bg-obsidian-700/60 border-obsidian-400/60 text-obsidian-300/60 hover:text-white hover:border-obsidian-300/40'
+                        : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:text-white hover:border-obsidian-300/40'
                     }`
                   }
                 >

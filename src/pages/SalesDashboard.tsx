@@ -280,7 +280,7 @@ export default function SalesDashboard() {
               <div className="border border-obsidian-400/60 rounded-xl overflow-hidden">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-obsidian-300/50 text-xs border-b border-obsidian-400/60 bg-obsidian-700/60">
+                    <tr className="text-gray-400 text-xs border-b border-obsidian-400/60 bg-obsidian-700/60">
                       <th className="text-left px-4 py-2.5 font-medium">Vehicle</th>
                       <th className="text-left px-4 py-2.5 font-medium">Date</th>
                       <th className="text-right px-4 py-2.5 font-medium">Deal Price</th>

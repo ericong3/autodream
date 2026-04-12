@@ -46,6 +46,25 @@ export interface FinalDeal {
   rejectionNotes?: string;
 }
 
+export interface Dealer {
+  id: string;
+  name: string;
+}
+
+export interface Workshop {
+  id: string;
+  name: string;
+  phone?: string;
+  speciality?: string;
+}
+
+export interface Supplier {
+  id: string;
+  name: string;
+  phone?: string;
+  category?: string;
+}
+
 export interface Consignment {
   dealer: string;
   terms: 'fixed_amount' | 'profit_split';
@@ -57,6 +76,7 @@ export interface Car {
   id: string;
   make: string;
   model: string;
+  variant?: string;
   year: number;
   carPlate?: string;
   colour: string;

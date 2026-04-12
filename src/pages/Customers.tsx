@@ -943,18 +943,22 @@ export default function Customers() {
             </FormField>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <FormField label="Lead Status">
-              <select className={inputCls()} value={form.leadStatus} onChange={e => setForm({ ...form, leadStatus: e.target.value as Customer['leadStatus'] })}>
-                {(['contacted', 'test_drive', 'follow_up'] as Customer['leadStatus'][]).map(s => (
-                  <option key={s} value={s}>{LEAD_STATUS_LABELS[s]}</option>
-                ))}
-              </select>
-            </FormField>
-            <FormField label="Interested Car">
+            {editTarget && (
+              <FormField label="Lead Status">
+                <select className={inputCls()} value={form.leadStatus} onChange={e => setForm({ ...form, leadStatus: e.target.value as Customer['leadStatus'] })}>
+                  {(['contacted', 'test_drive', 'follow_up'] as Customer['leadStatus'][]).map(s => (
+                    <option key={s} value={s}>{LEAD_STATUS_LABELS[s]}</option>
+                  ))}
+                </select>
+              </FormField>
+            )}
+            <FormField label="Interested Car" className={editTarget ? '' : 'col-span-2'}>
               <select className={inputCls()} value={form.interestedCarId} onChange={e => setForm({ ...form, interestedCarId: e.target.value })}>
                 <option value="">— None —</option>
                 {cars.filter(car => car.status !== 'sold').map(car => (
-                  <option key={car.id} value={car.id}>{car.year} {car.make} {car.model}</option>
+                  <option key={car.id} value={car.id}>
+                    {car.carPlate ? `${car.carPlate} · ` : ''}{car.year} {car.make} {car.model}
+                  </option>
                 ))}
               </select>
             </FormField>

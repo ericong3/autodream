@@ -1,6 +1,7 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
-import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder } from '../types';
+import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier } from '../types';
 
 interface StoreState {
   currentUser: User | null;
@@ -12,6 +13,9 @@ interface StoreState {
   customers: Customer[];
   testDrives: TestDrive[];
   personalReminders: PersonalReminder[];
+  dealers: Dealer[];
+  workshops: Workshop[];
+  suppliers: Supplier[];
   viewPreference: Record<string, 'grid' | 'list'>;
   loaded: boolean;
 
@@ -62,6 +66,18 @@ interface StoreState {
   updatePersonalReminder: (id: string, reminder: Partial<PersonalReminder>) => Promise<void>;
   deletePersonalReminder: (id: string) => Promise<void>;
 
+  // Dealers
+  addDealer: (dealer: Dealer) => Promise<void>;
+  deleteDealer: (id: string) => Promise<void>;
+
+  // Workshops
+  addWorkshop: (workshop: Workshop) => Promise<void>;
+  deleteWorkshop: (id: string) => Promise<void>;
+
+  // Suppliers
+  addSupplier: (supplier: Supplier) => Promise<void>;
+  deleteSupplier: (id: string) => Promise<void>;
+
   // View preference
   setViewPreference: (userId: string, page: string, view: 'grid' | 'list') => void;
 }
@@ -72,6 +88,7 @@ function rowToCar(r: any): Car {
     id: r.id,
     make: r.make,
     model: r.model,
+    variant: r.variant,
     year: r.year,
     carPlate: r.car_plate,
     colour: r.colour,
@@ -103,6 +120,7 @@ function carToRow(c: Partial<Car>) {
   if (c.id !== undefined) row.id = c.id;
   if (c.make !== undefined) row.make = c.make;
   if (c.model !== undefined) row.model = c.model;
+  if (c.variant !== undefined) row.variant = c.variant;
   if (c.year !== undefined) row.year = c.year;
   if (c.carPlate !== undefined) row.car_plate = c.carPlate;
   if (c.colour !== undefined) row.colour = c.colour;
@@ -359,7 +377,7 @@ function reminderToRow(r: Partial<PersonalReminder>) {
   return row;
 }
 
-export const useStore = create<StoreState>()((set, get) => ({
+export const useStore = create<StoreState>()(persist((set, get) => ({
   currentUser: null,
   users: [],
   cars: [],
@@ -369,11 +387,14 @@ export const useStore = create<StoreState>()((set, get) => ({
   customers: [],
   testDrives: [],
   personalReminders: [],
+  dealers: [],
+  workshops: [],
+  suppliers: [],
   viewPreference: {},
   loaded: false,
 
   loadAll: async () => {
-    const [users, cars, repairs, quotations, instructions, customers, testDrives, reminders] =
+    const [users, cars, repairs, quotations, instructions, customers, testDrives, reminders, dealers, workshops, suppliers] =
       await Promise.all([
         supabase.from('users').select('*'),
         supabase.from('cars').select('*'),
@@ -383,6 +404,9 @@ export const useStore = create<StoreState>()((set, get) => ({
         supabase.from('customers').select('*'),
         supabase.from('test_drives').select('*'),
         supabase.from('personal_reminders').select('*'),
+        supabase.from('dealers').select('*'),
+        supabase.from('workshops').select('*'),
+        supabase.from('suppliers').select('*'),
       ]);
 
     set({
@@ -394,8 +418,60 @@ export const useStore = create<StoreState>()((set, get) => ({
       customers: (customers.data ?? []).map(rowToCustomer),
       testDrives: (testDrives.data ?? []).map(rowToTestDrive),
       personalReminders: (reminders.data ?? []).map(rowToReminder),
+      dealers: (dealers.data ?? []) as Dealer[],
+      workshops: (workshops.data ?? []) as Workshop[],
+      suppliers: (suppliers.data ?? []) as Supplier[],
       loaded: true,
     });
+
+    // Real-time subscriptions — keep all clients in sync
+    supabase.channel('realtime-cars')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cars' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          set((s) => ({
+            cars: s.cars.some((c) => c.id === (payload.new as any).id)
+              ? s.cars.map((c) => c.id === (payload.new as any).id ? rowToCar(payload.new) : c)
+              : [...s.cars, rowToCar(payload.new)],
+          }));
+        } else if (payload.eventType === 'UPDATE') {
+          set((s) => ({ cars: s.cars.map((c) => c.id === (payload.new as any).id ? rowToCar(payload.new) : c) }));
+        } else if (payload.eventType === 'DELETE') {
+          set((s) => ({ cars: s.cars.filter((c) => c.id !== (payload.old as any).id) }));
+        }
+      })
+      .subscribe();
+
+    supabase.channel('realtime-customers')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          set((s) => ({
+            customers: s.customers.some((c) => c.id === (payload.new as any).id)
+              ? s.customers
+              : [...s.customers, rowToCustomer(payload.new)],
+          }));
+        } else if (payload.eventType === 'UPDATE') {
+          set((s) => ({ customers: s.customers.map((c) => c.id === (payload.new as any).id ? rowToCustomer(payload.new) : c) }));
+        } else if (payload.eventType === 'DELETE') {
+          set((s) => ({ customers: s.customers.filter((c) => c.id !== (payload.old as any).id) }));
+        }
+      })
+      .subscribe();
+
+    supabase.channel('realtime-repairs')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'repairs' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          set((s) => ({
+            repairs: s.repairs.some((r) => r.id === (payload.new as any).id)
+              ? s.repairs
+              : [...s.repairs, rowToRepair(payload.new)],
+          }));
+        } else if (payload.eventType === 'UPDATE') {
+          set((s) => ({ repairs: s.repairs.map((r) => r.id === (payload.new as any).id ? rowToRepair(payload.new) : r) }));
+        } else if (payload.eventType === 'DELETE') {
+          set((s) => ({ repairs: s.repairs.filter((r) => r.id !== (payload.old as any).id) }));
+        }
+      })
+      .subscribe();
   },
 
   login: async (username, password) => {
@@ -418,7 +494,10 @@ export const useStore = create<StoreState>()((set, get) => ({
   addCar: async (car) => {
     set((s) => ({ cars: [...s.cars, car] }));
     const { error } = await supabase.from('cars').insert(carToRow(car));
-    if (error) console.error('addCar failed:', error.message);
+    if (error) {
+      set((s) => ({ cars: s.cars.filter((c) => c.id !== car.id) }));
+      throw new Error(error.message);
+    }
   },
   updateCar: async (id, car) => {
     set((s) => ({ cars: s.cars.map((c) => (c.id === id ? { ...c, ...car } : c)) }));
@@ -580,4 +659,49 @@ export const useStore = create<StoreState>()((set, get) => ({
         [`${userId}-${page}`]: view,
       },
     })),
+
+  addDealer: async (dealer) => {
+    set((s) => ({ dealers: [...s.dealers, dealer] }));
+    const { error } = await supabase.from('dealers').insert(dealer);
+    if (error) {
+      set((s) => ({ dealers: s.dealers.filter((d) => d.id !== dealer.id) }));
+      throw new Error(error.message);
+    }
+  },
+  deleteDealer: async (id) => {
+    set((s) => ({ dealers: s.dealers.filter((d) => d.id !== id) }));
+    await supabase.from('dealers').delete().eq('id', id);
+  },
+
+  addWorkshop: async (workshop) => {
+    set((s) => ({ workshops: [...s.workshops, workshop] }));
+    const { error } = await supabase.from('workshops').insert(workshop);
+    if (error) {
+      set((s) => ({ workshops: s.workshops.filter((w) => w.id !== workshop.id) }));
+      throw new Error(error.message);
+    }
+  },
+  deleteWorkshop: async (id) => {
+    set((s) => ({ workshops: s.workshops.filter((w) => w.id !== id) }));
+    await supabase.from('workshops').delete().eq('id', id);
+  },
+
+  addSupplier: async (supplier) => {
+    set((s) => ({ suppliers: [...s.suppliers, supplier] }));
+    const { error } = await supabase.from('suppliers').insert(supplier);
+    if (error) {
+      set((s) => ({ suppliers: s.suppliers.filter((s2) => s2.id !== supplier.id) }));
+      throw new Error(error.message);
+    }
+  },
+  deleteSupplier: async (id) => {
+    set((s) => ({ suppliers: s.suppliers.filter((s2) => s2.id !== id) }));
+    await supabase.from('suppliers').delete().eq('id', id);
+  },
+}), {
+  name: 'autodream-session',
+  partialize: (state) => ({
+    currentUser: state.currentUser,
+    viewPreference: state.viewPreference,
+  }),
 }));

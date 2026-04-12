@@ -51,6 +51,7 @@ const CAR_MAKES = ['All', 'Perodua', 'Proton', 'Honda', 'Toyota', 'Nissan', 'Oth
 const emptyForm: Omit<Car, 'id' | 'dateAdded'> = {
   make: '',
   model: '',
+  variant: '',
   year: new Date().getFullYear(),
   carPlate: '',
   colour: '',
@@ -74,6 +75,7 @@ export default function Inventory() {
   const users = useStore((s) => s.users);
   const currentUser = useStore((s) => s.currentUser);
   const addCar = useStore((s) => s.addCar);
+  const dealers = useStore((s) => s.dealers);
   const viewPreference = useStore((s) => s.viewPreference);
   const setViewPreference = useStore((s) => s.setViewPreference);
   const navigate = useNavigate();
@@ -92,6 +94,8 @@ export default function Inventory() {
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const photoInputRef = useRef<HTMLInputElement>(null);
   const greenCardInputRef = useRef<HTMLInputElement>(null);
   const dragIndexRef = useRef<number | null>(null);
@@ -209,7 +213,7 @@ export default function Inventory() {
 
   const isComingSoon = form.status === 'coming_soon';
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const newErrors: Record<string, string> = {};
 
     if (!form.make.trim()) newErrors.make = 'Make is required';
@@ -229,14 +233,19 @@ export default function Inventory() {
       id: generateId(),
       dateAdded: new Date().toISOString().split('T')[0],
     };
+
+    setSubmitting(true);
+    setSubmitError('');
     try {
-      addCar(newCar);
-    } catch (e) {
-      console.error('Failed to save car:', e);
+      await addCar(newCar);
+      setShowModal(false);
+      setForm(emptyForm);
+      setErrors({});
+    } catch (e: any) {
+      setSubmitError(e.message || 'Failed to save car. Please try again.');
+    } finally {
+      setSubmitting(false);
     }
-    setShowModal(false);
-    setForm(emptyForm);
-    setErrors({});
   };
 
   const getSalesperson = (id?: string) =>
@@ -299,7 +308,7 @@ export default function Inventory() {
 
         {canAddCar && (
           <button
-            onClick={() => { setForm(emptyForm); setErrors({}); setShowModal(true); }}
+            onClick={() => { setForm(emptyForm); setErrors({}); setSubmitError(''); setShowModal(true); }}
             className="flex items-center gap-2 btn-gold px-4 py-2.5 rounded-lg text-sm"
           >
             <Plus size={16} />
@@ -355,7 +364,7 @@ export default function Inventory() {
                     <h3 className="text-white font-semibold text-sm group-hover:text-gold-400 transition-colors">
                       {car.year} {car.make} {car.model}
                     </h3>
-                    <p className="text-gray-500 text-xs mt-0.5">{car.colour} · {car.transmission}</p>
+                    <p className="text-gray-500 text-xs mt-0.5">{car.variant ? `${car.variant} · ` : ''}{car.colour} · {car.transmission}</p>
                   </div>
                   {car.carPlate && (
                     <span className="ml-2 shrink-0 text-xs font-mono font-semibold px-2 py-0.5 rounded bg-[#2C2415] text-gold-300 border border-[#3C321E] tracking-wider">
@@ -396,7 +405,7 @@ export default function Inventory() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-obsidian-300/50 text-xs border-b border-obsidian-400/60 bg-obsidian-700/60">
+                <tr className="text-gray-400 text-xs border-b border-obsidian-400/60 bg-obsidian-700/60">
                   <th className="text-left px-4 py-3 font-medium">Car</th>
                   <th className="text-left px-4 py-3 font-medium">Plate</th>
                   <th className="text-left px-4 py-3 font-medium">Year</th>
@@ -485,6 +494,14 @@ export default function Inventory() {
               value={form.model}
               onChange={(e) => setForm({ ...form, model: e.target.value })}
               placeholder="e.g. Myvi"
+            />
+          </FormField>
+          <FormField label="Variant" className="col-span-2">
+            <input
+              className={inputCls()}
+              value={form.variant ?? ''}
+              onChange={(e) => setForm({ ...form, variant: e.target.value })}
+              placeholder="e.g. 1.5 Advance"
             />
           </FormField>
           <FormField label="Year" error={errors.year}>
@@ -582,12 +599,19 @@ export default function Inventory() {
             {form.consignment && (
               <div className="mt-3 space-y-3 pl-2 border-l-2 border-blue-500/30">
                 <FormField label="Dealer Name">
-                  <input
+                  <select
                     className={inputCls()}
                     value={form.consignment.dealer}
                     onChange={(e) => setForm({ ...form, consignment: { ...form.consignment!, dealer: e.target.value } })}
-                    placeholder="e.g. ABC Motors"
-                  />
+                  >
+                    <option value="">— Select dealer —</option>
+                    {dealers.map((d) => (
+                      <option key={d.id} value={d.name}>{d.name}</option>
+                    ))}
+                  </select>
+                  {dealers.length === 0 && (
+                    <p className="text-xs text-gray-500 mt-1">No dealers yet — add them in the Data page under Car Dealers</p>
+                  )}
                 </FormField>
 
                 <div>
@@ -806,18 +830,33 @@ export default function Inventory() {
           </div>}
         </div>
 
-        <div className="flex gap-3 mt-6">
+        {submitError && (
+          <p className="mt-4 text-red-400 text-xs flex items-center gap-1.5">
+            <AlertCircle size={13} /> {submitError}
+          </p>
+        )}
+        <div className="flex gap-3 mt-4">
           <button
             onClick={() => setShowModal(false)}
-            className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm"
+            disabled={submitting}
+            className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
-            className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm"
+            disabled={submitting || uploadingPhotos}
+            className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm disabled:opacity-60 flex items-center justify-center gap-2"
           >
-            Add Car
+            {submitting ? (
+              <>
+                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+                Saving...
+              </>
+            ) : 'Add Car'}
           </button>
         </div>
       </Modal>

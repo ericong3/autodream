@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Edit, Trash2, Users, AlertCircle, Shield, UserCheck, Wrench } from 'lucide-react';
+import { Plus, Edit, Trash2, Users, AlertCircle, Shield, UserCheck, Wrench, Phone, AtSign, Car, TrendingUp, Target, Award, X } from 'lucide-react';
 import { useStore } from '../store';
 import { User } from '../types';
 import Modal from '../components/Modal';
@@ -66,6 +66,180 @@ const ROLE_CONFIG = {
   },
 };
 
+function EmployeeDetailModal({ member, onClose, currentUserId }: { member: User; onClose: () => void; currentUserId?: string }) {
+  const cars = useStore((s) => s.cars);
+  const customers = useStore((s) => s.customers);
+
+  const cfg = ROLE_CONFIG[member.role as keyof typeof ROLE_CONFIG];
+  const isSelf = member.id === currentUserId;
+
+  const soldCars = cars.filter((c) => c.status === 'sold' && c.assignedSalesperson === member.id);
+  const activeCars = cars.filter((c) => c.status !== 'sold' && c.assignedSalesperson === member.id);
+  const commission = soldCars.length * COMMISSION_PER_CAR;
+  const activeCustomers = customers.filter((c) => c.assignedSalesId === member.id);
+
+  const targetPct = member.role === 'salesperson' && member.monthlyTarget > 0
+    ? Math.min(100, (member.carsInMonth / member.monthlyTarget) * 100)
+    : 0;
+
+  const CAR_STATUS_LABEL: Record<string, string> = {
+    coming_soon: 'Coming Soon',
+    in_workshop: 'In Workshop',
+    ready: 'Ready',
+    photo_complete: 'Photo Done',
+    submitted: 'Submitted',
+    deal_pending: 'Deal Pending',
+    available: 'Available',
+    reserved: 'Reserved',
+    sold: 'Sold',
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col justify-end md:items-center md:justify-center">
+      <div className="absolute inset-0 bg-black/85 backdrop-blur-sm" onClick={onClose} />
+
+      <div className="relative w-full max-w-lg flex flex-col
+        bg-gradient-to-b from-obsidian-700 to-obsidian-800
+        border border-obsidian-400/80
+        shadow-[0_20px_80px_rgba(0,0,0,0.8),0_0_0_1px_rgba(42,35,22,0.8)]
+        rounded-t-2xl md:rounded-xl
+        max-h-[92vh] md:max-h-[88vh] overflow-hidden">
+
+        {/* Gold accent line */}
+        <div className="absolute top-0 left-0 right-0 h-[2px] rounded-t-2xl md:rounded-t-xl bg-gold-gradient opacity-80" />
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-obsidian-400/60 shrink-0 bg-gradient-to-r from-obsidian-600/50 to-transparent">
+          <h2 className="font-display text-white font-semibold text-sm tracking-wide">Employee Profile</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-obsidian-500/60 transition-colors">
+            <X size={17} />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 pb-safe">
+          {/* Profile hero */}
+          <div className="px-5 py-5 border-b border-obsidian-400/40">
+            <div className="flex items-center gap-4">
+              <div className={`w-16 h-16 border-2 rounded-full flex items-center justify-center font-bold text-2xl uppercase shrink-0 ${cfg.avatarBg}`}>
+                {member.name.charAt(0)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-white font-bold text-lg leading-none">{member.name}</h3>
+                  {isSelf && (
+                    <span className="text-[10px] px-1.5 py-0.5 bg-gray-700 text-gray-400 rounded font-medium">You</span>
+                  )}
+                </div>
+                <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 mt-2 rounded-full border ${cfg.badgeBg}`}>
+                  <cfg.icon size={11} />
+                  {cfg.label}
+                </span>
+              </div>
+            </div>
+
+            {/* Contact info */}
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="flex items-center gap-2">
+                <AtSign size={13} className="text-gray-500 shrink-0" />
+                <span className="text-gray-400 text-sm truncate">@{member.username}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Phone size={13} className="text-gray-500 shrink-0" />
+                <span className="text-gray-400 text-sm truncate">{member.phone || '—'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Salesperson stats */}
+          {member.role === 'salesperson' && (
+            <div className="px-5 py-4 border-b border-obsidian-400/40">
+              <p className="text-gray-500 text-xs font-medium uppercase tracking-wider mb-3">Performance</p>
+
+              {/* Monthly target progress */}
+              <div className="mb-4">
+                <div className="flex items-center justify-between text-xs mb-2">
+                  <span className="text-gray-400 flex items-center gap-1.5"><Target size={12} /> Monthly Target</span>
+                  <span className="text-white font-semibold">{member.carsInMonth} / {member.monthlyTarget} cars</span>
+                </div>
+                <div className="h-2.5 bg-obsidian-700/60 rounded-full overflow-hidden">
+                  <div
+                    className={`h-2.5 rounded-full transition-all ${targetPct >= 100 ? 'bg-green-500' : targetPct >= 50 ? 'bg-gold-500' : 'bg-yellow-500'}`}
+                    style={{ width: `${targetPct}%` }}
+                  />
+                </div>
+                <p className="text-right text-xs text-gray-500 mt-1">{Math.round(targetPct)}% achieved</p>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-obsidian-700/60 rounded-lg p-3 border border-obsidian-400/60">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Car size={12} className="text-gray-500" />
+                    <p className="text-gray-500 text-[11px]">Cars Sold</p>
+                  </div>
+                  <p className="text-white font-bold text-xl">{soldCars.length}</p>
+                </div>
+                <div className="bg-obsidian-700/60 rounded-lg p-3 border border-obsidian-400/60">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <TrendingUp size={12} className="text-gray-500" />
+                    <p className="text-gray-500 text-[11px]">Active Cars</p>
+                  </div>
+                  <p className="text-white font-bold text-xl">{activeCars.length}</p>
+                </div>
+                <div className="bg-obsidian-700/60 rounded-lg p-3 border border-obsidian-400/60">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Award size={12} className="text-gray-500" />
+                    <p className="text-gray-500 text-[11px]">Commission</p>
+                  </div>
+                  <p className="text-purple-400 font-bold text-sm">{formatRM(commission)}</p>
+                </div>
+              </div>
+
+              {/* Active customers */}
+              {activeCustomers.length > 0 && (
+                <div className="mt-3 bg-obsidian-700/40 rounded-lg p-3 border border-obsidian-400/40">
+                  <p className="text-gray-500 text-[11px] mb-1">Active Leads</p>
+                  <p className="text-white font-bold text-xl">{activeCustomers.length}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Assigned cars */}
+          {(member.role === 'salesperson' || member.role === 'mechanic') && activeCars.length > 0 && (
+            <div className="px-5 py-4">
+              <p className="text-gray-500 text-xs font-medium uppercase tracking-wider mb-3">
+                Assigned Cars ({activeCars.length})
+              </p>
+              <div className="space-y-2">
+                {activeCars.map((car) => (
+                  <div key={car.id} className="flex items-center justify-between bg-obsidian-700/40 rounded-lg px-3 py-2.5 border border-obsidian-400/40">
+                    <div>
+                      <p className="text-white text-sm font-medium">{car.year} {car.make} {car.model}</p>
+                      {car.carPlate && <p className="text-gray-500 text-xs">{car.carPlate}</p>}
+                    </div>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-obsidian-600/60 border border-obsidian-400/60 text-gray-400">
+                      {CAR_STATUS_LABEL[car.status] ?? car.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {member.role === 'director' && (
+            <div className="px-5 py-5">
+              <div className="flex flex-col items-center justify-center py-6 text-center">
+                <Shield size={32} className="text-purple-400/50 mb-2" />
+                <p className="text-gray-500 text-sm">Director — full system access</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function TeamMembers() {
   const users = useStore((s) => s.users);
   const cars = useStore((s) => s.cars);
@@ -81,6 +255,7 @@ export default function TeamMembers() {
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [filterRole, setFilterRole] = useState<'all' | 'director' | 'salesperson' | 'mechanic'>('all');
+  const [selectedEmployee, setSelectedEmployee] = useState<User | null>(null);
 
   const getCarsSoldByPerson = (userId: string) =>
     soldCars.filter((c) => c.assignedSalesperson === userId).length;
@@ -232,7 +407,8 @@ export default function TeamMembers() {
             return (
               <div
                 key={member.id}
-                className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-5 hover:border-gold-500/30 transition-colors"
+                onClick={() => setSelectedEmployee(member)}
+                className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-5 hover:border-gold-500/30 transition-colors cursor-pointer"
               >
                 {/* Card header */}
                 <div className="flex items-start justify-between mb-4">
@@ -254,7 +430,7 @@ export default function TeamMembers() {
                       <p className="text-gray-500 text-xs">@{member.username}</p>
                     </div>
                   </div>
-                  <div className="flex gap-1">
+                  <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                     <button
                       onClick={() => openEdit(member)}
                       className="p-1.5 text-gray-400 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors"
@@ -332,6 +508,15 @@ export default function TeamMembers() {
             );
           })}
         </div>
+      )}
+
+      {/* Employee Detail Modal */}
+      {selectedEmployee && (
+        <EmployeeDetailModal
+          member={selectedEmployee}
+          onClose={() => setSelectedEmployee(null)}
+          currentUserId={currentUser?.id}
+        />
       )}
 
       {/* Modal */}

@@ -19,12 +19,12 @@ import Reminders from './pages/Reminders';
 import History from './pages/History';
 import AIAssistant from './pages/AIAssistant';
 import Customers from './pages/Customers';
-import SalesPipeline from './pages/SalesPipeline';
 import Commission from './pages/Commission';
 import LoanCalculator from './pages/LoanCalculator';
 import CarCompare from './pages/CarCompare';
 import SalesDashboard from './pages/SalesDashboard';
 import Calendar from './pages/Calendar';
+import Data from './pages/Data';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
@@ -195,16 +195,6 @@ export default function App() {
           }
         />
         <Route
-          path="/pipeline"
-          element={
-            <RequireSalesOrDirector>
-              <Layout>
-                <SalesPipeline />
-              </Layout>
-            </RequireSalesOrDirector>
-          }
-        />
-        <Route
           path="/commission"
           element={
             <RequireSalesOrDirector>
@@ -242,6 +232,16 @@ export default function App() {
                 <Calendar />
               </Layout>
             </RequireSalesOrDirector>
+          }
+        />
+        <Route
+          path="/data"
+          element={
+            <RequireDirector>
+              <Layout>
+                <Data />
+              </Layout>
+            </RequireDirector>
           }
         />
         <Route path="*" element={<Navigate to="/" replace />} />

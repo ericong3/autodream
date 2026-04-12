@@ -34,7 +34,7 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = 'ma
           <h2 className="font-display text-white font-semibold text-sm tracking-wide">{title}</h2>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-obsidian-300/50 hover:text-white
+            className="p-1.5 rounded-lg text-gray-400 hover:text-white
               hover:bg-obsidian-500/60 transition-colors"
           >
             <X size={17} />

@@ -10,7 +10,6 @@ import {
   Bot,
   History,
   Users,
-  GitBranch,
   Banknote,
   Calculator,
   GitCompare,
@@ -18,6 +17,7 @@ import {
   ChevronDown,
   ChevronRight,
   ShoppingBag,
+  Database,
 } from 'lucide-react';
 import { useStore } from '../store';
 
@@ -35,6 +35,7 @@ const directorItems: NavItem[] = [
 const directorBottomItems: NavItem[] = [
   { to: '/finance', icon: TrendingUp, label: 'Accounting' },
   { to: '/team', icon: UsersRound, label: 'Team Members' },
+  { to: '/data', icon: Database, label: 'Data' },
   { to: '/reminders', icon: ClipboardList, label: 'Instructions' },
   { to: '/history', icon: History, label: 'History' },
   { to: '/ai-assistant', icon: Bot, label: 'AI Assistant' },
@@ -42,7 +43,6 @@ const directorBottomItems: NavItem[] = [
 
 const salesGroupItems: NavItem[] = [
   { to: '/customers', icon: Users, label: 'Leads & Loan' },
-  { to: '/pipeline', icon: GitBranch, label: 'Sales Pipeline' },
   { to: '/quotations', icon: FileText, label: 'Quotations' },
   { to: '/commission', icon: Banknote, label: 'Commission' },
   { to: '/loan-calculator', icon: Calculator, label: 'Loan Calculator' },
@@ -54,7 +54,6 @@ const salespersonItems: NavItem[] = [
   { to: '/sales-dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/inventory', icon: Car, label: 'Inventory' },
   { to: '/customers', icon: Users, label: 'Leads & Loan' },
-  { to: '/pipeline', icon: GitBranch, label: 'Sales Pipeline' },
   { to: '/quotations', icon: FileText, label: 'Quotations' },
   { to: '/loan-calculator', icon: Calculator, label: 'Loan Calculator' },
   { to: '/car-compare', icon: GitCompare, label: 'Car Compare' },
@@ -92,7 +91,7 @@ function NavItemLink({ item, indent = false }: { item: NavItem; indent?: boolean
             className={
               isActive
                 ? 'text-gold-300 drop-shadow-[0_0_6px_rgba(234,184,32,0.5)]'
-                : 'text-white/40 group-hover:text-white/80 transition-colors'
+                : 'text-gray-400 group-hover:text-white/80 transition-colors'
             }
           />
           <span className={isActive ? 'font-semibold' : ''}>{item.label}</span>
@@ -135,14 +134,14 @@ export default function Sidebar() {
                   className={
                     isSalesRouteActive
                       ? 'text-gold-300 drop-shadow-[0_0_6px_rgba(234,184,32,0.5)]'
-                      : 'text-white/40 group-hover:text-white/80 transition-colors'
+                      : 'text-gray-400 group-hover:text-white/80 transition-colors'
                   }
                 />
                 <span className={isSalesRouteActive ? 'font-semibold' : ''}>Sales</span>
               </div>
               {showSalesItems
-                ? <ChevronDown size={13} className="text-white/40" />
-                : <ChevronRight size={13} className="text-white/40" />
+                ? <ChevronDown size={13} className="text-gray-400" />
+                : <ChevronRight size={13} className="text-gray-400" />
               }
             </button>
 
@@ -185,7 +184,7 @@ function SidebarLogo() {
         </div>
         <div>
           <h1 className="font-display text-white font-bold text-base leading-none tracking-wide">AutoDream</h1>
-          <p className="text-[10px] mt-0.5 tracking-[0.2em] uppercase font-medium text-gold-500">
+          <p className="text-[10px] mt-0.5 tracking-[0.2em] uppercase font-medium text-gold-300">
             Car Dealership
           </p>
         </div>
@@ -205,7 +204,7 @@ function SidebarFooter() {
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-white text-sm font-semibold truncate leading-none">{currentUser?.name}</p>
-          <p className="text-white/50 text-[11px] capitalize mt-0.5">{currentUser?.role}</p>
+          <p className="text-gray-400 text-[11px] capitalize mt-0.5">{currentUser?.role}</p>
         </div>
       </div>
     </div>
