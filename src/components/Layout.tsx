@@ -83,10 +83,10 @@ export default function Layout({ children }: LayoutProps) {
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
 
         {/* ── Topbar ─────────────────────────────────────────── */}
-        <header className="bg-header-gradient border-b border-obsidian-400/80
+        <header className="safe-area-top bg-header-gradient border-b border-obsidian-400/80
           flex items-center justify-between px-4 md:px-6 shrink-0
           shadow-[0_2px_16px_rgba(0,0,0,0.5)]"
-          style={{ minHeight: '3.5rem' }}
+          style={{ minHeight: 'calc(3.5rem + env(safe-area-inset-top, 0px))' }}
         >
 
           {/* Left: logo (mobile) + name */}
@@ -143,7 +143,7 @@ export default function Layout({ children }: LayoutProps) {
         bg-header-gradient border-t border-obsidian-400/80
         flex items-center justify-around px-1
         shadow-[0_-4px_20px_rgba(0,0,0,0.5)]"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom)', paddingTop: '0.25rem' }}
+        style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 8px)', paddingTop: '0.25rem' }}
       >
         {primaryNav.map(item => (
           <NavLink
