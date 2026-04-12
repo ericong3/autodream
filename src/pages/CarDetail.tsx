@@ -149,6 +149,7 @@ export default function CarDetail() {
   const [photoUploading, setPhotoUploading] = useState(false);
   const replacePhotoRef = useRef<HTMLInputElement>(null);
   const addPhotoRef = useRef<HTMLInputElement>(null);
+  const addPhotoMainRef = useRef<HTMLInputElement>(null);
   const allPhotos = car?.photos?.length ? car.photos : (car?.photo ? [car.photo] : []);
 
   const openGallery = (idx = 0) => { setGalleryIndex(idx); setShowGallery(true); setEditingPhotos(false); };
@@ -409,21 +410,32 @@ export default function CarDetail() {
       {/* Main info */}
       <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card overflow-hidden">
         <div className="flex flex-col md:flex-row">
-          <div
-            className={`w-full md:w-72 h-52 md:h-auto bg-obsidian-700/60 flex items-center justify-center flex-shrink-0 relative group ${allPhotos.length > 0 ? 'cursor-pointer' : ''}`}
-            onClick={() => allPhotos.length > 0 && openGallery(0)}
-          >
+          <div className="w-full md:w-72 h-52 md:h-auto bg-obsidian-700/60 flex items-center justify-center flex-shrink-0 relative group">
+            <div
+              className={`absolute inset-0 ${allPhotos.length > 0 ? 'cursor-pointer' : ''}`}
+              onClick={() => allPhotos.length > 0 && openGallery(0)}
+            />
             {car.photo ? (
               <img src={car.photo} alt={`${car.make} ${car.model}`} className="w-full h-full object-cover" />
             ) : (
               <CarIcon size={56} className="text-gray-700" />
             )}
             {allPhotos.length > 0 && (
-              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1">
+              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 pointer-events-none">
                 <Image size={24} className="text-white" />
                 <span className="text-white text-xs font-medium">{allPhotos.length} photo{allPhotos.length !== 1 ? 's' : ''}</span>
               </div>
             )}
+            {/* Edit Photos button — always visible for director/salesperson */}
+            {(isDirector || isSalesperson) && (
+              <button
+                onClick={() => allPhotos.length > 0 ? openGallery(0) : addPhotoMainRef.current?.click()}
+                className="absolute bottom-2 right-2 z-10 flex items-center gap-1.5 bg-black/70 hover:bg-black/90 text-white px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors border border-white/20"
+              >
+                <Camera size={13} /> {allPhotos.length === 0 ? 'Add Photos' : 'Edit Photos'}
+              </button>
+            )}
+            <input ref={addPhotoMainRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleAddPhotos(e.target.files)} />
           </div>
 
           <div className="flex-1 p-6">
