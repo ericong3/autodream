@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
-import { Car, RepairJob, ChecklistItem, REPAIR_TYPES, REPAIR_LOCATIONS, DEFAULT_CHECKLIST_LABELS } from '../types';
+import { Car, RepairJob, ChecklistItem, REPAIR_TYPES, DEFAULT_CHECKLIST_LABELS } from '../types';
 import Modal from '../components/Modal';
 import { formatRM, formatMileage, generateId } from '../utils/format';
 
