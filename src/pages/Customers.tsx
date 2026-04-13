@@ -1321,9 +1321,22 @@ export default function Customers() {
             </FormField>
           </div>
         )}
-        <div className="flex justify-center gap-3 mt-5">
-          <button onClick={() => { setShowTdModal(false); setTdCustomer(null); }} className="px-6 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
-          <button onClick={handleSaveTd} disabled={!tdForm.date || !tdForm.time} className="btn-gold disabled:opacity-50 px-6 py-2.5 rounded-lg text-sm">Save to Calendar</button>
+        <div className="space-y-2 mt-5">
+          <button
+            onClick={() => {
+              if (!tdCustomer) return;
+              setShowTdModal(false);
+              openSidebar(tdCustomer);
+              setTdCustomer(null);
+            }}
+            className="w-full flex items-center justify-center gap-2 bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/60 hover:border-gold-500/40 text-gray-300 py-2.5 rounded-lg text-sm transition-colors"
+          >
+            Skip Test Drive — Proceed Now
+          </button>
+          <div className="flex justify-center gap-3">
+            <button onClick={() => { setShowTdModal(false); setTdCustomer(null); }} className="px-6 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
+            <button onClick={handleSaveTd} disabled={!tdForm.date || !tdForm.time} className="btn-gold disabled:opacity-50 px-6 py-2.5 rounded-lg text-sm">Save to Calendar</button>
+          </div>
         </div>
       </Modal>
 
