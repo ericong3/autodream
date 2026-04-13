@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, User, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, FileText, ClipboardList } from 'lucide-react';
+import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, FileText, ClipboardList } from 'lucide-react';
 import { useStore } from '../store';
 import { Customer, LoanApplication, TradeIn } from '../types';
 import Modal from '../components/Modal';
@@ -947,92 +947,67 @@ export default function Customers() {
         {sidebarLead && (
           <div className="space-y-4">
             {/* Customer info card — always visible */}
-            <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl p-4 space-y-2">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-full bg-yellow-500/20 border border-yellow-500/30 flex items-center justify-center text-yellow-400 font-bold text-sm uppercase">
-                  {sidebarLead.name.charAt(0)}
-                </div>
-                <div>
-                  <p className="text-white font-medium text-sm">{sidebarLead.name}</p>
-                  <p className="text-gray-500 text-xs">{SOURCE_LABELS[sidebarLead.source]}</p>
-                </div>
+            <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl px-3 py-2.5 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-yellow-500/20 border border-yellow-500/30 flex items-center justify-center text-yellow-400 font-bold text-sm uppercase shrink-0">
+                {sidebarLead.name.charAt(0)}
               </div>
-              <div className="flex items-center gap-1.5 text-xs text-gray-400">
-                <Phone size={11} className="text-gray-600" />
-                {sidebarLead.phone}
-              </div>
-              {isDirector && (
-                <div className="flex items-center gap-1.5 text-xs text-gray-400">
-                  <User size={11} className="text-gray-600" />
-                  {getSalesName(sidebarLead.assignedSalesId)}
-                </div>
-              )}
-              <div className="pt-1">
-                <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
-                  Test Drive Done
-                </span>
+              <div className="min-w-0">
+                <p className="text-white font-medium text-sm truncate">{sidebarLead.name}</p>
+                <p className="text-gray-500 text-xs">{sidebarLead.phone} · <span className="text-yellow-400">Test Drive Done</span></p>
               </div>
             </div>
 
             {/* ── Step 1: Options ── */}
             {sidebarView === 'options' && (
-              <>
-                <p className="text-gray-400 text-sm">What would you like to do next with this lead?</p>
-
+              <div className="space-y-2">
                 <button
                   onClick={handleFollowUp}
-                  className="w-full text-left bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/60 hover:border-gold-500/40 rounded-xl p-4 transition-all group"
+                  className="w-full text-left bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/60 hover:border-gold-500/40 rounded-xl p-3 transition-all group"
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-gold-500/10 border border-gold-500/20 flex items-center justify-center">
-                        <CalendarCheck size={18} className="text-gold-400" />
-                      </div>
-                      <div>
-                        <p className="text-white text-sm font-medium">Follow Up</p>
-                        <p className="text-gray-500 text-xs mt-0.5">Continue nurturing this lead</p>
-                      </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-gold-500/10 border border-gold-500/20 flex items-center justify-center shrink-0">
+                      <CalendarCheck size={16} className="text-gold-400" />
                     </div>
-                    <ChevronRight size={16} className="text-gray-600 group-hover:text-gold-400 transition-colors" />
+                    <div className="flex-1">
+                      <p className="text-white text-sm font-medium">Follow Up</p>
+                      <p className="text-gray-500 text-xs">Continue nurturing this lead</p>
+                    </div>
+                    <ChevronRight size={15} className="text-gray-600 group-hover:text-gold-400 transition-colors shrink-0" />
                   </div>
                 </button>
 
                 <button
                   onClick={() => { setSidebarCashFlow(false); setSidebarView('car_select'); }}
-                  className="w-full text-left bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/60 hover:border-green-500/40 rounded-xl p-4 transition-all group"
+                  className="w-full text-left bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/60 hover:border-green-500/40 rounded-xl p-3 transition-all group"
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-green-500/10 border border-green-500/20 flex items-center justify-center">
-                        <Banknote size={18} className="text-green-400" />
-                      </div>
-                      <div>
-                        <p className="text-white text-sm font-medium">Proceed with Loan</p>
-                        <p className="text-gray-500 text-xs mt-0.5">Submit loan application now</p>
-                      </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-green-500/10 border border-green-500/20 flex items-center justify-center shrink-0">
+                      <Banknote size={16} className="text-green-400" />
                     </div>
-                    <ChevronRight size={16} className="text-gray-600 group-hover:text-green-400 transition-colors" />
+                    <div className="flex-1">
+                      <p className="text-white text-sm font-medium">Proceed with Loan</p>
+                      <p className="text-gray-500 text-xs">Submit loan application now</p>
+                    </div>
+                    <ChevronRight size={15} className="text-gray-600 group-hover:text-green-400 transition-colors shrink-0" />
                   </div>
                 </button>
 
                 <button
                   onClick={() => { setSidebarCashFlow(true); setSidebarView('car_select'); }}
-                  className="w-full text-left bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/60 hover:border-purple-500/40 rounded-xl p-4 transition-all group"
+                  className="w-full text-left bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/60 hover:border-purple-500/40 rounded-xl p-3 transition-all group"
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
-                        <Banknote size={18} className="text-purple-400" />
-                      </div>
-                      <div>
-                        <p className="text-white text-sm font-medium">Cash Purchase</p>
-                        <p className="text-gray-500 text-xs mt-0.5">Customer paying in full cash</p>
-                      </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center shrink-0">
+                      <Banknote size={16} className="text-purple-400" />
                     </div>
-                    <ChevronRight size={16} className="text-gray-600 group-hover:text-purple-400 transition-colors" />
+                    <div className="flex-1">
+                      <p className="text-white text-sm font-medium">Cash Purchase</p>
+                      <p className="text-gray-500 text-xs">Customer paying in full cash</p>
+                    </div>
+                    <ChevronRight size={15} className="text-gray-600 group-hover:text-purple-400 transition-colors shrink-0" />
                   </div>
                 </button>
-              </>
+              </div>
             )}
 
             {/* ── Step 2: Car Selection ── */}
