@@ -278,6 +278,7 @@ function rowToCustomer(r: any): Customer {
     loanApplications: r.loan_applications ?? [],
     followUpRemark: r.follow_up_remark ?? undefined,
     tradeIn: r.trade_in ?? undefined,
+    cashWorkOrder: r.cash_work_order ?? undefined,
     createdAt: r.created_at,
   };
 }
@@ -303,6 +304,7 @@ function customerToRow(c: Partial<Customer>) {
   if (c.loanApplications !== undefined) row.loan_applications = c.loanApplications;
   if (c.followUpRemark !== undefined) row.follow_up_remark = c.followUpRemark;
   if (c.tradeIn !== undefined) row.trade_in = c.tradeIn;
+  if (c.cashWorkOrder !== undefined) row.cash_work_order = c.cashWorkOrder;
   if (c.createdAt !== undefined) row.created_at = c.createdAt;
   return row;
 }

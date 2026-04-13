@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, FileText, ClipboardList } from 'lucide-react';
 import { useStore } from '../store';
-import { Customer, LoanApplication, TradeIn } from '../types';
+import { Customer, LoanApplication, TradeIn, CashWorkOrder, WorkOrderItem } from '../types';
 import Modal from '../components/Modal';
 import { generateId, formatRM } from '../utils/format';
 
@@ -107,6 +107,23 @@ export default function Customers() {
   const [sidebarCashFlow, setSidebarCashFlow] = useState(false);
   const [loanForm, setLoanForm] = useState({ banks: [] as string[], dealPrice: '', notes: '', carId: '' });
   const [cashForm, setCashForm] = useState({ dealPrice: '', notes: '' });
+
+  // Work order overlay
+  const [workOrderCustomer, setWorkOrderCustomer] = useState<Customer | null>(null);
+  const [workOrderCarId, setWorkOrderCarId] = useState('');
+  const emptyWorkOrder = {
+    sellingPrice: 0, insurance: 0, bankProduct: 0,
+    additionalItems: [] as WorkOrderItem[],
+    bookingFee: 0, downpayment: 0, discount: 0,
+    customerName: '', customerIc: '', customerPhone: '', customerEmail: '', customerAddress: '',
+    hasTradeIn: false,
+    tradeInPhotos: [] as string[], greenCardPhoto: '',
+    tradeInPlate: '', tradeInMake: '', tradeInModel: '', tradeInVariant: '',
+    tradeInPrice: 0, settlementFigure: 0,
+  };
+  const [woForm, setWoForm] = useState({ ...emptyWorkOrder });
+  const tiPhotoRef = useRef<HTMLInputElement>(null);
+  const gcPhotoRef = useRef<HTMLInputElement>(null);
 
   // Loan status management modal (for loan_submitted leads)
 
@@ -325,6 +342,88 @@ export default function Customers() {
       });
     }
     closeSidebar();
+  };
+
+  // ── Work order ────────────────────────────────────────────
+  const handleWoPhoto = (e: React.ChangeEvent<HTMLInputElement>, field: 'tradeIn' | 'greenCard') => {
+    const files = Array.from(e.target.files ?? []);
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const url = ev.target?.result as string;
+        if (field === 'tradeIn') {
+          setWoForm(f => ({ ...f, tradeInPhotos: [...f.tradeInPhotos, url] }));
+        } else {
+          setWoForm(f => ({ ...f, greenCardPhoto: url }));
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    if (e.target) e.target.value = '';
+  };
+
+  const handleWorkOrderSubmit = () => {
+    if (!workOrderCustomer) return;
+    const car = getCar(workOrderCarId);
+    const additions = woForm.sellingPrice + woForm.insurance + woForm.bankProduct +
+      woForm.additionalItems.reduce((s, i) => s + i.amount, 0);
+    const reductions = woForm.bookingFee + woForm.downpayment + woForm.discount;
+    const totalFinalDeal = additions - reductions;
+    const hasDiscount = car ? woForm.sellingPrice < car.sellingPrice : false;
+
+    const workOrder: CashWorkOrder = {
+      carId: workOrderCarId,
+      sellingPrice: woForm.sellingPrice,
+      insurance: woForm.insurance,
+      bankProduct: woForm.bankProduct,
+      additionalItems: woForm.additionalItems,
+      bookingFee: woForm.bookingFee,
+      downpayment: woForm.downpayment,
+      discount: woForm.discount,
+      customerName: woForm.customerName,
+      customerIc: woForm.customerIc,
+      customerPhone: woForm.customerPhone,
+      customerEmail: woForm.customerEmail,
+      customerAddress: woForm.customerAddress,
+      hasTradeIn: woForm.hasTradeIn,
+      tradeInPhotos: woForm.tradeInPhotos,
+      greenCardPhoto: woForm.greenCardPhoto,
+      tradeInPlate: woForm.tradeInPlate,
+      tradeInMake: woForm.tradeInMake,
+      tradeInModel: woForm.tradeInModel,
+      tradeInVariant: woForm.tradeInVariant,
+      tradeInPrice: woForm.tradeInPrice,
+      settlementFigure: woForm.settlementFigure,
+      submittedBy: currentUser?.name ?? '',
+      createdAt: new Date().toISOString(),
+    };
+
+    updateCustomer(workOrderCustomer.id, {
+      leadStatus: 'loan_submitted',
+      loanStatus: 'approved',
+      loanBankSubmitted: 'Cash',
+      loanApplications: [{ bank: 'Cash', status: 'approved' }],
+      interestedCarId: workOrderCarId,
+      dealPrice: totalFinalDeal,
+      cashWorkOrder: workOrder,
+    });
+
+    if (car) {
+      const updateCar = useStore.getState().updateCar;
+      updateCar(car.id, {
+        status: 'deal_pending',
+        finalDeal: {
+          submittedBy: currentUser?.name ?? '',
+          submittedAt: new Date().toISOString(),
+          dealPrice: totalFinalDeal,
+          bank: 'Cash',
+          approvalStatus: (hasDiscount || woForm.discount > 0) ? 'pending' : 'approved',
+          approvedBy: (hasDiscount || woForm.discount > 0) ? undefined : currentUser?.name,
+          approvedAt: (hasDiscount || woForm.discount > 0) ? undefined : new Date().toISOString(),
+        },
+      });
+    }
+    setWorkOrderCustomer(null);
   };
 
   // ── Bank status modal ─────────────────────────────────────
@@ -1069,8 +1168,22 @@ export default function Customers() {
                 <button
                   onClick={() => {
                     const car = getCar(loanForm.carId);
-                    setCashForm(f => ({ ...f, dealPrice: String(car?.sellingPrice ?? f.dealPrice) }));
-                    setSidebarView(sidebarCashFlow ? 'cash' : 'loan');
+                    if (sidebarCashFlow && sidebarLead) {
+                      setWoForm({
+                        ...emptyWorkOrder,
+                        sellingPrice: car?.sellingPrice ?? 0,
+                        customerName: sidebarLead.name,
+                        customerIc: sidebarLead.ic ?? '',
+                        customerPhone: sidebarLead.phone,
+                        customerEmail: sidebarLead.email ?? '',
+                      });
+                      setWorkOrderCarId(loanForm.carId);
+                      setWorkOrderCustomer(sidebarLead);
+                      closeSidebar();
+                    } else {
+                      setCashForm(f => ({ ...f, dealPrice: String(car?.sellingPrice ?? f.dealPrice) }));
+                      setSidebarView('loan');
+                    }
                   }}
                   disabled={!loanForm.carId}
                   className={`w-full disabled:opacity-50 disabled:cursor-not-allowed text-white py-2.5 rounded-lg text-sm font-medium transition-colors ${sidebarCashFlow ? 'bg-purple-600 hover:bg-purple-500' : 'bg-green-500 hover:bg-green-400'}`}
@@ -1697,6 +1810,271 @@ export default function Customers() {
           );
         })()}
       </Modal>
+
+      {/* ── Cash Work Order Overlay ───────────────────── */}
+      {workOrderCustomer && (() => {
+        const car = getCar(workOrderCarId);
+        const additions = woForm.sellingPrice + woForm.insurance + woForm.bankProduct +
+          woForm.additionalItems.reduce((s, i) => s + i.amount, 0);
+        const reductions = woForm.bookingFee + woForm.downpayment + woForm.discount;
+        const totalFinalDeal = additions - reductions;
+        const netTradeIn = woForm.tradeInPrice - woForm.settlementFigure;
+
+        return (
+          <div className="fixed inset-0 z-50 bg-[#080808] overflow-y-auto">
+            {/* Header */}
+            <div className="sticky top-0 z-10 bg-[#0F0E0C] border-b border-obsidian-400/60 px-4 py-3 flex items-center justify-between">
+              <div>
+                <p className="text-white font-semibold text-sm">Cash Work Order</p>
+                <p className="text-gray-500 text-xs">{workOrderCustomer.name} · {car ? `${car.year} ${car.make} ${car.model}` : ''}</p>
+              </div>
+              <button onClick={() => setWorkOrderCustomer(null)} className="p-1.5 text-gray-500 hover:text-white hover:bg-obsidian-600/60 rounded-lg transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="max-w-lg mx-auto px-4 py-5 space-y-6 pb-32">
+
+              {/* ── Section 1: Deal ── */}
+              <div>
+                <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest mb-3">Deal of the Car</p>
+                <div className="bg-[#0F0E0C] border border-obsidian-400/60 rounded-xl overflow-hidden">
+                  {/* Additions */}
+                  {[
+                    { label: 'Selling Price', key: 'sellingPrice' as const },
+                    { label: 'Insurance', key: 'insurance' as const },
+                    { label: 'Bank Product', key: 'bankProduct' as const },
+                  ].map(row => (
+                    <div key={row.key} className="flex items-center gap-3 px-4 py-3 border-b border-obsidian-400/30">
+                      <span className="text-gray-400 text-sm flex-1">{row.label}</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-gray-600 text-xs">RM</span>
+                        <input
+                          type="number"
+                          value={woForm[row.key] || ''}
+                          onChange={e => setWoForm(f => ({ ...f, [row.key]: Number(e.target.value) }))}
+                          className="w-28 bg-transparent text-white text-sm text-right outline-none border-b border-transparent focus:border-gold-500/60 transition-colors"
+                          placeholder="0"
+                        />
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Additional custom items */}
+                  {woForm.additionalItems.map((item, idx) => (
+                    <div key={idx} className="flex items-center gap-3 px-4 py-3 border-b border-obsidian-400/30">
+                      <input
+                        value={item.label}
+                        onChange={e => setWoForm(f => ({ ...f, additionalItems: f.additionalItems.map((x, i) => i === idx ? { ...x, label: e.target.value } : x) }))}
+                        placeholder="Item name..."
+                        className="flex-1 bg-transparent text-gray-300 text-sm outline-none border-b border-transparent focus:border-gold-500/60 transition-colors"
+                      />
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-gray-600 text-xs">RM</span>
+                        <input
+                          type="number"
+                          value={item.amount || ''}
+                          onChange={e => setWoForm(f => ({ ...f, additionalItems: f.additionalItems.map((x, i) => i === idx ? { ...x, amount: Number(e.target.value) } : x) }))}
+                          className="w-24 bg-transparent text-white text-sm text-right outline-none border-b border-transparent focus:border-gold-500/60 transition-colors"
+                          placeholder="0"
+                        />
+                        <button onClick={() => setWoForm(f => ({ ...f, additionalItems: f.additionalItems.filter((_, i) => i !== idx) }))} className="ml-1 text-gray-600 hover:text-red-400 transition-colors">
+                          <X size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  <button
+                    onClick={() => setWoForm(f => ({ ...f, additionalItems: [...f.additionalItems, { label: '', amount: 0 }] }))}
+                    className="w-full px-4 py-2.5 text-xs text-gray-600 hover:text-gold-400 text-left transition-colors border-b border-obsidian-400/30"
+                  >
+                    + Add item
+                  </button>
+
+                  {/* Reductions */}
+                  <div className="px-4 py-2 bg-obsidian-700/30">
+                    <p className="text-gray-600 text-xs uppercase tracking-wide">Reduction</p>
+                  </div>
+                  {[
+                    { label: 'Booking Fee', key: 'bookingFee' as const },
+                    { label: 'Downpayment', key: 'downpayment' as const },
+                    { label: 'Discount', key: 'discount' as const },
+                  ].map(row => (
+                    <div key={row.key} className="flex items-center gap-3 px-4 py-3 border-b border-obsidian-400/30">
+                      <span className="text-gray-400 text-sm flex-1">{row.label}</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-red-500/60 text-xs">- RM</span>
+                        <input
+                          type="number"
+                          value={woForm[row.key] || ''}
+                          onChange={e => setWoForm(f => ({ ...f, [row.key]: Number(e.target.value) }))}
+                          className="w-28 bg-transparent text-red-400 text-sm text-right outline-none border-b border-transparent focus:border-red-500/40 transition-colors"
+                          placeholder="0"
+                        />
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Total */}
+                  <div className="flex items-center justify-between px-4 py-4 bg-gold-500/5">
+                    <span className="text-white font-semibold text-sm">Total Final Deal</span>
+                    <span className="text-gold-400 font-bold text-lg">{formatRM(totalFinalDeal)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Section 2: Customer Details ── */}
+              <div>
+                <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest mb-3">Customer Details</p>
+                <div className="bg-[#0F0E0C] border border-obsidian-400/60 rounded-xl overflow-hidden divide-y divide-obsidian-400/30">
+                  {[
+                    { label: 'Full Name', key: 'customerName' as const, placeholder: 'Ahmad Bin Ismail' },
+                    { label: 'IC Number', key: 'customerIc' as const, placeholder: '901231-14-5678' },
+                    { label: 'Phone', key: 'customerPhone' as const, placeholder: '0123456789' },
+                    { label: 'Email', key: 'customerEmail' as const, placeholder: 'email@example.com' },
+                    { label: 'Address', key: 'customerAddress' as const, placeholder: 'Full address...' },
+                  ].map(row => (
+                    <div key={row.key} className="flex items-start gap-3 px-4 py-3">
+                      <span className="text-gray-500 text-sm w-24 shrink-0 pt-0.5">{row.label}</span>
+                      <input
+                        value={woForm[row.key]}
+                        onChange={e => setWoForm(f => ({ ...f, [row.key]: e.target.value }))}
+                        placeholder={row.placeholder}
+                        className="flex-1 bg-transparent text-white text-sm outline-none border-b border-transparent focus:border-gold-500/60 transition-colors"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── Section 3: Trade-in ── */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest">Trade-in</p>
+                  <button
+                    onClick={() => setWoForm(f => ({ ...f, hasTradeIn: !f.hasTradeIn }))}
+                    className={`w-10 h-6 rounded-full border transition-colors relative ${woForm.hasTradeIn ? 'bg-gold-500 border-gold-500' : 'bg-obsidian-500 border-obsidian-400/60'}`}
+                  >
+                    <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow ${woForm.hasTradeIn ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+
+                {woForm.hasTradeIn && (
+                  <div className="space-y-4">
+                    {/* Trade-in car details */}
+                    <div className="bg-[#0F0E0C] border border-obsidian-400/60 rounded-xl overflow-hidden divide-y divide-obsidian-400/30">
+                      {[
+                        { label: 'Car Plate', key: 'tradeInPlate' as const, placeholder: 'WXX 1234' },
+                        { label: 'Make', key: 'tradeInMake' as const, placeholder: 'Toyota' },
+                        { label: 'Model', key: 'tradeInModel' as const, placeholder: 'Vios' },
+                        { label: 'Variant', key: 'tradeInVariant' as const, placeholder: '1.5 E' },
+                      ].map(row => (
+                        <div key={row.key} className="flex items-center gap-3 px-4 py-3">
+                          <span className="text-gray-500 text-sm w-20 shrink-0">{row.label}</span>
+                          <input
+                            value={woForm[row.key]}
+                            onChange={e => setWoForm(f => ({ ...f, [row.key]: e.target.value }))}
+                            placeholder={row.placeholder}
+                            className="flex-1 bg-transparent text-white text-sm outline-none border-b border-transparent focus:border-gold-500/60 transition-colors"
+                          />
+                        </div>
+                      ))}
+                      {[
+                        { label: 'Trade-in Price', key: 'tradeInPrice' as const },
+                        { label: 'Settlement', key: 'settlementFigure' as const },
+                      ].map(row => (
+                        <div key={row.key} className="flex items-center gap-3 px-4 py-3">
+                          <span className="text-gray-500 text-sm w-20 shrink-0">{row.label}</span>
+                          <div className="flex items-center gap-1 flex-1 justify-end">
+                            <span className="text-gray-600 text-xs">RM</span>
+                            <input
+                              type="number"
+                              value={woForm[row.key] || ''}
+                              onChange={e => setWoForm(f => ({ ...f, [row.key]: Number(e.target.value) }))}
+                              className="w-32 bg-transparent text-white text-sm text-right outline-none border-b border-transparent focus:border-gold-500/60 transition-colors"
+                              placeholder="0"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                      {woForm.tradeInPrice > 0 && (
+                        <div className="flex items-center justify-between px-4 py-3 bg-obsidian-700/30">
+                          <span className="text-gray-500 text-xs">Net Trade-in</span>
+                          <span className={`text-sm font-semibold ${netTradeIn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {netTradeIn >= 0 ? '+' : ''}{formatRM(netTradeIn)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Car photos */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-gray-500 text-xs">Car Photos <span className="text-red-400">*min 4</span></p>
+                        <span className={`text-xs ${woForm.tradeInPhotos.length >= 4 ? 'text-green-400' : 'text-gray-600'}`}>{woForm.tradeInPhotos.length} / 4+</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {woForm.tradeInPhotos.map((p, i) => (
+                          <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden border border-obsidian-400/60">
+                            <img src={p} alt="" className="w-full h-full object-cover" />
+                            <button onClick={() => setWoForm(f => ({ ...f, tradeInPhotos: f.tradeInPhotos.filter((_, j) => j !== i) }))} className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 flex items-center justify-center text-white">
+                              <X size={10} />
+                            </button>
+                          </div>
+                        ))}
+                        <button onClick={() => tiPhotoRef.current?.click()} className="w-20 h-20 rounded-xl border border-dashed border-obsidian-400/60 flex flex-col items-center justify-center text-gray-600 hover:text-gray-400 hover:border-obsidian-400 transition-colors">
+                          <Camera size={18} />
+                          <span className="text-[10px] mt-1">Add Photo</span>
+                        </button>
+                      </div>
+                      <input ref={tiPhotoRef} type="file" accept="image/*" multiple className="hidden" onChange={e => handleWoPhoto(e, 'tradeIn')} />
+                    </div>
+
+                    {/* Green card photo */}
+                    <div>
+                      <p className="text-gray-500 text-xs mb-2">Green Card Photo</p>
+                      {woForm.greenCardPhoto ? (
+                        <div className="relative w-full h-36 rounded-xl overflow-hidden border border-obsidian-400/60">
+                          <img src={woForm.greenCardPhoto} alt="" className="w-full h-full object-cover" />
+                          <button onClick={() => setWoForm(f => ({ ...f, greenCardPhoto: '' }))} className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/70 flex items-center justify-center text-white">
+                            <X size={11} />
+                          </button>
+                        </div>
+                      ) : (
+                        <button onClick={() => gcPhotoRef.current?.click()} className="w-full h-20 rounded-xl border border-dashed border-obsidian-400/60 flex flex-col items-center justify-center text-gray-600 hover:text-gray-400 hover:border-obsidian-400 transition-colors">
+                          <Camera size={18} />
+                          <span className="text-xs mt-1">Upload Green Card</span>
+                        </button>
+                      )}
+                      <input ref={gcPhotoRef} type="file" accept="image/*" className="hidden" onChange={e => handleWoPhoto(e, 'greenCard')} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Sticky Submit Footer */}
+            <div className="fixed bottom-0 left-0 right-0 bg-[#0F0E0C] border-t border-obsidian-400/60 px-4 py-4">
+              <div className="max-w-lg mx-auto flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-gray-500 text-xs">Total Final Deal</p>
+                  <p className="text-gold-400 font-bold text-lg">{formatRM(totalFinalDeal)}</p>
+                </div>
+                <button
+                  onClick={handleWorkOrderSubmit}
+                  disabled={woForm.hasTradeIn && woForm.tradeInPhotos.length < 4}
+                  className="btn-gold px-6 py-3 rounded-xl text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {woForm.hasTradeIn && woForm.tradeInPhotos.length < 4
+                    ? `Need ${4 - woForm.tradeInPhotos.length} more photo(s)`
+                    : 'Submit Work Order'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

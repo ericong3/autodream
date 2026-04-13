@@ -23,6 +23,42 @@ export interface LoanApplication {
   rejectionReason?: string;
 }
 
+export interface WorkOrderItem {
+  label: string;
+  amount: number;
+}
+
+export interface CashWorkOrder {
+  carId: string;
+  // Deal
+  sellingPrice: number;
+  insurance: number;
+  bankProduct: number;
+  additionalItems: WorkOrderItem[];
+  bookingFee: number;
+  downpayment: number;
+  discount: number;
+  // Customer
+  customerName: string;
+  customerIc: string;
+  customerPhone: string;
+  customerEmail: string;
+  customerAddress: string;
+  // Trade in
+  hasTradeIn: boolean;
+  tradeInPhotos: string[];
+  greenCardPhoto: string;
+  tradeInPlate: string;
+  tradeInMake: string;
+  tradeInModel: string;
+  tradeInVariant: string;
+  tradeInPrice: number;
+  settlementFigure: number;
+  // Meta
+  submittedBy: string;
+  createdAt: string;
+}
+
 export interface TradeIn {
   make: string;
   model: string;
@@ -233,6 +269,7 @@ export interface Customer {
   loanApplications?: LoanApplication[];
   followUpRemark?: string;
   tradeIn?: TradeIn;
+  cashWorkOrder?: CashWorkOrder;
   createdAt: string;
 }
 
