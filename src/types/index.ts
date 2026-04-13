@@ -23,6 +23,20 @@ export interface LoanApplication {
   rejectionReason?: string;
 }
 
+export interface TradeIn {
+  make: string;
+  model: string;
+  year: number;
+  carPlate: string;
+  colour: string;
+  mileage: number;
+  condition: 'excellent' | 'good' | 'fair' | 'poor';
+  outstandingLoan: number;
+  offeredValue: number;
+  damages: string;
+  photos: string[];
+}
+
 export interface LoanSubmission {
   id: string;
   bank: string;
@@ -217,6 +231,8 @@ export interface Customer {
   loanStatus?: 'not_started' | 'submitted' | 'approved' | 'rejected';
   loanBankSubmitted?: string;
   loanApplications?: LoanApplication[];
+  followUpRemark?: string;
+  tradeIn?: TradeIn;
   createdAt: string;
 }
 

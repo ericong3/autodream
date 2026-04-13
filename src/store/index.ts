@@ -276,6 +276,8 @@ function rowToCustomer(r: any): Customer {
     loanStatus: r.loan_status,
     loanBankSubmitted: r.loan_bank_submitted,
     loanApplications: r.loan_applications ?? [],
+    followUpRemark: r.follow_up_remark ?? undefined,
+    tradeIn: r.trade_in ?? undefined,
     createdAt: r.created_at,
   };
 }
@@ -299,6 +301,8 @@ function customerToRow(c: Partial<Customer>) {
   if (c.loanStatus !== undefined) row.loan_status = c.loanStatus;
   if (c.loanBankSubmitted !== undefined) row.loan_bank_submitted = c.loanBankSubmitted;
   if (c.loanApplications !== undefined) row.loan_applications = c.loanApplications;
+  if (c.followUpRemark !== undefined) row.follow_up_remark = c.followUpRemark;
+  if (c.tradeIn !== undefined) row.trade_in = c.tradeIn;
   if (c.createdAt !== undefined) row.created_at = c.createdAt;
   return row;
 }

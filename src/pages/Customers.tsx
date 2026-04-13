@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
-import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, User, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase } from 'lucide-react';
+import React, { useState, useMemo, useRef } from 'react';
+import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, User, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, FileText, ClipboardList } from 'lucide-react';
 import { useStore } from '../store';
-import { Customer } from '../types';
+import { Customer, LoanApplication, TradeIn } from '../types';
 import Modal from '../components/Modal';
 import { generateId, formatRM } from '../utils/format';
 
@@ -60,6 +60,7 @@ const emptyForm = {
   source: 'walk_in' as Customer['source'],
   leadStatus: 'contacted' as Customer['leadStatus'],
   interestedCarId: '', assignedSalesId: '', notes: '', followUpDate: '',
+  followUpRemark: '',
   dealPrice: 0, loanStatus: 'not_started' as Customer['loanStatus'], loanBankSubmitted: '',
 };
 
@@ -81,6 +82,9 @@ export default function Customers() {
   // Tab
   const [tab, setTab] = useState<'leads' | 'loan'>('leads');
 
+  // Director view toggle: 'all' | 'own' | salesperson userId
+  const [directorView, setDirectorView] = useState<'all' | 'own' | string>('all');
+
   // Filters
   const [statusFilter, setStatusFilter] = useState<Customer['leadStatus'] | 'all'>('all');
   const [sourceFilter, setSourceFilter] = useState<Customer['source'] | 'all'>('all');
@@ -99,19 +103,44 @@ export default function Customers() {
 
   // Next-step modal (for test_drive leads)
   const [sidebarLead, setSidebarLead] = useState<Customer | null>(null);
-  const [sidebarView, setSidebarView] = useState<'options' | 'car_select' | 'loan'>('options');
+  const [sidebarView, setSidebarView] = useState<'options' | 'car_select' | 'loan' | 'cash'>('options');
+  const [sidebarCashFlow, setSidebarCashFlow] = useState(false);
   const [loanForm, setLoanForm] = useState({ banks: [] as string[], dealPrice: '', notes: '', carId: '' });
+  const [cashForm, setCashForm] = useState({ dealPrice: '', notes: '' });
 
   // Loan status management modal (for loan_submitted leads)
+
+  // Bank status management modal
+  const [bankModal, setBankModal] = useState<Customer | null>(null);
+  const [bankStatuses, setBankStatuses] = useState<LoanApplication[]>([]);
+  const [rejectReason, setRejectReason] = useState<Record<string, string>>({});
+
+  // Final deal wizard
+  type FinalDealStep = 1 | 2 | 3;
+  const [finalDealModal, setFinalDealModal] = useState<Customer | null>(null);
+  const [finalDealStep, setFinalDealStep] = useState<FinalDealStep>(1);
+  const emptyTradeIn: TradeIn = {
+    make: '', model: '', year: new Date().getFullYear(), carPlate: '', colour: '',
+    mileage: 0, condition: 'good', outstandingLoan: 0, offeredValue: 0, damages: '', photos: [],
+  };
+  const [finalDealForm, setFinalDealForm] = useState({
+    approvedBank: '', dealPrice: '', hasTradeIn: false, tradeIn: { ...emptyTradeIn },
+  });
+  const tradeInPhotoRef = useRef<HTMLInputElement>(null);
 
   // Detail drawer
   const [detailLead, setDetailLead] = useState<Customer | null>(null);
 
   const myCustomers = useMemo(() =>
     customers
-      .filter(c => isDirector || c.assignedSalesId === currentUser?.id)
+      .filter(c => {
+        if (!isDirector) return c.assignedSalesId === currentUser?.id;
+        if (directorView === 'all') return true;
+        if (directorView === 'own') return c.assignedSalesId === currentUser?.id;
+        return c.assignedSalesId === directorView;
+      })
       .map(c => STAGE_ORDER.includes(c.leadStatus) ? c : { ...c, leadStatus: 'contacted' as Customer['leadStatus'] }),
-    [customers, isDirector, currentUser]
+    [customers, isDirector, currentUser, directorView]
   );
 
   const todayTestDrives = useMemo(() =>
@@ -159,10 +188,11 @@ export default function Customers() {
 
   const handleSubmit = () => {
     if (!validate()) return;
+    const payload = { ...form, followUpRemark: form.followUpRemark || undefined };
     if (editTarget) {
-      updateCustomer(editTarget.id, { ...form });
+      updateCustomer(editTarget.id, payload);
     } else {
-      addCustomer({ id: generateId(), ...form, createdAt: new Date().toISOString() });
+      addCustomer({ id: generateId(), ...payload, createdAt: new Date().toISOString() });
     }
     setShowModal(false);
     setEditTarget(null);
@@ -177,6 +207,7 @@ export default function Customers() {
       employer: c.employer ?? '', monthlySalary: c.monthlySalary ?? 0,
       source: c.source, leadStatus: c.leadStatus, interestedCarId: c.interestedCarId ?? '',
       assignedSalesId: c.assignedSalesId, notes: c.notes ?? '', followUpDate: c.followUpDate ?? '',
+      followUpRemark: c.followUpRemark ?? '',
       dealPrice: c.dealPrice ?? 0, loanStatus: c.loanStatus ?? 'not_started', loanBankSubmitted: c.loanBankSubmitted ?? '',
     });
     setErrors({});
@@ -227,13 +258,16 @@ export default function Customers() {
   const openSidebar = (c: Customer) => {
     setSidebarLead(c);
     setSidebarView('options');
+    setSidebarCashFlow(false);
     const interestedCar = cars.find(car => car.id === c.interestedCarId);
     setLoanForm({ banks: [], dealPrice: String(interestedCar?.sellingPrice ?? ''), notes: '', carId: c.interestedCarId ?? '' });
+    setCashForm({ dealPrice: String(interestedCar?.sellingPrice ?? ''), notes: '' });
   };
 
   const closeSidebar = () => {
     setSidebarLead(null);
     setSidebarView('options');
+    setSidebarCashFlow(false);
   };
 
   const handleFollowUp = () => {
@@ -244,10 +278,12 @@ export default function Customers() {
 
   const handleProceedLoan = () => {
     if (!sidebarLead) return;
+    const newApplications: LoanApplication[] = loanForm.banks.map(b => ({ bank: b, status: 'submitted' }));
     updateCustomer(sidebarLead.id, {
       leadStatus: 'loan_submitted',
       loanStatus: 'submitted',
       loanBankSubmitted: loanForm.banks.join(', '),
+      loanApplications: newApplications,
       interestedCarId: loanForm.carId || sidebarLead.interestedCarId,
       dealPrice: loanForm.dealPrice ? Number(loanForm.dealPrice) : sidebarLead.dealPrice,
       notes: loanForm.notes
@@ -255,6 +291,130 @@ export default function Customers() {
         : sidebarLead.notes,
     });
     closeSidebar();
+  };
+
+  const handleCashDeal = () => {
+    if (!sidebarLead) return;
+    const dealPrice = Number(cashForm.dealPrice);
+    const car = getCar(loanForm.carId || sidebarLead.interestedCarId);
+    const hasDiscount = car ? dealPrice < car.sellingPrice : false;
+    updateCustomer(sidebarLead.id, {
+      leadStatus: 'loan_submitted',
+      loanStatus: 'approved',
+      loanBankSubmitted: 'Cash',
+      loanApplications: [{ bank: 'Cash', status: 'approved' }],
+      interestedCarId: loanForm.carId || sidebarLead.interestedCarId,
+      dealPrice,
+      notes: cashForm.notes
+        ? (sidebarLead.notes ? sidebarLead.notes + '\n' + cashForm.notes : cashForm.notes)
+        : sidebarLead.notes,
+    });
+    if (car) {
+      const updateCar = useStore.getState().updateCar;
+      updateCar(car.id, {
+        status: 'deal_pending',
+        finalDeal: {
+          submittedBy: currentUser?.name ?? '',
+          submittedAt: new Date().toISOString(),
+          dealPrice,
+          bank: 'Cash',
+          approvalStatus: hasDiscount ? 'pending' : 'approved',
+          approvedBy: hasDiscount ? undefined : currentUser?.name,
+          approvedAt: hasDiscount ? undefined : new Date().toISOString(),
+        },
+      });
+    }
+    closeSidebar();
+  };
+
+  // ── Bank status modal ─────────────────────────────────────
+  const openBankModal = (c: Customer) => {
+    const apps = c.loanApplications?.length
+      ? c.loanApplications
+      : (c.loanBankSubmitted ?? '').split(',').filter(Boolean).map(b => ({ bank: b.trim(), status: 'submitted' as const }));
+    setBankStatuses(apps);
+    setRejectReason({});
+    setBankModal(c);
+  };
+
+  const handleSaveBankStatuses = () => {
+    if (!bankModal) return;
+    const anyApproved = bankStatuses.some(a => a.status === 'approved');
+    const allResolved = bankStatuses.every(a => a.status !== 'submitted');
+    const overallStatus: Customer['loanStatus'] = anyApproved ? 'approved' : allResolved ? 'rejected' : 'submitted';
+    updateCustomer(bankModal.id, { loanApplications: bankStatuses, loanStatus: overallStatus });
+    setBankModal(null);
+  };
+
+  const toggleBankStatus = (bank: string, newStatus: 'approved' | 'rejected') => {
+    setBankStatuses(prev => prev.map(a => {
+      if (a.bank !== bank) return a;
+      if (a.status === newStatus) return { ...a, status: 'submitted' }; // toggle off
+      return { ...a, status: newStatus, rejectionReason: newStatus === 'rejected' ? (rejectReason[bank] ?? '') : undefined };
+    }));
+  };
+
+  // ── Final deal wizard ─────────────────────────────────────
+  const openFinalDeal = (c: Customer) => {
+    const approvedBank = c.loanApplications?.find(a => a.status === 'approved')?.bank ?? '';
+    const car = getCar(c.interestedCarId);
+    setFinalDealForm({
+      approvedBank,
+      dealPrice: String(c.dealPrice ?? car?.sellingPrice ?? ''),
+      hasTradeIn: !!c.tradeIn,
+      tradeIn: c.tradeIn ? { ...c.tradeIn } : { ...emptyTradeIn },
+    });
+    setFinalDealStep(1);
+    setFinalDealModal(c);
+  };
+
+  const handleTradeInPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const url = ev.target?.result as string;
+        setFinalDealForm(prev => ({
+          ...prev,
+          tradeIn: { ...prev.tradeIn, photos: [...prev.tradeIn.photos, url].slice(0, 5) },
+        }));
+      };
+      reader.readAsDataURL(file);
+    });
+    if (e.target) e.target.value = '';
+  };
+
+  const handleFinalDealSubmit = () => {
+    if (!finalDealModal) return;
+    const car = getCar(finalDealModal.interestedCarId);
+    const dealPrice = Number(finalDealForm.dealPrice);
+    const hasDiscount = car ? dealPrice < car.sellingPrice : false;
+
+    // Update customer trade-in and finalize
+    updateCustomer(finalDealModal.id, {
+      tradeIn: finalDealForm.hasTradeIn ? finalDealForm.tradeIn : undefined,
+      dealPrice,
+      loanStatus: 'approved',
+    });
+
+    // Push final deal to car
+    if (car) {
+      const updateCar = useStore.getState().updateCar;
+      updateCar(car.id, {
+        status: 'deal_pending',
+        finalDeal: {
+          submittedBy: currentUser?.name ?? '',
+          submittedAt: new Date().toISOString(),
+          dealPrice,
+          bank: finalDealForm.approvedBank,
+          approvalStatus: hasDiscount ? 'pending' : 'approved',
+          approvedBy: hasDiscount ? undefined : currentUser?.name,
+          approvedAt: hasDiscount ? undefined : new Date().toISOString(),
+        },
+      });
+    }
+
+    setFinalDealModal(null);
   };
 
   return (
@@ -280,6 +440,49 @@ export default function Customers() {
           </button>
         )}
       </div>
+
+      {/* Director view toggle */}
+      {isDirector && (
+        <div className="flex gap-2 items-center">
+          {(['all', 'own', 'salesman'] as const).map(opt => (
+            <button
+              key={opt}
+              onClick={() => {
+                if (opt === 'salesman') {
+                  // default to first salesperson if none selected yet
+                  const firstSales = salespeople.find(u => u.role === 'salesperson');
+                  if (!['all', 'own'].includes(directorView)) return; // already on a salesman
+                  if (firstSales) setDirectorView(firstSales.id);
+                } else {
+                  setDirectorView(opt);
+                }
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                (opt === 'all' && directorView === 'all') ||
+                (opt === 'own' && directorView === 'own') ||
+                (opt === 'salesman' && !['all', 'own'].includes(directorView))
+                  ? 'bg-gold-500/15 border-gold-500/50 text-gold-400'
+                  : 'bg-[#0F0E0C] border-obsidian-400/50 text-gray-500 hover:text-gray-300 hover:border-obsidian-400'
+              }`}
+            >
+              {opt === 'all' ? 'All Leads' : opt === 'own' ? 'My Leads' : 'Salesman\'s Lead'}
+            </button>
+          ))}
+
+          {/* Salesman dropdown — shown when "Salesman's Lead" is active */}
+          {!['all', 'own'].includes(directorView) && (
+            <select
+              value={directorView}
+              onChange={e => setDirectorView(e.target.value)}
+              className="input text-xs py-1.5 px-3 rounded-lg border-gold-500/40 text-gold-400 bg-gold-500/10"
+            >
+              {salespeople.filter(u => u.role === 'salesperson').map(u => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
 
       {/* Today's Agenda Banner */}
       {todayTestDrives.length > 0 && (
@@ -404,6 +607,20 @@ export default function Customers() {
                       ))}
                       <span className={`text-xs font-medium ml-2 ${col.text}`}>{LEAD_STATUS_LABELS[c.leadStatus]}</span>
                     </div>
+                    <input
+                      type="text"
+                      defaultValue={c.followUpRemark ?? ''}
+                      onBlur={e => {
+                        const val = e.target.value.trim();
+                        if (val !== (c.followUpRemark ?? '')) {
+                          updateCustomer(c.id, { followUpRemark: val || undefined });
+                        }
+                      }}
+                      onClick={e => e.stopPropagation()}
+                      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                      placeholder="Remark... (what to follow up?)"
+                      className="mt-2 w-full text-xs bg-transparent border-b border-obsidian-400/40 hover:border-obsidian-400/70 focus:border-gold-500/60 text-gray-400 placeholder-gray-700 focus:text-gray-200 outline-none py-1 transition-colors"
+                    />
                   </div>
                   <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
                     {isTestDrive ? (
@@ -491,6 +708,20 @@ export default function Customers() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+                    {c.loanApplications?.some(a => a.status === 'approved') && (
+                      <button
+                        onClick={() => openFinalDeal(c)}
+                        className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-gold-500/10 border border-gold-500/40 text-gold-400 hover:bg-gold-500/20 rounded-lg font-medium transition-colors"
+                      >
+                        <ClipboardList size={12} />Final Deal
+                      </button>
+                    )}
+                    <button
+                      onClick={() => openBankModal(c)}
+                      className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-obsidian-700/60 border border-obsidian-400/60 text-gray-400 hover:text-white hover:border-obsidian-400 rounded-lg transition-colors"
+                    >
+                      <FileText size={12} />Banks
+                    </button>
                     <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${
                       loanInfo.label === 'Approved' ? 'bg-green-500/10 border-green-500/30 text-green-400' :
                       loanInfo.label === 'Rejected' ? 'bg-red-500/10 border-red-500/30 text-red-400' :
@@ -585,6 +816,12 @@ export default function Customers() {
                         <span className="text-white text-sm">{detailLead.followUpDate}</span>
                       </div>
                     )}
+                    {detailLead.followUpRemark && (
+                      <div>
+                        <span className="text-gray-500 text-xs">Follow-up About</span>
+                        <p className="text-white text-sm mt-1">{detailLead.followUpRemark}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -638,6 +875,22 @@ export default function Customers() {
                     </div>
                   </div>
                 )}
+
+                {/* Proceed to Loan — follow_up only */}
+                {detailLead.leadStatus === 'follow_up' && (
+                  <button
+                    onClick={() => {
+                      const interestedCar = cars.find(car => car.id === detailLead.interestedCarId);
+                      setLoanForm({ banks: [], dealPrice: String(interestedCar?.sellingPrice ?? ''), notes: '', carId: detailLead.interestedCarId ?? '' });
+                      setSidebarLead(detailLead);
+                      setSidebarView('car_select');
+                      setDetailLead(null);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-400 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                  >
+                    <Banknote size={15} />Loan
+                  </button>
+                )}
               </div>
 
               {/* Action Footer */}
@@ -688,7 +941,7 @@ export default function Customers() {
       <Modal
         isOpen={!!sidebarLead}
         onClose={closeSidebar}
-        title={sidebarView === 'car_select' ? 'Select Car' : sidebarView === 'loan' ? 'Loan Submission' : 'Next Step'}
+        title={sidebarView === 'car_select' ? 'Select Car' : sidebarView === 'loan' ? 'Loan Submission' : sidebarView === 'cash' ? 'Cash Purchase' : 'Next Step'}
         maxWidth={sidebarView === 'car_select' ? 'max-w-lg' : 'max-w-sm'}
       >
         {sidebarLead && (
@@ -745,7 +998,7 @@ export default function Customers() {
                 </button>
 
                 <button
-                  onClick={() => setSidebarView('car_select')}
+                  onClick={() => { setSidebarCashFlow(false); setSidebarView('car_select'); }}
                   className="w-full text-left bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/60 hover:border-green-500/40 rounded-xl p-4 transition-all group"
                 >
                   <div className="flex items-center justify-between">
@@ -759,6 +1012,24 @@ export default function Customers() {
                       </div>
                     </div>
                     <ChevronRight size={16} className="text-gray-600 group-hover:text-green-400 transition-colors" />
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => { setSidebarCashFlow(true); setSidebarView('car_select'); }}
+                  className="w-full text-left bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/60 hover:border-purple-500/40 rounded-xl p-4 transition-all group"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
+                        <Banknote size={18} className="text-purple-400" />
+                      </div>
+                      <div>
+                        <p className="text-white text-sm font-medium">Cash Purchase</p>
+                        <p className="text-gray-500 text-xs mt-0.5">Customer paying in full cash</p>
+                      </div>
+                    </div>
+                    <ChevronRight size={16} className="text-gray-600 group-hover:text-purple-400 transition-colors" />
                   </div>
                 </button>
               </>
@@ -821,11 +1092,15 @@ export default function Customers() {
                   })}
                 </div>
                 <button
-                  onClick={() => setSidebarView('loan')}
+                  onClick={() => {
+                    const car = getCar(loanForm.carId);
+                    setCashForm(f => ({ ...f, dealPrice: String(car?.sellingPrice ?? f.dealPrice) }));
+                    setSidebarView(sidebarCashFlow ? 'cash' : 'loan');
+                  }}
                   disabled={!loanForm.carId}
-                  className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-50 disabled:cursor-not-allowed text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
+                  className={`w-full disabled:opacity-50 disabled:cursor-not-allowed text-white py-2.5 rounded-lg text-sm font-medium transition-colors ${sidebarCashFlow ? 'bg-purple-600 hover:bg-purple-500' : 'bg-green-500 hover:bg-green-400'}`}
                 >
-                  Continue to Loan Submission
+                  {sidebarCashFlow ? 'Continue to Cash Deal' : 'Continue to Loan Submission'}
                 </button>
               </>
             )}
@@ -916,6 +1191,65 @@ export default function Customers() {
                 </>
               );
             })()}
+
+            {/* ── Cash Purchase view ── */}
+            {sidebarView === 'cash' && (() => {
+              const selectedCar = getCar(loanForm.carId);
+              const dealPrice = Number(cashForm.dealPrice) || 0;
+              const hasDiscount = selectedCar ? dealPrice < selectedCar.sellingPrice : false;
+              return (
+                <>
+                  <button onClick={() => setSidebarView('car_select')} className="flex items-center gap-1 text-xs text-gray-500 hover:text-white transition-colors">← Back</button>
+
+                  {selectedCar && (
+                    <div className="flex items-center gap-3 bg-obsidian-700/60 border border-purple-500/20 rounded-xl p-3">
+                      <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center shrink-0">
+                        <Car size={15} className="text-purple-400" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-white text-sm font-medium truncate">{selectedCar.year} {selectedCar.make} {selectedCar.model}</p>
+                        <p className="text-gray-500 text-xs">{selectedCar.colour} · {selectedCar.sellingPrice > 0 ? formatRM(selectedCar.sellingPrice) : 'TBD'}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
+                    <FormField label="Cash Deal Price (RM)">
+                      <input
+                        type="number"
+                        className={inputCls()}
+                        value={cashForm.dealPrice}
+                        onChange={e => setCashForm({ ...cashForm, dealPrice: e.target.value })}
+                        placeholder="e.g. 45000"
+                        autoFocus
+                      />
+                    </FormField>
+                    {hasDiscount && dealPrice > 0 && (
+                      <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2.5 text-xs text-amber-400">
+                        <AlertCircle size={13} className="shrink-0 mt-0.5" />
+                        <span>Discount of <strong>{formatRM(selectedCar!.sellingPrice - dealPrice)}</strong> from listed price — requires Director approval.</span>
+                      </div>
+                    )}
+                    <FormField label="Notes">
+                      <textarea
+                        className={`${inputCls()} h-20 resize-none`}
+                        value={cashForm.notes}
+                        onChange={e => setCashForm({ ...cashForm, notes: e.target.value })}
+                        placeholder="Any remarks about this cash deal..."
+                      />
+                    </FormField>
+                  </div>
+
+                  <button
+                    onClick={handleCashDeal}
+                    disabled={!cashForm.dealPrice}
+                    className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Confirm Cash Deal
+                  </button>
+                </>
+              );
+            })()}
           </div>
         )}
       </Modal>
@@ -975,9 +1309,9 @@ export default function Customers() {
             <textarea className={`${inputCls()} h-16 resize-none`} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Quick notes..." />
           </FormField>
         </div>
-        <div className="flex gap-3 mt-5">
-          <button onClick={() => { setShowModal(false); setEditTarget(null); }} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
-          <button onClick={handleSubmit} className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm">
+        <div className="flex justify-center gap-3 mt-5">
+          <button onClick={() => { setShowModal(false); setEditTarget(null); }} className="px-6 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
+          <button onClick={handleSubmit} className="btn-gold px-6 py-2.5 rounded-lg text-sm">
             {editTarget ? 'Save Changes' : 'Add Customer'}
           </button>
         </div>
@@ -1012,10 +1346,368 @@ export default function Customers() {
             </FormField>
           </div>
         )}
-        <div className="flex gap-3 mt-5">
-          <button onClick={() => { setShowTdModal(false); setTdCustomer(null); }} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
-          <button onClick={handleSaveTd} disabled={!tdForm.date || !tdForm.time} className="flex-1 btn-gold disabled:opacity-50 px-4 py-2.5 rounded-lg text-sm">Save to Calendar</button>
+        <div className="flex justify-center gap-3 mt-5">
+          <button onClick={() => { setShowTdModal(false); setTdCustomer(null); }} className="px-6 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
+          <button onClick={handleSaveTd} disabled={!tdForm.date || !tdForm.time} className="btn-gold disabled:opacity-50 px-6 py-2.5 rounded-lg text-sm">Save to Calendar</button>
         </div>
+      </Modal>
+
+      {/* ── Bank Status Modal ─────────────────────────── */}
+      <Modal isOpen={!!bankModal} onClose={() => setBankModal(null)} title="Update Bank Status" maxWidth="max-w-sm">
+        {bankModal && (
+          <div className="space-y-4">
+            <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl px-4 py-3">
+              <p className="text-white text-sm font-medium">{bankModal.name}</p>
+              <p className="text-gray-500 text-xs">{bankModal.phone}</p>
+            </div>
+            <div className="space-y-2">
+              {bankStatuses.map(app => (
+                <div key={app.bank} className="bg-obsidian-700/60 border border-obsidian-400/60 rounded-xl p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-white text-sm font-medium">{app.bank}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${
+                      app.status === 'approved' ? 'bg-green-500/10 border-green-500/30 text-green-400' :
+                      app.status === 'rejected' ? 'bg-red-500/10 border-red-500/30 text-red-400' :
+                      'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
+                    }`}>
+                      {app.status === 'approved' ? 'Approved' : app.status === 'rejected' ? 'Rejected' : 'Submitted'}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => toggleBankStatus(app.bank, 'approved')}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                        app.status === 'approved'
+                          ? 'bg-green-500/20 border-green-500/50 text-green-300'
+                          : 'border-obsidian-400/60 text-gray-500 hover:border-green-500/40 hover:text-green-400'
+                      }`}
+                    >
+                      <CheckCircle size={12} />Approve
+                    </button>
+                    <button
+                      onClick={() => toggleBankStatus(app.bank, 'rejected')}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                        app.status === 'rejected'
+                          ? 'bg-red-500/20 border-red-500/50 text-red-300'
+                          : 'border-obsidian-400/60 text-gray-500 hover:border-red-500/40 hover:text-red-400'
+                      }`}
+                    >
+                      <XCircle size={12} />Reject
+                    </button>
+                  </div>
+                  {app.status === 'rejected' && (
+                    <input
+                      className="input text-xs w-full"
+                      placeholder="Rejection reason (optional)..."
+                      value={rejectReason[app.bank] ?? app.rejectionReason ?? ''}
+                      onChange={e => {
+                        setRejectReason(prev => ({ ...prev, [app.bank]: e.target.value }));
+                        setBankStatuses(prev => prev.map(a => a.bank === app.bank ? { ...a, rejectionReason: e.target.value } : a));
+                      }}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-center gap-3">
+              <button onClick={() => setBankModal(null)} className="px-6 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
+              <button onClick={handleSaveBankStatuses} className="btn-gold px-6 py-2.5 rounded-lg text-sm">Save</button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Final Deal Wizard ─────────────────────────── */}
+      <Modal
+        isOpen={!!finalDealModal}
+        onClose={() => setFinalDealModal(null)}
+        title={finalDealStep === 1 ? 'Final Deal — Price' : finalDealStep === 2 ? 'Final Deal — Trade-in' : 'Deal Summary'}
+        maxWidth="max-w-md"
+      >
+        {finalDealModal && (() => {
+          const customer = finalDealModal;
+          const car = getCar(customer.interestedCarId);
+          const dealPrice = Number(finalDealForm.dealPrice) || 0;
+          const hasDiscount = car ? dealPrice < car.sellingPrice : false;
+          const discountAmt = car ? car.sellingPrice - dealPrice : 0;
+          const ti = finalDealForm.tradeIn;
+          const netTradeIn = ti.offeredValue - ti.outstandingLoan;
+
+          return (
+            <div className="space-y-4">
+
+              {/* Step indicators */}
+              <div className="flex items-center gap-2 mb-2">
+                {[1, 2, 3].map(s => (
+                  <React.Fragment key={s}>
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border ${
+                      finalDealStep === s ? 'bg-gold-500 border-gold-500 text-white' :
+                      finalDealStep > s ? 'bg-green-500/20 border-green-500/40 text-green-400' :
+                      'bg-obsidian-700/60 border-obsidian-400/60 text-gray-600'
+                    }`}>{s}</div>
+                    {s < 3 && <div className={`flex-1 h-px ${finalDealStep > s ? 'bg-green-500/40' : 'bg-obsidian-400/40'}`} />}
+                  </React.Fragment>
+                ))}
+              </div>
+
+              {/* ── Step 1: Deal price ── */}
+              {finalDealStep === 1 && (
+                <>
+                  {car && (
+                    <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl p-3">
+                      <p className="text-xs text-gray-500 mb-1">Car</p>
+                      <p className="text-white text-sm font-medium">{car.year} {car.make} {car.model}</p>
+                      <p className="text-gray-400 text-xs">Listed at {formatRM(car.sellingPrice)}</p>
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-gray-300 text-xs font-medium mb-1.5">Approved Bank</label>
+                    <select
+                      className="input w-full"
+                      value={finalDealForm.approvedBank}
+                      onChange={e => setFinalDealForm(f => ({ ...f, approvedBank: e.target.value }))}
+                    >
+                      <option value="">— Select bank —</option>
+                      {customer.loanApplications?.filter(a => a.status === 'approved').map(a => (
+                        <option key={a.bank} value={a.bank}>{a.bank}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-gray-300 text-xs font-medium mb-1.5">Final Deal Price (RM)</label>
+                    <input
+                      type="number"
+                      className="input w-full"
+                      value={finalDealForm.dealPrice}
+                      onChange={e => setFinalDealForm(f => ({ ...f, dealPrice: e.target.value }))}
+                      placeholder="e.g. 45000"
+                    />
+                  </div>
+                  {hasDiscount && dealPrice > 0 && (
+                    <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2.5 text-xs text-amber-400">
+                      <AlertCircle size={13} className="shrink-0 mt-0.5" />
+                      <span>Discount of <strong>{formatRM(discountAmt)}</strong> from listed price. This deal requires <strong>Director approval</strong>.</span>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => setFinalDealStep(2)}
+                    disabled={!finalDealForm.approvedBank || !finalDealForm.dealPrice}
+                    className="w-full btn-gold py-2.5 rounded-lg text-sm disabled:opacity-50"
+                  >
+                    Next — Trade-in
+                  </button>
+                </>
+              )}
+
+              {/* ── Step 2: Trade-in ── */}
+              {finalDealStep === 2 && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <button onClick={() => setFinalDealStep(1)} className="text-xs text-gray-500 hover:text-white">← Back</button>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 bg-obsidian-700/60 border border-obsidian-400/60 rounded-xl">
+                    <Car size={16} className="text-gray-500 shrink-0" />
+                    <div>
+                      <p className="text-white text-sm">Does this customer have a trade-in?</p>
+                    </div>
+                    <button
+                      onClick={() => setFinalDealForm(f => ({ ...f, hasTradeIn: !f.hasTradeIn, tradeIn: f.hasTradeIn ? { ...emptyTradeIn } : f.tradeIn }))}
+                      className={`ml-auto shrink-0 w-10 h-6 rounded-full border transition-colors relative ${
+                        finalDealForm.hasTradeIn ? 'bg-gold-500 border-gold-500' : 'bg-obsidian-500 border-obsidian-400/60'
+                      }`}
+                    >
+                      <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow ${
+                        finalDealForm.hasTradeIn ? 'translate-x-4' : 'translate-x-0.5'
+                      }`} />
+                    </button>
+                  </div>
+
+                  {finalDealForm.hasTradeIn && (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-gray-300 text-xs font-medium mb-1">Make</label>
+                          <input className="input" value={ti.make} onChange={e => setFinalDealForm(f => ({ ...f, tradeIn: { ...f.tradeIn, make: e.target.value } }))} placeholder="Toyota" />
+                        </div>
+                        <div>
+                          <label className="block text-gray-300 text-xs font-medium mb-1">Model</label>
+                          <input className="input" value={ti.model} onChange={e => setFinalDealForm(f => ({ ...f, tradeIn: { ...f.tradeIn, model: e.target.value } }))} placeholder="Vios" />
+                        </div>
+                        <div>
+                          <label className="block text-gray-300 text-xs font-medium mb-1">Year</label>
+                          <input type="number" className="input" value={ti.year} onChange={e => setFinalDealForm(f => ({ ...f, tradeIn: { ...f.tradeIn, year: Number(e.target.value) } }))} />
+                        </div>
+                        <div>
+                          <label className="block text-gray-300 text-xs font-medium mb-1">Plate</label>
+                          <input className="input" value={ti.carPlate} onChange={e => setFinalDealForm(f => ({ ...f, tradeIn: { ...f.tradeIn, carPlate: e.target.value } }))} placeholder="WXX 1234" />
+                        </div>
+                        <div>
+                          <label className="block text-gray-300 text-xs font-medium mb-1">Colour</label>
+                          <input className="input" value={ti.colour} onChange={e => setFinalDealForm(f => ({ ...f, tradeIn: { ...f.tradeIn, colour: e.target.value } }))} placeholder="Silver" />
+                        </div>
+                        <div>
+                          <label className="block text-gray-300 text-xs font-medium mb-1">Mileage (km)</label>
+                          <input type="number" className="input" value={ti.mileage || ''} onChange={e => setFinalDealForm(f => ({ ...f, tradeIn: { ...f.tradeIn, mileage: Number(e.target.value) } }))} />
+                        </div>
+                        <div>
+                          <label className="block text-gray-300 text-xs font-medium mb-1">Outstanding Loan (RM)</label>
+                          <input type="number" className="input" value={ti.outstandingLoan || ''} onChange={e => setFinalDealForm(f => ({ ...f, tradeIn: { ...f.tradeIn, outstandingLoan: Number(e.target.value) } }))} placeholder="0" />
+                        </div>
+                        <div>
+                          <label className="block text-gray-300 text-xs font-medium mb-1">Offered Value (RM)</label>
+                          <input type="number" className="input" value={ti.offeredValue || ''} onChange={e => setFinalDealForm(f => ({ ...f, tradeIn: { ...f.tradeIn, offeredValue: Number(e.target.value) } }))} placeholder="0" />
+                        </div>
+                      </div>
+                      {finalDealForm.hasTradeIn && ti.offeredValue > 0 && (
+                        <div className={`text-xs px-3 py-2 rounded-lg border ${netTradeIn >= 0 ? 'bg-green-500/10 border-green-500/20 text-green-400' : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
+                          Net trade-in: {netTradeIn >= 0 ? '+' : ''}{formatRM(netTradeIn)}
+                          {netTradeIn < 0 && ' (customer still owes settlement)'}
+                        </div>
+                      )}
+                      <div>
+                        <label className="block text-gray-300 text-xs font-medium mb-1">Damage Report</label>
+                        <textarea
+                          className="input h-20 resize-none w-full"
+                          value={ti.damages}
+                          onChange={e => setFinalDealForm(f => ({ ...f, tradeIn: { ...f.tradeIn, damages: e.target.value } }))}
+                          placeholder="Describe visible damages, dents, scratches..."
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-gray-300 text-xs font-medium mb-1">Photos ({ti.photos.length}/5)</label>
+                        <div className="flex flex-wrap gap-2">
+                          {ti.photos.map((p, i) => (
+                            <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-obsidian-400/60">
+                              <img src={p} alt="" className="w-full h-full object-cover" />
+                              <button
+                                onClick={() => setFinalDealForm(f => ({ ...f, tradeIn: { ...f.tradeIn, photos: f.tradeIn.photos.filter((_, j) => j !== i) } }))}
+                                className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/70 flex items-center justify-center text-white"
+                              >
+                                <X size={9} />
+                              </button>
+                            </div>
+                          ))}
+                          {ti.photos.length < 5 && (
+                            <button
+                              onClick={() => tradeInPhotoRef.current?.click()}
+                              className="w-16 h-16 rounded-lg border border-dashed border-obsidian-400/60 flex flex-col items-center justify-center text-gray-600 hover:text-gray-400 hover:border-obsidian-400 transition-colors"
+                            >
+                              <Camera size={16} />
+                              <span className="text-[10px] mt-0.5">Add</span>
+                            </button>
+                          )}
+                        </div>
+                        <input ref={tradeInPhotoRef} type="file" accept="image/*" multiple className="hidden" onChange={handleTradeInPhoto} />
+                      </div>
+                    </div>
+                  )}
+
+                  <button onClick={() => setFinalDealStep(3)} className="w-full btn-gold py-2.5 rounded-lg text-sm">
+                    Next — Summary
+                  </button>
+                </>
+              )}
+
+              {/* ── Step 3: Summary ── */}
+              {finalDealStep === 3 && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <button onClick={() => setFinalDealStep(2)} className="text-xs text-gray-500 hover:text-white">← Back</button>
+                    <span className="text-xs text-gray-500">Review before submitting</span>
+                  </div>
+
+                  <div className="space-y-3">
+                    {/* Customer */}
+                    <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl p-3">
+                      <p className="text-gray-500 text-xs mb-2 font-medium uppercase tracking-wide">Customer</p>
+                      <p className="text-white text-sm font-medium">{customer.name}</p>
+                      <p className="text-gray-400 text-xs">{customer.phone}</p>
+                    </div>
+
+                    {/* Car & Pricing */}
+                    <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl p-3 space-y-2.5">
+                      <p className="text-gray-500 text-xs mb-1 font-medium uppercase tracking-wide">Deal</p>
+                      {car && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-400 text-xs">Car</span>
+                          <span className="text-white text-sm">{car.year} {car.make} {car.model}</span>
+                        </div>
+                      )}
+                      {car && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-400 text-xs">Listed Price</span>
+                          <span className="text-gray-300 text-sm">{formatRM(car.sellingPrice)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-400 text-xs">Deal Price</span>
+                        <span className="text-white text-sm font-semibold">{formatRM(dealPrice)}</span>
+                      </div>
+                      {hasDiscount && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-amber-400 text-xs">Discount</span>
+                          <span className="text-amber-400 text-sm font-medium">-{formatRM(discountAmt)} ⚠ Director Approval</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-center pt-1 border-t border-obsidian-400/40">
+                        <span className="text-gray-400 text-xs">Approved Bank</span>
+                        <span className="text-green-400 text-sm font-medium">{finalDealForm.approvedBank}</span>
+                      </div>
+                    </div>
+
+                    {/* Trade-in */}
+                    {finalDealForm.hasTradeIn && ti.make && (
+                      <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl p-3 space-y-2.5">
+                        <p className="text-gray-500 text-xs mb-1 font-medium uppercase tracking-wide">Trade-in</p>
+                        <div className="flex justify-between">
+                          <span className="text-gray-400 text-xs">Car</span>
+                          <span className="text-white text-sm">{ti.year} {ti.make} {ti.model} · {ti.carPlate}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-400 text-xs">Offered Value</span>
+                          <span className="text-white text-sm">{formatRM(ti.offeredValue)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-400 text-xs">Outstanding Loan</span>
+                          <span className="text-white text-sm">-{formatRM(ti.outstandingLoan)}</span>
+                        </div>
+                        <div className="flex justify-between pt-1 border-t border-obsidian-400/40">
+                          <span className="text-gray-400 text-xs">Net Trade-in</span>
+                          <span className={`text-sm font-semibold ${netTradeIn >= 0 ? 'text-green-400' : 'text-red-400'}`}>{netTradeIn >= 0 ? '+' : ''}{formatRM(netTradeIn)}</span>
+                        </div>
+                        {ti.damages && (
+                          <div>
+                            <p className="text-gray-500 text-xs mb-1">Damages</p>
+                            <p className="text-gray-300 text-xs leading-relaxed">{ti.damages}</p>
+                          </div>
+                        )}
+                        {ti.photos.length > 0 && (
+                          <div className="flex gap-1.5 flex-wrap">
+                            {ti.photos.map((p, i) => (
+                              <img key={i} src={p} alt="" className="w-14 h-14 rounded-lg object-cover border border-obsidian-400/60" />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Effective price */}
+                    {finalDealForm.hasTradeIn && ti.offeredValue > 0 && (
+                      <div className="bg-gold-500/10 border border-gold-500/30 rounded-xl p-3 flex justify-between items-center">
+                        <span className="text-gold-400 text-sm">Effective Price</span>
+                        <span className="text-gold-300 text-base font-bold">{formatRM(Math.max(0, dealPrice - netTradeIn))}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <button onClick={handleFinalDealSubmit} className="w-full btn-gold py-2.5 rounded-lg text-sm font-medium">
+                    {hasDiscount ? 'Submit for Director Approval' : 'Confirm Final Deal'}
+                  </button>
+                </>
+              )}
+            </div>
+          );
+        })()}
       </Modal>
     </div>
   );
