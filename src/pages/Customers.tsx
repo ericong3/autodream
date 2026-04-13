@@ -1329,7 +1329,7 @@ export default function Customers() {
               openSidebar(tdCustomer);
               setTdCustomer(null);
             }}
-            className="w-full flex items-center justify-center gap-2 bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/60 hover:border-gold-500/40 text-gray-300 py-2.5 rounded-lg text-sm transition-colors"
+            className="w-full flex items-center justify-center gap-2 bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/60 hover:border-blue-500/40 text-blue-400 py-2.5 rounded-lg text-sm transition-colors"
           >
             Skip Test Drive — Proceed Now
           </button>
