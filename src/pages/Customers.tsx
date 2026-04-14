@@ -127,7 +127,7 @@ export default function Customers() {
   const gcPhotoRef = useRef<HTMLInputElement>(null);
 
   const [bankStatuses, setBankStatuses] = useState<LoanApplication[]>([]);
-  const tradeInPhotoRef = useRef<HTMLInputElement>(null);
+
 
   // Detail drawer
   const [detailLead, setDetailLead] = useState<Customer | null>(null);
