@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList } from 'lucide-react';
 import { useStore } from '../store';
-import { Customer, LoanApplication, TradeIn, CashWorkOrder, LoanWorkOrder, WorkOrderItem } from '../types';
+import { Customer, LoanApplication, TradeIn, CashWorkOrder, LoanWorkOrder, WorkOrderItem, BANKS } from '../types';
 import Modal from '../components/Modal';
 import { generateId, formatRM } from '../utils/format';
 
@@ -132,8 +132,9 @@ export default function Customers() {
   // Detail drawer
   const [detailLead, setDetailLead] = useState<Customer | null>(null);
   const [expandedBank, setExpandedBank] = useState<string | null>(null);
+  const [addBankInput, setAddBankInput] = useState('');
   useEffect(() => {
-    if (!detailLead) { setExpandedBank(null); return; }
+    if (!detailLead) { setExpandedBank(null); setAddBankInput(''); return; }
     const apps = detailLead.loanApplications?.length
       ? detailLead.loanApplications
       : (detailLead.loanBankSubmitted ?? '').split(',').filter(Boolean).map(b => ({ bank: b.trim(), status: 'submitted' as const }));
@@ -414,13 +415,13 @@ export default function Customers() {
   };
 
 
-  const handleSaveBankStatuses = (customerId: string) => {
-    const anyApproved = bankStatuses.some(a => a.status === 'approved');
-    const allResolved = bankStatuses.every(a => a.status !== 'submitted');
+  const handleSaveBankStatuses = (customerId: string, apps?: LoanApplication[]) => {
+    const list = apps ?? bankStatuses;
+    const anyApproved = list.some(a => a.status === 'approved');
+    const allResolved = list.every(a => a.status !== 'submitted');
     const overallStatus: Customer['loanStatus'] = anyApproved ? 'approved' : allResolved ? 'rejected' : 'submitted';
-    updateCustomer(customerId, { loanApplications: bankStatuses, loanStatus: overallStatus });
-    // refresh detailLead so the status badge updates
-    setDetailLead(prev => prev ? { ...prev, loanApplications: bankStatuses, loanStatus: overallStatus } : prev);
+    updateCustomer(customerId, { loanApplications: list, loanStatus: overallStatus });
+    setDetailLead(prev => prev ? { ...prev, loanApplications: list, loanStatus: overallStatus } : prev);
   };
 
   const toggleBankStatus = (bank: string, newStatus: 'approved' | 'rejected' | 'submitted') => {
@@ -804,7 +805,7 @@ export default function Customers() {
                               <span key={a.bank} className={`text-xs ${
                                 a.status === 'approved' ? 'text-green-400' :
                                 a.status === 'rejected' ? 'text-red-400' :
-                                'text-gray-500'
+                                'text-yellow-400'
                               }`}>{a.bank}</span>
                             ))}
                           </div>
@@ -960,8 +961,9 @@ export default function Customers() {
                       {bankStatuses.map(app => (
                         <div key={app.bank}>
                           {/* Summary row — click to expand */}
+                          <div className="flex items-center">
                           <button
-                            className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-obsidian-600/40 transition-colors text-left"
+                            className="flex-1 flex items-center justify-between px-4 py-2.5 hover:bg-obsidian-600/40 transition-colors text-left"
                             onClick={() => setExpandedBank(expandedBank === app.bank ? null : app.bank)}
                           >
                             <div className="min-w-0">
@@ -984,6 +986,18 @@ export default function Customers() {
                               {app.status === 'approved' ? 'Approved' : app.status === 'rejected' ? 'Rejected' : 'Submitted'}
                             </span>
                           </button>
+                          <button
+                            onClick={() => {
+                              const updated = bankStatuses.filter(a => a.bank !== app.bank);
+                              setBankStatuses(updated);
+                              handleSaveBankStatuses(detailLead.id, updated);
+                              if (expandedBank === app.bank) setExpandedBank(null);
+                            }}
+                            className="px-3 py-2.5 text-gray-600 hover:text-red-400 transition-colors shrink-0"
+                          >
+                            <X size={13} />
+                          </button>
+                          </div>
 
                           {/* Expanded edit section */}
                           {expandedBank === app.bank && (
@@ -1075,6 +1089,32 @@ export default function Customers() {
                           )}
                         </div>
                       ))}
+                      {/* Add Bank row */}
+                      <div className="flex items-center gap-2 px-3 py-2 border-t border-obsidian-400/30">
+                        <select
+                          className="flex-1 bg-transparent text-gray-400 text-xs outline-none"
+                          value={addBankInput}
+                          onChange={e => setAddBankInput(e.target.value)}
+                        >
+                          <option value="">+ Add bank...</option>
+                          {BANKS.filter(b => !bankStatuses.some(a => a.bank === b)).map(b => (
+                            <option key={b} value={b}>{b}</option>
+                          ))}
+                        </select>
+                        {addBankInput && (
+                          <button
+                            onClick={() => {
+                              const updated = [...bankStatuses, { bank: addBankInput, status: 'submitted' as const }];
+                              setBankStatuses(updated);
+                              handleSaveBankStatuses(detailLead.id, updated);
+                              setAddBankInput('');
+                            }}
+                            className="text-xs text-gold-400 hover:text-gold-300 font-medium transition-colors shrink-0"
+                          >
+                            Add
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
