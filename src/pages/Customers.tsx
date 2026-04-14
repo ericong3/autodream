@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList } from 'lucide-react';
 import { useStore } from '../store';
-import { Customer, LoanApplication, TradeIn, CashWorkOrder, LoanWorkOrder, WorkOrderItem, BANKS } from '../types';
+import { Customer, LoanApplication, CashWorkOrder, LoanWorkOrder, WorkOrderItem, BANKS } from '../types';
 import Modal from '../components/Modal';
 import { generateId, formatRM } from '../utils/format';
 
@@ -271,7 +271,7 @@ export default function Customers() {
     setSidebarView('options');
     setSidebarCashFlow(false);
     const interestedCar = cars.find(car => car.id === c.interestedCarId);
-    setLoanForm({ banks: [], dealPrice: String(interestedCar?.sellingPrice ?? ''), notes: '', carId: c.interestedCarId ?? '' });
+    setLoanForm({ dealPrice: String(interestedCar?.sellingPrice ?? ''), carId: c.interestedCarId ?? '' });
     setCashForm({ dealPrice: String(interestedCar?.sellingPrice ?? ''), notes: '' });
   };
 
@@ -1125,7 +1125,7 @@ export default function Customers() {
                   <button
                     onClick={() => {
                       const interestedCar = cars.find(car => car.id === detailLead.interestedCarId);
-                      setLoanForm({ banks: [], dealPrice: String(interestedCar?.sellingPrice ?? ''), notes: '', carId: detailLead.interestedCarId ?? '' });
+                      setLoanForm({ dealPrice: String(interestedCar?.sellingPrice ?? ''), carId: detailLead.interestedCarId ?? '' });
                       setSidebarLead(detailLead);
                       setSidebarView('car_select');
                       setDetailLead(null);
