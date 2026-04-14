@@ -343,7 +343,13 @@ export default function Inventory() {
               {/* Photo */}
               <div className="h-36 bg-obsidian-700/60 flex items-center justify-center relative">
                 {car.photo ? (
-                  <img src={car.photo} alt={`${car.make} ${car.model}`} className="w-full h-full object-cover" />
+                  <img
+                    src={car.photo}
+                    alt={`${car.make} ${car.model}`}
+                    className="w-full h-full object-cover opacity-0 transition-opacity duration-300"
+                    loading="lazy"
+                    onLoad={(e) => e.currentTarget.classList.replace('opacity-0', 'opacity-100')}
+                  />
                 ) : (
                   <CarIcon size={40} className="text-gray-700 group-hover:text-gray-600 transition-colors" />
                 )}

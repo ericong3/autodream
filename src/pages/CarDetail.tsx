@@ -416,7 +416,13 @@ export default function CarDetail() {
               onClick={() => allPhotos.length > 0 && openGallery(0)}
             />
             {car.photo ? (
-              <img src={car.photo} alt={`${car.make} ${car.model}`} className="w-full h-full object-cover" />
+              <img
+                src={car.photo}
+                alt={`${car.make} ${car.model}`}
+                className="w-full h-full object-cover opacity-0 transition-opacity duration-300"
+                loading="lazy"
+                onLoad={(e) => e.currentTarget.classList.replace('opacity-0', 'opacity-100')}
+              />
             ) : (
               <CarIcon size={56} className="text-gray-700" />
             )}
@@ -1087,7 +1093,13 @@ export default function CarDetail() {
                   onClick={() => setGalleryIndex(i)}
                   className={`flex-shrink-0 w-16 h-12 rounded-lg overflow-hidden border-2 transition-colors ${i === galleryIndex ? 'border-gold-400' : 'border-transparent opacity-50 hover:opacity-80'}`}
                 >
-                  <img src={src} alt={`thumb-${i}`} className="w-full h-full object-cover" />
+                  <img
+                    src={src}
+                    alt={`thumb-${i}`}
+                    className="w-full h-full object-cover opacity-0 transition-opacity duration-200"
+                    loading="lazy"
+                    onLoad={(e) => e.currentTarget.classList.replace('opacity-0', 'opacity-100')}
+                  />
                 </button>
               ))}
             </div>

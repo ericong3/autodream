@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useRef } from 'react';
-import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, FileText, ClipboardList } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList } from 'lucide-react';
 import { useStore } from '../store';
-import { Customer, LoanApplication, TradeIn, CashWorkOrder, WorkOrderItem } from '../types';
+import { Customer, LoanApplication, TradeIn, CashWorkOrder, LoanWorkOrder, WorkOrderItem } from '../types';
 import Modal from '../components/Modal';
 import { generateId, formatRM } from '../utils/format';
 
@@ -53,7 +53,6 @@ const STAGE_COLORS: Record<Customer['leadStatus'], { dot: string; text: string; 
   loan_submitted:{ dot: 'bg-green-400',  text: 'text-green-400',  line: 'bg-green-400' },
 };
 
-const BANKS = ['Maybank', 'Public Bank', 'CIMB', 'HLB', 'Aeon Credit', 'Chailease', 'Toyota Capital'];
 
 const emptyForm = {
   name: '', ic: '', phone: '', email: '', employer: '', monthlySalary: 0,
@@ -105,7 +104,7 @@ export default function Customers() {
   const [sidebarLead, setSidebarLead] = useState<Customer | null>(null);
   const [sidebarView, setSidebarView] = useState<'options' | 'car_select' | 'loan' | 'cash'>('options');
   const [sidebarCashFlow, setSidebarCashFlow] = useState(false);
-  const [loanForm, setLoanForm] = useState({ banks: [] as string[], dealPrice: '', notes: '', carId: '' });
+  const [loanForm, setLoanForm] = useState({ dealPrice: '', carId: '' });
   const [cashForm, setCashForm] = useState({ dealPrice: '', notes: '' });
 
   // Work order overlay
@@ -115,6 +114,7 @@ export default function Customers() {
     sellingPrice: 0, insurance: 0, bankProduct: 0,
     additionalItems: [] as WorkOrderItem[],
     bookingFee: 0, downpayment: 0, discount: 0,
+    loanAmount: 0, approvedBank: '',
     customerName: '', customerIc: '', customerPhone: '', customerEmail: '', customerAddress: '',
     hasTradeIn: false,
     tradeInPhotos: [] as string[], greenCardPhoto: '',
@@ -122,31 +122,24 @@ export default function Customers() {
     tradeInPrice: 0, settlementFigure: 0,
   };
   const [woForm, setWoForm] = useState({ ...emptyWorkOrder });
+  const [workOrderType, setWorkOrderType] = useState<'cash' | 'loan'>('cash');
   const tiPhotoRef = useRef<HTMLInputElement>(null);
   const gcPhotoRef = useRef<HTMLInputElement>(null);
 
-  // Loan status management modal (for loan_submitted leads)
-
-  // Bank status management modal
-  const [bankModal, setBankModal] = useState<Customer | null>(null);
   const [bankStatuses, setBankStatuses] = useState<LoanApplication[]>([]);
-  const [rejectReason, setRejectReason] = useState<Record<string, string>>({});
-
-  // Final deal wizard
-  type FinalDealStep = 1 | 2 | 3;
-  const [finalDealModal, setFinalDealModal] = useState<Customer | null>(null);
-  const [finalDealStep, setFinalDealStep] = useState<FinalDealStep>(1);
-  const emptyTradeIn: TradeIn = {
-    make: '', model: '', year: new Date().getFullYear(), carPlate: '', colour: '',
-    mileage: 0, condition: 'good', outstandingLoan: 0, offeredValue: 0, damages: '', photos: [],
-  };
-  const [finalDealForm, setFinalDealForm] = useState({
-    approvedBank: '', dealPrice: '', hasTradeIn: false, tradeIn: { ...emptyTradeIn },
-  });
   const tradeInPhotoRef = useRef<HTMLInputElement>(null);
 
   // Detail drawer
   const [detailLead, setDetailLead] = useState<Customer | null>(null);
+  const [expandedBank, setExpandedBank] = useState<string | null>(null);
+  useEffect(() => {
+    if (!detailLead) { setExpandedBank(null); return; }
+    const apps = detailLead.loanApplications?.length
+      ? detailLead.loanApplications
+      : (detailLead.loanBankSubmitted ?? '').split(',').filter(Boolean).map(b => ({ bank: b.trim(), status: 'submitted' as const }));
+    setBankStatuses(apps);
+    setExpandedBank(null);
+  }, [detailLead?.id]);
 
   const myCustomers = useMemo(() =>
     customers
@@ -295,17 +288,11 @@ export default function Customers() {
 
   const handleProceedLoan = () => {
     if (!sidebarLead) return;
-    const newApplications: LoanApplication[] = loanForm.banks.map(b => ({ bank: b, status: 'submitted' }));
     updateCustomer(sidebarLead.id, {
       leadStatus: 'loan_submitted',
       loanStatus: 'submitted',
-      loanBankSubmitted: loanForm.banks.join(', '),
-      loanApplications: newApplications,
       interestedCarId: loanForm.carId || sidebarLead.interestedCarId,
       dealPrice: loanForm.dealPrice ? Number(loanForm.dealPrice) : sidebarLead.dealPrice,
-      notes: loanForm.notes
-        ? (sidebarLead.notes ? sidebarLead.notes + '\n' + loanForm.notes : loanForm.notes)
-        : sidebarLead.notes,
     });
     closeSidebar();
   };
@@ -426,86 +413,93 @@ export default function Customers() {
     setWorkOrderCustomer(null);
   };
 
-  // ── Bank status modal ─────────────────────────────────────
-  const openBankModal = (c: Customer) => {
-    const apps = c.loanApplications?.length
-      ? c.loanApplications
-      : (c.loanBankSubmitted ?? '').split(',').filter(Boolean).map(b => ({ bank: b.trim(), status: 'submitted' as const }));
-    setBankStatuses(apps);
-    setRejectReason({});
-    setBankModal(c);
-  };
 
-  const handleSaveBankStatuses = () => {
-    if (!bankModal) return;
+  const handleSaveBankStatuses = (customerId: string) => {
     const anyApproved = bankStatuses.some(a => a.status === 'approved');
     const allResolved = bankStatuses.every(a => a.status !== 'submitted');
     const overallStatus: Customer['loanStatus'] = anyApproved ? 'approved' : allResolved ? 'rejected' : 'submitted';
-    updateCustomer(bankModal.id, { loanApplications: bankStatuses, loanStatus: overallStatus });
-    setBankModal(null);
+    updateCustomer(customerId, { loanApplications: bankStatuses, loanStatus: overallStatus });
+    // refresh detailLead so the status badge updates
+    setDetailLead(prev => prev ? { ...prev, loanApplications: bankStatuses, loanStatus: overallStatus } : prev);
   };
 
-  const toggleBankStatus = (bank: string, newStatus: 'approved' | 'rejected') => {
+  const toggleBankStatus = (bank: string, newStatus: 'approved' | 'rejected' | 'submitted') => {
     setBankStatuses(prev => prev.map(a => {
       if (a.bank !== bank) return a;
-      if (a.status === newStatus) return { ...a, status: 'submitted' }; // toggle off
-      return { ...a, status: newStatus, rejectionReason: newStatus === 'rejected' ? (rejectReason[bank] ?? '') : undefined };
+      return { ...a, status: newStatus };
     }));
   };
 
-  // ── Final deal wizard ─────────────────────────────────────
+  // ── Loan Work Order ───────────────────────────────────────
   const openFinalDeal = (c: Customer) => {
-    const approvedBank = c.loanApplications?.find(a => a.status === 'approved')?.bank ?? '';
+    const approvedApp = c.loanApplications?.find(a => a.status === 'approved');
     const car = getCar(c.interestedCarId);
-    setFinalDealForm({
-      approvedBank,
-      dealPrice: String(c.dealPrice ?? car?.sellingPrice ?? ''),
-      hasTradeIn: !!c.tradeIn,
-      tradeIn: c.tradeIn ? { ...c.tradeIn } : { ...emptyTradeIn },
+    setWoForm({
+      ...emptyWorkOrder,
+      sellingPrice: car?.sellingPrice ?? 0,
+      approvedBank: approvedApp?.bank ?? '',
+      loanAmount: approvedApp?.approvedAmount ?? 0,
+      customerName: c.name,
+      customerIc: c.ic ?? '',
+      customerPhone: c.phone,
+      customerEmail: c.email ?? '',
     });
-    setFinalDealStep(1);
-    setFinalDealModal(c);
+    setWorkOrderCarId(c.interestedCarId ?? '');
+    setWorkOrderCustomer(c);
+    setWorkOrderType('loan');
   };
 
-  const handleTradeInPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    files.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = ev => {
-        const url = ev.target?.result as string;
-        setFinalDealForm(prev => ({
-          ...prev,
-          tradeIn: { ...prev.tradeIn, photos: [...prev.tradeIn.photos, url].slice(0, 5) },
-        }));
-      };
-      reader.readAsDataURL(file);
-    });
-    if (e.target) e.target.value = '';
-  };
+  const handleLoanWoSubmit = () => {
+    if (!workOrderCustomer) return;
+    const car = getCar(workOrderCarId);
+    const additions = woForm.sellingPrice + woForm.insurance + woForm.bankProduct +
+      woForm.additionalItems.reduce((s, i) => s + i.amount, 0);
+    const totalFinalDeal = additions - woForm.loanAmount - woForm.bookingFee - woForm.discount;
+    const hasDiscount = car ? woForm.discount > 0 || woForm.sellingPrice < car.sellingPrice : false;
 
-  const handleFinalDealSubmit = () => {
-    if (!finalDealModal) return;
-    const car = getCar(finalDealModal.interestedCarId);
-    const dealPrice = Number(finalDealForm.dealPrice);
-    const hasDiscount = car ? dealPrice < car.sellingPrice : false;
+    const loanWorkOrder: LoanWorkOrder = {
+      carId: workOrderCarId,
+      bank: woForm.approvedBank,
+      loanAmount: woForm.loanAmount,
+      sellingPrice: woForm.sellingPrice,
+      insurance: woForm.insurance,
+      bankProduct: woForm.bankProduct,
+      additionalItems: woForm.additionalItems,
+      bookingFee: woForm.bookingFee,
+      discount: woForm.discount,
+      customerName: woForm.customerName,
+      customerIc: woForm.customerIc,
+      customerPhone: woForm.customerPhone,
+      customerEmail: woForm.customerEmail,
+      customerAddress: woForm.customerAddress,
+      hasTradeIn: woForm.hasTradeIn,
+      tradeInPhotos: woForm.tradeInPhotos,
+      greenCardPhoto: woForm.greenCardPhoto,
+      tradeInPlate: woForm.tradeInPlate,
+      tradeInMake: woForm.tradeInMake,
+      tradeInModel: woForm.tradeInModel,
+      tradeInVariant: woForm.tradeInVariant,
+      tradeInPrice: woForm.tradeInPrice,
+      settlementFigure: woForm.settlementFigure,
+      submittedBy: currentUser?.name ?? '',
+      createdAt: new Date().toISOString(),
+    };
 
-    // Update customer trade-in and finalize
-    updateCustomer(finalDealModal.id, {
-      tradeIn: finalDealForm.hasTradeIn ? finalDealForm.tradeIn : undefined,
-      dealPrice,
+    updateCustomer(workOrderCustomer.id, {
+      dealPrice: totalFinalDeal,
       loanStatus: 'approved',
+      loanWorkOrder,
     });
 
-    // Push final deal to car
     if (car) {
-      const updateCar = useStore.getState().updateCar;
-      updateCar(car.id, {
+      const storeUpdateCar = useStore.getState().updateCar;
+      storeUpdateCar(car.id, {
         status: 'deal_pending',
         finalDeal: {
           submittedBy: currentUser?.name ?? '',
           submittedAt: new Date().toISOString(),
-          dealPrice,
-          bank: finalDealForm.approvedBank,
+          dealPrice: totalFinalDeal,
+          bank: woForm.approvedBank,
           approvalStatus: hasDiscount ? 'pending' : 'approved',
           approvedBy: hasDiscount ? undefined : currentUser?.name,
           approvedAt: hasDiscount ? undefined : new Date().toISOString(),
@@ -513,7 +507,7 @@ export default function Customers() {
       });
     }
 
-    setFinalDealModal(null);
+    setWorkOrderCustomer(null);
   };
 
   return (
@@ -793,46 +787,56 @@ export default function Customers() {
               const car = getCar(c.interestedCarId);
               const loanInfo = LOAN_STATUS_LABELS[c.loanStatus ?? 'not_started'];
               return (
-                <div key={c.id} className="flex items-center gap-3 px-4 py-3 hover:bg-obsidian-700/50 transition-colors cursor-pointer" onClick={() => setDetailLead(c)}>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-white text-sm font-medium">{c.name}</span>
-                      <span className="text-gray-600 text-xs hidden sm:inline">{c.phone}</span>
-                      {isDirector && <span className="text-gray-600 text-xs hidden lg:inline">{getSalesName(c.assignedSalesId)}</span>}
+                <div key={c.id} className="divide-y divide-obsidian-400/40">
+                  {/* Row */}
+                  <div className="flex items-center gap-3 px-4 py-3 hover:bg-obsidian-700/50 transition-colors cursor-pointer" onClick={() => setDetailLead(c)}>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-white text-sm font-medium">{c.name}</span>
+                        <span className="text-gray-600 text-xs hidden sm:inline">{c.phone}</span>
+                        {isDirector && <span className="text-gray-600 text-xs hidden lg:inline">{getSalesName(c.assignedSalesId)}</span>}
+                      </div>
+                      <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                        {car && <span className="text-gray-400 text-xs">{car.year} {car.make} {car.model}</span>}
+                        {c.loanApplications?.length ? (
+                          <div className="flex flex-wrap gap-1">
+                            {c.loanApplications.map(a => (
+                              <span key={a.bank} className={`text-xs ${
+                                a.status === 'approved' ? 'text-green-400' :
+                                a.status === 'rejected' ? 'text-red-400' :
+                                'text-gray-500'
+                              }`}>{a.bank}</span>
+                            ))}
+                          </div>
+                        ) : c.loanBankSubmitted ? (
+                          <span className="text-gray-500 text-xs">{c.loanBankSubmitted}</span>
+                        ) : null}
+                        {c.dealPrice ? <span className="text-gray-400 text-xs font-medium">{formatRM(c.dealPrice)}</span> : null}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-                      {car && <span className="text-gray-400 text-xs">{car.year} {car.make} {car.model}</span>}
-                      {c.loanBankSubmitted && <span className="text-gray-500 text-xs">{c.loanBankSubmitted}</span>}
-                      {c.dealPrice ? <span className="text-gray-400 text-xs font-medium">{formatRM(c.dealPrice)}</span> : null}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
-                    {c.loanApplications?.some(a => a.status === 'approved') && (
-                      <button
-                        onClick={() => openFinalDeal(c)}
-                        className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-gold-500/10 border border-gold-500/40 text-gold-400 hover:bg-gold-500/20 rounded-lg font-medium transition-colors"
-                      >
-                        <ClipboardList size={12} />Final Deal
+                    <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+                      {c.loanApplications?.some(a => a.status === 'approved') && (
+                        <button
+                          onClick={() => openFinalDeal(c)}
+                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-gold-500/10 border border-gold-500/40 text-gold-400 hover:bg-gold-500/20 rounded-lg font-medium transition-colors"
+                        >
+                          <ClipboardList size={12} />Final Deal
+                        </button>
+                      )}
+                      <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${
+                        loanInfo.label === 'Approved' ? 'bg-green-500/10 border-green-500/30 text-green-400' :
+                        loanInfo.label === 'Rejected' ? 'bg-red-500/10 border-red-500/30 text-red-400' :
+                        'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
+                      }`}>{loanInfo.label}</span>
+                      <button onClick={() => handleWhatsApp(c.phone, c.name)} className="flex items-center gap-1 px-2 py-1.5 text-xs text-green-400 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 rounded-lg transition-colors">
+                        <MessageCircle size={12} />WA
                       </button>
-                    )}
-                    <button
-                      onClick={() => openBankModal(c)}
-                      className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-obsidian-700/60 border border-obsidian-400/60 text-gray-400 hover:text-white hover:border-obsidian-400 rounded-lg transition-colors"
-                    >
-                      <FileText size={12} />Banks
-                    </button>
-                    <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${
-                      loanInfo.label === 'Approved' ? 'bg-green-500/10 border-green-500/30 text-green-400' :
-                      loanInfo.label === 'Rejected' ? 'bg-red-500/10 border-red-500/30 text-red-400' :
-                      'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
-                    }`}>{loanInfo.label}</span>
-                    <button onClick={() => handleWhatsApp(c.phone, c.name)} className="flex items-center gap-1 px-2 py-1.5 text-xs text-green-400 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 rounded-lg transition-colors">
-                      <MessageCircle size={12} />WA
-                    </button>
-                    <button onClick={() => openEdit(c)} className="p-1.5 text-gray-600 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors">
-                      <Edit2 size={14} />
-                    </button>
+                      <button onClick={() => openEdit(c)} className="p-1.5 text-gray-600 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors">
+                        <Edit2 size={14} />
+                      </button>
+                    </div>
                   </div>
+
                 </div>
               );
             })}
@@ -840,33 +844,35 @@ export default function Customers() {
         )}
       </>)}
 
-      {/* ── Lead Detail Drawer ────────────────────────── */}
-      {detailLead && (
-        <div className="fixed inset-0 z-40 bg-black/50" onClick={() => setDetailLead(null)} />
-      )}
-      <div className={`fixed top-0 right-0 h-full w-full md:w-96 bg-[#0F0E0C] border-l border-obsidian-400/60 z-50 flex flex-col transition-transform duration-300 ${detailLead ? 'translate-x-0' : 'translate-x-full'}`}>
-        {detailLead && (() => {
-          const car = getCar(detailLead.interestedCarId);
-          return (
-            <>
-              {/* Header */}
-              <div className="flex items-center justify-between p-5 border-b border-obsidian-400/60">
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm uppercase ${STAGE_COLORS[detailLead.leadStatus].dot} bg-opacity-20 border border-opacity-30 text-white`} style={{ background: 'rgba(6,182,212,0.15)', borderColor: 'rgba(6,182,212,0.3)' }}>
-                    {detailLead.name.charAt(0)}
-                  </div>
-                  <div>
-                    <p className="text-white font-semibold text-sm">{detailLead.name}</p>
-                    <span className={`text-xs ${STAGE_COLORS[detailLead.leadStatus].text}`}>{LEAD_STATUS_LABELS[detailLead.leadStatus]}</span>
-                  </div>
-                </div>
-                <button onClick={() => setDetailLead(null)} className="p-1.5 text-gray-500 hover:text-white hover:bg-obsidian-600/60 rounded-lg transition-colors">
-                  <X size={16} />
-                </button>
-              </div>
+      {/* ── Lead Detail Modal ────────────────────────── */}
+      {detailLead && (() => {
+        const car = getCar(detailLead.interestedCarId);
+        return (
+          <>
+            <div className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm" onClick={() => setDetailLead(null)} />
+            <div className="fixed inset-0 z-50 overflow-y-auto pointer-events-none">
+              <div className="flex min-h-full items-center justify-center p-4">
+                <div key={detailLead.id} className="pointer-events-auto relative w-full max-w-sm bg-gradient-to-b from-obsidian-700 to-obsidian-800 border border-obsidian-400/80 rounded-xl shadow-[0_20px_80px_rgba(0,0,0,0.8)] flex flex-col max-h-[90vh]">
+                  <div className="absolute top-0 left-0 right-0 h-[2px] rounded-t-xl bg-gold-gradient opacity-80" />
 
-              {/* Scrollable content */}
-              <div className="flex-1 overflow-y-auto p-5 space-y-5">
+                  {/* Header */}
+                  <div className="flex items-center justify-between px-5 py-4 border-b border-obsidian-400/60 shrink-0">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm uppercase ${STAGE_COLORS[detailLead.leadStatus].dot} bg-opacity-20 border border-opacity-30 text-white`} style={{ background: 'rgba(6,182,212,0.15)', borderColor: 'rgba(6,182,212,0.3)' }}>
+                        {detailLead.name.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="text-white font-semibold text-sm">{detailLead.name}</p>
+                        <span className={`text-xs ${STAGE_COLORS[detailLead.leadStatus].text}`}>{LEAD_STATUS_LABELS[detailLead.leadStatus]}</span>
+                      </div>
+                    </div>
+                    <button onClick={() => setDetailLead(null)} className="p-1.5 text-gray-500 hover:text-white hover:bg-obsidian-600/60 rounded-lg transition-colors">
+                      <X size={16} />
+                    </button>
+                  </div>
+
+                  {/* Scrollable content */}
+                  <div className="flex-1 overflow-y-auto p-5 space-y-5 min-h-0">
                 {/* Contact */}
                 <div className="space-y-2">
                   <p className="text-gray-500 text-xs font-medium uppercase tracking-wide">Contact</p>
@@ -940,40 +946,139 @@ export default function Customers() {
                   </div>
                 )}
 
-                {/* Loan Info */}
+                {/* Loan / Bank Status */}
                 {detailLead.loanStatus && detailLead.loanStatus !== 'not_started' && (
                   <div className="space-y-2">
-                    <p className="text-gray-500 text-xs font-medium uppercase tracking-wide">Loan</p>
-                    <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl p-4 space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-500 text-xs">Status</span>
-                        <span className="text-green-400 text-sm capitalize">{detailLead.loanStatus}</span>
+                    <p className="text-gray-500 text-xs font-medium uppercase tracking-wide">Banks</p>
+                    {!!detailLead.dealPrice && (
+                      <div className="flex items-center justify-between px-1">
+                        <span className="text-gray-500 text-xs">Deal Price</span>
+                        <span className="text-white text-sm">{formatRM(detailLead.dealPrice)}</span>
                       </div>
-                      {detailLead.loanBankSubmitted && (
-                        <div className="flex items-center justify-between">
-                          <span className="text-gray-500 text-xs">Banks</span>
-                          <span className="text-white text-sm text-right max-w-[60%]">{detailLead.loanBankSubmitted}</span>
+                    )}
+                    <div className="bg-obsidian-700/60 border border-obsidian-400/60 rounded-xl divide-y divide-obsidian-400/30 overflow-hidden">
+                      {bankStatuses.map(app => (
+                        <div key={app.bank}>
+                          {/* Summary row — click to expand */}
+                          <button
+                            className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-obsidian-600/40 transition-colors text-left"
+                            onClick={() => setExpandedBank(expandedBank === app.bank ? null : app.bank)}
+                          >
+                            <div className="min-w-0">
+                              <span className="text-white text-sm">{app.bank}</span>
+                              {(app.approvedAmount || app.interestRate) && (
+                                <p className="text-green-400 text-xs mt-0.5 truncate">
+                                  {app.approvedAmount ? `RM ${app.approvedAmount.toLocaleString()}` : ''}
+                                  {app.approvedAmount && app.interestRate ? ' · ' : ''}
+                                  {app.interestRate ? `${app.interestRate}%` : ''}
+                                </p>
+                              )}
+                              {app.approvalReason && <p className="text-green-400/70 text-xs mt-0.5 truncate">{app.approvalReason}</p>}
+                              {app.rejectionReason && <p className="text-red-400 text-xs mt-0.5 truncate">{app.rejectionReason}</p>}
+                            </div>
+                            <span className={`text-xs px-2 py-0.5 rounded-full border font-medium shrink-0 ml-3 ${
+                              app.status === 'approved' ? 'bg-green-500/10 border-green-500/30 text-green-400' :
+                              app.status === 'rejected' ? 'bg-red-500/10 border-red-500/30 text-red-400' :
+                              'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
+                            }`}>
+                              {app.status === 'approved' ? 'Approved' : app.status === 'rejected' ? 'Rejected' : 'Submitted'}
+                            </span>
+                          </button>
+
+                          {/* Expanded edit section */}
+                          {expandedBank === app.bank && (
+                            <div className="px-4 pb-3 pt-1 space-y-2 bg-obsidian-800/60 border-t border-obsidian-400/30">
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => toggleBankStatus(app.bank, 'approved')}
+                                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                                    app.status === 'approved'
+                                      ? 'bg-green-500/20 border-green-500/50 text-green-300'
+                                      : 'border-obsidian-400/60 text-gray-500 hover:border-green-500/40 hover:text-green-400'
+                                  }`}
+                                >
+                                  <CheckCircle size={12} />Approve
+                                </button>
+                                <button
+                                  onClick={() => toggleBankStatus(app.bank, 'submitted')}
+                                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                                    app.status === 'submitted'
+                                      ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-300'
+                                      : 'border-obsidian-400/60 text-gray-500 hover:border-yellow-500/40 hover:text-yellow-400'
+                                  }`}
+                                >
+                                  Submitted
+                                </button>
+                                <button
+                                  onClick={() => toggleBankStatus(app.bank, 'rejected')}
+                                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                                    app.status === 'rejected'
+                                      ? 'bg-red-500/20 border-red-500/50 text-red-300'
+                                      : 'border-obsidian-400/60 text-gray-500 hover:border-red-500/40 hover:text-red-400'
+                                  }`}
+                                >
+                                  <XCircle size={12} />Reject
+                                </button>
+                              </div>
+                              {app.status === 'approved' && (
+                                <div className="space-y-2">
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                      <p className="text-gray-500 text-xs mb-1">Approved Amount (RM)</p>
+                                      <input
+                                        type="number"
+                                        className="input text-xs w-full"
+                                        placeholder="e.g. 45000"
+                                        value={app.approvedAmount ?? ''}
+                                        onChange={e => setBankStatuses(prev => prev.map(a => a.bank === app.bank ? { ...a, approvedAmount: e.target.value ? Number(e.target.value) : undefined } : a))}
+                                        onKeyDown={e => { if (e.key === 'Enter') { handleSaveBankStatuses(detailLead.id); setExpandedBank(null); } }}
+                                      />
+                                    </div>
+                                    <div>
+                                      <p className="text-gray-500 text-xs mb-1">Interest Rate (%)</p>
+                                      <input
+                                        type="number"
+                                        step="0.01"
+                                        className="input text-xs w-full"
+                                        placeholder="e.g. 3.5"
+                                        value={app.interestRate ?? ''}
+                                        onChange={e => setBankStatuses(prev => prev.map(a => a.bank === app.bank ? { ...a, interestRate: e.target.value ? Number(e.target.value) : undefined } : a))}
+                                        onKeyDown={e => { if (e.key === 'Enter') { handleSaveBankStatuses(detailLead.id); setExpandedBank(null); } }}
+                                      />
+                                    </div>
+                                  </div>
+                                  <input
+                                    className="input text-xs w-full"
+                                    placeholder="Approval notes..."
+                                    value={app.approvalReason ?? ''}
+                                    onChange={e => setBankStatuses(prev => prev.map(a => a.bank === app.bank ? { ...a, approvalReason: e.target.value } : a))}
+                                    onKeyDown={e => { if (e.key === 'Enter') { handleSaveBankStatuses(detailLead.id); setExpandedBank(null); } }}
+                                  />
+                                </div>
+                              )}
+                              {app.status === 'rejected' && (
+                                <input
+                                  className="input text-xs w-full"
+                                  placeholder="Rejection reason..."
+                                  value={app.rejectionReason ?? ''}
+                                  onChange={e => setBankStatuses(prev => prev.map(a => a.bank === app.bank ? { ...a, rejectionReason: e.target.value } : a))}
+                                  onKeyDown={e => { if (e.key === 'Enter') { handleSaveBankStatuses(detailLead.id); setExpandedBank(null); } }}
+                                />
+                              )}
+                              <button
+                                onClick={() => { handleSaveBankStatuses(detailLead.id); setExpandedBank(null); }}
+                                className="w-full btn-gold py-1.5 rounded-lg text-xs font-medium"
+                              >
+                                Save
+                              </button>
+                            </div>
+                          )}
                         </div>
-                      )}
-                      {!!detailLead.dealPrice && (
-                        <div className="flex items-center justify-between">
-                          <span className="text-gray-500 text-xs">Deal Price</span>
-                          <span className="text-white text-sm">{formatRM(detailLead.dealPrice)}</span>
-                        </div>
-                      )}
+                      ))}
                     </div>
                   </div>
                 )}
 
-                {/* Notes */}
-                {detailLead.notes && (
-                  <div className="space-y-2">
-                    <p className="text-gray-500 text-xs font-medium uppercase tracking-wide">Notes</p>
-                    <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl p-4">
-                      <p className="text-gray-300 text-sm whitespace-pre-wrap leading-relaxed">{detailLead.notes}</p>
-                    </div>
-                  </div>
-                )}
 
                 {/* Proceed to Loan — follow_up only */}
                 {detailLead.leadStatus === 'follow_up' && (
@@ -1031,10 +1136,12 @@ export default function Customers() {
                   </button>
                 </div>
               </div>
-            </>
-          );
-        })()}
-      </div>
+                </div>
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
       {/* ── Next Step Modal ────────────────────────────── */}
       <Modal
@@ -1179,6 +1286,7 @@ export default function Customers() {
                       });
                       setWorkOrderCarId(loanForm.carId);
                       setWorkOrderCustomer(sidebarLead);
+                      setWorkOrderType('cash');
                       closeSidebar();
                     } else {
                       setCashForm(f => ({ ...f, dealPrice: String(car?.sellingPrice ?? f.dealPrice) }));
@@ -1218,38 +1326,6 @@ export default function Customers() {
                   )}
 
                   <div className="space-y-3">
-                    <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className="text-gray-300 text-xs font-medium">Bank</label>
-                        {loanForm.banks.length > 0 && (
-                          <span className="text-xs text-green-400">{loanForm.banks.length} selected</span>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        {BANKS.map(b => {
-                          const selected = loanForm.banks.includes(b);
-                          return (
-                            <button
-                              key={b}
-                              type="button"
-                              onClick={() => {
-                                const updated = selected
-                                  ? loanForm.banks.filter(x => x !== b)
-                                  : [...loanForm.banks, b];
-                                setLoanForm({ ...loanForm, banks: updated });
-                              }}
-                              className={`px-2 py-2 rounded-lg text-xs font-medium border transition-colors text-center ${
-                                selected
-                                  ? 'bg-green-500/20 border-green-500/60 text-green-300'
-                                  : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-green-500/40 hover:text-gray-200'
-                              }`}
-                            >
-                              {b}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
                     <FormField label="Loan Amount (RM)">
                       <input
                         type="number"
@@ -1259,22 +1335,13 @@ export default function Customers() {
                         placeholder="e.g. 45000"
                       />
                     </FormField>
-                    <FormField label="Notes">
-                      <textarea
-                        className={`${inputCls()} h-20 resize-none`}
-                        value={loanForm.notes}
-                        onChange={e => setLoanForm({ ...loanForm, notes: e.target.value })}
-                        placeholder="Any remarks about the loan..."
-                      />
-                    </FormField>
                   </div>
 
                   <button
                     onClick={handleProceedLoan}
-                    disabled={loanForm.banks.length === 0}
-                    className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-50 disabled:cursor-not-allowed text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
+                    className="w-full bg-green-500 hover:bg-green-400 text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
                   >
-                    Submit{loanForm.banks.length > 1 ? ` to ${loanForm.banks.length} Banks` : ' Loan'} & Move to Follow Up
+                    Submit Loan & Move to Follow Up
                   </button>
                 </>
               );
@@ -1393,9 +1460,6 @@ export default function Customers() {
               </select>
             </FormField>
           )}
-          <FormField label="Notes">
-            <textarea className={`${inputCls()} h-16 resize-none`} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Quick notes..." />
-          </FormField>
         </div>
         <div className="flex justify-center gap-3 mt-5">
           <button onClick={() => { setShowModal(false); setEditTarget(null); }} className="px-6 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
@@ -1453,371 +1517,16 @@ export default function Customers() {
         </div>
       </Modal>
 
-      {/* ── Bank Status Modal ─────────────────────────── */}
-      <Modal isOpen={!!bankModal} onClose={() => setBankModal(null)} title="Update Bank Status" maxWidth="max-w-sm">
-        {bankModal && (
-          <div className="space-y-4">
-            <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl px-4 py-3">
-              <p className="text-white text-sm font-medium">{bankModal.name}</p>
-              <p className="text-gray-500 text-xs">{bankModal.phone}</p>
-            </div>
-            <div className="space-y-2">
-              {bankStatuses.map(app => (
-                <div key={app.bank} className="bg-obsidian-700/60 border border-obsidian-400/60 rounded-xl p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-white text-sm font-medium">{app.bank}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${
-                      app.status === 'approved' ? 'bg-green-500/10 border-green-500/30 text-green-400' :
-                      app.status === 'rejected' ? 'bg-red-500/10 border-red-500/30 text-red-400' :
-                      'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
-                    }`}>
-                      {app.status === 'approved' ? 'Approved' : app.status === 'rejected' ? 'Rejected' : 'Submitted'}
-                    </span>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => toggleBankStatus(app.bank, 'approved')}
-                      className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                        app.status === 'approved'
-                          ? 'bg-green-500/20 border-green-500/50 text-green-300'
-                          : 'border-obsidian-400/60 text-gray-500 hover:border-green-500/40 hover:text-green-400'
-                      }`}
-                    >
-                      <CheckCircle size={12} />Approve
-                    </button>
-                    <button
-                      onClick={() => toggleBankStatus(app.bank, 'rejected')}
-                      className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                        app.status === 'rejected'
-                          ? 'bg-red-500/20 border-red-500/50 text-red-300'
-                          : 'border-obsidian-400/60 text-gray-500 hover:border-red-500/40 hover:text-red-400'
-                      }`}
-                    >
-                      <XCircle size={12} />Reject
-                    </button>
-                  </div>
-                  {app.status === 'rejected' && (
-                    <input
-                      className="input text-xs w-full"
-                      placeholder="Rejection reason (optional)..."
-                      value={rejectReason[app.bank] ?? app.rejectionReason ?? ''}
-                      onChange={e => {
-                        setRejectReason(prev => ({ ...prev, [app.bank]: e.target.value }));
-                        setBankStatuses(prev => prev.map(a => a.bank === app.bank ? { ...a, rejectionReason: e.target.value } : a));
-                      }}
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
-            <div className="flex justify-center gap-3">
-              <button onClick={() => setBankModal(null)} className="px-6 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
-              <button onClick={handleSaveBankStatuses} className="btn-gold px-6 py-2.5 rounded-lg text-sm">Save</button>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      {/* ── Final Deal Wizard ─────────────────────────── */}
-      <Modal
-        isOpen={!!finalDealModal}
-        onClose={() => setFinalDealModal(null)}
-        title={finalDealStep === 1 ? 'Final Deal — Price' : finalDealStep === 2 ? 'Final Deal — Trade-in' : 'Deal Summary'}
-        maxWidth="max-w-md"
-      >
-        {finalDealModal && (() => {
-          const customer = finalDealModal;
-          const car = getCar(customer.interestedCarId);
-          const dealPrice = Number(finalDealForm.dealPrice) || 0;
-          const hasDiscount = car ? dealPrice < car.sellingPrice : false;
-          const discountAmt = car ? car.sellingPrice - dealPrice : 0;
-          const ti = finalDealForm.tradeIn;
-          const netTradeIn = ti.offeredValue - ti.outstandingLoan;
-
-          return (
-            <div className="space-y-4">
-
-              {/* Step indicators */}
-              <div className="flex items-center gap-2 mb-2">
-                {[1, 2, 3].map(s => (
-                  <React.Fragment key={s}>
-                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border ${
-                      finalDealStep === s ? 'bg-gold-500 border-gold-500 text-white' :
-                      finalDealStep > s ? 'bg-green-500/20 border-green-500/40 text-green-400' :
-                      'bg-obsidian-700/60 border-obsidian-400/60 text-gray-600'
-                    }`}>{s}</div>
-                    {s < 3 && <div className={`flex-1 h-px ${finalDealStep > s ? 'bg-green-500/40' : 'bg-obsidian-400/40'}`} />}
-                  </React.Fragment>
-                ))}
-              </div>
-
-              {/* ── Step 1: Deal price ── */}
-              {finalDealStep === 1 && (
-                <>
-                  {car && (
-                    <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl p-3">
-                      <p className="text-xs text-gray-500 mb-1">Car</p>
-                      <p className="text-white text-sm font-medium">{car.year} {car.make} {car.model}</p>
-                      <p className="text-gray-400 text-xs">Listed at {formatRM(car.sellingPrice)}</p>
-                    </div>
-                  )}
-                  <div>
-                    <label className="block text-gray-300 text-xs font-medium mb-1.5">Approved Bank</label>
-                    <select
-                      className="input w-full"
-                      value={finalDealForm.approvedBank}
-                      onChange={e => setFinalDealForm(f => ({ ...f, approvedBank: e.target.value }))}
-                    >
-                      <option value="">— Select bank —</option>
-                      {customer.loanApplications?.filter(a => a.status === 'approved').map(a => (
-                        <option key={a.bank} value={a.bank}>{a.bank}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-gray-300 text-xs font-medium mb-1.5">Final Deal Price (RM)</label>
-                    <input
-                      type="number"
-                      className="input w-full"
-                      value={finalDealForm.dealPrice}
-                      onChange={e => setFinalDealForm(f => ({ ...f, dealPrice: e.target.value }))}
-                      placeholder="e.g. 45000"
-                    />
-                  </div>
-                  {hasDiscount && dealPrice > 0 && (
-                    <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2.5 text-xs text-amber-400">
-                      <AlertCircle size={13} className="shrink-0 mt-0.5" />
-                      <span>Discount of <strong>{formatRM(discountAmt)}</strong> from listed price. This deal requires <strong>Director approval</strong>.</span>
-                    </div>
-                  )}
-                  <button
-                    onClick={() => setFinalDealStep(2)}
-                    disabled={!finalDealForm.approvedBank || !finalDealForm.dealPrice}
-                    className="w-full btn-gold py-2.5 rounded-lg text-sm disabled:opacity-50"
-                  >
-                    Next — Trade-in
-                  </button>
-                </>
-              )}
-
-              {/* ── Step 2: Trade-in ── */}
-              {finalDealStep === 2 && (
-                <>
-                  <div className="flex items-center justify-between">
-                    <button onClick={() => setFinalDealStep(1)} className="text-xs text-gray-500 hover:text-white">← Back</button>
-                  </div>
-                  <div className="flex items-center gap-3 p-3 bg-obsidian-700/60 border border-obsidian-400/60 rounded-xl">
-                    <Car size={16} className="text-gray-500 shrink-0" />
-                    <div>
-                      <p className="text-white text-sm">Does this customer have a trade-in?</p>
-                    </div>
-                    <button
-                      onClick={() => setFinalDealForm(f => ({ ...f, hasTradeIn: !f.hasTradeIn, tradeIn: f.hasTradeIn ? { ...emptyTradeIn } : f.tradeIn }))}
-                      className={`ml-auto shrink-0 w-10 h-6 rounded-full border transition-colors relative ${
-                        finalDealForm.hasTradeIn ? 'bg-gold-500 border-gold-500' : 'bg-obsidian-500 border-obsidian-400/60'
-                      }`}
-                    >
-                      <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow ${
-                        finalDealForm.hasTradeIn ? 'translate-x-4' : 'translate-x-0.5'
-                      }`} />
-                    </button>
-                  </div>
-
-                  {finalDealForm.hasTradeIn && (
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="block text-gray-300 text-xs font-medium mb-1">Make</label>
-                          <input className="input" value={ti.make} onChange={e => setFinalDealForm(f => ({ ...f, tradeIn: { ...f.tradeIn, make: e.target.value } }))} placeholder="Toyota" />
-                        </div>
-                        <div>
-                          <label className="block text-gray-300 text-xs font-medium mb-1">Model</label>
-                          <input className="input" value={ti.model} onChange={e => setFinalDealForm(f => ({ ...f, tradeIn: { ...f.tradeIn, model: e.target.value } }))} placeholder="Vios" />
-                        </div>
-                        <div>
-                          <label className="block text-gray-300 text-xs font-medium mb-1">Year</label>
-                          <input type="number" className="input" value={ti.year} onChange={e => setFinalDealForm(f => ({ ...f, tradeIn: { ...f.tradeIn, year: Number(e.target.value) } }))} />
-                        </div>
-                        <div>
-                          <label className="block text-gray-300 text-xs font-medium mb-1">Plate</label>
-                          <input className="input" value={ti.carPlate} onChange={e => setFinalDealForm(f => ({ ...f, tradeIn: { ...f.tradeIn, carPlate: e.target.value } }))} placeholder="WXX 1234" />
-                        </div>
-                        <div>
-                          <label className="block text-gray-300 text-xs font-medium mb-1">Colour</label>
-                          <input className="input" value={ti.colour} onChange={e => setFinalDealForm(f => ({ ...f, tradeIn: { ...f.tradeIn, colour: e.target.value } }))} placeholder="Silver" />
-                        </div>
-                        <div>
-                          <label className="block text-gray-300 text-xs font-medium mb-1">Mileage (km)</label>
-                          <input type="number" className="input" value={ti.mileage || ''} onChange={e => setFinalDealForm(f => ({ ...f, tradeIn: { ...f.tradeIn, mileage: Number(e.target.value) } }))} />
-                        </div>
-                        <div>
-                          <label className="block text-gray-300 text-xs font-medium mb-1">Outstanding Loan (RM)</label>
-                          <input type="number" className="input" value={ti.outstandingLoan || ''} onChange={e => setFinalDealForm(f => ({ ...f, tradeIn: { ...f.tradeIn, outstandingLoan: Number(e.target.value) } }))} placeholder="0" />
-                        </div>
-                        <div>
-                          <label className="block text-gray-300 text-xs font-medium mb-1">Offered Value (RM)</label>
-                          <input type="number" className="input" value={ti.offeredValue || ''} onChange={e => setFinalDealForm(f => ({ ...f, tradeIn: { ...f.tradeIn, offeredValue: Number(e.target.value) } }))} placeholder="0" />
-                        </div>
-                      </div>
-                      {finalDealForm.hasTradeIn && ti.offeredValue > 0 && (
-                        <div className={`text-xs px-3 py-2 rounded-lg border ${netTradeIn >= 0 ? 'bg-green-500/10 border-green-500/20 text-green-400' : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
-                          Net trade-in: {netTradeIn >= 0 ? '+' : ''}{formatRM(netTradeIn)}
-                          {netTradeIn < 0 && ' (customer still owes settlement)'}
-                        </div>
-                      )}
-                      <div>
-                        <label className="block text-gray-300 text-xs font-medium mb-1">Damage Report</label>
-                        <textarea
-                          className="input h-20 resize-none w-full"
-                          value={ti.damages}
-                          onChange={e => setFinalDealForm(f => ({ ...f, tradeIn: { ...f.tradeIn, damages: e.target.value } }))}
-                          placeholder="Describe visible damages, dents, scratches..."
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-gray-300 text-xs font-medium mb-1">Photos ({ti.photos.length}/5)</label>
-                        <div className="flex flex-wrap gap-2">
-                          {ti.photos.map((p, i) => (
-                            <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-obsidian-400/60">
-                              <img src={p} alt="" className="w-full h-full object-cover" />
-                              <button
-                                onClick={() => setFinalDealForm(f => ({ ...f, tradeIn: { ...f.tradeIn, photos: f.tradeIn.photos.filter((_, j) => j !== i) } }))}
-                                className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/70 flex items-center justify-center text-white"
-                              >
-                                <X size={9} />
-                              </button>
-                            </div>
-                          ))}
-                          {ti.photos.length < 5 && (
-                            <button
-                              onClick={() => tradeInPhotoRef.current?.click()}
-                              className="w-16 h-16 rounded-lg border border-dashed border-obsidian-400/60 flex flex-col items-center justify-center text-gray-600 hover:text-gray-400 hover:border-obsidian-400 transition-colors"
-                            >
-                              <Camera size={16} />
-                              <span className="text-[10px] mt-0.5">Add</span>
-                            </button>
-                          )}
-                        </div>
-                        <input ref={tradeInPhotoRef} type="file" accept="image/*" multiple className="hidden" onChange={handleTradeInPhoto} />
-                      </div>
-                    </div>
-                  )}
-
-                  <button onClick={() => setFinalDealStep(3)} className="w-full btn-gold py-2.5 rounded-lg text-sm">
-                    Next — Summary
-                  </button>
-                </>
-              )}
-
-              {/* ── Step 3: Summary ── */}
-              {finalDealStep === 3 && (
-                <>
-                  <div className="flex items-center justify-between">
-                    <button onClick={() => setFinalDealStep(2)} className="text-xs text-gray-500 hover:text-white">← Back</button>
-                    <span className="text-xs text-gray-500">Review before submitting</span>
-                  </div>
-
-                  <div className="space-y-3">
-                    {/* Customer */}
-                    <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl p-3">
-                      <p className="text-gray-500 text-xs mb-2 font-medium uppercase tracking-wide">Customer</p>
-                      <p className="text-white text-sm font-medium">{customer.name}</p>
-                      <p className="text-gray-400 text-xs">{customer.phone}</p>
-                    </div>
-
-                    {/* Car & Pricing */}
-                    <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl p-3 space-y-2.5">
-                      <p className="text-gray-500 text-xs mb-1 font-medium uppercase tracking-wide">Deal</p>
-                      {car && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-400 text-xs">Car</span>
-                          <span className="text-white text-sm">{car.year} {car.make} {car.model}</span>
-                        </div>
-                      )}
-                      {car && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-400 text-xs">Listed Price</span>
-                          <span className="text-gray-300 text-sm">{formatRM(car.sellingPrice)}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between items-center">
-                        <span className="text-gray-400 text-xs">Deal Price</span>
-                        <span className="text-white text-sm font-semibold">{formatRM(dealPrice)}</span>
-                      </div>
-                      {hasDiscount && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-amber-400 text-xs">Discount</span>
-                          <span className="text-amber-400 text-sm font-medium">-{formatRM(discountAmt)} ⚠ Director Approval</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between items-center pt-1 border-t border-obsidian-400/40">
-                        <span className="text-gray-400 text-xs">Approved Bank</span>
-                        <span className="text-green-400 text-sm font-medium">{finalDealForm.approvedBank}</span>
-                      </div>
-                    </div>
-
-                    {/* Trade-in */}
-                    {finalDealForm.hasTradeIn && ti.make && (
-                      <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl p-3 space-y-2.5">
-                        <p className="text-gray-500 text-xs mb-1 font-medium uppercase tracking-wide">Trade-in</p>
-                        <div className="flex justify-between">
-                          <span className="text-gray-400 text-xs">Car</span>
-                          <span className="text-white text-sm">{ti.year} {ti.make} {ti.model} · {ti.carPlate}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-400 text-xs">Offered Value</span>
-                          <span className="text-white text-sm">{formatRM(ti.offeredValue)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-400 text-xs">Outstanding Loan</span>
-                          <span className="text-white text-sm">-{formatRM(ti.outstandingLoan)}</span>
-                        </div>
-                        <div className="flex justify-between pt-1 border-t border-obsidian-400/40">
-                          <span className="text-gray-400 text-xs">Net Trade-in</span>
-                          <span className={`text-sm font-semibold ${netTradeIn >= 0 ? 'text-green-400' : 'text-red-400'}`}>{netTradeIn >= 0 ? '+' : ''}{formatRM(netTradeIn)}</span>
-                        </div>
-                        {ti.damages && (
-                          <div>
-                            <p className="text-gray-500 text-xs mb-1">Damages</p>
-                            <p className="text-gray-300 text-xs leading-relaxed">{ti.damages}</p>
-                          </div>
-                        )}
-                        {ti.photos.length > 0 && (
-                          <div className="flex gap-1.5 flex-wrap">
-                            {ti.photos.map((p, i) => (
-                              <img key={i} src={p} alt="" className="w-14 h-14 rounded-lg object-cover border border-obsidian-400/60" />
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Effective price */}
-                    {finalDealForm.hasTradeIn && ti.offeredValue > 0 && (
-                      <div className="bg-gold-500/10 border border-gold-500/30 rounded-xl p-3 flex justify-between items-center">
-                        <span className="text-gold-400 text-sm">Effective Price</span>
-                        <span className="text-gold-300 text-base font-bold">{formatRM(Math.max(0, dealPrice - netTradeIn))}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <button onClick={handleFinalDealSubmit} className="w-full btn-gold py-2.5 rounded-lg text-sm font-medium">
-                    {hasDiscount ? 'Submit for Director Approval' : 'Confirm Final Deal'}
-                  </button>
-                </>
-              )}
-            </div>
-          );
-        })()}
-      </Modal>
-
-      {/* ── Cash Work Order Overlay ───────────────────── */}
+      {/* ── Work Order Overlay (Cash & Loan) ─────────── */}
       {workOrderCustomer && (() => {
         const car = getCar(workOrderCarId);
         const additions = woForm.sellingPrice + woForm.insurance + woForm.bankProduct +
           woForm.additionalItems.reduce((s, i) => s + i.amount, 0);
-        const reductions = woForm.bookingFee + woForm.downpayment + woForm.discount;
+        const reductions = workOrderType === 'loan'
+          ? woForm.loanAmount + woForm.bookingFee + woForm.discount
+          : woForm.bookingFee + woForm.downpayment + woForm.discount;
         const totalFinalDeal = additions - reductions;
+        const downpayment = workOrderType === 'loan' ? woForm.sellingPrice - woForm.loanAmount : 0;
         const netTradeIn = woForm.tradeInPrice - woForm.settlementFigure;
 
         return (
@@ -1825,7 +1534,7 @@ export default function Customers() {
             {/* Header */}
             <div className="sticky top-0 z-10 bg-[#0F0E0C] border-b border-obsidian-400/60 px-4 py-3 flex items-center justify-between">
               <div>
-                <p className="text-white font-semibold text-sm">Cash Work Order</p>
+                <p className="text-white font-semibold text-sm">{workOrderType === 'loan' ? 'Loan Work Order' : 'Cash Work Order'}</p>
                 <p className="text-gray-500 text-xs">{workOrderCustomer.name} · {car ? `${car.year} ${car.make} ${car.model}` : ''}</p>
               </div>
               <button onClick={() => setWorkOrderCustomer(null)} className="p-1.5 text-gray-500 hover:text-white hover:bg-obsidian-600/60 rounded-lg transition-colors">
@@ -1896,9 +1605,33 @@ export default function Customers() {
                   <div className="px-4 py-2 bg-obsidian-700/30">
                     <p className="text-gray-600 text-xs uppercase tracking-wide">Reduction</p>
                   </div>
+
+                  {/* Loan-specific: Approved Bank display + Loan Amount */}
+                  {workOrderType === 'loan' && (
+                    <>
+                      <div className="flex items-center gap-3 px-4 py-3 border-b border-obsidian-400/30">
+                        <span className="text-gray-400 text-sm flex-1">Approved Bank</span>
+                        <span className="text-green-400 text-sm font-medium">{woForm.approvedBank || '—'}</span>
+                      </div>
+                      <div className="flex items-center gap-3 px-4 py-3 border-b border-obsidian-400/30">
+                        <span className="text-gray-400 text-sm flex-1">Loan Amount</span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-red-500/60 text-xs">- RM</span>
+                          <input
+                            type="number"
+                            value={woForm.loanAmount || ''}
+                            onChange={e => setWoForm(f => ({ ...f, loanAmount: Number(e.target.value) }))}
+                            className="w-28 bg-transparent text-red-400 text-sm text-right outline-none border-b border-transparent focus:border-red-500/40 transition-colors"
+                            placeholder="0"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+
                   {[
                     { label: 'Booking Fee', key: 'bookingFee' as const },
-                    { label: 'Downpayment', key: 'downpayment' as const },
+                    ...(workOrderType === 'cash' ? [{ label: 'Downpayment', key: 'downpayment' as const }] : []),
                     { label: 'Discount', key: 'discount' as const },
                   ].map(row => (
                     <div key={row.key} className="flex items-center gap-3 px-4 py-3 border-b border-obsidian-400/30">
@@ -1915,6 +1648,14 @@ export default function Customers() {
                       </div>
                     </div>
                   ))}
+
+                  {/* Loan: show calculated downpayment */}
+                  {workOrderType === 'loan' && (
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-obsidian-400/30 bg-blue-500/5">
+                      <span className="text-blue-300 text-sm">Downpayment (Customer)</span>
+                      <span className="text-blue-300 text-sm font-semibold">{formatRM(Math.max(0, downpayment))}</span>
+                    </div>
+                  )}
 
                   {/* Total */}
                   <div className="flex items-center justify-between px-4 py-4 bg-gold-500/5">
@@ -1956,7 +1697,7 @@ export default function Customers() {
                     onClick={() => setWoForm(f => ({ ...f, hasTradeIn: !f.hasTradeIn }))}
                     className={`w-10 h-6 rounded-full border transition-colors relative ${woForm.hasTradeIn ? 'bg-gold-500 border-gold-500' : 'bg-obsidian-500 border-obsidian-400/60'}`}
                   >
-                    <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow ${woForm.hasTradeIn ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                    <span className={`absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow ${woForm.hasTradeIn ? 'translate-x-4' : 'translate-x-0'}`} />
                   </button>
                 </div>
 
@@ -2062,7 +1803,7 @@ export default function Customers() {
                   <p className="text-gold-400 font-bold text-lg">{formatRM(totalFinalDeal)}</p>
                 </div>
                 <button
-                  onClick={handleWorkOrderSubmit}
+                  onClick={workOrderType === 'loan' ? handleLoanWoSubmit : handleWorkOrderSubmit}
                   disabled={woForm.hasTradeIn && woForm.tradeInPhotos.length < 4}
                   className="btn-gold px-6 py-3 rounded-xl text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >

@@ -20,12 +20,47 @@ export interface ChecklistItem {
 export interface LoanApplication {
   bank: string;
   status: 'submitted' | 'approved' | 'rejected';
+  approvalReason?: string;
+  approvedAmount?: number;
+  interestRate?: number;
   rejectionReason?: string;
 }
 
 export interface WorkOrderItem {
   label: string;
   amount: number;
+}
+
+export interface LoanWorkOrder {
+  carId: string;
+  bank: string;
+  loanAmount: number;
+  // Deal
+  sellingPrice: number;
+  insurance: number;
+  bankProduct: number;
+  additionalItems: WorkOrderItem[];
+  bookingFee: number;
+  discount: number;
+  // Customer
+  customerName: string;
+  customerIc: string;
+  customerPhone: string;
+  customerEmail: string;
+  customerAddress: string;
+  // Trade in
+  hasTradeIn: boolean;
+  tradeInPhotos: string[];
+  greenCardPhoto: string;
+  tradeInPlate: string;
+  tradeInMake: string;
+  tradeInModel: string;
+  tradeInVariant: string;
+  tradeInPrice: number;
+  settlementFigure: number;
+  // Meta
+  submittedBy: string;
+  createdAt: string;
 }
 
 export interface CashWorkOrder {
@@ -270,6 +305,7 @@ export interface Customer {
   followUpRemark?: string;
   tradeIn?: TradeIn;
   cashWorkOrder?: CashWorkOrder;
+  loanWorkOrder?: LoanWorkOrder;
   createdAt: string;
 }
 
