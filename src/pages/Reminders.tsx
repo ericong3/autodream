@@ -13,6 +13,7 @@ import {
 import { useStore } from '../store';
 import { Instruction } from '../types';
 import Modal from '../components/Modal';
+import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { generateId } from '../utils/format';
 
 function inputCls(error?: string) {
@@ -81,6 +82,7 @@ export default function Instructions() {
   const isDirector = currentUser?.role === 'director';
   const [tab, setTab] = useState<'main' | 'secondary'>('main');
   const [showModal, setShowModal] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
 
   const [instrForm, setInstrForm] = useState({
     toType: 'all' as 'all' | 'department' | 'individual',
@@ -274,7 +276,7 @@ export default function Instructions() {
                         </button>
                       )}
                       <button
-                        onClick={() => deleteInstruction(instr.id)}
+                        onClick={() => setDeleteTarget({ id: instr.id, label: instr.title })}
                         className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
                       >
                         <XCircle size={16} />
@@ -633,6 +635,12 @@ export default function Instructions() {
           </button>
         </div>
       </Modal>
+      <DeleteConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={async () => { if (deleteTarget) deleteInstruction(deleteTarget.id); }}
+        itemName={deleteTarget?.label ?? ''}
+      />
     </div>
   );
 }

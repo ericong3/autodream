@@ -3,6 +3,7 @@ import { Plus, Edit, Trash2, Users, AlertCircle } from 'lucide-react';
 import { useStore } from '../store';
 import { User } from '../types';
 import Modal from '../components/Modal';
+import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, generateId } from '../utils/format';
 
 function inputCls(error?: string) {
@@ -43,6 +44,7 @@ export default function Salespeople() {
   const [showModal, setShowModal] = useState(false);
   const [editTarget, setEditTarget] = useState<User | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const getCarsSoldByPerson = (userId: string) =>
@@ -105,12 +107,12 @@ export default function Salespeople() {
     setShowModal(true);
   };
 
-  const handleDelete = (id: string) => {
-    if (id === currentUser?.id) {
+  const handleDelete = (sp: User) => {
+    if (sp.id === currentUser?.id) {
       alert("You can't delete yourself!");
       return;
     }
-    if (window.confirm('Delete this salesperson?')) deleteUser(id);
+    setDeleteTarget({ id: sp.id, label: sp.name });
   };
 
   return (
@@ -156,7 +158,7 @@ export default function Salespeople() {
                     <button onClick={() => openEdit(sp)} className="p-1.5 text-gray-400 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors">
                       <Edit size={14} />
                     </button>
-                    <button onClick={() => handleDelete(sp.id)} className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">
+                    <button onClick={() => handleDelete(sp)} className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">
                       <Trash2 size={14} />
                     </button>
                   </div>
@@ -229,6 +231,12 @@ export default function Salespeople() {
           </button>
         </div>
       </Modal>
+      <DeleteConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={async () => { if (deleteTarget) deleteUser(deleteTarget.id); }}
+        itemName={deleteTarget?.label ?? ''}
+      />
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { Plus, FileText, Trash2, Edit, ArrowRight, AlertCircle, MessageCircle } 
 import { useStore } from '../store';
 import { Quotation, Car } from '../types';
 import Modal from '../components/Modal';
+import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, formatMileage, generateId } from '../utils/format';
 
 function inputCls(error?: string) {
@@ -52,6 +53,7 @@ export default function Quotations() {
   const [tab, setTab] = useState<'inbound' | 'outbound'>('inbound');
   const [showModal, setShowModal] = useState(false);
   const [editTarget, setEditTarget] = useState<Quotation | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -133,8 +135,8 @@ export default function Quotations() {
     alert(`${q.make} ${q.model} added to inventory!`);
   };
 
-  const handleDelete = (id: string) => {
-    if (window.confirm('Delete this quotation?')) deleteQuotation(id);
+  const handleDelete = (q: Quotation) => {
+    setDeleteTarget({ id: q.id, label: `${q.make} ${q.model} quotation` });
   };
 
   return (
@@ -230,7 +232,7 @@ export default function Quotations() {
                           <button onClick={() => openEdit(q)} className="p-1.5 text-gray-400 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors">
                             <Edit size={14} />
                           </button>
-                          <button onClick={() => handleDelete(q.id)} className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">
+                          <button onClick={() => handleDelete(q)} className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">
                             <Trash2 size={14} />
                           </button>
                           {q.type === 'inbound' && q.status === 'accepted' && (
@@ -312,6 +314,12 @@ export default function Quotations() {
           </button>
         </div>
       </Modal>
+      <DeleteConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={async () => { if (deleteTarget) deleteQuotation(deleteTarget.id); }}
+        itemName={deleteTarget?.label ?? ''}
+      />
     </div>
   );
 }

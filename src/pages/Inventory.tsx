@@ -14,37 +14,41 @@ import {
   FileText,
   Upload,
   MapPin,
+  Trash2,
+  Users,
+  ClipboardList,
+  Truck,
+  Building2,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
 import { Car } from '../types';
 import Modal from '../components/Modal';
+import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, formatMileage, generateId } from '../utils/format';
 
 
-const STATUS_BADGE: Record<string, string> = {
-  coming_soon: 'bg-purple-500/80 text-white',
-  in_workshop: 'bg-orange-500/80 text-white',
-  ready: 'bg-yellow-500/80 text-white',
-  photo_complete: 'bg-blue-500/80 text-white',
-  submitted: 'bg-indigo-500/80 text-white',
-  deal_pending: 'bg-yellow-600/80 text-white',
-  available: 'bg-green-500/80 text-white',
-  reserved: 'bg-yellow-500/80 text-white',
-  sold: 'bg-gray-500/80 text-white',
-};
+// Loan/deal pipeline badge — based purely on case/loan progress, not car location
+type DealStatus = 'available' | 'loan_in_process' | 'approval_received' | 'sold_pending';
 
-const STATUS_LABEL: Record<string, string> = {
-  coming_soon: 'Coming Soon',
-  in_workshop: 'In Workshop',
-  ready: 'Ready',
-  photo_complete: 'Photo Complete',
-  submitted: 'Submitted',
-  deal_pending: 'Deal Pending',
-  available: 'Available',
-  reserved: 'Reserved',
-  sold: 'Sold',
-};
+interface DealBadge { cls: string; label: string }
+
+function getDealBadge(car: Car): DealBadge {
+  // Deal confirmed → sold, pending delivery/puspakom/etc.
+  if (car.status === 'sold' || car.finalDeal?.approvalStatus === 'approved') {
+    const pendingLabel = !car.deliveryCollected ? 'Pending Delivery' : 'Delivered';
+    return { cls: 'bg-violet-500/90 text-white', label: `Sold · ${pendingLabel}` };
+  }
+
+  const submissions = car.loanSubmissions ?? [];
+  const hasApproval = submissions.some((s) => s.status === 'approved');
+  const hasPending  = submissions.some((s) => s.status === 'submitted');
+
+  if (hasApproval) return { cls: 'bg-emerald-500/90 text-white', label: 'Approval Received' };
+  if (hasPending)  return { cls: 'bg-blue-500/90 text-white',    label: 'Loan in Process' };
+
+  return { cls: 'bg-teal-500/90 text-white', label: 'Available' };
+}
 
 const CAR_MAKES = ['All', 'Perodua', 'Proton', 'Honda', 'Toyota', 'Nissan', 'Other'];
 
@@ -73,8 +77,10 @@ const emptyForm: Omit<Car, 'id' | 'dateAdded'> = {
 export default function Inventory() {
   const cars = useStore((s) => s.cars);
   const users = useStore((s) => s.users);
+  const customers = useStore((s) => s.customers);
   const currentUser = useStore((s) => s.currentUser);
   const addCar = useStore((s) => s.addCar);
+  const deleteCar = useStore((s) => s.deleteCar);
   const dealers = useStore((s) => s.dealers);
   const viewPreference = useStore((s) => s.viewPreference);
   const setViewPreference = useStore((s) => s.setViewPreference);
@@ -91,6 +97,8 @@ export default function Inventory() {
   const [filterStatus, setFilterStatus] = useState('All');
   const [sortBy, setSortBy] = useState('dateAdded-desc');
   const [showModal, setShowModal] = useState(false);
+  const [deleteCarId, setDeleteCarId] = useState<string | null>(null);
+  const [consignmentPopover, setConsignmentPopover] = useState<string | null>(null); // carId
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
@@ -171,8 +179,20 @@ export default function Inventory() {
     setErrors((prev) => ({ ...prev, greenCard: '' }));
   };
 
+  // Lead & deal stats per car
+  const carStats = useMemo(() => {
+    const map: Record<string, { leadCount: number }> = {};
+    for (const c of customers) {
+      if (c.interestedCarId) {
+        map[c.interestedCarId] = { leadCount: (map[c.interestedCarId]?.leadCount ?? 0) + 1 };
+      }
+    }
+    return map;
+  }, [customers]);
+
   const filtered = useMemo(() => {
-    let result = cars.filter((c) => c.status !== 'sold');
+    // Show all cars except fully delivered sold cars
+    let result = cars.filter((c) => c.status !== 'sold' || !c.deliveryCollected);
 
     if (search) {
       const q = search.toLowerCase();
@@ -189,7 +209,12 @@ export default function Inventory() {
     if (filterTransmission !== 'All')
       result = result.filter((c) => c.transmission === filterTransmission);
     if (filterStatus !== 'All')
-      result = result.filter((c) => c.status === filterStatus);
+      result = result.filter((c) => getDealBadge(c).label.startsWith(
+        filterStatus === 'available'         ? 'Available' :
+        filterStatus === 'loan_in_process'   ? 'Loan in Process' :
+        filterStatus === 'approval_received' ? 'Approval Received' :
+        'Sold'
+      ));
 
     result.sort((a, b) => {
       switch (sortBy) {
@@ -278,8 +303,8 @@ export default function Inventory() {
         <Select
           value={filterStatus}
           onChange={setFilterStatus}
-          options={['All', 'coming_soon', 'in_workshop', 'ready', 'photo_complete', 'submitted', 'deal_pending', 'available', 'reserved']}
-          labels={['All Status', 'Coming Soon', 'In Workshop', 'Ready', 'Photo Complete', 'Submitted', 'Deal Pending', 'Available', 'Reserved']}
+          options={['All', 'available', 'loan_in_process', 'approval_received', 'sold_pending']}
+          labels={['All Status', 'Available', 'Loan in Process', 'Approval Received', 'Sold']}
           placeholder="Status"
         />
         <Select
@@ -319,7 +344,7 @@ export default function Inventory() {
 
       {/* Count */}
       <p className="text-gray-500 text-sm">
-        Showing <span className="text-white font-medium">{filtered.length}</span> of {cars.length} cars
+        Showing <span className="text-white font-medium">{filtered.length}</span> of {cars.filter(c => c.status !== 'sold' || !c.deliveryCollected).length} active stock
       </p>
 
       {/* Empty state */}
@@ -335,10 +360,70 @@ export default function Inventory() {
       {view === 'grid' && filtered.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filtered.map((car) => (
+            <div key={car.id} className="relative group/card">
+              {/* Consignment sticker */}
+              {car.consignment && (
+                <div className="absolute -top-2.5 left-3 z-20">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setConsignmentPopover(consignmentPopover === car.id ? null : car.id); }}
+                    className="flex items-center gap-1 bg-blue-500 hover:bg-blue-400 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg shadow-blue-500/30 transition-colors"
+                    title="Consignment details"
+                  >
+                    <Building2 size={9} /> CONSIGN
+                  </button>
+                  {/* Popover */}
+                  {consignmentPopover === car.id && (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="absolute top-6 left-0 z-30 w-52 bg-[#0F0E0C] border border-blue-500/40 rounded-xl shadow-xl p-3 space-y-2"
+                    >
+                      <p className="text-blue-400 text-xs font-semibold uppercase tracking-wide">Consignment</p>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-gray-500">Dealer</span>
+                        <span className="text-white font-medium">{car.consignment.dealer || '—'}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-gray-500">Terms</span>
+                        <span className="text-white">{car.consignment.terms === 'fixed_amount' ? 'Fixed Amount' : 'Profit Split'}</span>
+                      </div>
+                      {car.consignment.terms === 'fixed_amount' && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-500">Amount</span>
+                          <span className="text-blue-400 font-semibold">{formatRM(car.consignment.fixedAmount ?? 0)}</span>
+                        </div>
+                      )}
+                      {car.consignment.terms === 'profit_split' && (
+                        <>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-500">Dealer's Split</span>
+                            <span className="text-white">{car.consignment.splitPercent ?? 50}%</span>
+                          </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-500">Our Split</span>
+                            <span className="text-green-400 font-semibold">{100 - (car.consignment.splitPercent ?? 50)}%</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              {isDirector && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setDeleteCarId(car.id); }}
+                  className="absolute top-2 right-2 z-10 p-1.5 bg-red-500/80 hover:bg-red-500 text-white rounded-lg opacity-0 group-hover/card:opacity-100 transition-opacity"
+                  title="Delete car"
+                >
+                  <Trash2 size={13} />
+                </button>
+              )}
             <div
-              key={car.id}
-              onClick={() => navigate(`/inventory/${car.id}`)}
-              className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card overflow-hidden cursor-pointer hover:border-gold-500/40 hover:shadow-xl hover:shadow-gold-500/10 transition-all group"
+              onClick={() => { setConsignmentPopover(null); navigate(`/inventory/${car.id}`); }}
+              className={`bg-card-gradient border rounded-xl shadow-card overflow-hidden cursor-pointer hover:shadow-xl transition-all group ${
+                car.consignment
+                  ? 'border-blue-500/50 hover:border-blue-400/70 hover:shadow-blue-500/10'
+                  : 'border-obsidian-400/70 hover:border-gold-500/40 hover:shadow-gold-500/10'
+              }`}
             >
               {/* Photo */}
               <div className="h-36 bg-obsidian-700/60 flex items-center justify-center relative">
@@ -353,9 +438,14 @@ export default function Inventory() {
                 ) : (
                   <CarIcon size={40} className="text-gray-700 group-hover:text-gray-600 transition-colors" />
                 )}
-                <span className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[car.status] ?? 'bg-gray-500/20 text-gray-400'}`}>
-                  {STATUS_LABEL[car.status] ?? car.status}
-                </span>
+                {(() => {
+                  const { cls, label } = getDealBadge(car);
+                  return (
+                    <span className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-xs font-semibold ${cls}`}>
+                      {label}
+                    </span>
+                  );
+                })()}
                 {!car.greenCard && car.status !== 'coming_soon' && (
                   <span className="absolute top-2 left-2 flex items-center gap-1 bg-orange-500/80 border border-orange-400 text-white px-2 py-0.5 rounded-full text-[10px] font-medium">
                     <AlertCircle size={10} /> No Green Card
@@ -396,10 +486,45 @@ export default function Inventory() {
                   </div>
                 </div>
 
-                <p className="text-gray-600 text-xs mt-2 truncate">
-                  {getSalesperson(car.assignedSalesperson)}
-                </p>
+                <p className="text-gray-600 text-xs mt-1 truncate">{getSalesperson(car.assignedSalesperson)}</p>
+
+                {/* Deal summary strip */}
+                {(() => {
+                  const leadCount = carStats[car.id]?.leadCount ?? 0;
+                  const submissions = car.loanSubmissions ?? [];
+                  const approvedBanks = submissions.filter((s) => s.status === 'approved');
+                  const pendingBanks  = submissions.filter((s) => s.status === 'submitted');
+                  const deal = car.finalDeal;
+
+                  if (leadCount === 0 && submissions.length === 0 && !deal) return null;
+
+                  return (
+                    <div className="mt-2 pt-2 border-t border-obsidian-400/30 space-y-1">
+                      {leadCount > 0 && (
+                        <span className="flex items-center gap-1 text-[10px] text-gray-500">
+                          <Users size={9} /> {leadCount} lead{leadCount > 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {pendingBanks.length > 0 && (
+                        <p className="text-[10px] text-blue-400 truncate">
+                          {pendingBanks.length} bank{pendingBanks.length > 1 ? 's' : ''} pending · {pendingBanks.map((s) => s.bank).join(', ')}
+                        </p>
+                      )}
+                      {approvedBanks.length > 0 && (
+                        <p className="text-[10px] text-emerald-400 truncate">
+                          Approved · {approvedBanks.map((s) => s.bank).join(', ')}
+                        </p>
+                      )}
+                      {deal && (
+                        <p className="text-[10px] text-violet-400 font-medium truncate">
+                          {deal.bank} · {formatRM(deal.dealPrice)}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
+            </div>
             </div>
           ))}
         </div>
@@ -419,10 +544,12 @@ export default function Inventory() {
                   <th className="text-left px-4 py-3 font-medium">Mileage</th>
                   <th className="text-left px-4 py-3 font-medium">Transmission</th>
                   <th className="text-left px-4 py-3 font-medium">Location</th>
-                  <th className="text-left px-4 py-3 font-medium">Status</th>
+                  <th className="text-left px-4 py-3 font-medium">Availability</th>
+                  <th className="text-left px-4 py-3 font-medium">Deal Summary</th>
                   <th className="text-right px-4 py-3 font-medium">Selling Price</th>
                   {isDirector && <th className="text-right px-4 py-3 font-medium">Profit</th>}
                   <th className="text-left px-4 py-3 font-medium">Assigned To</th>
+                  {isDirector && <th className="px-4 py-3" />}
                 </tr>
               </thead>
               <tbody>
@@ -457,16 +584,37 @@ export default function Inventory() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[car.status] ?? 'bg-gray-500/20 text-gray-400'}`}>
-                          {STATUS_LABEL[car.status] ?? car.status}
-                        </span>
-                        {!car.greenCard && car.status !== 'coming_soon' && (
-                          <span className="flex items-center gap-1 bg-orange-500/80 border border-orange-400 text-white px-2 py-0.5 rounded-full text-[10px] font-medium">
-                            <AlertCircle size={10} /> No Green Card
-                          </span>
-                        )}
-                      </div>
+                      {(() => {
+                        const { cls, label } = getDealBadge(car);
+                        return (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${cls}`}>{label}</span>
+                            {!car.greenCard && car.status !== 'coming_soon' && (
+                              <span className="flex items-center gap-1 bg-orange-500/80 text-white px-1.5 py-0.5 rounded-full text-[10px] font-medium">
+                                <AlertCircle size={9} /> No GC
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </td>
+                    <td className="px-4 py-3">
+                      {(() => {
+                        const leadCount = carStats[car.id]?.leadCount ?? 0;
+                        const submissions = car.loanSubmissions ?? [];
+                        const approved = submissions.filter((s) => s.status === 'approved');
+                        const pending  = submissions.filter((s) => s.status === 'submitted');
+                        const deal = car.finalDeal;
+                        return (
+                          <div className="space-y-0.5">
+                            {leadCount > 0 && <span className="flex items-center gap-1 text-xs text-gray-500"><Users size={10} />{leadCount} lead{leadCount > 1 ? 's' : ''}</span>}
+                            {pending.length > 0 && <p className="text-xs text-blue-400 truncate">{pending.length} pending · {pending.map((s) => s.bank).join(', ')}</p>}
+                            {approved.length > 0 && <p className="text-xs text-emerald-400 truncate">Approved · {approved.map((s) => s.bank).join(', ')}</p>}
+                            {deal && <p className="text-xs text-violet-400 truncate">{deal.bank} · {formatRM(deal.dealPrice)}</p>}
+                            {!leadCount && !submissions.length && !deal && <span className="text-xs text-gray-600">—</span>}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-3 text-gold-400 font-semibold text-right">{formatRM(car.sellingPrice)}</td>
                     {isDirector && (
@@ -475,6 +623,17 @@ export default function Inventory() {
                       </td>
                     )}
                     <td className="px-4 py-3 text-gray-400">{getSalesperson(car.assignedSalesperson)}</td>
+                    {isDirector && (
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => setDeleteCarId(car.id)}
+                          className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                          title="Delete car"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -482,6 +641,13 @@ export default function Inventory() {
           </div>
         </div>
       )}
+
+      <DeleteConfirmModal
+        isOpen={!!deleteCarId}
+        onClose={() => setDeleteCarId(null)}
+        onConfirm={async () => { if (deleteCarId) await deleteCar(deleteCarId); }}
+        itemName={(() => { const c = cars.find((c) => c.id === deleteCarId); return c ? `${c.year} ${c.make} ${c.model}` : 'this car'; })()}
+      />
 
       {/* Add Car Modal */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Add New Car" maxWidth="max-w-2xl">

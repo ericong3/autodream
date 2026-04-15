@@ -3,6 +3,7 @@ import { Plus, Edit, Trash2, Users, AlertCircle, Shield, UserCheck, Wrench, Phon
 import { useStore } from '../store';
 import { User } from '../types';
 import Modal from '../components/Modal';
+import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, generateId } from '../utils/format';
 
 function inputCls(error?: string) {
@@ -253,6 +254,7 @@ export default function TeamMembers() {
   const [showModal, setShowModal] = useState(false);
   const [editTarget, setEditTarget] = useState<User | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [filterRole, setFilterRole] = useState<'all' | 'director' | 'salesperson' | 'mechanic'>('all');
   const [selectedEmployee, setSelectedEmployee] = useState<User | null>(null);
@@ -320,12 +322,12 @@ export default function TeamMembers() {
     setShowModal(true);
   };
 
-  const handleDelete = (id: string) => {
-    if (id === currentUser?.id) {
+  const handleDelete = (member: User) => {
+    if (member.id === currentUser?.id) {
       alert("You can't delete yourself!");
       return;
     }
-    if (window.confirm('Delete this team member?')) deleteUser(id);
+    setDeleteTarget({ id: member.id, label: member.name });
   };
 
   const filteredUsers =
@@ -438,7 +440,7 @@ export default function TeamMembers() {
                       <Edit size={14} />
                     </button>
                     <button
-                      onClick={() => handleDelete(member.id)}
+                      onClick={() => handleDelete(member)}
                       disabled={isSelf}
                       className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                     >
@@ -631,6 +633,12 @@ export default function TeamMembers() {
           </button>
         </div>
       </Modal>
+      <DeleteConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={async () => { if (deleteTarget) deleteUser(deleteTarget.id); }}
+        itemName={deleteTarget?.label ?? ''}
+      />
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { Car, Users, Calendar, Bell, ChevronDown, ChevronUp, Banknote, AlertCircle, Plus, CheckCircle, Circle, Trash2 } from 'lucide-react';
 import { useStore } from '../store';
 import Modal from '../components/Modal';
+import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, generateId } from '../utils/format';
 
 const COMMISSION_PER_CAR = 500;
@@ -20,6 +21,7 @@ export default function SalesDashboard() {
   const [monthFilter, setMonthFilter] = useState(new Date().toISOString().slice(0, 7));
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [reminderForm, setReminderForm] = useState({ title: '', dueAt: '' });
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
 
   const myId = currentUser?.id ?? '';
   const today = new Date().toISOString().split('T')[0];
@@ -206,7 +208,7 @@ export default function SalesDashboard() {
                   }`}>
                     {new Date(r.dueAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}
                   </span>
-                  <button onClick={() => deletePersonalReminder(r.id)} className="text-gray-700 hover:text-red-400 transition-colors shrink-0">
+                  <button onClick={() => setDeleteTarget({ id: r.id, label: r.title })} className="text-gray-700 hover:text-red-400 transition-colors shrink-0">
                     <Trash2 size={12} />
                   </button>
                 </div>
@@ -349,6 +351,12 @@ export default function SalesDashboard() {
           </button>
         </div>
       </Modal>
+      <DeleteConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={async () => { if (deleteTarget) deletePersonalReminder(deleteTarget.id); }}
+        itemName={deleteTarget?.label ?? ''}
+      />
     </div>
   );
 }

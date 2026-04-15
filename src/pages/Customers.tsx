@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList } from 'lucide-react';
 import { useStore } from '../store';
-import { Customer, LoanApplication, CashWorkOrder, LoanWorkOrder, WorkOrderItem, BANKS } from '../types';
+import { Customer, LoanApplication, LoanSubmission, CashWorkOrder, LoanWorkOrder, WorkOrderItem, BANKS } from '../types';
 import Modal from '../components/Modal';
+import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { generateId, formatRM } from '../utils/format';
 
 const LEAD_STATUS_LABELS: Record<Customer['leadStatus'], string> = {
@@ -79,7 +80,7 @@ export default function Customers() {
   const todayStr = new Date().toISOString().slice(0, 10);
 
   // Tab
-  const [tab, setTab] = useState<'leads' | 'loan'>('leads');
+  const [tab, setTab] = useState<'leads' | 'loan' | 'confirmed'>('leads');
 
   // Director view toggle: 'all' | 'own' | salesperson userId
   const [directorView, setDirectorView] = useState<'all' | 'own' | string>('all');
@@ -94,6 +95,9 @@ export default function Customers() {
   const [editTarget, setEditTarget] = useState<Customer | null>(null);
   const [form, setForm] = useState({ ...emptyForm, assignedSalesId: currentUser?.id ?? '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Delete confirmation
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
 
   // Test drive scheduling modal
   const [showTdModal, setShowTdModal] = useState(false);
@@ -175,6 +179,14 @@ export default function Customers() {
     const matchSearch = !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search);
     return matchSource && matchSearch;
   }), [myCustomers, sourceFilter, search]);
+
+  const confirmedFiltered = useMemo(() => myCustomers.filter(c => {
+    const hasWorkOrder = !!(c.cashWorkOrder || c.loanWorkOrder);
+    const legacyConfirmed = !!c.dealPrice && !!cars.find(x => x.id === c.interestedCarId)?.finalDeal;
+    if (!hasWorkOrder && !legacyConfirmed) return false;
+    const matchSearch = !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search);
+    return matchSearch;
+  }), [myCustomers, cars, search]);
 
   const salespeople = users.filter(u => u.role === 'salesperson' || u.role === 'director');
   const getSalesName = (salesId: string) => users.find(u => u.id === salesId)?.name ?? salesId;
@@ -422,6 +434,31 @@ export default function Customers() {
     const overallStatus: Customer['loanStatus'] = anyApproved ? 'approved' : allResolved ? 'rejected' : 'submitted';
     updateCustomer(customerId, { loanApplications: list, loanStatus: overallStatus });
     setDetailLead(prev => prev ? { ...prev, loanApplications: list, loanStatus: overallStatus } : prev);
+
+    // Sync to car.loanSubmissions so the Loan Log on CarDetail stays up to date
+    const customer = customers.find(c => c.id === customerId) ?? detailLead;
+    if (customer?.interestedCarId) {
+      const { cars: allCars, updateCar } = useStore.getState();
+      const car = allCars.find(c => c.id === customer.interestedCarId);
+      if (car) {
+        const existing = car.loanSubmissions ?? [];
+        const otherEntries = existing.filter(s => s.customerPhone !== customer.phone);
+        const updatedEntries: LoanSubmission[] = list.map(app => {
+          const prev = existing.find(s => s.customerPhone === customer.phone && s.bank === app.bank);
+          return {
+            id: prev?.id ?? generateId(),
+            bank: app.bank,
+            customerName: customer.name,
+            customerPhone: customer.phone,
+            submittedBy: prev?.submittedBy ?? currentUser?.id ?? '',
+            submittedAt: prev?.submittedAt ?? new Date().toISOString(),
+            status: app.status,
+            notes: prev?.notes,
+          };
+        });
+        updateCar(car.id, { loanSubmissions: [...otherEntries, ...updatedEntries] });
+      }
+    }
   };
 
   const toggleBankStatus = (bank: string, newStatus: 'approved' | 'rejected' | 'submitted') => {
@@ -526,6 +563,12 @@ export default function Customers() {
             className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'loan' ? 'bg-green-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
             Loan <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'loan' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => c.leadStatus === 'loan_submitted').length}</span>
+          </button>
+          <button
+            onClick={() => { setTab('confirmed'); setStatusFilter('all'); }}
+            className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'confirmed' ? 'bg-violet-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+          >
+            Confirmed <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'confirmed' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !!(c.cashWorkOrder || c.loanWorkOrder) || (!!c.dealPrice && !!cars.find(x => x.id === c.interestedCarId)?.finalDeal)).length}</span>
           </button>
         </div>
         {tab === 'leads' && (
@@ -673,12 +716,19 @@ export default function Customers() {
               return (
                 <div key={c.id} className="flex items-center gap-3 px-4 py-3 hover:bg-obsidian-700/50 transition-colors cursor-pointer" onClick={() => setDetailLead(c)}>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-white text-sm font-medium">{c.name}</span>
                       <span className="text-gray-600 text-xs hidden sm:inline">{c.phone}</span>
                       <span className="text-gray-700 text-xs px-1.5 py-0.5 bg-[#2C2415] rounded hidden md:inline">{SOURCE_LABELS[c.source]}</span>
                       {isDirector && <span className="text-gray-600 text-xs hidden lg:inline">{getSalesName(c.assignedSalesId)}</span>}
                     </div>
+                    {(() => { const car = getCar(c.interestedCarId); return car ? (
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <Car size={10} className="text-gray-600 flex-shrink-0" />
+                        <span className="text-gray-500 text-xs">{car.year} {car.make} {car.model}{car.variant ? ` ${car.variant}` : ''}</span>
+                        {car.carPlate && <span className="text-xs font-mono text-gold-500/70">{car.carPlate}</span>}
+                      </div>
+                    ) : null; })()}
                     <div className="flex items-center gap-1 mt-1.5 flex-wrap">
                       {STAGE_ORDER.filter(s => s !== 'loan_submitted').map((stage, idx) => (
                         <React.Fragment key={stage}>
@@ -735,7 +785,7 @@ export default function Customers() {
                     <button onClick={() => openEdit(c)} className="p-1.5 text-gray-600 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors">
                       <Edit2 size={14} />
                     </button>
-                    <button onClick={() => { if (window.confirm('Delete this lead?')) deleteCustomer(c.id); }} className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">
+                    <button onClick={() => setDeleteTarget({ id: c.id, label: c.name })} className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">
                       <Trash2 size={14} />
                     </button>
                   </div>
@@ -838,6 +888,58 @@ export default function Customers() {
                     </div>
                   </div>
 
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </>)}
+
+      {/* ── Confirmed Cases tab ── */}
+      {tab === 'confirmed' && (<>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder="Search by name or phone..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="flex-1 input rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors"
+          />
+        </div>
+        {confirmedFiltered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <CheckCircle size={40} className="text-gray-600 mb-3" />
+            <p className="text-gray-400">No confirmed cases yet</p>
+            <p className="text-gray-600 text-xs mt-1">Cases appear here once a work order is submitted</p>
+          </div>
+        ) : (
+          <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card divide-y divide-obsidian-400/60">
+            {confirmedFiltered.map(c => {
+              const car = getCar(c.interestedCarId);
+              const isLoan = !!c.loanWorkOrder;
+              const wo = c.loanWorkOrder ?? c.cashWorkOrder;
+              return (
+                <div key={c.id} className="flex items-center gap-3 px-4 py-3 hover:bg-obsidian-700/50 transition-colors cursor-pointer" onClick={() => setDetailLead(c)}>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-white text-sm font-medium">{c.name}</span>
+                      <span className="text-gray-500 text-xs">{c.phone}</span>
+                      {isDirector && <span className="text-gray-600 text-xs">{getSalesName(c.assignedSalesId)}</span>}
+                    </div>
+                    <div className="flex items-center gap-3 mt-1 flex-wrap">
+                      {car && <span className="text-gray-400 text-xs">{car.year} {car.make} {car.model}</span>}
+                      {c.dealPrice && <span className="text-gold-400 text-xs font-semibold">{formatRM(c.dealPrice)}</span>}
+                      {wo && <span className="text-gray-600 text-xs">{new Date(wo.createdAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${isLoan ? 'bg-blue-500/10 border-blue-500/30 text-blue-400' : 'bg-green-500/10 border-green-500/30 text-green-400'}`}>
+                      {isLoan ? `Loan · ${c.loanWorkOrder?.bank}` : 'Cash'}
+                    </span>
+                    <span className="text-xs font-medium px-2.5 py-1 rounded-full border bg-violet-500/10 border-violet-500/30 text-violet-400">
+                      Confirmed
+                    </span>
+                  </div>
                 </div>
               );
             })}
@@ -1169,7 +1271,7 @@ export default function Customers() {
                     <Edit2 size={13} />Edit
                   </button>
                   <button
-                    onClick={() => { if (window.confirm('Delete this lead?')) { deleteCustomer(detailLead.id); setDetailLead(null); } }}
+                    onClick={() => setDeleteTarget({ id: detailLead.id, label: detailLead.name })}
                     className="flex items-center justify-center gap-1.5 border border-red-500/20 hover:bg-red-500/10 text-red-400 py-2.5 rounded-lg text-sm font-medium transition-colors"
                   >
                     <Trash2 size={13} />Delete
@@ -1856,6 +1958,12 @@ export default function Customers() {
           </div>
         );
       })()}
+      <DeleteConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={async () => { if (deleteTarget) { deleteCustomer(deleteTarget.id); setDetailLead(null); } }}
+        itemName={deleteTarget?.label ?? ''}
+      />
     </div>
   );
 }

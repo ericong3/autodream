@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Plus, X, Building2, Wrench, Package } from 'lucide-react';
 import { useStore } from '../store';
 import { generateId } from '../utils/format';
+import DeleteConfirmModal from '../components/DeleteConfirmModal';
 
 type Tab = 'dealers' | 'workshops' | 'suppliers';
 
@@ -95,7 +96,7 @@ export default function Data() {
             primary: d.name,
             secondary: (d as any).phone,
           }))}
-          onDelete={(id) => window.confirm('Remove this dealer?') && deleteDealer(id)}
+          onDelete={(id) => deleteDealer(id)}
           emptyText="No dealers added yet"
         />
       )}
@@ -144,7 +145,7 @@ export default function Data() {
             primary: s.name,
             secondary: [s.phone, s.category].filter(Boolean).join(' · '),
           }))}
-          onDelete={(id) => window.confirm('Remove this supplier?') && deleteSupplier(id)}
+          onDelete={(id) => deleteSupplier(id)}
           emptyText="No suppliers added yet"
         />
       )}
@@ -174,6 +175,8 @@ function WorkshopsTab({
   addWorkshop: (w: any) => void;
   deleteWorkshop: (id: string) => void;
 }) {
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
+
   return (
     <div className="space-y-4">
       {/* Add form */}
@@ -238,7 +241,7 @@ function WorkshopsTab({
                     {w.phone && <p className="text-gray-500 text-xs mt-0.5">{w.phone}</p>}
                   </div>
                   <button
-                    onClick={() => window.confirm('Remove this workshop?') && deleteWorkshop(w.id)}
+                    onClick={() => setDeleteTarget({ id: w.id, label: w.name })}
                     className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
                   >
                     <X size={14} />
@@ -253,6 +256,13 @@ function WorkshopsTab({
       {workshops.length === 0 && (
         <div className="text-center py-10 text-gray-600 text-sm">No workshops added yet</div>
       )}
+
+      <DeleteConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={async () => { if (deleteTarget) deleteWorkshop(deleteTarget.id); }}
+        itemName={deleteTarget?.label ?? ''}
+      />
     </div>
   );
 }
@@ -269,6 +279,8 @@ function Section({
   onDelete: (id: string) => void;
   emptyText: string;
 }) {
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
+
   return (
     <div className="space-y-4">
       {/* Add form */}
@@ -300,7 +312,7 @@ function Section({
                   {item.secondary && <p className="text-gray-500 text-xs mt-0.5">{item.secondary}</p>}
                 </div>
                 <button
-                  onClick={() => onDelete(item.id)}
+                  onClick={() => setDeleteTarget({ id: item.id, label: item.primary })}
                   className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
                 >
                   <X size={14} />
@@ -310,6 +322,13 @@ function Section({
           </div>
         )}
       </div>
+
+      <DeleteConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={async () => { if (deleteTarget) onDelete(deleteTarget.id); }}
+        itemName={deleteTarget?.label ?? ''}
+      />
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { Plus, Wrench, Trash2, Edit, AlertCircle, MapPin } from 'lucide-react';
 import { useStore } from '../store';
 import { RepairJob } from '../types';
 import Modal from '../components/Modal';
+import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import StatCard from '../components/StatCard';
 import { formatRM, generateId } from '../utils/format';
 
@@ -58,6 +59,7 @@ export default function Workshop() {
 
   const [showModal, setShowModal] = useState(false);
   const [editTarget, setEditTarget] = useState<RepairJob | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
   const [form, setForm] = useState(emptyRepairForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -259,7 +261,7 @@ export default function Workshop() {
                               <Edit size={14} />
                             </button>
                             {isDirector && (
-                              <button onClick={() => { if (window.confirm('Delete this repair job?')) deleteRepair(r.id); }} className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">
+                              <button onClick={() => setDeleteTarget({ id: r.id, label: `repair job "${r.typeOfRepair}"` })} className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">
                                 <Trash2 size={14} />
                               </button>
                             )}
@@ -352,6 +354,12 @@ export default function Workshop() {
           </button>
         </div>
       </Modal>
+      <DeleteConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={async () => { if (deleteTarget) deleteRepair(deleteTarget.id); }}
+        itemName={deleteTarget?.label ?? ''}
+      />
     </div>
   );
 }

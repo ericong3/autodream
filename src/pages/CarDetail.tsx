@@ -23,11 +23,15 @@ import {
   Image,
   FileText,
   Building2,
+  Banknote,
+  CheckCircle,
+  XCircle,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
 import { Car, RepairJob, ChecklistItem, REPAIR_TYPES, DEFAULT_CHECKLIST_LABELS } from '../types';
 import Modal from '../components/Modal';
+import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, formatMileage, generateId } from '../utils/format';
 
 
@@ -100,6 +104,7 @@ export default function CarDetail() {
   const navigate = useNavigate();
   const cars = useStore((s) => s.cars);
   const users = useStore((s) => s.users);
+  const customers = useStore((s) => s.customers);
   const repairs = useStore((s) => s.repairs);
   const workshops = useStore((s) => s.workshops);
   const currentUser = useStore((s) => s.currentUser);
@@ -136,6 +141,13 @@ export default function CarDetail() {
   const [repairErrors, setRepairErrors] = useState<Record<string, string>>({});
   const [completeForm, setCompleteForm] = useState({ actualCost: 0, receiptPhoto: '' });
 
+
+  // ── Delete confirmation ──
+  const [deleteTarget, setDeleteTarget] = useState<{ action: () => void | Promise<void>; label: string } | null>(null);
+
+  // ── Repair / Loans tab ──
+  const [jobTab, setJobTab] = useState<'repairs' | 'loans'>('repairs');
+  const [showConsignment, setShowConsignment] = useState(false);
 
   // ── Delivery Modal ──
   const [showDeliveryModal, setShowDeliveryModal] = useState(false);
@@ -174,13 +186,17 @@ export default function CarDetail() {
     finally { setPhotoUploading(false); }
   };
 
-  const handleDeletePhoto = async () => {
+  const handleDeletePhoto = () => {
     if (!car || allPhotos.length === 0) return;
-    if (!window.confirm('Delete this photo?')) return;
-    const updated = allPhotos.filter((_, i) => i !== galleryIndex);
-    await updateCar(car.id, { photos: updated, photo: updated[0] ?? '' });
-    setGalleryIndex((i) => Math.min(i, updated.length - 1));
-    if (updated.length === 0) setShowGallery(false);
+    setDeleteTarget({
+      label: `photo ${galleryIndex + 1} of ${car.year} ${car.make} ${car.model}`,
+      action: async () => {
+        const updated = allPhotos.filter((_, i) => i !== galleryIndex);
+        await updateCar(car.id, { photos: updated, photo: updated[0] ?? '' });
+        setGalleryIndex((i) => Math.min(i, updated.length - 1));
+        if (updated.length === 0) setShowGallery(false);
+      },
+    });
   };
 
   const handleAddPhotos = async (files: FileList | null) => {
@@ -408,7 +424,47 @@ export default function CarDetail() {
       </div>
 
       {/* Main info */}
-      <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card overflow-hidden">
+      <div className={`bg-card-gradient border rounded-xl shadow-card overflow-hidden ${car.consignment ? 'border-blue-500/50' : 'border-obsidian-400/70'}`}>
+        {car.consignment && (
+          <div>
+            <button
+              onClick={() => setShowConsignment(!showConsignment)}
+              className="flex items-center gap-2 bg-blue-500 hover:bg-blue-400 text-white text-xs font-bold px-4 py-1.5 rounded-br-xl transition-colors"
+            >
+              <Building2 size={11} /> CONSIGN {showConsignment ? '▲' : '▼'}
+            </button>
+            {showConsignment && (
+              <div className="px-5 py-4 bg-blue-500/5 border-b border-blue-500/20 grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-2 text-sm">
+                <div>
+                  <p className="text-gray-500 text-xs">Dealer</p>
+                  <p className="text-white font-medium mt-0.5">{car.consignment.dealer || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500 text-xs">Terms</p>
+                  <p className="text-white mt-0.5">{car.consignment.terms === 'fixed_amount' ? 'Fixed Amount' : 'Profit Split'}</p>
+                </div>
+                {car.consignment.terms === 'fixed_amount' && (
+                  <div>
+                    <p className="text-gray-500 text-xs">Amount</p>
+                    <p className="text-blue-400 font-semibold mt-0.5">{formatRM(car.consignment.fixedAmount ?? 0)}</p>
+                  </div>
+                )}
+                {car.consignment.terms === 'profit_split' && (
+                  <>
+                    <div>
+                      <p className="text-gray-500 text-xs">Dealer's Split</p>
+                      <p className="text-white mt-0.5">{car.consignment.splitPercent ?? 50}%</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500 text-xs">Our Split</p>
+                      <p className="text-green-400 font-semibold mt-0.5">{100 - (car.consignment.splitPercent ?? 50)}%</p>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         <div className="flex flex-col md:flex-row">
           <div className="w-full md:w-72 h-52 md:h-auto bg-obsidian-700/60 flex items-center justify-center flex-shrink-0 relative group">
             <div
@@ -490,6 +546,7 @@ export default function CarDetail() {
                 <p className="text-gray-300 text-sm">{car.notes}</p>
               </div>
             )}
+
           </div>
         </div>
       </div>
@@ -528,47 +585,31 @@ export default function CarDetail() {
         </div>
       )}
 
-      {/* ── Consignment ── */}
-      {car.consignment && isDirector && (
-        <div className="bg-card-gradient border border-blue-500/30 rounded-xl shadow-card">
-          <SectionHeader icon={Building2} title="Consignment" color="text-blue-400" />
-          <div className="p-5 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-gray-500 text-sm">Dealer</span>
-              <span className="text-white font-medium">{car.consignment.dealer || '—'}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-gray-500 text-sm">Terms</span>
-              <span className="text-blue-300 font-medium">
-                {car.consignment.terms === 'fixed_amount' ? 'Fixed Amount' : 'Profit Split'}
-              </span>
-            </div>
-            {car.consignment.terms === 'fixed_amount' && (
-              <div className="flex items-center justify-between">
-                <span className="text-gray-500 text-sm">Dealer Takes Back</span>
-                <span className="text-white font-semibold">{formatRM(car.consignment.fixedAmount ?? 0)}</span>
-              </div>
-            )}
-            {car.consignment.terms === 'profit_split' && (
-              <>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-500 text-sm">Dealer's Split</span>
-                  <span className="text-white font-semibold">{car.consignment.splitPercent ?? 50}%</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-500 text-sm">Our Split</span>
-                  <span className="text-green-400 font-semibold">{100 - (car.consignment.splitPercent ?? 50)}%</span>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
 
-      {/* ── Repair History ── */}
+      {/* ── Repair Jobs & Loans ── */}
       <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card">
-        <SectionHeader icon={Wrench} title="Repair Jobs" count={carRepairs.length} color="text-orange-400" />
-        {carRepairs.length === 0 ? (
+        {/* Tab bar */}
+        <div className="flex items-center gap-1 px-4 pt-4 pb-0 border-b border-obsidian-400/60">
+          <button
+            onClick={() => setJobTab('repairs')}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors -mb-px ${
+              jobTab === 'repairs' ? 'border-orange-400 text-orange-400' : 'border-transparent text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            <Wrench size={14} /> Repair Jobs
+            {carRepairs.length > 0 && <span className="text-xs bg-obsidian-700/60 px-1.5 py-0.5 rounded-full">{carRepairs.length}</span>}
+          </button>
+          <button
+            onClick={() => setJobTab('loans')}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors -mb-px ${
+              jobTab === 'loans' ? 'border-blue-400 text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            <Banknote size={14} /> Loan Log
+            {(() => { const n = customers.filter(c => c.interestedCarId === car.id && c.loanApplications?.length).length; return n > 0 ? <span className="text-xs bg-obsidian-700/60 px-1.5 py-0.5 rounded-full">{n}</span> : null; })()}
+          </button>
+        </div>
+        {jobTab === 'repairs' && (carRepairs.length === 0 ? (
           <div className="text-center py-10 text-gray-600 text-sm">No repair jobs recorded</div>
         ) : (
           <div className="divide-y divide-obsidian-400/60/50">
@@ -655,7 +696,7 @@ export default function CarDetail() {
                       )}
                       {isDirector && (
                         <button
-                          onClick={() => { if (window.confirm('Delete this repair job?')) deleteRepair(r.id); }}
+                          onClick={() => setDeleteTarget({ label: `repair job "${r.typeOfRepair}"`, action: () => deleteRepair(r.id) })}
                           className="text-red-400 hover:text-red-300 transition-colors"
                         >
                           <Trash2 size={14} />
@@ -667,14 +708,69 @@ export default function CarDetail() {
               );
             })}
           </div>
-        )}
-        {isDirector && carRepairs.length > 0 && (
+        ))}
+        {jobTab === 'repairs' && isDirector && carRepairs.length > 0 && (
           <div className="px-5 py-3 border-t border-obsidian-400/60 text-right">
             <p className="text-sm text-gray-400">
               Total Repair Cost: <span className="text-orange-400 font-semibold">{formatRM(totalRepairCost)}</span>
             </p>
           </div>
         )}
+
+        {/* ── Loan Log tab ── */}
+        {jobTab === 'loans' && (() => {
+          const BANK_CLS: Record<string, string> = {
+            submitted: 'bg-blue-500/20 text-blue-400',
+            approved:  'bg-emerald-500/20 text-emerald-400',
+            rejected:  'bg-red-500/20 text-red-400',
+          };
+          const BANK_ICON: Record<string, React.ReactNode> = {
+            submitted: <Clock size={10} />,
+            approved:  <CheckCircle size={10} />,
+            rejected:  <XCircle size={10} />,
+          };
+          const loanCustomers = customers
+            .filter(c => c.interestedCarId === car.id && c.loanApplications?.length)
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          if (loanCustomers.length === 0) {
+            return (
+              <div className="flex flex-col items-center justify-center py-12 text-gray-600 text-sm gap-2">
+                <Banknote size={28} className="text-gray-700" />
+                No loan submissions recorded
+              </div>
+            );
+          }
+          return (
+            <div className="divide-y divide-obsidian-400/40">
+              {loanCustomers.map(c => {
+                const apps = c.loanApplications ?? [];
+                const hasApproved = apps.some(a => a.status === 'approved');
+                const allRejected = apps.every(a => a.status === 'rejected');
+                const overallCls = hasApproved ? 'text-emerald-400' : allRejected ? 'text-red-400' : 'text-blue-400';
+                return (
+                  <div key={c.id} className="px-5 py-4">
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <div>
+                        <p className="text-white font-semibold text-sm">{c.name}</p>
+                        <p className="text-gray-500 text-xs mt-0.5">{c.phone} · by {users.find(u => u.id === c.assignedSalesId)?.name ?? '—'}</p>
+                      </div>
+                      <span className={`text-xs font-medium ${overallCls}`}>
+                        {hasApproved ? 'Approved' : allRejected ? 'All Rejected' : `${apps.length} bank${apps.length > 1 ? 's' : ''} pending`}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {apps.map(app => (
+                        <span key={app.bank} className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium ${BANK_CLS[app.status] ?? 'bg-gray-500/20 text-gray-400'}`}>
+                          {BANK_ICON[app.status]} {app.bank}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── Mechanic Checklist ── (visible to mechanic and director) */}
@@ -1144,6 +1240,13 @@ export default function CarDetail() {
           </button>
         </div>
       </Modal>
+
+      <DeleteConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={async () => { if (deleteTarget) await deleteTarget.action(); }}
+        itemName={deleteTarget?.label ?? ''}
+      />
     </div>
   );
 }

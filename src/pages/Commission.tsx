@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { Car, Plus, CheckCircle, Circle, Trash2, Bell } from 'lucide-react';
 import { useStore } from '../store';
 import Modal from '../components/Modal';
+import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, generateId } from '../utils/format';
 
 const COMMISSION_PER_CAR = 500;
@@ -21,6 +22,7 @@ export default function Commission() {
   const [monthFilter, setMonthFilter] = useState<string>(new Date().toISOString().slice(0, 7));
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [reminderForm, setReminderForm] = useState({ title: '', dueAt: '' });
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
 
   const salespeople = users.filter(u => u.role === 'salesperson');
 
@@ -241,7 +243,7 @@ export default function Commission() {
                       </p>
                     </div>
                     <button
-                      onClick={() => deletePersonalReminder(r.id)}
+                      onClick={() => setDeleteTarget({ id: r.id, label: r.title })}
                       className="text-gray-600 hover:text-red-400 transition-colors p-1"
                     >
                       <Trash2 size={14} />
@@ -287,6 +289,12 @@ export default function Commission() {
           </Modal>
         </div>
       )}
+      <DeleteConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={async () => { if (deleteTarget) deletePersonalReminder(deleteTarget.id); }}
+        itemName={deleteTarget?.label ?? ''}
+      />
     </div>
   );
 }
