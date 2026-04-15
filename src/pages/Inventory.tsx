@@ -16,8 +16,6 @@ import {
   MapPin,
   Trash2,
   Users,
-  ClipboardList,
-  Truck,
   Building2,
 } from 'lucide-react';
 import { useStore } from '../store';
@@ -29,8 +27,6 @@ import { formatRM, formatMileage, generateId } from '../utils/format';
 
 
 // Loan/deal pipeline badge — based purely on case/loan progress, not car location
-type DealStatus = 'available' | 'loan_in_process' | 'approval_received' | 'sold_pending';
-
 interface DealBadge { cls: string; label: string }
 
 function getDealBadge(car: Car): DealBadge {
