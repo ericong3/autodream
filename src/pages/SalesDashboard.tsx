@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Car, Users, Calendar, Bell, ChevronDown, ChevronUp, Banknote, AlertCircle, Plus, CheckCircle, Circle, Trash2 } from 'lucide-react';
+import { Car, Users, Calendar, Bell, ChevronDown, ChevronUp, Banknote, AlertCircle, Plus, CheckCircle, Circle, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useStore } from '../store';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
@@ -19,6 +19,19 @@ export default function SalesDashboard() {
 
   const [showCommission, setShowCommission] = useState(false);
   const [monthFilter, setMonthFilter] = useState(new Date().toISOString().slice(0, 7));
+
+  const prevMonth = () => setMonthFilter(m => {
+    const d = new Date(m + '-01');
+    d.setMonth(d.getMonth() - 1);
+    return d.toISOString().slice(0, 7);
+  });
+  const nextMonth = () => setMonthFilter(m => {
+    const d = new Date(m + '-01');
+    d.setMonth(d.getMonth() + 1);
+    return d.toISOString().slice(0, 7);
+  });
+  const isCurrentMonth = monthFilter === new Date().toISOString().slice(0, 7);
+  const monthLabel = new Date(monthFilter + '-01').toLocaleDateString('en-MY', { month: 'long', year: 'numeric' });
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [reminderForm, setReminderForm] = useState({ title: '', dueAt: '' });
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
@@ -32,7 +45,12 @@ export default function SalesDashboard() {
     [customers, myId]
   );
 
-  const activeLeads = myCustomers;
+  const monthCustomers = useMemo(() =>
+    myCustomers.filter(c => (c.lastActionAt ?? c.createdAt).startsWith(monthFilter)),
+    [myCustomers, monthFilter]
+  );
+
+  const activeLeads = monthCustomers;
   const followUpToday = myCustomers.filter(c => c.followUpDate === today);
   const overdueFollowUps = myCustomers.filter(c => c.followUpDate && c.followUpDate < today);
 
@@ -40,19 +58,26 @@ export default function SalesDashboard() {
   const weekEnd = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
   const upcomingTds = testDrives.filter(td => td.salesId === myId && td.status === 'scheduled' && td.scheduledAt.slice(0, 10) >= today && td.scheduledAt.slice(0, 10) <= weekEnd);
 
-  // My commission
-  const mySoldCars = useMemo(() =>
-    cars.filter(c => c.status === 'sold' && c.assignedSalesperson === myId),
-    [cars, myId]
+  // Delivered customers (commission source of truth)
+  const myDeliveredCustomers = useMemo(() =>
+    customers.filter(c => c.assignedSalesId === myId && c.delivered && c.deliveredAt),
+    [customers, myId]
   );
 
-  const soldThisMonth = useMemo(() =>
-    mySoldCars.filter(c => c.dateAdded.startsWith(monthFilter)),
-    [mySoldCars, monthFilter]
+  const deliveredThisMonth = useMemo(() =>
+    myDeliveredCustomers.filter(c => c.deliveredAt!.startsWith(monthFilter)),
+    [myDeliveredCustomers, monthFilter]
   );
 
-  const totalCommission = mySoldCars.length * COMMISSION_PER_CAR;
-  const monthCommission = soldThisMonth.length * COMMISSION_PER_CAR;
+  const totalCommission = useMemo(() =>
+    myDeliveredCustomers.reduce((s, c) => s + (c.commission ?? COMMISSION_PER_CAR), 0),
+    [myDeliveredCustomers]
+  );
+
+  const monthCommission = useMemo(() =>
+    deliveredThisMonth.reduce((s, c) => s + (c.commission ?? COMMISSION_PER_CAR), 0),
+    [deliveredThisMonth]
+  );
 
   // My reminders
   const myReminders = useMemo(() =>
@@ -89,15 +114,26 @@ export default function SalesDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Greeting */}
-      <div>
-        <h1 className="text-white text-xl font-bold">Good {getGreeting()}, {currentUser?.name?.split(' ')[0]} 👋</h1>
-        <p className="text-gray-500 text-sm mt-0.5">{new Date().toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+      {/* Greeting + month navigator */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-white text-xl font-bold">Good {getGreeting()}, {currentUser?.name?.split(' ')[0]} 👋</h1>
+          <p className="text-gray-500 text-sm mt-0.5">{new Date().toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+        </div>
+        <div className="flex items-center gap-1.5 bg-obsidian-700/60 border border-obsidian-400/60 rounded-xl px-1 py-1 shrink-0">
+          <button onClick={prevMonth} className="p-1.5 text-gray-500 hover:text-white hover:bg-obsidian-600/60 rounded-lg transition-colors">
+            <ChevronLeft size={14} />
+          </button>
+          <span className="text-white text-xs font-medium px-1 min-w-[90px] text-center">{monthLabel}</span>
+          <button onClick={nextMonth} disabled={isCurrentMonth} className="p-1.5 text-gray-500 hover:text-white hover:bg-obsidian-600/60 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+            <ChevronRight size={14} />
+          </button>
+        </div>
       </div>
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard icon={Users} label="Active Leads" value={activeLeads.length} color="text-gold-400" iconBg="bg-gold-500/10" />
+        <StatCard icon={Users} label={`Leads (${monthLabel.split(' ')[0]})`} value={activeLeads.length} color="text-gold-400" iconBg="bg-gold-500/10" />
         <StatCard
           icon={AlertCircle}
           label="Follow-ups Today"
@@ -107,7 +143,7 @@ export default function SalesDashboard() {
           sub={overdueFollowUps.length > 0 ? `${overdueFollowUps.length} overdue` : undefined}
         />
         <StatCard icon={Car} label="Test Drives This Week" value={upcomingTds.length} color="text-purple-400" iconBg="bg-purple-500/10" />
-        <StatCard icon={Car} label="Cars Sold (All Time)" value={mySoldCars.length} color="text-green-400" iconBg="bg-green-500/10" />
+        <StatCard icon={Banknote} label={`Commission (${monthLabel.split(' ')[0]})`} value={`RM ${monthCommission.toLocaleString()}`} color="text-green-400" iconBg="bg-green-500/10" />
       </div>
 
       {/* Follow-ups & Test drives row */}
@@ -231,12 +267,12 @@ export default function SalesDashboard() {
             <div className="text-left">
               <p className="text-white font-semibold text-sm">My Commission</p>
               <p className="text-gray-500 text-xs">
-                {mySoldCars.length} cars sold · {formatRM(totalCommission)} total earned
+                {myDeliveredCustomers.length} deliveries · {formatRM(totalCommission)} total earned
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-green-400 font-bold text-sm">{formatRM(monthCommission)}<span className="text-gray-600 font-normal text-xs"> this month</span></span>
+            <span className="text-green-400 font-bold text-sm">{formatRM(monthCommission)}<span className="text-gray-600 font-normal text-xs"> {monthLabel.split(' ')[0]}</span></span>
             {showCommission
               ? <ChevronUp size={16} className="text-gray-500" />
               : <ChevronDown size={16} className="text-gray-500" />
@@ -249,9 +285,9 @@ export default function SalesDashboard() {
             {/* Mini stats */}
             <div className="grid grid-cols-3 gap-3">
               {[
-                { label: 'Total Sold', value: mySoldCars.length, color: 'text-gold-400' },
+                { label: 'Total Deliveries', value: myDeliveredCustomers.length, color: 'text-gold-400' },
                 { label: 'Total Earned', value: formatRM(totalCommission), color: 'text-green-400' },
-                { label: 'This Month', value: formatRM(monthCommission), color: 'text-yellow-400' },
+                { label: monthLabel, value: formatRM(monthCommission), color: 'text-yellow-400' },
               ].map(s => (
                 <div key={s.label} className="bg-obsidian-700/60 rounded-xl p-3 text-center border border-obsidian-400/50">
                   <p className={`text-lg font-bold ${s.color}`}>{s.value}</p>
@@ -260,53 +296,48 @@ export default function SalesDashboard() {
               ))}
             </div>
 
-            {/* Month filter */}
-            <div className="flex items-center gap-3">
-              <input
-                type="month"
-                value={monthFilter}
-                onChange={e => setMonthFilter(e.target.value)}
-                className="input py-1.5"
-              />
-              {monthFilter && (
-                <button onClick={() => setMonthFilter('')} className="text-gray-500 hover:text-white text-xs transition-colors">
-                  Show All
-                </button>
-              )}
-            </div>
-
             {/* Table */}
-            {soldThisMonth.length === 0 ? (
-              <p className="text-gray-600 text-sm text-center py-4">No sold cars in this period</p>
+            {deliveredThisMonth.length === 0 ? (
+              <p className="text-gray-600 text-sm text-center py-4">No deliveries in {monthLabel}</p>
             ) : (
               <div className="border border-obsidian-400/60 rounded-xl overflow-hidden">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-gray-400 text-xs border-b border-obsidian-400/60 bg-obsidian-700/60">
-                      <th className="text-left px-4 py-2.5 font-medium">Vehicle</th>
-                      <th className="text-left px-4 py-2.5 font-medium">Date</th>
-                      <th className="text-right px-4 py-2.5 font-medium">Deal Price</th>
+                      <th className="text-left px-4 py-2.5 font-medium">Customer</th>
+                      <th className="text-left px-4 py-2.5 font-medium">Delivered</th>
+                      <th className="text-right px-4 py-2.5 font-medium">Deal</th>
                       <th className="text-right px-4 py-2.5 font-medium">Commission</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {soldThisMonth.map((c, i) => (
-                      <tr key={c.id} className={`border-b border-obsidian-400/30 ${i % 2 !== 0 ? 'bg-obsidian-950/30' : ''}`}>
-                        <td className="px-4 py-2.5">
-                          <p className="text-white font-medium">{c.year} {c.make} {c.model}</p>
-                          <p className="text-gray-500 text-xs capitalize">{c.colour}</p>
-                        </td>
-                        <td className="px-4 py-2.5 text-gray-400 text-xs">{new Date(c.dateAdded).toLocaleDateString('en-MY')}</td>
-                        <td className="px-4 py-2.5 text-right text-gold-400 font-semibold">{formatRM(c.finalDeal?.dealPrice ?? c.sellingPrice)}</td>
-                        <td className="px-4 py-2.5 text-right text-green-400 font-semibold">{formatRM(COMMISSION_PER_CAR)}</td>
-                      </tr>
-                    ))}
+                    {deliveredThisMonth.map((c, i) => {
+                      const wo = c.loanWorkOrder ?? c.cashWorkOrder;
+                      const dealPrice = wo ? (wo.sellingPrice - (wo.discount ?? 0)) : (c.dealPrice ?? 0);
+                      const carObj = cars.find(x => x.id === c.interestedCarId);
+                      return (
+                        <tr key={c.id} className={`border-b border-obsidian-400/30 ${i % 2 !== 0 ? 'bg-obsidian-950/30' : ''}`}>
+                          <td className="px-4 py-2.5">
+                            <p className="text-white font-medium">{c.name}</p>
+                            <p className="text-gray-500 text-xs">{carObj ? `${carObj.year} ${carObj.make} ${carObj.model}` : '—'}</p>
+                          </td>
+                          <td className="px-4 py-2.5 text-gray-400 text-xs">{new Date(c.deliveredAt!).toLocaleDateString('en-MY')}</td>
+                          <td className="px-4 py-2.5 text-right text-gold-400 font-semibold">{formatRM(dealPrice)}</td>
+                          <td className="px-4 py-2.5 text-right text-green-400 font-semibold">{formatRM(c.commission ?? COMMISSION_PER_CAR)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                   <tfoot>
                     <tr className="border-t border-obsidian-400/60 bg-obsidian-700/60">
-                      <td colSpan={2} className="px-4 py-2.5 text-gray-500 text-xs">Total ({soldThisMonth.length} cars)</td>
-                      <td className="px-4 py-2.5 text-right text-gold-400 font-bold">{formatRM(soldThisMonth.reduce((s, c) => s + (c.finalDeal?.dealPrice ?? c.sellingPrice), 0))}</td>
-                      <td className="px-4 py-2.5 text-right text-green-400 font-bold">{formatRM(soldThisMonth.length * COMMISSION_PER_CAR)}</td>
+                      <td colSpan={2} className="px-4 py-2.5 text-gray-500 text-xs">Total ({deliveredThisMonth.length})</td>
+                      <td className="px-4 py-2.5 text-right text-gold-400 font-bold">
+                        {formatRM(deliveredThisMonth.reduce((s, c) => {
+                          const wo = c.loanWorkOrder ?? c.cashWorkOrder;
+                          return s + (wo ? wo.sellingPrice - (wo.discount ?? 0) : (c.dealPrice ?? 0));
+                        }, 0))}
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-green-400 font-bold">{formatRM(monthCommission)}</td>
                     </tr>
                   </tfoot>
                 </table>

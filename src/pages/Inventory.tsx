@@ -186,6 +186,18 @@ export default function Inventory() {
     return map;
   }, [customers]);
 
+  // Final deal price per car (confirmed customers only)
+  const confirmedDealPrice = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const c of customers) {
+      const wo = c.loanWorkOrder ?? c.cashWorkOrder;
+      if (wo && c.interestedCarId) {
+        map[c.interestedCarId] = wo.sellingPrice - (wo.discount ?? 0);
+      }
+    }
+    return map;
+  }, [customers]);
+
   const filtered = useMemo(() => {
     // Show all cars except fully delivered sold cars
     let result = cars.filter((c) => c.status !== 'sold' || !c.deliveryCollected);
@@ -473,10 +485,19 @@ export default function Inventory() {
 
                 <div className="mt-3 flex items-end justify-between">
                   <div>
-                    <p className="text-gold-400 text-lg font-bold">{formatRM(car.sellingPrice)}</p>
+                    {confirmedDealPrice[car.id] != null ? (
+                      <div>
+                        {confirmedDealPrice[car.id] !== car.sellingPrice && (
+                          <p className="text-gray-600 text-xs line-through">{formatRM(car.sellingPrice)}</p>
+                        )}
+                        <p className="text-gold-400 text-lg font-bold">{formatRM(confirmedDealPrice[car.id])}</p>
+                      </div>
+                    ) : (
+                      <p className="text-gold-400 text-lg font-bold">{formatRM(car.sellingPrice)}</p>
+                    )}
                     {isDirector && (
                       <p className="text-green-400 text-xs font-medium mt-0.5">
-                        Profit: {formatRM(car.sellingPrice - car.purchasePrice)}
+                        Profit: {formatRM((confirmedDealPrice[car.id] ?? car.sellingPrice) - car.purchasePrice)}
                       </p>
                     )}
                   </div>
@@ -612,10 +633,21 @@ export default function Inventory() {
                         );
                       })()}
                     </td>
-                    <td className="px-4 py-3 text-gold-400 font-semibold text-right">{formatRM(car.sellingPrice)}</td>
+                    <td className="px-4 py-3 text-right">
+                      {confirmedDealPrice[car.id] != null ? (
+                        <div>
+                          {confirmedDealPrice[car.id] !== car.sellingPrice && (
+                            <p className="text-gray-600 text-xs line-through text-right">{formatRM(car.sellingPrice)}</p>
+                          )}
+                          <p className="text-gold-400 font-semibold">{formatRM(confirmedDealPrice[car.id])}</p>
+                        </div>
+                      ) : (
+                        <p className="text-gold-400 font-semibold">{formatRM(car.sellingPrice)}</p>
+                      )}
+                    </td>
                     {isDirector && (
                       <td className="px-4 py-3 text-green-400 text-right">
-                        {formatRM(car.sellingPrice - car.purchasePrice)}
+                        {formatRM((confirmedDealPrice[car.id] ?? car.sellingPrice) - car.purchasePrice)}
                       </td>
                     )}
                     <td className="px-4 py-3 text-gray-400">{getSalesperson(car.assignedSalesperson)}</td>

@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList } from 'lucide-react';
+import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList, Truck, Upload, Lock, Skull, Clock } from 'lucide-react';
 import { useStore } from '../store';
-import { Customer, LoanApplication, LoanSubmission, CashWorkOrder, LoanWorkOrder, WorkOrderItem, BANKS } from '../types';
+import { Customer, LoanApplication, LoanSubmission, CashWorkOrder, LoanWorkOrder, WorkOrderItem, BANKS, PostSaleChecklist } from '../types';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { generateId, formatRM } from '../utils/format';
+import { supabase } from '../lib/supabase';
 
 const LEAD_STATUS_LABELS: Record<Customer['leadStatus'], string> = {
   contacted: 'Contacted',
@@ -74,8 +75,18 @@ export default function Customers() {
   const deleteCustomer = useStore((s) => s.deleteCustomer);
   const addTestDrive = useStore((s) => s.addTestDrive);
   const testDrives = useStore((s) => s.testDrives);
+  const addPersonalReminder = useStore((s) => s.addPersonalReminder);
 
   const isDirector = currentUser?.role === 'director';
+  const isAdmin = currentUser?.role === 'admin';
+  const isDirectorOrAdmin = isDirector || isAdmin;
+
+  // ── Stale lead helpers ────────────────────────────────────
+  const getDaysSinceAction = (c: Customer) => {
+    const ref = c.lastActionAt ?? c.createdAt;
+    return Math.floor((Date.now() - new Date(ref).getTime()) / 86400000);
+  };
+  const isStale = (c: Customer) => !c.isDead && getDaysSinceAction(c) >= 7;
 
   const todayStr = new Date().toISOString().slice(0, 10);
 
@@ -135,6 +146,11 @@ export default function Customers() {
 
   // Detail drawer
   const [detailLead, setDetailLead] = useState<Customer | null>(null);
+  const [detailTab, setDetailTab] = useState<'details' | 'calculation' | 'postsale'>('details');
+  const [showDeliveryModal, setShowDeliveryModal] = useState(false);
+  const [deliveryPhotoUrl, setDeliveryPhotoUrl] = useState('');
+  const [deliveryUploading, setDeliveryUploading] = useState(false);
+  const deliveryPhotoRef = useRef<HTMLInputElement>(null);
   const [expandedBank, setExpandedBank] = useState<string | null>(null);
   const [addBankInput, setAddBankInput] = useState('');
   useEffect(() => {
@@ -149,13 +165,13 @@ export default function Customers() {
   const myCustomers = useMemo(() =>
     customers
       .filter(c => {
-        if (!isDirector) return c.assignedSalesId === currentUser?.id;
+        if (!isDirectorOrAdmin) return c.assignedSalesId === currentUser?.id;
         if (directorView === 'all') return true;
         if (directorView === 'own') return c.assignedSalesId === currentUser?.id;
         return c.assignedSalesId === directorView;
       })
       .map(c => STAGE_ORDER.includes(c.leadStatus) ? c : { ...c, leadStatus: 'contacted' as Customer['leadStatus'] }),
-    [customers, isDirector, currentUser, directorView]
+    [customers, isDirectorOrAdmin, currentUser, directorView]
   );
 
   const todayTestDrives = useMemo(() =>
@@ -167,11 +183,17 @@ export default function Customers() {
 
   const leadsFiltered = useMemo(() => myCustomers.filter(c => {
     if (c.leadStatus === 'loan_submitted') return false;
+    if (c.isDead) return false;
     const matchStatus = statusFilter === 'all' || c.leadStatus === statusFilter;
     const matchSource = sourceFilter === 'all' || c.source === sourceFilter;
     const matchSearch = !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search);
     return matchStatus && matchSource && matchSearch;
   }), [myCustomers, statusFilter, sourceFilter, search]);
+
+  const deadLeads = useMemo(() => myCustomers.filter(c =>
+    c.isDead && c.leadStatus !== 'loan_submitted' &&
+    (!search || c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search))
+  ), [myCustomers, search]);
 
   const loanFiltered = useMemo(() => myCustomers.filter(c => {
     if (c.leadStatus !== 'loan_submitted') return false;
@@ -188,12 +210,12 @@ export default function Customers() {
     return matchSearch;
   }), [myCustomers, cars, search]);
 
-  const salespeople = users.filter(u => u.role === 'salesperson' || u.role === 'director');
+  const salespeople = users.filter(u => u.role === 'salesperson' || u.role === 'director' || u.role === 'admin');
   const getSalesName = (salesId: string) => users.find(u => u.id === salesId)?.name ?? salesId;
   const getCar = (id?: string) => cars.find(c => c.id === id);
 
   const statusCounts = useMemo(() => {
-    const leads = myCustomers.filter(c => c.leadStatus !== 'loan_submitted');
+    const leads = myCustomers.filter(c => c.leadStatus !== 'loan_submitted' && !c.isDead);
     const counts: Partial<Record<Customer['leadStatus'] | 'all', number>> = { all: leads.length };
     leads.forEach(c => { counts[c.leadStatus] = (counts[c.leadStatus] ?? 0) + 1; });
     return counts;
@@ -211,11 +233,12 @@ export default function Customers() {
 
   const handleSubmit = () => {
     if (!validate()) return;
+    const now = new Date().toISOString();
     const payload = { ...form, followUpRemark: form.followUpRemark || undefined };
     if (editTarget) {
-      updateCustomer(editTarget.id, payload);
+      updateCustomer(editTarget.id, { ...payload, lastActionAt: now });
     } else {
-      addCustomer({ id: generateId(), ...payload, createdAt: new Date().toISOString() });
+      addCustomer({ id: generateId(), ...payload, lastActionAt: now, createdAt: now });
     }
     setShowModal(false);
     setEditTarget(null);
@@ -242,6 +265,86 @@ export default function Customers() {
     setForm({ ...emptyForm, assignedSalesId: currentUser?.id ?? '' });
     setErrors({});
     setShowModal(true);
+  };
+
+  // ── Revert ────────────────────────────────────────────────
+  const handleRevert = async (c: Customer) => {
+    const { cars: allCars, updateCar } = useStore.getState();
+    const car = allCars.find(x => x.id === c.interestedCarId);
+    if (c.loanWorkOrder) {
+      // Confirmed (loan) → Loan tab: clear work order, keep loan_submitted
+      updateCustomer(c.id, { loanWorkOrder: undefined, dealPrice: 0 });
+      await supabase.from('customers').update({ loan_work_order: null, deal_price: 0 }).eq('id', c.id);
+      if (car) {
+        updateCar(car.id, { status: 'available', finalDeal: undefined });
+        await supabase.from('cars').update({ status: 'available', final_deal: null }).eq('id', car.id);
+      }
+    } else if (c.cashWorkOrder) {
+      // Confirmed (cash) → Leads: clear work order, reset to follow_up
+      updateCustomer(c.id, { cashWorkOrder: undefined, dealPrice: 0, leadStatus: 'follow_up', loanStatus: 'not_started', loanBankSubmitted: '', loanApplications: [] });
+      await supabase.from('customers').update({ cash_work_order: null, deal_price: 0 }).eq('id', c.id);
+      if (car) {
+        updateCar(car.id, { status: 'available', finalDeal: undefined });
+        await supabase.from('cars').update({ status: 'available', final_deal: null }).eq('id', car.id);
+      }
+    } else if (c.leadStatus === 'loan_submitted') {
+      // Loan tab → Leads: reset status and loan data
+      updateCustomer(c.id, { leadStatus: 'follow_up', loanStatus: 'not_started', loanBankSubmitted: '', loanApplications: [], dealPrice: 0 });
+    } else if (c.leadStatus === 'follow_up') {
+      updateCustomer(c.id, { leadStatus: 'test_drive' });
+    } else if (c.leadStatus === 'test_drive') {
+      updateCustomer(c.id, { leadStatus: 'contacted' });
+    }
+    setDetailLead(null);
+  };
+
+  const getRevertLabel = (c: Customer): string | null => {
+    if (c.loanWorkOrder) return 'Revert to Loan';
+    if (c.cashWorkOrder) return 'Revert to Leads';
+    if (c.leadStatus === 'loan_submitted') return 'Revert to Follow Up';
+    if (c.leadStatus === 'follow_up') return 'Revert to Test Drive';
+    if (c.leadStatus === 'test_drive') return 'Revert to Contacted';
+    return null;
+  };
+
+  // ── Delivery ──────────────────────────────────────────────
+  const handleDeliveryConfirm = async (c: Customer) => {
+    const { cars: allCars, repairs: allRepairs, updateCar } = useStore.getState();
+    const car = allCars.find(x => x.id === c.interestedCarId);
+    // Commission auto-calc: profit = selling - purchase - repairs; RM 2k if > 12k else RM 1k
+    const wo = c.loanWorkOrder ?? c.cashWorkOrder;
+    const dealPrice = wo ? (wo.sellingPrice - (wo.discount ?? 0)) : (car?.sellingPrice ?? 0);
+    const purchasePrice = car?.purchasePrice ?? 0;
+    const repairTotal = allRepairs.filter(r => r.carId === c.interestedCarId).reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
+    const netProfit = dealPrice - purchasePrice - repairTotal;
+    const commission = netProfit > 12000 ? 2000 : 1000;
+
+    updateCustomer(c.id, {
+      delivered: true,
+      deliveredAt: new Date().toISOString(),
+      deliveryPhoto: deliveryPhotoUrl || undefined,
+      commission,
+      lastActionAt: new Date().toISOString(),
+    });
+    // Auto-update car: sold + deliveryCollected
+    if (car) {
+      updateCar(car.id, { status: 'sold', deliveryCollected: true, deliveryPhoto: deliveryPhotoUrl || undefined });
+    }
+    setShowDeliveryModal(false);
+    setDeliveryPhotoUrl('');
+    setDetailLead(null);
+  };
+
+  // ── Dead Lead ─────────────────────────────────────────────
+  const handleMarkDead = async (c: Customer) => {
+    const now = new Date().toISOString();
+    updateCustomer(c.id, { isDead: true, deadAt: now });
+    setDetailLead(null);
+  };
+
+  const handleReviveLead = async (c: Customer) => {
+    updateCustomer(c.id, { isDead: false, deadAt: undefined, lastActionAt: new Date().toISOString() });
+    setDetailLead(null);
   };
 
   // ── WhatsApp ──────────────────────────────────────────────
@@ -295,7 +398,7 @@ export default function Customers() {
 
   const handleFollowUp = () => {
     if (!sidebarLead) return;
-    updateCustomer(sidebarLead.id, { leadStatus: 'follow_up' });
+    updateCustomer(sidebarLead.id, { leadStatus: 'follow_up', lastActionAt: new Date().toISOString() });
     closeSidebar();
   };
 
@@ -306,6 +409,7 @@ export default function Customers() {
       loanStatus: 'submitted',
       interestedCarId: loanForm.carId || sidebarLead.interestedCarId,
       dealPrice: loanForm.dealPrice ? Number(loanForm.dealPrice) : sidebarLead.dealPrice,
+      lastActionAt: new Date().toISOString(),
     });
     closeSidebar();
   };
@@ -365,10 +469,7 @@ export default function Customers() {
   const handleWorkOrderSubmit = () => {
     if (!workOrderCustomer) return;
     const car = getCar(workOrderCarId);
-    const additions = woForm.sellingPrice + woForm.insurance + woForm.bankProduct +
-      woForm.additionalItems.reduce((s, i) => s + i.amount, 0);
-    const reductions = woForm.bookingFee + woForm.downpayment + woForm.discount;
-    const totalFinalDeal = additions - reductions;
+    const totalFinalDeal = woForm.sellingPrice - woForm.discount;
     const hasDiscount = car ? woForm.sellingPrice < car.sellingPrice : false;
 
     const workOrder: CashWorkOrder = {
@@ -432,7 +533,7 @@ export default function Customers() {
     const anyApproved = list.some(a => a.status === 'approved');
     const allResolved = list.every(a => a.status !== 'submitted');
     const overallStatus: Customer['loanStatus'] = anyApproved ? 'approved' : allResolved ? 'rejected' : 'submitted';
-    updateCustomer(customerId, { loanApplications: list, loanStatus: overallStatus });
+    updateCustomer(customerId, { loanApplications: list, loanStatus: overallStatus, lastActionAt: new Date().toISOString() });
     setDetailLead(prev => prev ? { ...prev, loanApplications: list, loanStatus: overallStatus } : prev);
 
     // Sync to car.loanSubmissions so the Loan Log on CarDetail stays up to date
@@ -464,7 +565,11 @@ export default function Customers() {
   const toggleBankStatus = (bank: string, newStatus: 'approved' | 'rejected' | 'submitted') => {
     setBankStatuses(prev => prev.map(a => {
       if (a.bank !== bank) return a;
-      return { ...a, status: newStatus };
+      return {
+        ...a,
+        status: newStatus,
+        approvedAt: newStatus === 'approved' && !a.approvedAt ? new Date().toISOString() : a.approvedAt,
+      };
     }));
   };
 
@@ -490,9 +595,7 @@ export default function Customers() {
   const handleLoanWoSubmit = () => {
     if (!workOrderCustomer) return;
     const car = getCar(workOrderCarId);
-    const additions = woForm.sellingPrice + woForm.insurance + woForm.bankProduct +
-      woForm.additionalItems.reduce((s, i) => s + i.amount, 0);
-    const totalFinalDeal = additions - woForm.loanAmount - woForm.bookingFee - woForm.discount;
+    const totalFinalDeal = woForm.sellingPrice - woForm.discount;
     const hasDiscount = car ? woForm.discount > 0 || woForm.sellingPrice < car.sellingPrice : false;
 
     const loanWorkOrder: LoanWorkOrder = {
@@ -556,7 +659,11 @@ export default function Customers() {
             onClick={() => { setTab('leads'); setStatusFilter('all'); }}
             className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'leads' ? 'bg-gold-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
-            Leads <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'leads' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => c.leadStatus !== 'loan_submitted').length}</span>
+            Leads
+            <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'leads' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => c.leadStatus !== 'loan_submitted' && !c.isDead).length}</span>
+            {myCustomers.filter(c => c.leadStatus !== 'loan_submitted' && isStale(c)).length > 0 && (
+              <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-400">{myCustomers.filter(c => c.leadStatus !== 'loan_submitted' && isStale(c)).length} stale</span>
+            )}
           </button>
           <button
             onClick={() => { setTab('loan'); setStatusFilter('all'); }}
@@ -579,7 +686,7 @@ export default function Customers() {
       </div>
 
       {/* Director view toggle */}
-      {isDirector && (
+      {isDirectorOrAdmin && (
         <div className="flex gap-2 items-center">
           {(['all', 'own', 'salesman'] as const).map(opt => (
             <button
@@ -720,7 +827,12 @@ export default function Customers() {
                       <span className="text-white text-sm font-medium">{c.name}</span>
                       <span className="text-gray-600 text-xs hidden sm:inline">{c.phone}</span>
                       <span className="text-gray-700 text-xs px-1.5 py-0.5 bg-[#2C2415] rounded hidden md:inline">{SOURCE_LABELS[c.source]}</span>
-                      {isDirector && <span className="text-gray-600 text-xs hidden lg:inline">{getSalesName(c.assignedSalesId)}</span>}
+                      {isDirectorOrAdmin && <span className="text-gray-600 text-xs hidden lg:inline">{getSalesName(c.assignedSalesId)}</span>}
+                      {isStale(c) && (
+                        <span className="flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/25">
+                          <Clock size={9} />{getDaysSinceAction(c)}d stale
+                        </span>
+                      )}
                     </div>
                     {(() => { const car = getCar(c.interestedCarId); return car ? (
                       <div className="flex items-center gap-1 mt-0.5">
@@ -794,6 +906,35 @@ export default function Customers() {
             })}
           </div>
         )}
+
+        {/* Dead Leads section */}
+        {deadLeads.length > 0 && (
+          <details className="group">
+            <summary className="flex items-center gap-2 px-1 py-2 text-gray-600 hover:text-gray-400 cursor-pointer text-xs font-medium select-none list-none">
+              <Skull size={13} />
+              Dead Leads ({deadLeads.length})
+              <span className="ml-auto text-gray-700 group-open:rotate-90 transition-transform">›</span>
+            </summary>
+            <div className="bg-card-gradient border border-obsidian-400/40 rounded-xl shadow-card divide-y divide-obsidian-400/40 opacity-60">
+              {deadLeads.map(c => (
+                <div key={c.id} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:opacity-80" onClick={() => setDetailLead(c)}>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-400 text-sm font-medium line-through">{c.name}</span>
+                      <span className="text-gray-600 text-xs">{c.phone}</span>
+                    </div>
+                    {(() => { const car = getCar(c.interestedCarId); return car ? (
+                      <span className="text-gray-600 text-xs">{car.year} {car.make} {car.model}</span>
+                    ) : null; })()}
+                  </div>
+                  <span className="text-gray-700 text-xs">
+                    {c.deadAt ? new Date(c.deadAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' }) : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
       </>)}
 
       {tab === 'loan' && (<>
@@ -845,19 +986,28 @@ export default function Customers() {
                       <div className="flex items-center gap-2">
                         <span className="text-white text-sm font-medium">{c.name}</span>
                         <span className="text-gray-600 text-xs hidden sm:inline">{c.phone}</span>
-                        {isDirector && <span className="text-gray-600 text-xs hidden lg:inline">{getSalesName(c.assignedSalesId)}</span>}
+                        {isDirectorOrAdmin && <span className="text-gray-600 text-xs hidden lg:inline">{getSalesName(c.assignedSalesId)}</span>}
                       </div>
                       <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                         {car && <span className="text-gray-400 text-xs">{car.year} {car.make} {car.model}</span>}
                         {c.loanApplications?.length ? (
                           <div className="flex flex-wrap gap-1">
-                            {c.loanApplications.map(a => (
-                              <span key={a.bank} className={`text-xs ${
-                                a.status === 'approved' ? 'text-green-400' :
-                                a.status === 'rejected' ? 'text-red-400' :
-                                'text-yellow-400'
-                              }`}>{a.bank}</span>
-                            ))}
+                            {c.loanApplications.map(a => {
+                              const daysLeft = a.approvedAt ? 90 - Math.floor((Date.now() - new Date(a.approvedAt).getTime()) / 86400000) : null;
+                              const expiring = daysLeft !== null && daysLeft <= 20;
+                              return (
+                                <span key={a.bank} className={`text-xs ${
+                                  a.status === 'approved' ? 'text-green-400' :
+                                  a.status === 'rejected' ? 'text-red-400' :
+                                  'text-yellow-400'
+                                }`}>
+                                  {a.bank}
+                                  {expiring && (
+                                    <span className="ml-1 text-orange-400">⚠ {daysLeft}d</span>
+                                  )}
+                                </span>
+                              );
+                            })}
                           </div>
                         ) : c.loanBankSubmitted ? (
                           <span className="text-gray-500 text-xs">{c.loanBankSubmitted}</span>
@@ -919,16 +1069,16 @@ export default function Customers() {
               const isLoan = !!c.loanWorkOrder;
               const wo = c.loanWorkOrder ?? c.cashWorkOrder;
               return (
-                <div key={c.id} className="flex items-center gap-3 px-4 py-3 hover:bg-obsidian-700/50 transition-colors cursor-pointer" onClick={() => setDetailLead(c)}>
+                <div key={c.id} className="flex items-center gap-3 px-4 py-3 hover:bg-obsidian-700/50 transition-colors cursor-pointer" onClick={() => { setDetailLead(c); setDetailTab('details'); }}>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-white text-sm font-medium">{c.name}</span>
                       <span className="text-gray-500 text-xs">{c.phone}</span>
-                      {isDirector && <span className="text-gray-600 text-xs">{getSalesName(c.assignedSalesId)}</span>}
+                      {isDirectorOrAdmin && <span className="text-gray-600 text-xs">{getSalesName(c.assignedSalesId)}</span>}
                     </div>
                     <div className="flex items-center gap-3 mt-1 flex-wrap">
                       {car && <span className="text-gray-400 text-xs">{car.year} {car.make} {car.model}</span>}
-                      {c.dealPrice && <span className="text-gold-400 text-xs font-semibold">{formatRM(c.dealPrice)}</span>}
+                      {(wo?.sellingPrice || c.dealPrice) ? <span className="text-gold-400 text-xs font-semibold">{formatRM(wo?.sellingPrice ?? c.dealPrice ?? 0)}</span> : null}
                       {wo && <span className="text-gray-600 text-xs">{new Date(wo.createdAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</span>}
                     </div>
                   </div>
@@ -936,9 +1086,10 @@ export default function Customers() {
                     <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${isLoan ? 'bg-blue-500/10 border-blue-500/30 text-blue-400' : 'bg-green-500/10 border-green-500/30 text-green-400'}`}>
                       {isLoan ? `Loan · ${c.loanWorkOrder?.bank}` : 'Cash'}
                     </span>
-                    <span className="text-xs font-medium px-2.5 py-1 rounded-full border bg-violet-500/10 border-violet-500/30 text-violet-400">
-                      Confirmed
-                    </span>
+                    {c.delivered
+                      ? <span className="text-xs font-medium px-2.5 py-1 rounded-full border bg-green-500/10 border-green-500/30 text-green-400 flex items-center gap-1"><Truck size={10} />Delivered</span>
+                      : <span className="text-xs font-medium px-2.5 py-1 rounded-full border bg-violet-500/10 border-violet-500/30 text-violet-400">Confirmed</span>
+                    }
                   </div>
                 </div>
               );
@@ -950,6 +1101,9 @@ export default function Customers() {
       {/* ── Lead Detail Modal ────────────────────────── */}
       {detailLead && (() => {
         const car = getCar(detailLead.interestedCarId);
+        const wo = detailLead.loanWorkOrder ?? detailLead.cashWorkOrder;
+        const isLoanWo = !!detailLead.loanWorkOrder;
+        const hasWorkOrder = !!wo;
         return (
           <>
             <div className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm" onClick={() => setDetailLead(null)} />
@@ -974,8 +1128,226 @@ export default function Customers() {
                     </button>
                   </div>
 
-                  {/* Scrollable content */}
-                  <div className="flex-1 overflow-y-auto p-5 space-y-5 min-h-0">
+                  {/* Tabs — only show when there's a work order */}
+                  {hasWorkOrder && (
+                    <div className="flex border-b border-obsidian-400/60 shrink-0">
+                      <button
+                        onClick={() => setDetailTab('details')}
+                        className={`flex-1 py-2.5 text-xs font-medium transition-colors ${detailTab === 'details' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}
+                      >
+                        Details
+                      </button>
+                      <button
+                        onClick={() => setDetailTab('calculation')}
+                        className={`flex-1 py-2.5 text-xs font-medium transition-colors ${detailTab === 'calculation' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}
+                      >
+                        Calculation
+                      </button>
+                      <button
+                        onClick={() => setDetailTab('postsale')}
+                        className={`flex-1 py-2.5 text-xs font-medium transition-colors ${detailTab === 'postsale' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}
+                      >
+                        Post-Sale
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Calculation Tab */}
+                  {hasWorkOrder && detailTab === 'calculation' && (() => {
+                    const lwo = detailLead.loanWorkOrder;
+                    const cwo = detailLead.cashWorkOrder;
+                    const sellingPrice = wo!.sellingPrice;
+                    const insurance = wo!.insurance;
+                    const bankProduct = wo!.bankProduct;
+                    const additionalItems = wo!.additionalItems ?? [];
+                    const bookingFee = wo!.bookingFee;
+                    const discount = wo!.discount;
+                    const loanAmount = lwo?.loanAmount ?? 0;
+                    const downpayment = cwo?.downpayment ?? 0;
+                    const customerDownpayment = lwo ? sellingPrice - loanAmount : 0;
+                    const finalDeal = sellingPrice - discount;
+                    const netTradeIn = wo!.hasTradeIn ? wo!.tradeInPrice - wo!.settlementFigure : 0;
+
+                    const Row = ({ label, value, color = 'text-white', bold = false, sub = false }: { label: string; value: string; color?: string; bold?: boolean; sub?: boolean }) => (
+                      <div className={`flex items-center justify-between px-4 py-2.5 border-b border-obsidian-400/20 ${sub ? 'bg-obsidian-800/40' : ''}`}>
+                        <span className={`text-xs ${sub ? 'text-gray-500' : 'text-gray-400'}`}>{label}</span>
+                        <span className={`text-sm ${color} ${bold ? 'font-bold' : 'font-medium'}`}>{value}</span>
+                      </div>
+                    );
+
+                    return (
+                      <div className="flex-1 overflow-y-auto min-h-0">
+                        {/* Car Deal */}
+                        <div className="px-4 py-2 bg-obsidian-700/30">
+                          <p className="text-gray-500 text-xs uppercase tracking-wide font-semibold">Car Deal</p>
+                        </div>
+                        <Row label="Selling Price" value={formatRM(sellingPrice)} color="text-white" />
+                        {discount > 0 && <Row label="Discount" value={`− ${formatRM(discount)}`} color="text-red-400" sub />}
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-obsidian-400/20 bg-gold-500/5">
+                          <span className="text-xs text-gold-400 font-semibold">Total Final Deal</span>
+                          <span className="text-gold-400 text-sm font-bold">{formatRM(finalDeal)}</span>
+                        </div>
+
+                        {/* Others */}
+                        {(insurance > 0 || bankProduct > 0 || additionalItems.length > 0) && (<>
+                          <div className="px-4 py-2 bg-obsidian-700/30">
+                            <p className="text-gray-500 text-xs uppercase tracking-wide font-semibold">Others</p>
+                          </div>
+                          {insurance > 0 && <Row label="Insurance" value={formatRM(insurance)} />}
+                          {bankProduct > 0 && <Row label="Bank Product" value={formatRM(bankProduct)} />}
+                          {additionalItems.map((item, i) => <Row key={i} label={item.label || 'Item'} value={formatRM(item.amount)} />)}
+                        </>)}
+
+                        {/* Payment */}
+                        <div className="px-4 py-2 bg-obsidian-700/30">
+                          <p className="text-gray-500 text-xs uppercase tracking-wide font-semibold">Payment</p>
+                        </div>
+                        {isLoanWo && lwo && (<>
+                          <Row label="Bank" value={lwo.bank} color="text-blue-300" />
+                          <Row label="Loan Amount" value={formatRM(loanAmount)} color="text-blue-300" />
+                          {customerDownpayment > 0 && <Row label="Customer Downpayment" value={formatRM(customerDownpayment)} color="text-blue-300" />}
+                        </>)}
+                        {!isLoanWo && cwo && (<>
+                          {bookingFee > 0 && <Row label="Booking Fee" value={`− ${formatRM(bookingFee)}`} color="text-red-400" />}
+                          {downpayment > 0 && <Row label="Downpayment" value={`− ${formatRM(downpayment)}`} color="text-red-400" />}
+                        </>)}
+
+                        {/* Trade-in */}
+                        {wo!.hasTradeIn && (<>
+                          <div className="px-4 py-2 bg-obsidian-700/30">
+                            <p className="text-gray-500 text-xs uppercase tracking-wide font-semibold">Trade-In</p>
+                          </div>
+                          <Row label={`${wo!.tradeInMake} ${wo!.tradeInModel} ${wo!.tradeInPlate}`} value="" color="text-gray-300" />
+                          <Row label="Trade-In Value" value={formatRM(wo!.tradeInPrice)} color="text-green-400" />
+                          {wo!.settlementFigure > 0 && <Row label="Settlement" value={`− ${formatRM(wo!.settlementFigure)}`} color="text-red-400" sub />}
+                          {netTradeIn !== 0 && <Row label="Net Trade-In" value={formatRM(netTradeIn)} color={netTradeIn > 0 ? 'text-green-400' : 'text-red-400'} bold />}
+                        </>)}
+
+                        <div className="h-6" />
+                      </div>
+                    );
+                  })()}
+
+                  {/* Post-Sale Tab */}
+                  {hasWorkOrder && detailTab === 'postsale' && (() => {
+                    const liveCustomer = customers.find(c => c.id === detailLead.id) ?? detailLead;
+                    const cl: PostSaleChecklist = liveCustomer.postSaleChecklist ?? {};
+                    const isLoanCase = !!detailLead.loanWorkOrder;
+                    const update = (patch: Partial<PostSaleChecklist>) => {
+                      const updated = { ...cl, ...patch };
+                      updateCustomer(detailLead.id, { postSaleChecklist: updated });
+                    };
+                    const b5b7Done = isLoanCase ? (cl.b5Obtained && cl.b7Obtained) : cl.b5Obtained;
+                    const canTransfer = !!b5b7Done && !!cl.insuranceCoverNote;
+                    const b2Required = !!cl.wantsCustomPlate;
+
+                    const Step = ({ done, locked, label, sub, onToggle }: { done: boolean; locked?: boolean; label: string; sub?: string; onToggle: () => void }) => (
+                      <button
+                        onClick={() => !locked && onToggle()}
+                        disabled={locked}
+                        className={`w-full flex items-center gap-3 px-4 py-3 border-b border-obsidian-400/20 text-left transition-colors ${locked ? 'opacity-40 cursor-not-allowed' : 'hover:bg-obsidian-700/40'}`}
+                      >
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${done ? 'bg-green-500 border-green-500' : locked ? 'border-gray-600' : 'border-gray-500'}`}>
+                          {done && <CheckCircle size={12} className="text-white" />}
+                          {locked && !done && <Lock size={9} className="text-gray-600" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-medium ${done ? 'text-green-400 line-through opacity-60' : locked ? 'text-gray-600' : 'text-white'}`}>{label}</p>
+                          {sub && <p className="text-xs text-gray-600 mt-0.5">{sub}</p>}
+                        </div>
+                      </button>
+                    );
+
+                    return (
+                      <div className="flex-1 overflow-y-auto min-h-0">
+                        {/* Custom plate toggle */}
+                        <div className="px-4 py-3 border-b border-obsidian-400/30 flex items-center justify-between">
+                          <div>
+                            <p className="text-white text-sm font-medium">Custom Plate (B2)</p>
+                            <p className="text-gray-600 text-xs">Customer wants to change car plate</p>
+                          </div>
+                          <button
+                            onClick={() => update({ wantsCustomPlate: !cl.wantsCustomPlate })}
+                            className={`w-11 h-6 rounded-full transition-colors relative ${cl.wantsCustomPlate ? 'bg-gold-500' : 'bg-obsidian-500'}`}
+                          >
+                            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${cl.wantsCustomPlate ? 'left-5' : 'left-0.5'}`} />
+                          </button>
+                        </div>
+
+                        {/* Puspakom */}
+                        <div className="px-4 py-2 bg-obsidian-700/30">
+                          <p className="text-gray-500 text-xs uppercase tracking-wide font-semibold">Puspakom</p>
+                        </div>
+                        <Step done={!!cl.puspakomBooked} label="Book Puspakom" sub={isLoanCase ? 'B5 + B7 required' : 'B5 required'} onToggle={() => update({ puspakomBooked: !cl.puspakomBooked })} />
+                        {/* Puspakom date input */}
+                        <div className="flex items-center justify-between px-4 py-2.5 border-b border-obsidian-400/20 bg-obsidian-800/30">
+                          <span className="text-xs text-gray-500">Puspakom Date</span>
+                          <input
+                            type="date"
+                            className="bg-obsidian-700/60 border border-obsidian-400/60 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-gold-500/60"
+                            value={cl.puspakomDate ?? ''}
+                            onChange={e => {
+                              const newDate = e.target.value;
+                              update({ puspakomDate: newDate || undefined });
+                              if (newDate && liveCustomer.assignedSalesId) {
+                                // Auto-create a reminder for the salesperson
+                                addPersonalReminder({
+                                  id: generateId(),
+                                  userId: liveCustomer.assignedSalesId,
+                                  title: `Puspakom appointment – ${liveCustomer.name}`,
+                                  dueAt: newDate,
+                                  isCompleted: false,
+                                  createdAt: new Date().toISOString(),
+                                });
+                              }
+                            }}
+                          />
+                        </div>
+                        <Step done={!!cl.b5Obtained} label="B5 Obtained" onToggle={() => update({ b5Obtained: !cl.b5Obtained })} />
+                        {isLoanCase && <Step done={!!cl.b7Obtained} label="B7 Obtained" sub="Required for hire purchase transfer" onToggle={() => update({ b7Obtained: !cl.b7Obtained })} />}
+                        {b2Required && <>
+                          <Step done={!!cl.b2Booked} label="Book B2" sub="For custom plate change" onToggle={() => update({ b2Booked: !cl.b2Booked })} />
+                          <Step done={!!cl.b2Obtained} label="B2 Obtained" onToggle={() => update({ b2Obtained: !cl.b2Obtained })} />
+                        </>}
+
+                        {/* Insurance & Transfer */}
+                        <div className="px-4 py-2 bg-obsidian-700/30">
+                          <p className="text-gray-500 text-xs uppercase tracking-wide font-semibold">Insurance & Transfer</p>
+                        </div>
+                        <Step done={!!cl.insuranceCoverNote} label="Insurance Cover Note" sub="Get cover note before name transfer" onToggle={() => update({ insuranceCoverNote: !cl.insuranceCoverNote })} />
+                        <Step
+                          done={!!cl.nameTransferDone}
+                          locked={!canTransfer}
+                          label="Name Transfer (JPJ)"
+                          sub={!canTransfer ? `Requires: ${!b5b7Done ? (isLoanCase ? 'B5, B7' : 'B5') : ''}${!b5b7Done && !cl.insuranceCoverNote ? ', ' : ''}${!cl.insuranceCoverNote ? 'cover note' : ''}` : undefined}
+                          onToggle={() => update({ nameTransferDone: !cl.nameTransferDone })}
+                        />
+
+                        {/* Progress summary */}
+                        {(() => {
+                          const steps = [cl.puspakomBooked, cl.b5Obtained, isLoanCase && cl.b7Obtained, b2Required && cl.b2Booked, b2Required && cl.b2Obtained, cl.insuranceCoverNote, cl.nameTransferDone].filter(s => s !== false);
+                          const done = steps.filter(Boolean).length;
+                          const total = steps.length;
+                          const pct = Math.round((done / total) * 100);
+                          return (
+                            <div className="px-4 py-4">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-gray-500 text-xs">{done}/{total} steps done</span>
+                                <span className="text-gray-500 text-xs">{pct}%</span>
+                              </div>
+                              <div className="h-1.5 bg-obsidian-600 rounded-full overflow-hidden">
+                                <div className="h-full bg-gold-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                              </div>
+                            </div>
+                          );
+                        })()}
+                        <div className="h-4" />
+                      </div>
+                    );
+                  })()}
+
+                  {/* Scrollable content — Details tab */}
+                  {(!hasWorkOrder || detailTab === 'details') && <div className="flex-1 overflow-y-auto p-5 space-y-5 min-h-0">
                 {/* Contact */}
                 <div className="space-y-2">
                   <p className="text-gray-500 text-xs font-medium uppercase tracking-wide">Contact</p>
@@ -1012,7 +1384,7 @@ export default function Customers() {
                       <span className="text-gray-500 text-xs">Stage</span>
                       <span className={`text-sm font-medium ${STAGE_COLORS[detailLead.leadStatus].text}`}>{LEAD_STATUS_LABELS[detailLead.leadStatus]}</span>
                     </div>
-                    {isDirector && (
+                    {isDirectorOrAdmin && (
                       <div className="flex items-center justify-between">
                         <span className="text-gray-500 text-xs">Assigned To</span>
                         <span className="text-white text-sm">{getSalesName(detailLead.assignedSalesId)}</span>
@@ -1070,6 +1442,15 @@ export default function Customers() {
                           >
                             <div className="min-w-0">
                               <span className="text-white text-sm">{app.bank}</span>
+                              {app.status === 'approved' && app.approvedAt && (() => {
+                                const daysLeft = 90 - Math.floor((Date.now() - new Date(app.approvedAt).getTime()) / 86400000);
+                                if (daysLeft <= 20) return (
+                                  <p className="text-orange-400 text-xs mt-0.5 flex items-center gap-1">
+                                    <AlertCircle size={10} />Approval expires in {daysLeft} day{daysLeft !== 1 ? 's' : ''}
+                                  </p>
+                                );
+                                return <p className="text-green-400/60 text-xs mt-0.5">{daysLeft} days remaining</p>;
+                              })()}
                               {(app.approvedAmount || app.interestRate) && (
                                 <p className="text-green-400 text-xs mt-0.5 truncate">
                                   {app.approvedAmount ? `RM ${app.approvedAmount.toLocaleString()}` : ''}
@@ -1237,7 +1618,7 @@ export default function Customers() {
                     <Banknote size={15} />Loan
                   </button>
                 )}
-              </div>
+              </div>}
 
               {/* Action Footer */}
               <div className="p-4 border-t border-obsidian-400/60 space-y-2">
@@ -1247,6 +1628,43 @@ export default function Customers() {
                 >
                   <MessageCircle size={15} />WhatsApp
                 </button>
+                {(detailLead.cashWorkOrder || detailLead.loanWorkOrder) && !detailLead.delivered && (
+                  <button
+                    onClick={() => { setDeliveryPhotoUrl(''); setShowDeliveryModal(true); }}
+                    className="w-full flex items-center justify-center gap-2 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    <Truck size={15} />Mark as Delivered
+                  </button>
+                )}
+                {detailLead.delivered && (
+                  <div className="w-full flex items-center justify-center gap-2 bg-green-500/5 border border-green-500/20 text-green-500 py-2.5 rounded-lg text-sm font-medium">
+                    <CheckCircle size={15} />Delivered · {detailLead.deliveredAt ? new Date(detailLead.deliveredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
+                  </div>
+                )}
+                {getRevertLabel(detailLead) && (
+                  <button
+                    onClick={() => handleRevert(detailLead)}
+                    className="w-full flex items-center justify-center gap-2 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 text-orange-400 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    ← {getRevertLabel(detailLead)}
+                  </button>
+                )}
+                {!detailLead.isDead && !detailLead.cashWorkOrder && !detailLead.loanWorkOrder && isStale(detailLead) && (
+                  <button
+                    onClick={() => handleMarkDead(detailLead)}
+                    className="w-full flex items-center justify-center gap-2 bg-gray-700/40 hover:bg-gray-700/60 border border-gray-600/40 text-gray-500 hover:text-gray-300 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    <Skull size={14} />Mark as Dead Lead
+                  </button>
+                )}
+                {detailLead.isDead && (
+                  <button
+                    onClick={() => handleReviveLead(detailLead)}
+                    className="w-full flex items-center justify-center gap-2 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-400 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    ↑ Revive Lead
+                  </button>
+                )}
                 <div className="grid grid-cols-2 gap-2">
                   {detailLead.leadStatus === 'contacted' && (
                     <button
@@ -1284,6 +1702,47 @@ export default function Customers() {
           </>
         );
       })()}
+
+      {/* ── Delivery Modal ───────────────────────────────── */}
+      <Modal isOpen={showDeliveryModal} onClose={() => setShowDeliveryModal(false)} title="Confirm Delivery" maxWidth="max-w-sm">
+        {detailLead && (
+          <div className="space-y-4">
+            <p className="text-gray-400 text-sm">Confirm that the car has been delivered and payment collected.</p>
+            <div>
+              <label className="block text-gray-300 text-xs font-medium mb-1.5">Delivery Photo <span className="text-gray-600">(optional)</span></label>
+              {deliveryPhotoUrl ? (
+                <div className="relative inline-block w-full">
+                  <img src={deliveryPhotoUrl} alt="Delivery" className="w-full h-40 object-cover rounded-lg border border-obsidian-400/60" />
+                  <button onClick={() => setDeliveryPhotoUrl('')} className="absolute top-2 right-2 bg-black/60 text-white rounded-full p-0.5"><X size={12} /></button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => deliveryPhotoRef.current?.click()}
+                  disabled={deliveryUploading}
+                  className="w-full border-2 border-dashed border-obsidian-400/60 hover:border-green-500/50 rounded-lg p-4 flex flex-col items-center gap-2 text-gray-600 hover:text-green-400 transition-colors"
+                >
+                  {deliveryUploading ? <span className="text-xs">Uploading...</span> : <><Upload size={18} /><span className="text-xs">Upload delivery photo</span></>}
+                </button>
+              )}
+              <input ref={deliveryPhotoRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setDeliveryUploading(true);
+                const reader = new FileReader();
+                reader.onload = ev => { setDeliveryPhotoUrl(ev.target?.result as string); setDeliveryUploading(false); };
+                reader.readAsDataURL(file);
+                e.target.value = '';
+              }} />
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowDeliveryModal(false)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
+              <button onClick={() => handleDeliveryConfirm(detailLead)} className="flex-1 flex items-center justify-center gap-2 btn-gold px-4 py-2.5 rounded-lg text-sm font-medium">
+                <Truck size={14} />Confirm Delivery
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* ── Next Step Modal ────────────────────────────── */}
       <Modal
@@ -1662,12 +2121,7 @@ export default function Customers() {
       {/* ── Work Order Overlay (Cash & Loan) ─────────── */}
       {workOrderCustomer && (() => {
         const car = getCar(workOrderCarId);
-        const additions = woForm.sellingPrice + woForm.insurance + woForm.bankProduct +
-          woForm.additionalItems.reduce((s, i) => s + i.amount, 0);
-        const reductions = workOrderType === 'loan'
-          ? woForm.loanAmount + woForm.bookingFee + woForm.discount
-          : woForm.bookingFee + woForm.downpayment + woForm.discount;
-        const totalFinalDeal = additions - reductions;
+        const totalFinalDeal = woForm.sellingPrice - woForm.discount;
         const downpayment = workOrderType === 'loan' ? woForm.sellingPrice - woForm.loanAmount : 0;
         const netTradeIn = woForm.tradeInPrice - woForm.settlementFigure;
 

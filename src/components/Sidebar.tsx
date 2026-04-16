@@ -68,6 +68,20 @@ const mechanicItems: NavItem[] = [
   { to: '/ai-assistant', icon: Bot, label: 'AI Assistant' },
 ];
 
+// Admin: same nav as director but no Finance page (no purchase price / profit access)
+const adminItems: NavItem[] = [
+  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/inventory', icon: Car, label: 'Inventory' },
+];
+
+const adminBottomItems: NavItem[] = [
+  { to: '/team', icon: UsersRound, label: 'Team Members' },
+  { to: '/data', icon: Database, label: 'Data' },
+  { to: '/reminders', icon: ClipboardList, label: 'Instructions' },
+  { to: '/history', icon: History, label: 'History' },
+  { to: '/ai-assistant', icon: Bot, label: 'AI Assistant' },
+];
+
 const SALES_ROUTES = salesGroupItems.map(i => i.to);
 
 function NavItemLink({ item, indent = false }: { item: NavItem; indent?: boolean }) {
@@ -105,12 +119,50 @@ export default function Sidebar() {
   const currentUser = useStore((s) => s.currentUser);
   const location = useLocation();
   const isDirector = currentUser?.role === 'director';
+  const isAdmin = currentUser?.role === 'admin';
   const isSalesperson = currentUser?.role === 'salesperson';
 
   const isSalesRouteActive = SALES_ROUTES.some(r => location.pathname === r);
   const [salesOpen, setSalesOpen] = useState(isSalesRouteActive);
 
   const showSalesItems = salesOpen || isSalesRouteActive;
+
+  if (isAdmin) {
+    return (
+      <aside className="hidden md:flex flex-col w-64 min-h-screen bg-sidebar-gradient border-r border-obsidian-400/80">
+        <SidebarLogo />
+        <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
+          {adminItems.map(item => <NavItemLink key={item.to} item={item} />)}
+
+          <div>
+            <button
+              onClick={() => setSalesOpen(v => !v)}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group ${
+                isSalesRouteActive
+                  ? 'text-gold-300 bg-gradient-to-r from-gold-500/[0.14] to-transparent'
+                  : 'text-white/60 hover:text-white hover:bg-obsidian-600/60'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <ShoppingBag size={18} className={isSalesRouteActive ? 'text-gold-300 drop-shadow-[0_0_6px_rgba(234,184,32,0.5)]' : 'text-gray-400 group-hover:text-white/80 transition-colors'} />
+                <span className={isSalesRouteActive ? 'font-semibold' : ''}>Sales</span>
+              </div>
+              {showSalesItems ? <ChevronDown size={13} className="text-gray-400" /> : <ChevronRight size={13} className="text-gray-400" />}
+            </button>
+            {showSalesItems && (
+              <div className="mt-1 space-y-0.5 border-l border-obsidian-400/60 ml-5">
+                {salesGroupItems.map(item => <NavItemLink key={item.to} item={item} indent />)}
+              </div>
+            )}
+          </div>
+
+          <div className="divider-gold my-2 mx-1" />
+          {adminBottomItems.map(item => <NavItemLink key={item.to} item={item} />)}
+        </nav>
+        <SidebarFooter />
+      </aside>
+    );
+  }
 
   if (isDirector) {
     return (

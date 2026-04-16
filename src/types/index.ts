@@ -3,7 +3,7 @@ export interface User {
   name: string;
   username: string;
   password: string;
-  role: 'director' | 'salesperson' | 'mechanic';
+  role: 'director' | 'salesperson' | 'mechanic' | 'admin';
   phone: string;
   monthlyTarget: number;
   carsInMonth: number;
@@ -21,6 +21,7 @@ export interface LoanApplication {
   bank: string;
   status: 'submitted' | 'approved' | 'rejected';
   approvalReason?: string;
+  approvedAt?: string;
   approvedAmount?: number;
   interestRate?: number;
   rejectionReason?: string;
@@ -284,6 +285,18 @@ export const DEFAULT_CHECKLIST_LABELS = [
   'Test Drive Completed',
 ];
 
+export interface PostSaleChecklist {
+  wantsCustomPlate?: boolean;
+  puspakomBooked?: boolean;
+  puspakomDate?: string;
+  b5Obtained?: boolean;
+  b7Obtained?: boolean;
+  b2Booked?: boolean;
+  b2Obtained?: boolean;
+  insuranceCoverNote?: boolean;
+  nameTransferDone?: boolean;
+}
+
 export interface Customer {
   id: string;
   name: string;
@@ -306,6 +319,14 @@ export interface Customer {
   tradeIn?: TradeIn;
   cashWorkOrder?: CashWorkOrder;
   loanWorkOrder?: LoanWorkOrder;
+  delivered?: boolean;
+  deliveredAt?: string;
+  deliveryPhoto?: string;
+  postSaleChecklist?: PostSaleChecklist;
+  lastActionAt?: string;
+  isDead?: boolean;
+  deadAt?: string;
+  commission?: number;
   createdAt: string;
 }
 

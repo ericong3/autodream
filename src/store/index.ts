@@ -280,6 +280,14 @@ function rowToCustomer(r: any): Customer {
     tradeIn: r.trade_in ?? undefined,
     cashWorkOrder: r.cash_work_order ?? undefined,
     loanWorkOrder: r.loan_work_order ?? undefined,
+    delivered: r.delivered ?? false,
+    deliveredAt: r.delivered_at ?? undefined,
+    deliveryPhoto: r.delivery_photo_customer ?? undefined,
+    postSaleChecklist: r.post_sale_checklist ?? undefined,
+    lastActionAt: r.last_action_at ?? undefined,
+    isDead: r.is_dead ?? false,
+    deadAt: r.dead_at ?? undefined,
+    commission: r.commission ?? undefined,
     createdAt: r.created_at,
   };
 }
@@ -307,6 +315,14 @@ function customerToRow(c: Partial<Customer>) {
   if (c.tradeIn !== undefined) row.trade_in = c.tradeIn;
   if (c.cashWorkOrder !== undefined) row.cash_work_order = c.cashWorkOrder;
   if (c.loanWorkOrder !== undefined) row.loan_work_order = c.loanWorkOrder;
+  if (c.delivered !== undefined) row.delivered = c.delivered;
+  if (c.deliveredAt !== undefined) row.delivered_at = c.deliveredAt;
+  if (c.deliveryPhoto !== undefined) row.delivery_photo_customer = c.deliveryPhoto;
+  if (c.postSaleChecklist !== undefined) row.post_sale_checklist = c.postSaleChecklist;
+  if (c.lastActionAt !== undefined) row.last_action_at = c.lastActionAt;
+  if (c.isDead !== undefined) row.is_dead = c.isDead;
+  if (c.deadAt !== undefined) row.dead_at = c.deadAt;
+  if (c.commission !== undefined) row.commission = c.commission;
   if (c.createdAt !== undefined) row.created_at = c.createdAt;
   return row;
 }
@@ -417,13 +433,34 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         supabase.from('suppliers').select('*'),
       ]);
 
+    const allCars = (cars.data ?? []).map(rowToCar);
+    const allCustomers = (customers.data ?? []).map(rowToCustomer);
+
+    // Auto-reconcile: clear finalDeal on cars that have no confirmed customer
+    const confirmedCarIds = new Set(
+      allCustomers
+        .filter(c => c.cashWorkOrder || c.loanWorkOrder)
+        .map(c => c.interestedCarId)
+        .filter(Boolean)
+    );
+    const orphanedCars = allCars.filter(c => c.finalDeal && !confirmedCarIds.has(c.id));
+    if (orphanedCars.length > 0) {
+      await Promise.all(orphanedCars.map(c =>
+        supabase.from('cars').update({ final_deal: null, status: 'available' }).eq('id', c.id)
+      ));
+      orphanedCars.forEach(c => {
+        const idx = allCars.findIndex(x => x.id === c.id);
+        if (idx !== -1) allCars[idx] = { ...allCars[idx], finalDeal: undefined, status: 'available' };
+      });
+    }
+
     set({
       users: (users.data ?? []).map(rowToUser),
-      cars: (cars.data ?? []).map(rowToCar),
+      cars: allCars,
       repairs: (repairs.data ?? []).map(rowToRepair),
       quotations: (quotations.data ?? []).map(rowToQuotation),
       instructions: (instructions.data ?? []).map(rowToInstruction),
-      customers: (customers.data ?? []).map(rowToCustomer),
+      customers: allCustomers,
       testDrives: (testDrives.data ?? []).map(rowToTestDrive),
       personalReminders: (reminders.data ?? []).map(rowToReminder),
       dealers: (dealers.data ?? []) as Dealer[],

@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Car,
@@ -5,6 +6,7 @@ import {
   DollarSign,
   Wrench,
   ArrowRight,
+  AlertTriangle,
 } from 'lucide-react';
 import { useStore } from '../store';
 import StatCard from '../components/StatCard';
@@ -13,7 +15,20 @@ import { formatRM } from '../utils/format';
 export default function Dashboard() {
   const cars = useStore((s) => s.cars);
   const repairs = useStore((s) => s.repairs);
+  const customers = useStore((s) => s.customers);
   const navigate = useNavigate();
+
+  // 15-day stock alert: cars with no leads for 15+ days
+  const staleStock = useMemo(() => {
+    const threshold = Date.now() - 15 * 86400000;
+    return cars.filter(c => {
+      if (['sold', 'coming_soon'].includes(c.status)) return false;
+      const addedDate = new Date(c.dateAdded).getTime();
+      if (addedDate > threshold) return false;
+      const hasLead = customers.some(cust => cust.interestedCarId === c.id);
+      return !hasLead;
+    });
+  }, [cars, customers]);
 
   const soldCars = cars.filter((c) => c.status === 'sold');
   const availableCars = cars.filter((c) => c.status === 'available');
@@ -67,6 +82,27 @@ export default function Dashboard() {
           iconColor="text-orange-400"
         />
       </div>
+
+      {/* ── 15-day stock alert ─────────────────────────────────── */}
+      {staleStock.length > 0 && (
+        <div className="bg-orange-500/10 border border-orange-500/30 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle size={16} className="text-orange-400" />
+            <p className="text-orange-400 font-semibold text-sm">{staleStock.length} car{staleStock.length > 1 ? 's' : ''} with no leads for 15+ days</p>
+          </div>
+          <div className="space-y-1.5">
+            {staleStock.map(c => {
+              const days = Math.floor((Date.now() - new Date(c.dateAdded).getTime()) / 86400000);
+              return (
+                <div key={c.id} className="flex items-center justify-between">
+                  <span className="text-white text-sm">{c.year} {c.make} {c.model}{c.variant ? ` ${c.variant}` : ''}</span>
+                  <span className="text-orange-400 text-xs">{days} days in stock</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── Two column section ───────────────────────────────── */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">

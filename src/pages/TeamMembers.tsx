@@ -42,7 +42,7 @@ const emptyForm = {
   username: '',
   password: '',
   phone: '',
-  role: 'salesperson' as 'director' | 'salesperson' | 'mechanic',
+  role: 'salesperson' as 'director' | 'salesperson' | 'mechanic' | 'admin',
   monthlyTarget: 4,
 };
 
