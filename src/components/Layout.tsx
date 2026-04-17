@@ -83,9 +83,9 @@ export default function Layout({ children }: LayoutProps) {
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
 
         {/* ── Topbar ─────────────────────────────────────────── */}
-        <header className="safe-area-top bg-header-gradient border-b border-obsidian-400/80
+        <header className="safe-area-top glass-header border-b border-gold-500/20
           flex items-center justify-between px-4 md:px-6 shrink-0
-          shadow-[0_2px_16px_rgba(0,0,0,0.5)]"
+          shadow-card sticky top-0 z-20"
           style={{ minHeight: 'calc(3.5rem + env(safe-area-inset-top, 0px))' }}
         >
 
@@ -140,9 +140,9 @@ export default function Layout({ children }: LayoutProps) {
 
       {/* ── Mobile Bottom Nav ───────────────────────────────────── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30
-        bg-header-gradient border-t border-obsidian-400/80
+        glass-header border-t border-gold-500/20
         flex items-center justify-around px-1
-        shadow-[0_-4px_20px_rgba(0,0,0,0.5)]"
+        shadow-card-lg"
         style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 8px)', paddingTop: '0.25rem' }}
       >
         {primaryNav.map(item => (
@@ -160,14 +160,14 @@ export default function Layout({ children }: LayoutProps) {
                 <item.icon
                   size={20}
                   className={isActive
-                    ? 'drop-shadow-[0_0_8px_rgba(234,184,32,0.65)]'
+                    ? 'drop-shadow-[0_0_8px_rgba(234,184,32,0.6)]'
                     : ''}
                 />
                 <span className={`text-[10px] font-medium ${isActive ? 'text-gold-300' : ''}`}>
                   {item.label}
                 </span>
                 {isActive && (
-                  <span className="w-1 h-1 rounded-full bg-gold-300 shadow-[0_0_4px_rgba(234,184,32,0.8)]" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-gold-300 shadow-[0_0_6px_rgba(234,184,32,0.7)]" />
                 )}
               </>
             )}
@@ -196,7 +196,7 @@ export default function Layout({ children }: LayoutProps) {
           <div className="md:hidden fixed bottom-0 left-0 right-0 z-50
             bg-gradient-to-b from-obsidian-800 to-obsidian-900
             border-t border-obsidian-400/80 rounded-t-2xl p-4 pb-8
-            shadow-[0_-8px_40px_rgba(0,0,0,0.7)]">
+            shadow-card-lg">
 
             {/* Handle bar */}
             <div className="w-10 h-1 rounded-full bg-obsidian-400/60 mx-auto mb-4" />

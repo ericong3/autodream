@@ -287,6 +287,8 @@ function rowToCustomer(r: any): Customer {
     lastActionAt: r.last_action_at ?? undefined,
     isDead: r.is_dead ?? false,
     deadAt: r.dead_at ?? undefined,
+    isTrashed: r.is_trashed ?? false,
+    trashedAt: r.trashed_at ?? undefined,
     commission: r.commission ?? undefined,
     createdAt: r.created_at,
   };
@@ -322,6 +324,8 @@ function customerToRow(c: Partial<Customer>) {
   if (c.lastActionAt !== undefined) row.last_action_at = c.lastActionAt;
   if (c.isDead !== undefined) row.is_dead = c.isDead;
   if (c.deadAt !== undefined) row.dead_at = c.deadAt;
+  if (c.isTrashed !== undefined) row.is_trashed = c.isTrashed;
+  if (c.trashedAt !== undefined) row.trashed_at = c.trashedAt;
   if (c.commission !== undefined) row.commission = c.commission;
   if (c.createdAt !== undefined) row.created_at = c.createdAt;
   return row;

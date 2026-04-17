@@ -109,6 +109,7 @@ export default function CarDetail() {
   const workshops = useStore((s) => s.workshops);
   const currentUser = useStore((s) => s.currentUser);
   const updateCar = useStore((s) => s.updateCar);
+  const updateCustomer = useStore((s) => s.updateCustomer);
   const addRepair = useStore((s) => s.addRepair);
   const updateRepair = useStore((s) => s.updateRepair);
   const deleteRepair = useStore((s) => s.deleteRepair);
@@ -762,6 +763,18 @@ export default function CarDetail() {
                       {apps.map(app => (
                         <span key={app.bank} className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium ${BANK_CLS[app.status] ?? 'bg-gray-500/20 text-gray-400'}`}>
                           {BANK_ICON[app.status]} {app.bank}
+                          {app.status === 'rejected' && (
+                            <button
+                              onClick={() => {
+                                const updated = apps.filter(a => a.bank !== app.bank);
+                                updateCustomer(c.id, { loanApplications: updated });
+                              }}
+                              className="ml-1 hover:text-red-300 transition-colors"
+                              title="Remove rejected entry"
+                            >
+                              <Trash2 size={10} />
+                            </button>
+                          )}
                         </span>
                       ))}
                     </div>

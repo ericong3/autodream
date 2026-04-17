@@ -5,6 +5,8 @@ import {
   TrendingUp,
   DollarSign,
   Wrench,
+  Settings,
+  CheckCircle2,
   ArrowRight,
   AlertTriangle,
 } from 'lucide-react';
@@ -111,11 +113,11 @@ export default function Dashboard() {
         <div className="card-surface rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-obsidian-400/60
             bg-gradient-to-r from-obsidian-600/40 to-transparent">
-            <div className="flex items-center gap-2">
-              <div className="w-1 h-4 rounded-full bg-gold-gradient" />
-              <h3 className="text-white font-semibold text-sm">P&L Summary</h3>
+            <div className="flex items-center gap-2.5">
+              <div className="w-[3px] h-5 rounded-full bg-gold-gradient" />
+              <h3 className="text-white font-semibold text-base">P&L Summary</h3>
             </div>
-            <p className="text-white/40 text-xs mt-0.5 ml-3">Based on sold vehicles</p>
+            <p className="text-white/40 text-xs mt-0.5 ml-[19px]">Based on sold vehicles</p>
           </div>
           <div className="p-5 space-y-1">
             <PLRow label="Total Revenue (Sales)" value={totalRevenue} positive />
@@ -136,9 +138,9 @@ export default function Dashboard() {
         <div className="card-surface rounded-xl overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-obsidian-400/60
             bg-gradient-to-r from-obsidian-600/40 to-transparent">
-            <div className="flex items-center gap-2">
-              <div className="w-1 h-4 rounded-full bg-gold-gradient" />
-              <h3 className="text-white font-semibold text-sm">Inventory Status</h3>
+            <div className="flex items-center gap-2.5">
+              <div className="w-[3px] h-5 rounded-full bg-gold-gradient" />
+              <h3 className="text-white font-semibold text-base">Inventory Status</h3>
             </div>
             <button
               onClick={() => navigate('/inventory')}
@@ -167,7 +169,7 @@ export default function Dashboard() {
                     <span className={`text-xs font-semibold uppercase tracking-wider ${text}`}>{status}</span>
                     <span className="text-white text-sm font-bold">{count}</span>
                   </div>
-                  <div className="h-2 rounded-full bg-obsidian-700 overflow-hidden">
+                  <div className="h-2.5 rounded-full bg-obsidian-700 overflow-hidden">
                     <div
                       className={`h-full rounded-full bg-gradient-to-r ${bar} transition-all duration-500`}
                       style={{ width: `${pct}%` }}
@@ -184,9 +186,9 @@ export default function Dashboard() {
       <div className="card-surface rounded-xl overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-obsidian-400/60
           bg-gradient-to-r from-obsidian-600/40 to-transparent">
-          <div className="flex items-center gap-2">
-            <div className="w-1 h-4 rounded-full bg-gold-gradient" />
-            <h3 className="text-white font-semibold text-sm">Workshop Overview</h3>
+          <div className="flex items-center gap-2.5">
+            <div className="w-[3px] h-5 rounded-full bg-gold-gradient" />
+            <h3 className="text-white font-semibold text-base">Workshop Overview</h3>
           </div>
           <button
             onClick={() => navigate('/workshop')}
@@ -197,15 +199,18 @@ export default function Dashboard() {
         </div>
         <div className="p-5 grid grid-cols-3 gap-4">
           {[
-            { label: 'Total Repair Spend', value: formatRM(totalRepairCosts), color: 'text-orange-400', icon: '🔧' },
-            { label: 'Active Jobs', value: repairs.filter(r => r.status !== 'done').length, color: 'text-yellow-400', icon: '⚙️' },
-            { label: 'Completed Jobs', value: repairs.filter(r => r.status === 'done').length, color: 'text-emerald-400', icon: '✓' },
+            { label: 'Total Repair Spend', value: formatRM(totalRepairCosts), color: 'text-orange-400', Icon: Wrench },
+            { label: 'Active Jobs', value: repairs.filter(r => r.status !== 'done').length, color: 'text-yellow-400', Icon: Settings },
+            { label: 'Completed Jobs', value: repairs.filter(r => r.status === 'done').length, color: 'text-emerald-400', Icon: CheckCircle2 },
           ].map(item => (
             <div key={item.label}
               className="bg-obsidian-700/60 rounded-xl p-4 border border-obsidian-400/50
-                hover:border-obsidian-300/60 transition-colors">
-              <p className="text-white/50 text-[11px] uppercase tracking-wider font-medium mb-2">{item.label}</p>
-              <p className={`text-xl font-bold ${item.color}`}>{item.value}</p>
+                hover:border-gold-500/30 hover:bg-obsidian-600/60 transition-all duration-200 cursor-default">
+              <div className={`inline-flex p-2 rounded-lg bg-obsidian-600/60 ${item.color} mb-3`}>
+                <item.Icon size={15} />
+              </div>
+              <p className="text-white/40 text-[10px] uppercase tracking-widest font-semibold mb-1">{item.label}</p>
+              <p className={`text-2xl font-bold ${item.color}`}>{item.value}</p>
             </div>
           ))}
         </div>

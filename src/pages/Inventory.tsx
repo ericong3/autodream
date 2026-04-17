@@ -549,124 +549,96 @@ export default function Inventory() {
 
       {/* List view */}
       {view === 'list' && filtered.length > 0 && (
-        <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-gray-400 text-xs border-b border-obsidian-400/60 bg-obsidian-700/60">
-                  <th className="text-left px-4 py-3 font-medium">Car</th>
-                  <th className="text-left px-4 py-3 font-medium">Plate</th>
-                  <th className="text-left px-4 py-3 font-medium">Year</th>
-                  <th className="text-left px-4 py-3 font-medium">Colour</th>
-                  <th className="text-left px-4 py-3 font-medium">Mileage</th>
-                  <th className="text-left px-4 py-3 font-medium">Transmission</th>
-                  <th className="text-left px-4 py-3 font-medium">Location</th>
-                  <th className="text-left px-4 py-3 font-medium">Availability</th>
-                  <th className="text-left px-4 py-3 font-medium">Deal Summary</th>
-                  <th className="text-right px-4 py-3 font-medium">Selling Price</th>
-                  {isDirector && <th className="text-right px-4 py-3 font-medium">Profit</th>}
-                  <th className="text-left px-4 py-3 font-medium">Assigned To</th>
-                  {isDirector && <th className="px-4 py-3" />}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((car, i) => (
-                  <tr
-                    key={car.id}
-                    onClick={() => navigate(`/inventory/${car.id}`)}
-                    className={`border-b border-obsidian-400/60/50 cursor-pointer hover:bg-obsidian-700/50 transition-colors ${i % 2 === 0 ? 'bg-card-gradient' : 'bg-obsidian-950/30'}`}
+        <div className="space-y-2">
+          {filtered.map((car) => {
+            const { cls, label } = getDealBadge(car);
+            const leadCount = carStats[car.id]?.leadCount ?? 0;
+            const submissions = car.loanSubmissions ?? [];
+            const approved = submissions.filter((s) => s.status === 'approved');
+            const pending  = submissions.filter((s) => s.status === 'submitted');
+            const deal = car.finalDeal;
+            const price = confirmedDealPrice[car.id] ?? car.sellingPrice;
+            const profit = price - car.purchasePrice;
+
+            return (
+              <div
+                key={car.id}
+                onClick={() => navigate(`/inventory/${car.id}`)}
+                className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card cursor-pointer hover:border-gold-500/40 hover:bg-obsidian-700/30 transition-all flex items-center gap-4 px-4 py-3"
+              >
+                {/* Thumbnail */}
+                <div className="w-24 h-16 bg-obsidian-700/60 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center">
+                  {car.photo
+                    ? <img src={car.photo} alt={`${car.make} ${car.model}`} className="w-full h-full object-cover" loading="lazy" />
+                    : <CarIcon size={20} className="text-gray-600" />
+                  }
+                </div>
+
+                {/* Car name + details */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-white font-semibold text-sm">{car.year} {car.make} {car.model}{car.variant ? ` ${car.variant}` : ''}</span>
+                    {car.carPlate && (
+                      <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-[#2C2415] text-gold-300 border border-[#3C321E] tracking-wider">{car.carPlate}</span>
+                    )}
+                    {car.consignment && (
+                      <span className="flex items-center gap-1 bg-blue-500/20 text-blue-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-500/30">
+                        <Building2 size={9} /> CONSIGN
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 mt-1 flex-wrap">
+                    <span className="text-gray-500 text-xs">{car.colour} · {car.transmission} · {formatMileage(car.mileage)}</span>
+                    <span className="flex items-center gap-1 text-gray-500 text-xs">
+                      <MapPin size={10} />{car.currentLocation ?? 'Showroom'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Deal summary */}
+                <div className="hidden md:flex flex-col gap-0.5 min-w-[120px]">
+                  {leadCount > 0 && <span className="flex items-center gap-1 text-xs text-gray-500"><Users size={10} />{leadCount} lead{leadCount > 1 ? 's' : ''}</span>}
+                  {pending.length > 0 && <p className="text-xs text-blue-400">{pending.length} pending</p>}
+                  {approved.length > 0 && <p className="text-xs text-emerald-400">Approved</p>}
+                  {deal && <p className="text-xs text-violet-400 truncate">{deal.bank}</p>}
+                  {!leadCount && !submissions.length && !deal && <span className="text-xs text-gray-600">No leads</span>}
+                </div>
+
+                {/* Status badge */}
+                <div className="hidden sm:flex flex-col items-end gap-1.5 flex-shrink-0">
+                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${cls}`}>{label}</span>
+                  {!car.greenCard && car.status !== 'coming_soon' && (
+                    <span className="flex items-center gap-1 bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full text-[10px] font-medium border border-orange-500/30">
+                      <AlertCircle size={9} /> No GC
+                    </span>
+                  )}
+                </div>
+
+                {/* Price + profit */}
+                <div className="text-right flex-shrink-0">
+                  {confirmedDealPrice[car.id] != null && confirmedDealPrice[car.id] !== car.sellingPrice && (
+                    <p className="text-gray-600 text-xs line-through">{formatRM(car.sellingPrice)}</p>
+                  )}
+                  <p className="text-gold-400 font-bold text-sm">{formatRM(price)}</p>
+                  {isDirector && (
+                    <p className={`text-xs font-medium mt-0.5 ${profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {profit >= 0 ? '+' : ''}{formatRM(profit)}
+                    </p>
+                  )}
+                </div>
+
+                {/* Delete */}
+                {isDirector && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setDeleteCarId(car.id); }}
+                    className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors flex-shrink-0"
                   >
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-obsidian-700/60 rounded-lg flex items-center justify-center">
-                          <CarIcon size={14} className="text-gray-500" />
-                        </div>
-                        <span className="text-white font-medium">{car.make} {car.model}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      {car.carPlate
-                        ? <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-[#2C2415] text-gold-300 border border-[#3C321E] tracking-wider">{car.carPlate}</span>
-                        : <span className="text-gray-600 text-xs">—</span>
-                      }
-                    </td>
-                    <td className="px-4 py-3 text-gray-400">{car.year}</td>
-                    <td className="px-4 py-3 text-gray-400">{car.colour}</td>
-                    <td className="px-4 py-3 text-gray-400">{formatMileage(car.mileage)}</td>
-                    <td className="px-4 py-3 text-gray-400 capitalize">{car.transmission}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1">
-                        <MapPin size={11} className="text-gray-500 flex-shrink-0" />
-                        <span className="text-gray-400 text-xs">{car.currentLocation ?? 'Showroom'}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      {(() => {
-                        const { cls, label } = getDealBadge(car);
-                        return (
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${cls}`}>{label}</span>
-                            {!car.greenCard && car.status !== 'coming_soon' && (
-                              <span className="flex items-center gap-1 bg-orange-500/80 text-white px-1.5 py-0.5 rounded-full text-[10px] font-medium">
-                                <AlertCircle size={9} /> No GC
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </td>
-                    <td className="px-4 py-3">
-                      {(() => {
-                        const leadCount = carStats[car.id]?.leadCount ?? 0;
-                        const submissions = car.loanSubmissions ?? [];
-                        const approved = submissions.filter((s) => s.status === 'approved');
-                        const pending  = submissions.filter((s) => s.status === 'submitted');
-                        const deal = car.finalDeal;
-                        return (
-                          <div className="space-y-0.5">
-                            {leadCount > 0 && <span className="flex items-center gap-1 text-xs text-gray-500"><Users size={10} />{leadCount} lead{leadCount > 1 ? 's' : ''}</span>}
-                            {pending.length > 0 && <p className="text-xs text-blue-400 truncate">{pending.length} pending · {pending.map((s) => s.bank).join(', ')}</p>}
-                            {approved.length > 0 && <p className="text-xs text-emerald-400 truncate">Approved · {approved.map((s) => s.bank).join(', ')}</p>}
-                            {deal && <p className="text-xs text-violet-400 truncate">{deal.bank} · {formatRM(deal.dealPrice)}</p>}
-                            {!leadCount && !submissions.length && !deal && <span className="text-xs text-gray-600">—</span>}
-                          </div>
-                        );
-                      })()}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {confirmedDealPrice[car.id] != null ? (
-                        <div>
-                          {confirmedDealPrice[car.id] !== car.sellingPrice && (
-                            <p className="text-gray-600 text-xs line-through text-right">{formatRM(car.sellingPrice)}</p>
-                          )}
-                          <p className="text-gold-400 font-semibold">{formatRM(confirmedDealPrice[car.id])}</p>
-                        </div>
-                      ) : (
-                        <p className="text-gold-400 font-semibold">{formatRM(car.sellingPrice)}</p>
-                      )}
-                    </td>
-                    {isDirector && (
-                      <td className="px-4 py-3 text-green-400 text-right">
-                        {formatRM((confirmedDealPrice[car.id] ?? car.sellingPrice) - car.purchasePrice)}
-                      </td>
-                    )}
-                    <td className="px-4 py-3 text-gray-400">{getSalesperson(car.assignedSalesperson)}</td>
-                    {isDirector && (
-                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          onClick={() => setDeleteCarId(car.id)}
-                          className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                          title="Delete car"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

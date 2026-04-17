@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList, Truck, Upload, Lock, Skull, Clock } from 'lucide-react';
+import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList, Truck, Upload, Lock, Skull, Clock, RotateCcw } from 'lucide-react';
 import { useStore } from '../store';
 import { Customer, LoanApplication, LoanSubmission, CashWorkOrder, LoanWorkOrder, WorkOrderItem, BANKS, PostSaleChecklist } from '../types';
 import Modal from '../components/Modal';
@@ -91,7 +91,8 @@ export default function Customers() {
   const todayStr = new Date().toISOString().slice(0, 10);
 
   // Tab
-  const [tab, setTab] = useState<'leads' | 'loan' | 'confirmed'>('leads');
+  const [tab, setTab] = useState<'leads' | 'loan' | 'confirmed' | 'bin'>('leads');
+  const [binMonth, setBinMonth] = useState(() => new Date().toISOString().slice(0, 7));
 
   // Director view toggle: 'all' | 'own' | salesperson userId
   const [directorView, setDirectorView] = useState<'all' | 'own' | string>('all');
@@ -197,10 +198,18 @@ export default function Customers() {
 
   const loanFiltered = useMemo(() => myCustomers.filter(c => {
     if (c.leadStatus !== 'loan_submitted') return false;
+    if (c.isTrashed) return false;
     const matchSource = sourceFilter === 'all' || c.source === sourceFilter;
     const matchSearch = !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search);
     return matchSource && matchSearch;
   }), [myCustomers, sourceFilter, search]);
+
+  const trashedFiltered = useMemo(() => myCustomers.filter(c => {
+    if (!c.isTrashed) return false;
+    const matchMonth = !binMonth || (c.trashedAt ?? '').startsWith(binMonth);
+    const matchSearch = !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search);
+    return matchMonth && matchSearch;
+  }), [myCustomers, binMonth, search]);
 
   const confirmedFiltered = useMemo(() => myCustomers.filter(c => {
     const hasWorkOrder = !!(c.cashWorkOrder || c.loanWorkOrder);
@@ -677,6 +686,16 @@ export default function Customers() {
           >
             Confirmed <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'confirmed' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !!(c.cashWorkOrder || c.loanWorkOrder) || (!!c.dealPrice && !!cars.find(x => x.id === c.interestedCarId)?.finalDeal)).length}</span>
           </button>
+          <button
+            onClick={() => { setTab('bin'); setStatusFilter('all'); }}
+            className={`px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${tab === 'bin' ? 'bg-red-500/80 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+            title="Rejected / Trashed Cases"
+          >
+            <Trash2 size={14} />
+            {myCustomers.filter(c => c.isTrashed).length > 0 && (
+              <span className={`text-xs px-1.5 py-0.5 rounded-full ${tab === 'bin' ? 'bg-white/20' : 'bg-red-500/20 text-red-400'}`}>{myCustomers.filter(c => c.isTrashed).length}</span>
+            )}
+          </button>
         </div>
         {tab === 'leads' && (
           <button onClick={openAdd} className="flex items-center gap-2 btn-gold px-4 py-2.5 rounded-lg text-sm">
@@ -1032,6 +1051,15 @@ export default function Customers() {
                       <button onClick={() => handleWhatsApp(c.phone, c.name)} className="flex items-center gap-1 px-2 py-1.5 text-xs text-green-400 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 rounded-lg transition-colors">
                         <MessageCircle size={12} />WA
                       </button>
+                      {c.loanApplications?.length && c.loanApplications.every(a => a.status === 'rejected') && (
+                        <button
+                          onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })}
+                          className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                          title="Toss to bin"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
                       <button onClick={() => openEdit(c)} className="p-1.5 text-gray-600 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors">
                         <Edit2 size={14} />
                       </button>
@@ -1041,6 +1069,77 @@ export default function Customers() {
                 </div>
               );
             })}
+          </div>
+        )}
+      </>)}
+
+      {/* ── Bin tab ── */}
+      {tab === 'bin' && (<>
+        <div className="flex items-center gap-3">
+          <input
+            type="text"
+            placeholder="Search by name or phone..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="flex-1 input rounded-lg px-4 py-2.5 text-sm"
+          />
+          <input
+            type="month"
+            value={binMonth}
+            onChange={e => setBinMonth(e.target.value)}
+            className="input rounded-lg px-3 py-2.5 text-sm"
+          />
+          {binMonth && (
+            <button onClick={() => setBinMonth('')} className="px-3 py-2.5 text-xs text-gray-500 hover:text-white border border-obsidian-400/60 rounded-lg transition-colors whitespace-nowrap">All Time</button>
+          )}
+        </div>
+
+        {trashedFiltered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <Trash2 size={40} className="text-gray-600 mb-3" />
+            <p className="text-gray-400">No rejected cases in bin</p>
+            <p className="text-gray-600 text-xs mt-1">{binMonth ? 'Try changing the month filter' : 'Cases tossed from the Loan tab will appear here'}</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-gray-500 text-xs">{trashedFiltered.length} rejected case{trashedFiltered.length > 1 ? 's' : ''}{binMonth ? ` in ${new Date(binMonth + '-01').toLocaleDateString('en-MY', { month: 'long', year: 'numeric' })}` : ''}</p>
+            <div className="bg-card-gradient border border-red-500/20 rounded-xl shadow-card divide-y divide-obsidian-400/60">
+              {trashedFiltered.map(c => {
+                const car = getCar(c.interestedCarId);
+                const rejectedBanks = c.loanApplications?.filter(a => a.status === 'rejected') ?? [];
+                return (
+                  <div key={c.id} className="flex items-center gap-3 px-4 py-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-white text-sm font-medium">{c.name}</span>
+                        <span className="text-gray-600 text-xs">{c.phone}</span>
+                        {isDirectorOrAdmin && <span className="text-gray-600 text-xs hidden lg:inline">{getSalesName(c.assignedSalesId)}</span>}
+                      </div>
+                      <div className="flex items-center gap-3 mt-1 flex-wrap">
+                        {car && <span className="text-gray-500 text-xs">{car.year} {car.make} {car.model}</span>}
+                        {rejectedBanks.length > 0 && (
+                          <div className="flex gap-1 flex-wrap">
+                            {rejectedBanks.map(a => (
+                              <span key={a.bank} className="text-xs text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">{a.bank}</span>
+                            ))}
+                          </div>
+                        )}
+                        {c.trashedAt && (
+                          <span className="text-gray-600 text-xs">Binned {new Date(c.trashedAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => updateCustomer(c.id, { isTrashed: false, trashedAt: undefined })}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-400 hover:text-white bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/60 rounded-lg transition-colors"
+                      title="Restore to Loan tab"
+                    >
+                      <RotateCcw size={12} /> Restore
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </>)}

@@ -12,6 +12,34 @@ body {
   font-family: 'Outfit', system-ui, sans-serif;
 }
 
+/* ─── Ambient blobs for glassmorphism depth ───────────────── */
+#root {
+  position: relative;
+  isolation: isolate;
+}
+#root::before {
+  content: '';
+  position: fixed;
+  top: -25%;
+  left: -15%;
+  width: 65%;
+  height: 65%;
+  background: radial-gradient(ellipse at center, rgba(234,184,32,0.07) 0%, transparent 65%);
+  pointer-events: none;
+  z-index: -1;
+}
+#root::after {
+  content: '';
+  position: fixed;
+  bottom: -20%;
+  right: -10%;
+  width: 50%;
+  height: 50%;
+  background: radial-gradient(ellipse at center, rgba(184,136,10,0.05) 0%, transparent 65%);
+  pointer-events: none;
+  z-index: -1;
+}
+
 /* Safe area utility — works on both old and new iOS + Android */
 .safe-area-top {
   padding-top: constant(safe-area-inset-top);
@@ -38,7 +66,7 @@ body {
 .section-title {
   font-family: 'Cinzel', serif;
   font-weight: 600;
-  font-size: 0.8rem;
+  font-size: 0.875rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   background: linear-gradient(135deg, #F7D96A 0%, #EAB820 100%);
@@ -49,14 +77,28 @@ body {
 
 /* ─── Cards ───────────────────────────────────────────────── */
 .card-surface {
-  background: linear-gradient(145deg, #141210 0%, #0E0D0B 100%);
-  border: 1px solid #2A2316;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  background: linear-gradient(160deg, rgba(26,24,18,0.55) 0%, rgba(13,12,10,0.55) 100%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(234,184,32,0.1);
+  box-shadow: 0 4px 28px rgba(0,0,0,0.45), inset 0 1px 0 rgba(234,184,32,0.07);
+  position: relative;
+}
+
+.card-surface::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(234,184,32,0.25) 30%, rgba(234,184,32,0.5) 50%, rgba(234,184,32,0.25) 70%, transparent 100%);
+  border-radius: inherit;
+  pointer-events: none;
 }
 
 .card-surface:hover {
-  border-color: #3D3420;
-  box-shadow: 0 4px 32px rgba(0,0,0,0.5);
+  border-color: rgba(234,184,32,0.2);
+  box-shadow: 0 8px 40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(234,184,32,0.12);
+  background: linear-gradient(160deg, rgba(32,30,22,0.65) 0%, rgba(19,17,9,0.65) 100%);
 }
 
 /* ─── Buttons ─────────────────────────────────────────────── */
@@ -114,11 +156,11 @@ body {
 .input[data-no-capitalize] {
   text-transform: none;
 }
-.input::placeholder { color: #4A4030 !important; -webkit-text-fill-color: #4A4030; }
+.input::placeholder { color: #5A5040 !important; -webkit-text-fill-color: #5A5040; }
 .input:focus {
   outline: none;
   border-color: #EAB820 !important;
-  box-shadow: 0 0 0 3px rgba(234,184,32,0.12);
+  box-shadow: 0 0 0 3px rgba(234,184,32,0.22);
 }
 /* Autofill override */
 .input:-webkit-autofill,
@@ -132,6 +174,27 @@ body {
 .input option {
   background: #141210;
   color: #F0EDE8;
+}
+
+/* ─── Glass utilities ─────────────────────────────────────── */
+.glass-panel {
+  background: rgba(20, 18, 14, 0.5);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(234,184,32,0.1);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4), inset 0 1px 0 rgba(234,184,32,0.08);
+}
+
+.glass-sidebar {
+  background: rgba(10, 9, 6, 0.72);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+.glass-header {
+  background: rgba(12, 10, 8, 0.68);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
 /* ─── Gold glow utilities ─────────────────────────────────── */
@@ -160,14 +223,28 @@ body {
   background: linear-gradient(90deg, transparent 0%, #2A2316 20%, #3D3420 50%, #2A2316 80%, transparent 100%);
 }
 
+/* ─── bg-card-gradient gold hairline (applied via Tailwind inline class) ── */
+[class*="bg-card-gradient"] {
+  position: relative;
+}
+[class*="bg-card-gradient"]::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(234,184,32,0.2) 30%, rgba(234,184,32,0.4) 50%, rgba(234,184,32,0.2) 70%, transparent 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
 /* ─── Active nav glow dot ─────────────────────────────────── */
 .nav-dot::after {
   content: '';
   display: block;
-  width: 4px;
-  height: 4px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: #EAB820;
-  box-shadow: 0 0 6px rgba(234,184,32,0.7);
+  box-shadow: 0 0 8px rgba(234,184,32,0.8);
   margin: 2px auto 0;
 }

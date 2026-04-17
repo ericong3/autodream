@@ -93,8 +93,8 @@ function NavItemLink({ item, indent = false }: { item: NavItem; indent?: boolean
           indent ? 'px-3 py-2 ml-3' : 'px-3 py-2.5'
         } ${
           isActive
-            ? 'text-gold-300 bg-gradient-to-r from-gold-500/[0.14] to-transparent border-l-2 border-gold-400 pl-[10px] shadow-[inset_0_0_20px_rgba(234,184,32,0.04)]'
-            : 'text-white/60 hover:text-white hover:bg-obsidian-600/60'
+            ? 'text-gold-300 bg-gradient-to-r from-gold-500/20 to-transparent border-l-2 border-gold-400 pl-[10px]'
+            : 'text-white/60 hover:text-white hover:bg-white/[0.05]'
         }`
       }
     >
@@ -104,7 +104,7 @@ function NavItemLink({ item, indent = false }: { item: NavItem; indent?: boolean
             size={indent ? 15 : 18}
             className={
               isActive
-                ? 'text-gold-300 drop-shadow-[0_0_6px_rgba(234,184,32,0.5)]'
+                ? 'text-gold-300 drop-shadow-[0_0_6px_rgba(234,184,32,0.6)]'
                 : 'text-gray-400 group-hover:text-white/80 transition-colors'
             }
           />
@@ -129,7 +129,7 @@ export default function Sidebar() {
 
   if (isAdmin) {
     return (
-      <aside className="hidden md:flex flex-col w-64 min-h-screen bg-sidebar-gradient border-r border-obsidian-400/80">
+      <aside className="hidden md:flex flex-col w-64 min-h-screen glass-sidebar border-r border-gold-500/[0.12]">
         <SidebarLogo />
         <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
           {adminItems.map(item => <NavItemLink key={item.to} item={item} />)}
@@ -139,12 +139,12 @@ export default function Sidebar() {
               onClick={() => setSalesOpen(v => !v)}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group ${
                 isSalesRouteActive
-                  ? 'text-gold-300 bg-gradient-to-r from-gold-500/[0.14] to-transparent'
-                  : 'text-white/60 hover:text-white hover:bg-obsidian-600/60'
+                  ? 'text-gold-300 bg-gradient-to-r from-gold-500/20 to-transparent'
+                  : 'text-white/60 hover:text-white hover:bg-white/[0.05]'
               }`}
             >
               <div className="flex items-center gap-3">
-                <ShoppingBag size={18} className={isSalesRouteActive ? 'text-gold-300 drop-shadow-[0_0_6px_rgba(234,184,32,0.5)]' : 'text-gray-400 group-hover:text-white/80 transition-colors'} />
+                <ShoppingBag size={18} className={isSalesRouteActive ? 'text-gold-300 drop-shadow-[0_0_6px_rgba(234,184,32,0.6)]' : 'text-gray-400 group-hover:text-white/80 transition-colors'} />
                 <span className={isSalesRouteActive ? 'font-semibold' : ''}>Sales</span>
               </div>
               {showSalesItems ? <ChevronDown size={13} className="text-gray-400" /> : <ChevronRight size={13} className="text-gray-400" />}
@@ -166,7 +166,7 @@ export default function Sidebar() {
 
   if (isDirector) {
     return (
-      <aside className="hidden md:flex flex-col w-64 min-h-screen bg-sidebar-gradient border-r border-obsidian-400/80">
+      <aside className="hidden md:flex flex-col w-64 min-h-screen glass-sidebar border-r border-gold-500/[0.12]">
         <SidebarLogo />
         <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
           {directorItems.map(item => <NavItemLink key={item.to} item={item} />)}
@@ -176,8 +176,8 @@ export default function Sidebar() {
               onClick={() => setSalesOpen(v => !v)}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group ${
                 isSalesRouteActive
-                  ? 'text-gold-300 bg-gradient-to-r from-gold-500/[0.14] to-transparent'
-                  : 'text-white/60 hover:text-white hover:bg-obsidian-600/60'
+                  ? 'text-gold-300 bg-gradient-to-r from-gold-500/20 to-transparent'
+                  : 'text-white/60 hover:text-white hover:bg-white/[0.05]'
               }`}
             >
               <div className="flex items-center gap-3">
@@ -185,7 +185,7 @@ export default function Sidebar() {
                   size={18}
                   className={
                     isSalesRouteActive
-                      ? 'text-gold-300 drop-shadow-[0_0_6px_rgba(234,184,32,0.5)]'
+                      ? 'text-gold-300 drop-shadow-[0_0_6px_rgba(234,184,32,0.6)]'
                       : 'text-gray-400 group-hover:text-white/80 transition-colors'
                   }
                 />
@@ -217,7 +217,7 @@ export default function Sidebar() {
   const flatItems = isSalesperson ? salespersonItems : mechanicItems;
 
   return (
-    <aside className="hidden md:flex flex-col w-64 min-h-screen bg-sidebar-gradient border-r border-obsidian-400/80">
+    <aside className="hidden md:flex flex-col w-64 min-h-screen glass-sidebar border-r border-gold-500/[0.12]">
       <SidebarLogo />
       <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
         {flatItems.map(item => <NavItemLink key={item.to} item={item} />)}
@@ -229,7 +229,7 @@ export default function Sidebar() {
 
 function SidebarLogo() {
   return (
-    <div className="px-4 py-5 border-b border-obsidian-400/80">
+    <div className="px-4 py-5 border-b border-gold-500/[0.12]">
       <div className="flex items-center gap-3">
         <div className="relative w-14 h-14 rounded-xl overflow-hidden shrink-0 shadow-gold-sm">
           <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
@@ -248,7 +248,7 @@ function SidebarLogo() {
 function SidebarFooter() {
   const currentUser = useStore((s) => s.currentUser);
   return (
-    <div className="p-3 border-t border-obsidian-400/80">
+    <div className="p-3 border-t border-gold-500/[0.12]">
       <div className="flex items-center gap-3 px-2 py-2 rounded-lg bg-obsidian-700/50">
         <div className="w-8 h-8 rounded-full bg-gold-gradient flex items-center justify-center
           text-obsidian-950 font-bold text-sm uppercase shadow-gold-sm shrink-0">

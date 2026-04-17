@@ -326,6 +326,8 @@ export interface Customer {
   lastActionAt?: string;
   isDead?: boolean;
   deadAt?: string;
+  isTrashed?: boolean;
+  trashedAt?: string;
   commission?: number;
   createdAt: string;
 }

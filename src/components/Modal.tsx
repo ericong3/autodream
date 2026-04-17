@@ -17,9 +17,8 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = 'ma
       <div className="absolute inset-0 bg-black/85 backdrop-blur-sm" onClick={onClose} />
       <div className="flex min-h-full items-center justify-center p-4">
         <div className={`relative w-full ${maxWidth} flex flex-col
-          bg-gradient-to-b from-obsidian-700 to-obsidian-800
-          border border-obsidian-400/80
-          shadow-[0_20px_80px_rgba(0,0,0,0.8),0_0_0_1px_rgba(42,35,22,0.8)]
+          glass-panel
+          shadow-card-lg
           rounded-xl overflow-hidden`}>
 
           {/* Gold top accent line */}
@@ -27,8 +26,8 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = 'ma
 
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-4
-            border-b border-obsidian-400/60 shrink-0
-            bg-gradient-to-r from-obsidian-600/50 to-transparent">
+            border-b border-gold-500/10 shrink-0
+            bg-gradient-to-r from-white/[0.03] to-transparent">
             <h2 className="font-display text-white font-semibold text-sm tracking-wide">{title}</h2>
             <button
               onClick={onClose}
