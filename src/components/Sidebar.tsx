@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import ProfileModal from './ProfileModal';
 import {
   LayoutDashboard,
   Car,
@@ -247,18 +248,39 @@ function SidebarLogo() {
 
 function SidebarFooter() {
   const currentUser = useStore((s) => s.currentUser);
+  const [profileOpen, setProfileOpen] = useState(false);
+
   return (
-    <div className="p-3 border-t border-gold-500/[0.12]">
-      <div className="flex items-center gap-3 px-2 py-2 rounded-lg bg-obsidian-700/50">
-        <div className="w-8 h-8 rounded-full bg-gold-gradient flex items-center justify-center
-          text-obsidian-950 font-bold text-sm uppercase shadow-gold-sm shrink-0">
-          {currentUser?.name?.charAt(0) ?? '?'}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-white text-sm font-semibold truncate leading-none">{currentUser?.name}</p>
-          <p className="text-gray-400 text-[11px] capitalize mt-0.5">{currentUser?.role}</p>
-        </div>
+    <>
+      <div className="p-3 border-t border-gold-500/[0.12]">
+        <button
+          onClick={() => setProfileOpen(true)}
+          className="w-full flex items-center gap-3 px-2 py-2 rounded-lg bg-obsidian-700/50 hover:bg-obsidian-600/60 hover:border hover:border-gold-500/20 transition-all group text-left"
+        >
+          <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 shadow-gold-sm">
+            {currentUser?.avatar ? (
+              <img src={currentUser.avatar} alt="Avatar" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-gold-gradient flex items-center justify-center text-obsidian-950 font-bold text-sm uppercase">
+                {currentUser?.name?.charAt(0) ?? '?'}
+              </div>
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-white text-sm font-semibold truncate leading-none">{currentUser?.name}</p>
+            <p className="text-gray-400 text-[11px] capitalize mt-0.5">
+              {currentUser?.position || currentUser?.role}
+            </p>
+          </div>
+          <div className="text-gray-500 group-hover:text-gold-400 transition-colors shrink-0">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <circle cx="12" cy="12" r="3" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" />
+            </svg>
+          </div>
+        </button>
       </div>
-    </div>
+
+      <ProfileModal isOpen={profileOpen} onClose={() => setProfileOpen(false)} />
+    </>
   );
 }

@@ -7,6 +7,15 @@ export interface User {
   phone: string;
   monthlyTarget: number;
   carsInMonth: number;
+  // Profile / name card fields (persisted locally via Zustand)
+  avatar?: string;
+  position?: string;
+  bio?: string;
+  email?: string;
+  whatsapp?: string;
+  instagram?: string;
+  facebook?: string;
+  website?: string;
 }
 
 export interface ChecklistItem {

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Edit, Trash2, Users, AlertCircle, Shield, UserCheck, Wrench, Phone, AtSign, Car, TrendingUp, Target, Award, X } from 'lucide-react';
+import { Plus, Edit, Trash2, Users, AlertCircle, Shield, UserCheck, Wrench, Phone, Mail, AtSign, Car, TrendingUp, Target, Award, X } from 'lucide-react';
 import { useStore } from '../store';
 import { User } from '../types';
 import Modal from '../components/Modal';
@@ -121,8 +121,10 @@ function EmployeeDetailModal({ member, onClose, currentUserId }: { member: User;
           {/* Profile hero */}
           <div className="px-5 py-5 border-b border-obsidian-400/40">
             <div className="flex items-center gap-4">
-              <div className={`w-16 h-16 border-2 rounded-full flex items-center justify-center font-bold text-2xl uppercase shrink-0 ${cfg.avatarBg}`}>
-                {member.name.charAt(0)}
+              <div className={`w-16 h-16 border-2 rounded-full shrink-0 overflow-hidden flex items-center justify-center font-bold text-2xl uppercase ${cfg.avatarBg}`}>
+                {member.avatar
+                  ? <img src={member.avatar} alt={member.name} className="w-full h-full object-cover" />
+                  : member.name.charAt(0)}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -131,12 +133,20 @@ function EmployeeDetailModal({ member, onClose, currentUserId }: { member: User;
                     <span className="text-[10px] px-1.5 py-0.5 bg-gray-700 text-gray-400 rounded font-medium">You</span>
                   )}
                 </div>
+                {member.position && (
+                  <p className="text-gold-300 text-xs mt-0.5">{member.position}</p>
+                )}
                 <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 mt-2 rounded-full border ${cfg.badgeBg}`}>
                   <cfg.icon size={11} />
                   {cfg.label}
                 </span>
               </div>
             </div>
+
+            {/* Bio */}
+            {member.bio && (
+              <p className="mt-3 text-gray-400 text-sm italic leading-snug">{member.bio}</p>
+            )}
 
             {/* Contact info */}
             <div className="mt-4 grid grid-cols-2 gap-3">
@@ -148,6 +158,12 @@ function EmployeeDetailModal({ member, onClose, currentUserId }: { member: User;
                 <Phone size={13} className="text-gray-500 shrink-0" />
                 <span className="text-gray-400 text-sm truncate">{member.phone || '—'}</span>
               </div>
+              {member.email && (
+                <div className="flex items-center gap-2 col-span-2">
+                  <Mail size={13} className="text-gray-500 shrink-0" />
+                  <span className="text-gray-400 text-sm truncate">{member.email}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -416,9 +432,11 @@ export default function TeamMembers() {
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
                     <div
-                      className={`w-11 h-11 border rounded-full flex items-center justify-center font-bold text-lg uppercase ${cfg.avatarBg}`}
+                      className={`w-11 h-11 border rounded-full overflow-hidden flex items-center justify-center font-bold text-lg uppercase ${cfg.avatarBg}`}
                     >
-                      {member.name.charAt(0)}
+                      {member.avatar
+                        ? <img src={member.avatar} alt={member.name} className="w-full h-full object-cover" />
+                        : member.name.charAt(0)}
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
@@ -429,7 +447,7 @@ export default function TeamMembers() {
                           </span>
                         )}
                       </div>
-                      <p className="text-gray-500 text-xs">@{member.username}</p>
+                      <p className="text-gray-500 text-xs">{member.position || `@${member.username}`}</p>
                     </div>
                   </div>
                   <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
@@ -546,6 +564,8 @@ export default function TeamMembers() {
               value={form.username}
               onChange={(e) => setForm({ ...form, username: e.target.value })}
               placeholder="e.g. ahmad123"
+              autoCapitalize="none"
+              spellCheck={false}
             />
           </FormField>
 
@@ -559,6 +579,8 @@ export default function TeamMembers() {
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               placeholder={editTarget ? 'Leave blank to keep current' : 'Set a password'}
+              autoCapitalize="none"
+              spellCheck={false}
             />
           </FormField>
 

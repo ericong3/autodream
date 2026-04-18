@@ -2365,11 +2365,11 @@ export default function Customers() {
                 <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest mb-3">Customer Details</p>
                 <div className="bg-[#0F0E0C] border border-obsidian-400/60 rounded-xl overflow-hidden divide-y divide-obsidian-400/30">
                   {[
-                    { label: 'Full Name', key: 'customerName' as const, placeholder: 'Ahmad Bin Ismail' },
-                    { label: 'IC Number', key: 'customerIc' as const, placeholder: '901231-14-5678' },
-                    { label: 'Phone', key: 'customerPhone' as const, placeholder: '0123456789' },
-                    { label: 'Email', key: 'customerEmail' as const, placeholder: 'email@example.com' },
-                    { label: 'Address', key: 'customerAddress' as const, placeholder: 'Full address...' },
+                    { label: 'Full Name', key: 'customerName' as const, placeholder: 'Ahmad Bin Ismail', lower: false },
+                    { label: 'IC Number', key: 'customerIc' as const, placeholder: '901231-14-5678', lower: true },
+                    { label: 'Phone', key: 'customerPhone' as const, placeholder: '0123456789', lower: false },
+                    { label: 'Email', key: 'customerEmail' as const, placeholder: 'email@example.com', lower: true },
+                    { label: 'Address', key: 'customerAddress' as const, placeholder: 'Full address...', lower: false },
                   ].map(row => (
                     <div key={row.key} className="flex items-start gap-3 px-4 py-3">
                       <span className="text-gray-500 text-sm w-24 shrink-0 pt-0.5">{row.label}</span>
@@ -2377,6 +2377,8 @@ export default function Customers() {
                         value={woForm[row.key]}
                         onChange={e => setWoForm(f => ({ ...f, [row.key]: e.target.value }))}
                         placeholder={row.placeholder}
+                        autoCapitalize={row.lower ? 'none' : undefined}
+                        spellCheck={row.lower ? false : undefined}
                         className="flex-1 bg-transparent text-white text-sm outline-none border-b border-transparent focus:border-gold-500/60 transition-colors"
                       />
                     </div>

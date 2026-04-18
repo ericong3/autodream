@@ -212,10 +212,10 @@ export default function Salespeople() {
             <input className={inputCls(errors.name)} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Ahmad bin Zakaria" />
           </FormField>
           <FormField label="Username" error={errors.username}>
-            <input className={inputCls(errors.username)} value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="e.g. ahmad123" />
+            <input className={inputCls(errors.username)} value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="e.g. ahmad123" autoCapitalize="none" spellCheck={false} />
           </FormField>
           <FormField label={editTarget ? 'Password (leave blank to keep)' : 'Password'} error={errors.password}>
-            <input type="password" className={inputCls(errors.password)} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={editTarget ? 'Leave blank to keep current' : 'Set a password'} />
+            <input type="password" className={inputCls(errors.password)} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={editTarget ? 'Leave blank to keep current' : 'Set a password'} autoCapitalize="none" spellCheck={false} />
           </FormField>
           <FormField label="Phone Number" error={errors.phone}>
             <input className={inputCls(errors.phone)} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+601X-XXXXXXX" />

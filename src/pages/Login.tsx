@@ -109,6 +109,8 @@ export default function Login() {
                   placeholder="Enter your username"
                   className="input"
                   autoComplete="username"
+                  autoCapitalize="none"
+                  spellCheck={false}
                 />
               </div>
 
@@ -125,6 +127,8 @@ export default function Login() {
                     placeholder="Enter your password"
                     className="input pr-11"
                     autoComplete="current-password"
+                    autoCapitalize="none"
+                    spellCheck={false}
                   />
                   <button
                     type="button"

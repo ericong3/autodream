@@ -84,6 +84,8 @@ export default function DeleteConfirmModal({ isOpen, onClose, onConfirm, itemNam
             value={password}
             onChange={(e) => { setPassword(e.target.value); setError(''); }}
             onKeyDown={(e) => e.key === 'Enter' && handleConfirm()}
+            autoCapitalize="none"
+            spellCheck={false}
             autoFocus
           />
           {error && <p className="text-red-400 text-xs mt-1">{error}</p>}
