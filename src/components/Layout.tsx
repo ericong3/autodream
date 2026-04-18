@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
+import ProfileModal from './ProfileModal';
 import { useStore } from '../store';
 
 interface LayoutProps {
@@ -56,6 +57,7 @@ export default function Layout({ children }: LayoutProps) {
   const instructions = useStore((s) => s.instructions);
   const navigate = useNavigate();
   const [showMore, setShowMore] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
 
   const pendingCount = instructions.filter((i) => {
     if (currentUser?.role === 'director') return i.type === 'request' && i.status === 'pending';
@@ -90,19 +92,30 @@ export default function Layout({ children }: LayoutProps) {
         >
 
           {/* Left: logo (mobile) + name */}
-          <div className="flex items-center gap-2.5">
+          <button
+            className="flex items-center gap-2.5 md:cursor-default text-left"
+            onClick={() => setShowProfile(true)}
+          >
+            {/* Avatar — mobile only */}
             <div className="md:hidden shrink-0">
-              <img src="/logo.png" alt="AutoDream" className="h-8 w-auto" />
+              {currentUser?.avatar ? (
+                <img src={currentUser.avatar} alt={currentUser.name} className="h-8 w-8 rounded-full object-cover border border-gold-400/40" />
+              ) : (
+                <img src="/logo.png" alt="AutoDream" className="h-8 w-auto" />
+              )}
             </div>
             <div>
               <h2 className="text-white font-semibold text-sm md:text-base leading-none">
                 {currentUser?.name ?? 'AutoDream'}
               </h2>
+              <p className="text-[10px] text-gold-300 uppercase tracking-widest font-medium mt-0.5 md:hidden capitalize">
+                {currentUser?.position || currentUser?.role}
+              </p>
               <p className="text-[10px] text-gold-300 uppercase tracking-widest font-medium mt-0.5 hidden md:block capitalize">
                 {currentUser?.role}
               </p>
             </div>
-          </div>
+          </button>
 
           {/* Right: actions */}
           <div className="flex items-center gap-1">
@@ -233,6 +246,7 @@ export default function Layout({ children }: LayoutProps) {
           </div>
         </>
       )}
+      <ProfileModal isOpen={showProfile} onClose={() => setShowProfile(false)} />
     </div>
   );
 }
