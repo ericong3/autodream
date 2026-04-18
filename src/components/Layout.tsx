@@ -96,12 +96,15 @@ export default function Layout({ children }: LayoutProps) {
             className="flex items-center gap-2.5 md:cursor-default text-left"
             onClick={() => setShowProfile(true)}
           >
-            {/* Avatar — mobile only */}
-            <div className="md:hidden shrink-0">
+            {/* Logo + Avatar — mobile only */}
+            <div className="md:hidden flex items-center gap-2 shrink-0">
+              <img src="/logo.png" alt="AutoDream" className="h-8 w-auto" />
               {currentUser?.avatar ? (
                 <img src={currentUser.avatar} alt={currentUser.name} className="h-8 w-8 rounded-full object-cover border border-gold-400/40" />
               ) : (
-                <img src="/logo.png" alt="AutoDream" className="h-8 w-auto" />
+                <div className="h-8 w-8 rounded-full bg-gold-gradient flex items-center justify-center text-obsidian-950 font-bold text-sm uppercase">
+                  {currentUser?.name?.charAt(0) ?? '?'}
+                </div>
               )}
             </div>
             <div>
