@@ -99,9 +99,7 @@ function SectionHeader({ icon: Icon, title, count, color = 'text-gold-400' }: { 
   );
 }
 
-export default function CarDetail() {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
+export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', initialTab }: { id: string; onBack: () => void; backLabel?: string; initialTab?: 'repairs' | 'loans' | 'final_deal' }) {
   const cars = useStore((s) => s.cars);
   const users = useStore((s) => s.users);
   const customers = useStore((s) => s.customers);
@@ -147,7 +145,7 @@ export default function CarDetail() {
   const [deleteTarget, setDeleteTarget] = useState<{ action: () => void | Promise<void>; label: string } | null>(null);
 
   // ── Repair / Loans tab ──
-  const [jobTab, setJobTab] = useState<'repairs' | 'loans'>('repairs');
+  const [jobTab, setJobTab] = useState<'repairs' | 'loans' | 'final_deal'>(initialTab ?? 'repairs');
   const [showConsignment, setShowConsignment] = useState(false);
 
   // ── Delivery Modal ──
@@ -252,8 +250,8 @@ export default function CarDetail() {
       <div className="flex flex-col items-center justify-center py-20">
         <CarIcon size={40} className="text-gray-600 mb-3" />
         <p className="text-gray-400">Car not found</p>
-        <button onClick={() => navigate('/inventory')} className="text-gold-400 text-sm mt-3 hover:underline">
-          Back to Inventory
+        <button onClick={onBack} className="text-gold-400 text-sm mt-3 hover:underline">
+          {backLabel}
         </button>
       </div>
     );
@@ -396,11 +394,11 @@ export default function CarDetail() {
       {/* Back + actions */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <button
-          onClick={() => navigate('/inventory')}
+          onClick={onBack}
           className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors text-sm"
         >
           <ArrowLeft size={16} />
-          Back to Inventory
+          {backLabel}
         </button>
         <div className="flex gap-3 flex-wrap">
           {(isMechanic || isDirector) && (
@@ -607,8 +605,18 @@ export default function CarDetail() {
             }`}
           >
             <Banknote size={14} /> Loan Log
-            {(() => { const n = customers.filter(c => c.interestedCarId === car.id && c.loanApplications?.length).length; return n > 0 ? <span className="text-xs bg-obsidian-700/60 px-1.5 py-0.5 rounded-full">{n}</span> : null; })()}
+            {(() => { const isSoldDelivered = car.status === 'sold' && car.deliveryCollected; const n = isSoldDelivered ? 0 : customers.filter(c => c.interestedCarId === car.id && c.loanApplications?.length && !c.isTrashed).length; return n > 0 ? <span className="text-xs bg-obsidian-700/60 px-1.5 py-0.5 rounded-full">{n}</span> : null; })()}
           </button>
+          {car.finalDeal && (
+            <button
+              onClick={() => setJobTab('final_deal')}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors -mb-px ${
+                jobTab === 'final_deal' ? 'border-gold-400 text-gold-400' : 'border-transparent text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              <CheckCircle size={14} /> Final Deal
+            </button>
+          )}
         </div>
         {jobTab === 'repairs' && (carRepairs.length === 0 ? (
           <div className="text-center py-10 text-gray-600 text-sm">No repair jobs recorded</div>
@@ -730,10 +738,26 @@ export default function CarDetail() {
             approved:  <CheckCircle size={10} />,
             rejected:  <XCircle size={10} />,
           };
+          const isCarSoldDelivered = car.status === 'sold' && car.deliveryCollected;
           const loanCustomers = customers
-            .filter(c => c.interestedCarId === car.id && c.loanApplications?.length)
+            .filter(c => c.interestedCarId === car.id && c.loanApplications?.length && !isCarSoldDelivered)
             .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-          if (loanCustomers.length === 0) {
+          const trashedLoanCustomers = customers
+            .filter(c => c.interestedCarId === car.id && c.loanApplications?.length && c.isTrashed)
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          const activeCustomers = loanCustomers.filter(c => !c.isTrashed);
+          const allVisible = [...activeCustomers, ...trashedLoanCustomers.filter(c => !activeCustomers.find(a => a.id === c.id))];
+
+          if (isCarSoldDelivered) {
+            return (
+              <div className="flex flex-col items-center justify-center py-12 text-gray-600 text-sm gap-2">
+                <CheckCircle size={28} className="text-green-700" />
+                <p>Loan closed — car sold &amp; delivered</p>
+                <p className="text-xs text-gray-700">See Final Deal tab for details</p>
+              </div>
+            );
+          }
+          if (allVisible.length === 0) {
             return (
               <div className="flex flex-col items-center justify-center py-12 text-gray-600 text-sm gap-2">
                 <Banknote size={28} className="text-gray-700" />
@@ -743,27 +767,31 @@ export default function CarDetail() {
           }
           return (
             <div className="divide-y divide-obsidian-400/40">
-              {loanCustomers.map(c => {
+              {allVisible.map(c => {
                 const apps = c.loanApplications ?? [];
                 const hasApproved = apps.some(a => a.status === 'approved');
                 const allRejected = apps.every(a => a.status === 'rejected');
-                const overallCls = hasApproved ? 'text-emerald-400' : allRejected ? 'text-red-400' : 'text-blue-400';
+                const isTrashed = !!c.isTrashed;
+                const overallCls = isTrashed ? 'text-gray-600' : hasApproved ? 'text-emerald-400' : allRejected ? 'text-red-400' : 'text-blue-400';
                 return (
-                  <div key={c.id} className="px-5 py-4">
+                  <div key={c.id} className={`px-5 py-4 ${isTrashed ? 'opacity-50' : ''}`}>
                     <div className="flex items-start justify-between gap-3 mb-3">
                       <div>
-                        <p className="text-white font-semibold text-sm">{c.name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className={`font-semibold text-sm ${isTrashed ? 'text-gray-500 line-through' : 'text-white'}`}>{c.name}</p>
+                          {isTrashed && <span className="text-[10px] bg-gray-700/60 text-gray-500 px-1.5 py-0.5 rounded-full">Inactive</span>}
+                        </div>
                         <p className="text-gray-500 text-xs mt-0.5">{c.phone} · by {users.find(u => u.id === c.assignedSalesId)?.name ?? '—'}</p>
                       </div>
                       <span className={`text-xs font-medium ${overallCls}`}>
-                        {hasApproved ? 'Approved' : allRejected ? 'All Rejected' : `${apps.length} bank${apps.length > 1 ? 's' : ''} pending`}
+                        {isTrashed ? 'Trashed' : hasApproved ? 'Approved' : allRejected ? 'All Rejected' : `${apps.length} bank${apps.length > 1 ? 's' : ''} pending`}
                       </span>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {apps.map(app => (
-                        <span key={app.bank} className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium ${BANK_CLS[app.status] ?? 'bg-gray-500/20 text-gray-400'}`}>
+                        <span key={app.bank} className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium ${isTrashed ? 'bg-gray-700/40 text-gray-600' : BANK_CLS[app.status] ?? 'bg-gray-500/20 text-gray-400'}`}>
                           {BANK_ICON[app.status]} {app.bank}
-                          {app.status === 'rejected' && (
+                          {!isTrashed && app.status === 'rejected' && (
                             <button
                               onClick={() => {
                                 const updated = apps.filter(a => a.bank !== app.bank);
@@ -781,6 +809,133 @@ export default function CarDetail() {
                   </div>
                 );
               })}
+            </div>
+          );
+        })()}
+
+        {/* ── Final Deal tab ── */}
+        {jobTab === 'final_deal' && (() => {
+          const deal = car.finalDeal!;
+          const soldCustomer = customers.find(
+            c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder)
+          );
+          const wo = soldCustomer?.loanWorkOrder ?? soldCustomer?.cashWorkOrder;
+          const isLoan = !!soldCustomer?.loanWorkOrder;
+          const approvedByUser = users.find(u => u.id === deal.approvedBy);
+
+          const DRow = ({ label, value, valueClass, border = true }: { label: string; value: React.ReactNode; valueClass?: string; border?: boolean }) => (
+            <div className={`flex justify-between items-center py-2.5 ${border ? 'border-b border-obsidian-400/30' : ''}`}>
+              <span className="text-gray-500 text-sm">{label}</span>
+              <span className={`text-sm font-medium text-right ${valueClass ?? 'text-white'}`}>{value}</span>
+            </div>
+          );
+
+          const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
+            <div className="px-5 py-4 border-b border-obsidian-400/30 last:border-0">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">{title}</p>
+              {children}
+            </div>
+          );
+
+          return (
+            <div className="divide-y-0">
+              {/* Deal approval summary */}
+              <Section title="Deal Approval">
+                <DRow label="Status" value={
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                    deal.approvalStatus === 'approved' ? 'bg-green-500/20 text-green-400' :
+                    deal.approvalStatus === 'rejected' ? 'bg-red-500/20 text-red-400' :
+                    'bg-yellow-500/20 text-yellow-400'
+                  }`}>
+                    {deal.approvalStatus === 'approved' ? 'Approved' : deal.approvalStatus === 'rejected' ? 'Rejected' : 'Pending'}
+                  </span>
+                } />
+                <DRow label="Submitted At" value={new Date(deal.submittedAt).toLocaleString('en-MY', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })} />
+                {deal.approvedBy && <DRow label="Approved By" value={approvedByUser?.name ?? deal.approvedBy} />}
+                {deal.approvedAt && <DRow label="Approved At" value={new Date(deal.approvedAt).toLocaleString('en-MY', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })} />}
+                {deal.rejectionNotes && <DRow label="Rejection Notes" value={deal.rejectionNotes} valueClass="text-red-400" />}
+                {deal.notes && <DRow label="Notes" value={deal.notes} border={false} />}
+              </Section>
+
+              {/* Financials */}
+              {(() => {
+                const sellingPrice = wo?.sellingPrice ?? deal.dealPrice;
+                const purchasePrice = car.purchasePrice;
+                const discount = wo?.discount ?? 0;
+                const insurance = wo?.insurance ?? 0;
+                const bankProduct = wo?.bankProduct ?? 0;
+                const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
+                const profitBeforeCommission = sellingPrice - purchasePrice - discount - insurance - bankProduct - totalRepairCost - additionalTotal;
+                const commission = profitBeforeCommission < 10000 ? 1000 : profitBeforeCommission < 15000 ? 1500 : 2000;
+                const netProfit = profitBeforeCommission - commission;
+                return (
+                  <Section title="Deal Financials">
+                    <DRow label="Bank" value={deal.bank} valueClass="text-blue-400" />
+                    <DRow label="Selling Price" value={formatRM(sellingPrice)} valueClass="text-gold-400 font-bold" />
+                    {isDirector && (
+                      <>
+                        <DRow label="Purchase Price" value={`− ${formatRM(purchasePrice)}`} valueClass="text-red-400" />
+                        {discount > 0 && <DRow label="Discount" value={`− ${formatRM(discount)}`} valueClass="text-red-400" />}
+                        {insurance > 0 && <DRow label="Insurance" value={`− ${formatRM(insurance)}`} valueClass="text-red-400" />}
+                        {bankProduct > 0 && <DRow label="Bank Product" value={`− ${formatRM(bankProduct)}`} valueClass="text-red-400" />}
+                        <DRow label="Salesman Commission" value={`− ${formatRM(commission)}`} valueClass="text-red-400" />
+                        {totalRepairCost > 0 && <DRow label="Repair Expenses" value={`− ${formatRM(totalRepairCost)}`} valueClass="text-red-400" />}
+                        {additionalTotal > 0 && <DRow label="Additional Expenses" value={`− ${formatRM(additionalTotal)}`} valueClass="text-red-400" />}
+                        <div className="flex justify-between items-center pt-3 mt-1 border-t-2 border-obsidian-400/50">
+                          <span className="text-white font-semibold">Net Profit</span>
+                          <span className={`text-lg font-bold ${netProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {netProfit >= 0 ? '' : '− '}{formatRM(Math.abs(netProfit))}
+                          </span>
+                        </div>
+                      </>
+                    )}
+                  </Section>
+                );
+              })()}
+
+              {/* Work order breakdown */}
+              {wo && (
+                <Section title={isLoan ? 'Loan Work Order' : 'Cash Work Order'}>
+                  <DRow label="Selling Price" value={formatRM(wo.sellingPrice)} />
+                  {wo.discount > 0 && <DRow label="Discount" value={`− ${formatRM(wo.discount)}`} valueClass="text-red-400" />}
+                  {wo.insurance > 0 && <DRow label="Insurance" value={formatRM(wo.insurance)} />}
+                  {wo.bankProduct > 0 && <DRow label="Bank Product" value={formatRM(wo.bankProduct)} />}
+                  {wo.bookingFee > 0 && <DRow label="Booking Fee" value={formatRM(wo.bookingFee)} />}
+                  {(wo as any).downpayment > 0 && <DRow label="Downpayment" value={formatRM((wo as any).downpayment)} />}
+                  {(wo as any).loanAmount > 0 && <DRow label="Loan Amount" value={formatRM((wo as any).loanAmount)} />}
+                  {wo.additionalItems?.length > 0 && wo.additionalItems.map((item, i) => (
+                    <DRow key={i} label={item.label} value={formatRM(item.amount)} />
+                  ))}
+                  {/* Net deal */}
+                  <div className="mt-3 pt-3 border-t border-obsidian-400/40 flex justify-between items-center">
+                    <span className="text-white text-sm font-semibold">Final Amount</span>
+                    <span className="text-gold-400 text-base font-bold">
+                      {formatRM(wo.sellingPrice - wo.discount + wo.insurance + wo.bankProduct + (wo.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0))}
+                    </span>
+                  </div>
+                </Section>
+              )}
+
+              {/* Customer info */}
+              {wo && (
+                <Section title="Customer">
+                  <DRow label="Name" value={wo.customerName} />
+                  <DRow label="IC" value={wo.customerIc || '—'} />
+                  <DRow label="Phone" value={wo.customerPhone || '—'} />
+                  {wo.customerEmail && <DRow label="Email" value={wo.customerEmail} />}
+                  {wo.customerAddress && <DRow label="Address" value={wo.customerAddress} valueClass="text-gray-300 text-right max-w-[200px]" border={false} />}
+                </Section>
+              )}
+
+              {/* Trade-in */}
+              {wo?.hasTradeIn && (
+                <Section title="Trade-In">
+                  <DRow label="Vehicle" value={`${wo.tradeInMake} ${wo.tradeInModel}${wo.tradeInVariant ? ` ${wo.tradeInVariant}` : ''}`} />
+                  <DRow label="Plate" value={wo.tradeInPlate || '—'} />
+                  <DRow label="Trade-In Value" value={formatRM(wo.tradeInPrice)} valueClass="text-green-400" />
+                  {wo.settlementFigure > 0 && <DRow label="Settlement" value={formatRM(wo.settlementFigure)} valueClass="text-orange-400" border={false} />}
+                </Section>
+              )}
             </div>
           );
         })()}
@@ -1271,4 +1426,10 @@ function InfoItem({ label, value, valueClass }: { label: string; value: string; 
       <p className={`text-sm mt-0.5 ${valueClass ?? 'text-gray-200'}`}>{value}</p>
     </div>
   );
+}
+
+export default function CarDetail() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  return <CarDetailContent id={id!} onBack={() => navigate('/inventory')} />;
 }

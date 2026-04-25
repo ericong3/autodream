@@ -1,19 +1,63 @@
 import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Car as CarIcon, Search, TrendingUp, CheckCircle, DollarSign } from 'lucide-react';
+import {
+  Search,
+  LayoutGrid,
+  List,
+  Car as CarIcon,
+  TrendingUp,
+  CheckCircle,
+  DollarSign,
+  MapPin,
+  ChevronDown,
+} from 'lucide-react';
 import { useStore } from '../store';
 import { formatRM, formatMileage } from '../utils/format';
 import StatCard from '../components/StatCard';
+import { CarDetailContent } from './CarDetail';
 
+// ── Select helper ─────────────────────────────────────────────────────────────
+function Select({ value, onChange, options, labels, placeholder }: {
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+  labels?: string[];
+  placeholder?: string;
+}) {
+  return (
+    <div className="relative">
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="input appearance-none pl-3 pr-8 py-2.5 cursor-pointer">
+        {options.map((opt, i) => (
+          <option key={opt} value={opt}>{labels ? labels[i] : opt === 'All' ? (placeholder ?? opt) : opt}</option>
+        ))}
+      </select>
+      <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function History() {
   const cars = useStore((s) => s.cars);
   const users = useStore((s) => s.users);
-  const navigate = useNavigate();
+  const customers = useStore((s) => s.customers);
+  const repairs = useStore((s) => s.repairs);
+  const currentUser = useStore((s) => s.currentUser);
+  const viewPreference = useStore((s) => s.viewPreference);
+  const setViewPreference = useStore((s) => s.setViewPreference);
+
+  const isDirector = currentUser?.role === 'director';
+  const viewKey = `${currentUser?.id}-history`;
+  const view = viewPreference[viewKey] ?? 'grid';
 
   const [search, setSearch] = useState('');
+  const [monthFilter, setMonthFilter] = useState<string>(new Date().toISOString().slice(0, 7));
+  const [filterMake, setFilterMake] = useState('All');
+  const [selectedCarId, setSelectedCarId] = useState<string | null>(null);
 
   const soldCars = useMemo(() => {
     let result = cars.filter((c) => c.status === 'sold');
+    if (monthFilter) result = result.filter((c) => c.dateAdded.startsWith(monthFilter));
+    if (filterMake !== 'All') result = result.filter((c) => c.make === filterMake);
     if (search) {
       const q = search.toLowerCase();
       result = result.filter(
@@ -21,128 +65,271 @@ export default function History() {
           c.make.toLowerCase().includes(q) ||
           c.model.toLowerCase().includes(q) ||
           c.colour.toLowerCase().includes(q) ||
-          String(c.year).includes(q)
+          String(c.year).includes(q) ||
+          (c.carPlate ?? '').toLowerCase().includes(q)
       );
     }
-    return result.sort(
-      (a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime()
-    );
-  }, [cars, search]);
+    return result.sort((a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime());
+  }, [cars, search, monthFilter, filterMake]);
 
-  const totalRevenue = soldCars.reduce((s, c) => s + (c.finalDeal?.dealPrice ?? c.sellingPrice), 0);
-  const totalProfit = soldCars.reduce((s, c) => s + ((c.finalDeal?.dealPrice ?? c.sellingPrice) - c.purchasePrice), 0);
+  const carCalcMap = useMemo(() => {
+    const map: Record<string, { sellingPrice: number; profit: number }> = {};
+    for (const c of cars.filter(x => x.status === 'sold')) {
+      const wo = customers.find(cu => cu.interestedCarId === c.id && (cu.cashWorkOrder || cu.loanWorkOrder));
+      const w = wo?.loanWorkOrder ?? wo?.cashWorkOrder;
+      const sellingPrice = (w?.sellingPrice && w.sellingPrice > 0) ? w.sellingPrice : c.sellingPrice;
+      const discount = w?.discount ?? 0;
+      const insurance = w?.insurance ?? 0;
+      const bankProduct = w?.bankProduct ?? 0;
+      const additionalTotal = w?.additionalItems?.reduce((a, i) => a + i.amount, 0) ?? 0;
+      const repairCosts = repairs.filter(r => r.carId === c.id).reduce((a, r) => a + r.totalCost, 0);
+      const profitBeforeCommission = sellingPrice - c.purchasePrice - discount - insurance - bankProduct - repairCosts - additionalTotal;
+      const commission = profitBeforeCommission < 10000 ? 1000 : profitBeforeCommission < 15000 ? 1500 : 2000;
+      map[c.id] = { sellingPrice, profit: profitBeforeCommission - commission };
+    }
+    return map;
+  }, [cars, customers, repairs]);
+
+  const totalRevenue = soldCars.reduce((s, c) => s + (carCalcMap[c.id]?.sellingPrice ?? c.sellingPrice), 0);
+  const totalProfit = soldCars.reduce((s, c) => s + (carCalcMap[c.id]?.profit ?? 0), 0);
 
   const getSalesperson = (id?: string) =>
-    id ? users.find((u) => u.id === id)?.name ?? '—' : '—';
+    id ? users.find((u) => u.id === id)?.name ?? 'Unassigned' : 'Unassigned';
+
+  const monthLabel = monthFilter
+    ? new Date(monthFilter + '-01').toLocaleString('en-MY', { month: 'long', year: 'numeric' })
+    : '';
+
+  if (selectedCarId) {
+    return (
+      <CarDetailContent
+        id={selectedCarId}
+        onBack={() => setSelectedCarId(null)}
+        backLabel="Back to Sold Units"
+        initialTab="final_deal"
+      />
+    );
+  }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Stat cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <StatCard
-          title="Cars Sold"
-          value={soldCars.length}
-          icon={CheckCircle}
-          borderColor="border-l-green-400"
-          iconColor="text-green-400"
-        />
-        <StatCard
-          title="Total Revenue"
-          value={formatRM(totalRevenue)}
-          icon={DollarSign}
-          borderColor="border-l-gold-400"
-          iconColor="text-gold-400"
-        />
-        <StatCard
-          title="Total Profit"
-          value={formatRM(totalProfit)}
-          icon={TrendingUp}
-          borderColor="border-l-yellow-400"
-          iconColor="text-yellow-400"
-        />
+        <StatCard title="Units Sold" value={soldCars.length} icon={CheckCircle} borderColor="border-l-green-400" iconColor="text-green-400" />
+        <StatCard title="Total Revenue" value={formatRM(totalRevenue)} icon={DollarSign} borderColor="border-l-gold-400" iconColor="text-gold-400" />
+        <StatCard title="Total Profit" value={formatRM(totalProfit)} icon={TrendingUp} borderColor="border-l-yellow-400" iconColor="text-yellow-400" />
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+      {/* Top bar */}
+      <div className="flex flex-wrap gap-3">
+        <div className="relative flex-1 min-w-[180px]">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+          <input
+            type="text"
+            placeholder="Search sold units..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="input pl-9 pr-4 py-2.5 w-full"
+          />
+        </div>
+
         <input
-          type="text"
-          placeholder="Search sold cars..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full input rounded-lg pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors"
+          type="month"
+          value={monthFilter}
+          onChange={(e) => setMonthFilter(e.target.value)}
+          className="input px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors"
         />
+
+        <Select
+          value={filterMake}
+          onChange={setFilterMake}
+          options={['All', 'Perodua', 'Proton', 'Honda', 'Toyota', 'Nissan', 'Other']}
+          placeholder="Brand"
+        />
+
+        {/* View toggle */}
+        <div className="flex border border-obsidian-400/60 rounded-lg p-1 gap-1" style={{ background: '#0E0D0B' }}>
+          <button
+            onClick={() => setViewPreference(currentUser!.id, 'history', 'grid')}
+            className={`p-1.5 rounded-md transition-colors ${view === 'grid' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
+          >
+            <LayoutGrid size={16} />
+          </button>
+          <button
+            onClick={() => setViewPreference(currentUser!.id, 'history', 'list')}
+            className={`p-1.5 rounded-md transition-colors ${view === 'list' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
+          >
+            <List size={16} />
+          </button>
+        </div>
       </div>
 
       {/* Count */}
       <p className="text-gray-500 text-sm">
-        <span className="text-white font-medium">{soldCars.length}</span> sold car{soldCars.length !== 1 ? 's' : ''}
+        <span className="text-white font-medium">{soldCars.length}</span> sold unit{soldCars.length !== 1 ? 's' : ''}
+        {monthLabel && <span className="ml-1">in {monthLabel}</span>}
       </p>
 
       {/* Empty */}
       {soldCars.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <CarIcon size={40} className="text-gray-600 mb-3" />
-          <p className="text-gray-400 font-medium">No sold cars yet</p>
+          <p className="text-gray-400 font-medium">No sold units{monthFilter ? ` for this month` : ''}</p>
+          <p className="text-gray-600 text-sm mt-1">Try adjusting your filters</p>
         </div>
       )}
 
-      {/* Table */}
-      {soldCars.length > 0 && (
-        <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-gray-500 text-xs border-b border-obsidian-400/60 bg-[#161410]">
-                  <th className="text-left px-4 py-3 font-medium">Car</th>
-                  <th className="text-left px-4 py-3 font-medium">Year</th>
-                  <th className="text-left px-4 py-3 font-medium">Colour</th>
-                  <th className="text-left px-4 py-3 font-medium">Mileage</th>
-                  <th className="text-left px-4 py-3 font-medium">Salesperson</th>
-                  <th className="text-right px-4 py-3 font-medium">Purchase Price</th>
-                  <th className="text-right px-4 py-3 font-medium">Deal Price</th>
-                  <th className="text-right px-4 py-3 font-medium">Profit</th>
-                  <th className="text-left px-4 py-3 font-medium">Bank</th>
-                </tr>
-              </thead>
-              <tbody>
-                {soldCars.map((car, i) => {
-                  const dealPrice = car.finalDeal?.dealPrice ?? car.sellingPrice;
-                  const profit = dealPrice - car.purchasePrice;
-                  return (
-                    <tr
-                      key={car.id}
-                      onClick={() => navigate(`/inventory/${car.id}`)}
-                      className={`border-b border-obsidian-400/60/50 cursor-pointer hover:bg-obsidian-700/50 transition-colors ${i % 2 === 0 ? 'bg-[#0F0E0C]' : 'bg-obsidian-950/30'}`}
-                    >
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          {car.photo ? (
-                            <img src={car.photo} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
-                          ) : (
-                            <div className="w-9 h-9 bg-obsidian-700/60 rounded-lg flex items-center justify-center flex-shrink-0">
-                              <CarIcon size={14} className="text-gray-500" />
-                            </div>
-                          )}
-                          <span className="text-white font-medium">{car.make} {car.model}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-gray-400">{car.year}</td>
-                      <td className="px-4 py-3 text-gray-400">{car.colour}</td>
-                      <td className="px-4 py-3 text-gray-400">{formatMileage(car.mileage)}</td>
-                      <td className="px-4 py-3 text-gray-400">{getSalesperson(car.assignedSalesperson)}</td>
-                      <td className="px-4 py-3 text-gray-400 text-right">{formatRM(car.purchasePrice)}</td>
-                      <td className="px-4 py-3 text-gold-400 font-semibold text-right">{formatRM(dealPrice)}</td>
-                      <td className={`px-4 py-3 font-semibold text-right ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {formatRM(profit)}
-                      </td>
-                      <td className="px-4 py-3 text-gray-400">{car.finalDeal?.bank ?? '—'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+      {/* ── Grid view ── */}
+      {view === 'grid' && soldCars.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {soldCars.map((car) => {
+            const dealPrice = carCalcMap[car.id]?.sellingPrice ?? car.sellingPrice;
+            const profit = carCalcMap[car.id]?.profit;
+            return (
+              <div
+                key={car.id}
+                onClick={() => setSelectedCarId(car.id)}
+                className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card overflow-hidden cursor-pointer hover:border-gold-500/40 hover:shadow-xl hover:shadow-gold-500/10 transition-all group"
+              >
+                {/* Photo */}
+                <div className="h-36 bg-obsidian-700/60 flex items-center justify-center relative">
+                  {car.photo ? (
+                    <img
+                      src={car.photo}
+                      alt={`${car.make} ${car.model}`}
+                      className="w-full h-full object-cover opacity-0 transition-opacity duration-300"
+                      loading="lazy"
+                      onLoad={(e) => e.currentTarget.classList.replace('opacity-0', 'opacity-100')}
+                    />
+                  ) : (
+                    <CarIcon size={40} className="text-gray-700 group-hover:text-gray-600 transition-colors" />
+                  )}
+                  <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full text-xs font-semibold bg-violet-500/90 text-white">
+                    Sold · Delivered
+                  </span>
+                </div>
+
+                {/* Info */}
+                <div className="p-4">
+                  <div className="flex items-start justify-between">
+                    <div className="min-w-0">
+                      <h3 className="text-white font-semibold text-sm group-hover:text-gold-400 transition-colors">
+                        {car.year} {car.make} {car.model}
+                      </h3>
+                      <p className="text-gray-500 text-xs mt-0.5">
+                        {car.variant ? `${car.variant} · ` : ''}{car.colour} · {car.transmission}
+                      </p>
+                    </div>
+                    {car.carPlate && (
+                      <span className="ml-2 shrink-0 text-xs font-mono font-semibold px-2 py-0.5 rounded bg-[#2C2415] text-gold-300 border border-[#3C321E] tracking-wider">
+                        {car.carPlate}
+                      </span>
+                    )}
+                  </div>
+                  {car.currentLocation && (
+                    <div className="flex items-center gap-1 mt-1">
+                      <MapPin size={11} className="text-gray-500 flex-shrink-0" />
+                      <span className="text-gray-400 text-xs truncate">{car.currentLocation}</span>
+                    </div>
+                  )}
+
+                  <p className="text-gray-400 text-xs mt-2">{formatMileage(car.mileage)}</p>
+
+                  <div className="mt-3 flex items-end justify-between">
+                    <div>
+                      <p className="text-gold-400 text-lg font-bold">{formatRM(dealPrice)}</p>
+                      {isDirector && profit !== undefined && (
+                        <p className={`text-xs font-medium mt-0.5 ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          Profit: {formatRM(profit)}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <p className="text-gray-600 text-xs mt-1 truncate">{getSalesperson(car.assignedSalesperson)}</p>
+
+                  {/* Deal strip */}
+                  {car.finalDeal && (
+                    <div className="mt-2 pt-2 border-t border-obsidian-400/30">
+                      <p className="text-[10px] text-violet-400 font-medium truncate">
+                        {car.finalDeal.bank} · {formatRM(car.finalDeal.dealPrice)}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── List view ── */}
+      {view === 'list' && soldCars.length > 0 && (
+        <div className="space-y-2">
+          {soldCars.map((car) => {
+            const dealPrice = carCalcMap[car.id]?.sellingPrice ?? car.sellingPrice;
+            const profit = carCalcMap[car.id]?.profit;
+            return (
+              <div
+                key={car.id}
+                onClick={() => setSelectedCarId(car.id)}
+                className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card cursor-pointer hover:border-gold-500/40 hover:bg-obsidian-700/30 transition-all flex items-center gap-4 px-4 py-3"
+              >
+                {/* Thumbnail */}
+                <div className="w-24 h-16 bg-obsidian-700/60 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center">
+                  {car.photo
+                    ? <img src={car.photo} alt={`${car.make} ${car.model}`} className="w-full h-full object-cover" loading="lazy" />
+                    : <CarIcon size={20} className="text-gray-600" />
+                  }
+                </div>
+
+                {/* Car name + details */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-white font-semibold text-sm">
+                      {car.year} {car.make} {car.model}{car.variant ? ` ${car.variant}` : ''}
+                    </span>
+                    {car.carPlate && (
+                      <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-[#2C2415] text-gold-300 border border-[#3C321E] tracking-wider">
+                        {car.carPlate}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 mt-1 flex-wrap">
+                    <span className="text-gray-500 text-xs">{car.colour} · {car.transmission} · {formatMileage(car.mileage)}</span>
+                    {car.currentLocation && (
+                      <span className="flex items-center gap-1 text-gray-500 text-xs">
+                        <MapPin size={10} />{car.currentLocation}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Deal info */}
+                <div className="hidden md:flex flex-col gap-0.5 min-w-[120px]">
+                  <span className="text-xs text-gray-500">{getSalesperson(car.assignedSalesperson)}</span>
+                  {car.finalDeal?.bank && <p className="text-xs text-violet-400">{car.finalDeal.bank}</p>}
+                </div>
+
+                {/* Badge */}
+                <div className="hidden sm:flex flex-col items-end gap-1.5 flex-shrink-0">
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-violet-500/90 text-white">
+                    Sold · Delivered
+                  </span>
+                </div>
+
+                {/* Price + profit */}
+                <div className="text-right flex-shrink-0">
+                  <p className="text-gold-400 font-bold text-sm">{formatRM(dealPrice)}</p>
+                  {isDirector && profit !== undefined && (
+                    <p className={`text-xs font-medium mt-0.5 ${profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {profit >= 0 ? '+' : ''}{formatRM(profit)}
+                    </p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
