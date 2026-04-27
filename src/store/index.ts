@@ -112,6 +112,7 @@ function rowToCar(r: any): Car {
     deliveryPhoto: r.delivery_photo,
     deliveryCollected: r.delivery_collected,
     consignment: r.consignment ?? undefined,
+    priceFloor: r.price_floor ?? undefined,
   };
 }
 
@@ -144,6 +145,7 @@ function carToRow(c: Partial<Car>) {
   if (c.deliveryPhoto !== undefined) row.delivery_photo = c.deliveryPhoto;
   if (c.deliveryCollected !== undefined) row.delivery_collected = c.deliveryCollected;
   if (c.consignment !== undefined) row.consignment = c.consignment;
+  if (c.priceFloor !== undefined) row.price_floor = c.priceFloor;
   return row;
 }
 

@@ -38,7 +38,7 @@ const directorBottomItems: NavItem[] = [
   { to: '/team', icon: UsersRound, label: 'Team Members' },
   { to: '/data', icon: Database, label: 'Data' },
   { to: '/reminders', icon: ClipboardList, label: 'Instructions' },
-  { to: '/history', icon: History, label: 'Sold Units' },
+  { to: '/history', icon: History, label: 'Delivered' },
   { to: '/ai-assistant', icon: Bot, label: 'AI Assistant' },
 ];
 
@@ -79,7 +79,7 @@ const adminBottomItems: NavItem[] = [
   { to: '/team', icon: UsersRound, label: 'Team Members' },
   { to: '/data', icon: Database, label: 'Data' },
   { to: '/reminders', icon: ClipboardList, label: 'Instructions' },
-  { to: '/history', icon: History, label: 'Sold Units' },
+  { to: '/history', icon: History, label: 'Delivered' },
   { to: '/ai-assistant', icon: Bot, label: 'AI Assistant' },
 ];
 

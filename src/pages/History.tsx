@@ -9,6 +9,8 @@ import {
   DollarSign,
   MapPin,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { formatRM, formatMileage } from '../utils/format';
@@ -51,11 +53,17 @@ export default function History() {
 
   const [search, setSearch] = useState('');
   const [monthFilter, setMonthFilter] = useState<string>(new Date().toISOString().slice(0, 7));
+
+  const shiftMonth = (dir: -1 | 1) => {
+    const [y, m] = monthFilter.split('-').map(Number);
+    const d = new Date(y, m - 1 + dir, 1);
+    setMonthFilter(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  };
   const [filterMake, setFilterMake] = useState('All');
   const [selectedCarId, setSelectedCarId] = useState<string | null>(null);
 
   const soldCars = useMemo(() => {
-    let result = cars.filter((c) => c.status === 'sold');
+    let result = cars.filter((c) => c.status === 'delivered');
     if (monthFilter) result = result.filter((c) => c.dateAdded.startsWith(monthFilter));
     if (filterMake !== 'All') result = result.filter((c) => c.make === filterMake);
     if (search) {
@@ -74,7 +82,7 @@ export default function History() {
 
   const carCalcMap = useMemo(() => {
     const map: Record<string, { sellingPrice: number; profit: number }> = {};
-    for (const c of cars.filter(x => x.status === 'sold')) {
+    for (const c of cars.filter(x => x.status === 'delivered')) {
       const wo = customers.find(cu => cu.interestedCarId === c.id && (cu.cashWorkOrder || cu.loanWorkOrder));
       const w = wo?.loanWorkOrder ?? wo?.cashWorkOrder;
       const sellingPrice = (w?.sellingPrice && w.sellingPrice > 0) ? w.sellingPrice : c.sellingPrice;
@@ -105,7 +113,7 @@ export default function History() {
       <CarDetailContent
         id={selectedCarId}
         onBack={() => setSelectedCarId(null)}
-        backLabel="Back to Sold Units"
+        backLabel="Back to Delivered"
         initialTab="final_deal"
       />
     );
@@ -115,7 +123,7 @@ export default function History() {
     <div className="space-y-5">
       {/* Stat cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <StatCard title="Units Sold" value={soldCars.length} icon={CheckCircle} borderColor="border-l-green-400" iconColor="text-green-400" />
+        <StatCard title="Units Delivered" value={soldCars.length} icon={CheckCircle} borderColor="border-l-green-400" iconColor="text-green-400" />
         <StatCard title="Total Revenue" value={formatRM(totalRevenue)} icon={DollarSign} borderColor="border-l-gold-400" iconColor="text-gold-400" />
         <StatCard title="Total Profit" value={formatRM(totalProfit)} icon={TrendingUp} borderColor="border-l-yellow-400" iconColor="text-yellow-400" />
       </div>
@@ -126,19 +134,22 @@ export default function History() {
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
           <input
             type="text"
-            placeholder="Search sold units..."
+            placeholder="Search delivered..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="input pl-9 pr-4 py-2.5 w-full"
           />
         </div>
 
-        <input
-          type="month"
-          value={monthFilter}
-          onChange={(e) => setMonthFilter(e.target.value)}
-          className="input px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors"
-        />
+        <div className="flex items-center border border-obsidian-400/60 rounded-lg overflow-hidden" style={{ background: '#0E0D0B' }}>
+          <button onClick={() => shiftMonth(-1)} className="px-2.5 py-2.5 text-gray-400 hover:text-white hover:bg-obsidian-500/60 transition-colors">
+            <ChevronLeft size={16} />
+          </button>
+          <span className="px-3 text-sm text-white font-medium whitespace-nowrap">{monthLabel}</span>
+          <button onClick={() => shiftMonth(1)} className="px-2.5 py-2.5 text-gray-400 hover:text-white hover:bg-obsidian-500/60 transition-colors">
+            <ChevronRight size={16} />
+          </button>
+        </div>
 
         <Select
           value={filterMake}
@@ -166,7 +177,7 @@ export default function History() {
 
       {/* Count */}
       <p className="text-gray-500 text-sm">
-        <span className="text-white font-medium">{soldCars.length}</span> sold unit{soldCars.length !== 1 ? 's' : ''}
+        <span className="text-white font-medium">{soldCars.length}</span> delivered unit{soldCars.length !== 1 ? 's' : ''}
         {monthLabel && <span className="ml-1">in {monthLabel}</span>}
       </p>
 
@@ -174,7 +185,7 @@ export default function History() {
       {soldCars.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <CarIcon size={40} className="text-gray-600 mb-3" />
-          <p className="text-gray-400 font-medium">No sold units{monthFilter ? ` for this month` : ''}</p>
+          <p className="text-gray-400 font-medium">No delivered units{monthFilter ? ` for this month` : ''}</p>
           <p className="text-gray-600 text-sm mt-1">Try adjusting your filters</p>
         </div>
       )}

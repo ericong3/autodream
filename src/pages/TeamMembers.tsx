@@ -36,8 +36,6 @@ function FormField({
   );
 }
 
-const COMMISSION_PER_CAR = 500;
-
 const emptyForm = {
   name: '',
   username: '',
@@ -70,14 +68,28 @@ const ROLE_CONFIG = {
 
 function EmployeeDetailModal({ member, onClose, currentUserId }: { member: User; onClose: () => void; currentUserId?: string }) {
   const cars = useStore((s) => s.cars);
+  const repairs = useStore((s) => s.repairs);
   const customers = useStore((s) => s.customers);
 
   const cfg = ROLE_CONFIG[member.role as keyof typeof ROLE_CONFIG];
   const isSelf = member.id === currentUserId;
 
-  const soldCars = cars.filter((c) => c.status === 'sold' && c.assignedSalesperson === member.id);
-  const activeCars = cars.filter((c) => c.status !== 'sold' && c.assignedSalesperson === member.id);
-  const commission = soldCars.length * COMMISSION_PER_CAR;
+  const soldCars = cars.filter((c) => c.status === 'delivered' && c.assignedSalesperson === member.id);
+  const activeCars = cars.filter((c) => c.status !== 'delivered' && c.assignedSalesperson === member.id);
+
+  const getRepairCosts = (carId: string) =>
+    repairs.filter(r => r.carId === carId && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
+  const calcCommission = (car: typeof cars[0]): number => {
+    const dealPrice = car.finalDeal?.dealPrice ?? car.sellingPrice;
+    const repairCosts = getRepairCosts(car.id);
+    const netBeforeComm = dealPrice - car.purchasePrice - repairCosts;
+    if (car.priceFloor != null) {
+      return dealPrice >= car.priceFloor ? (netBeforeComm >= 10000 ? 2000 : 1500) : 1000;
+    }
+    return netBeforeComm >= 10000 ? 1500 : 1000;
+  };
+
+  const commission = soldCars.reduce((s, c) => s + calcCommission(c), 0);
   const activeCustomers = customers.filter((c) => c.assignedSalesId === member.id);
 
   const targetPct = member.role === 'salesperson' && member.monthlyTarget > 0
@@ -94,6 +106,7 @@ function EmployeeDetailModal({ member, onClose, currentUserId }: { member: User;
     available: 'Available',
     reserved: 'Reserved',
     sold: 'Sold',
+    delivered: 'Delivered',
   };
 
   return createPortal(
@@ -262,12 +275,25 @@ function EmployeeDetailModal({ member, onClose, currentUserId }: { member: User;
 export default function TeamMembers() {
   const users = useStore((s) => s.users);
   const cars = useStore((s) => s.cars);
+  const repairs = useStore((s) => s.repairs);
   const currentUser = useStore((s) => s.currentUser);
   const addUser = useStore((s) => s.addUser);
   const updateUser = useStore((s) => s.updateUser);
   const deleteUser = useStore((s) => s.deleteUser);
 
-  const soldCars = cars.filter((c) => c.status === 'sold');
+  const soldCars = cars.filter((c) => c.status === 'delivered');
+
+  const getRepairCosts = (carId: string) =>
+    repairs.filter(r => r.carId === carId && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
+  const calcCommission = (car: typeof cars[0]): number => {
+    const dealPrice = car.finalDeal?.dealPrice ?? car.sellingPrice;
+    const repairCosts = getRepairCosts(car.id);
+    const netBeforeComm = dealPrice - car.purchasePrice - repairCosts;
+    if (car.priceFloor != null) {
+      return dealPrice >= car.priceFloor ? (netBeforeComm >= 10000 ? 2000 : 1500) : 1000;
+    }
+    return netBeforeComm >= 10000 ? 1500 : 1000;
+  };
 
   const [showModal, setShowModal] = useState(false);
   const [editTarget, setEditTarget] = useState<User | null>(null);
@@ -421,7 +447,7 @@ export default function TeamMembers() {
           {filteredUsers.map((member) => {
             const cfg = ROLE_CONFIG[member.role as keyof typeof ROLE_CONFIG];
             const soldCount = getCarsSoldByPerson(member.id);
-            const commission = soldCount * COMMISSION_PER_CAR;
+            const commission = soldCars.filter(c => c.assignedSalesperson === member.id).reduce((s, c) => s + calcCommission(c), 0);
             const isSelf = member.id === currentUser?.id;
 
             return (

@@ -5,10 +5,9 @@ import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, generateId } from '../utils/format';
 
-const COMMISSION_PER_CAR = 500;
-
 export default function Commission() {
   const cars = useStore((s) => s.cars);
+  const repairs = useStore((s) => s.repairs);
   const currentUser = useStore((s) => s.currentUser);
   const users = useStore((s) => s.users);
   const personalReminders = useStore((s) => s.personalReminders);
@@ -26,7 +25,20 @@ export default function Commission() {
 
   const salespeople = users.filter(u => u.role === 'salesperson');
 
-  const allSoldCars = cars.filter(c => c.status === 'sold');
+  const allSoldCars = cars.filter(c => c.status === 'delivered');
+
+  const getRepairCosts = (carId: string) =>
+    repairs.filter(r => r.carId === carId && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
+
+  const calcCommission = (car: typeof cars[0]): number => {
+    const dealPrice = car.finalDeal?.dealPrice ?? car.sellingPrice;
+    const repairCosts = getRepairCosts(car.id);
+    const netBeforeComm = dealPrice - car.purchasePrice - repairCosts;
+    if (car.priceFloor != null) {
+      return dealPrice >= car.priceFloor ? (netBeforeComm >= 10000 ? 2000 : 1500) : 1000;
+    }
+    return netBeforeComm >= 10000 ? 1500 : 1000;
+  };
 
   const filteredSoldCars = useMemo(() => allSoldCars.filter(c => {
     const matchSales = !salesFilter || c.assignedSalesperson === salesFilter;
@@ -34,10 +46,11 @@ export default function Commission() {
     return matchSales && matchMonth;
   }), [allSoldCars, salesFilter, monthFilter]);
 
-  const totalSoldAll = allSoldCars.filter(c => !salesFilter || c.assignedSalesperson === salesFilter).length;
-  const totalCommissionAll = totalSoldAll * COMMISSION_PER_CAR;
+  const allFilteredForSp = allSoldCars.filter(c => !salesFilter || c.assignedSalesperson === salesFilter);
+  const totalSoldAll = allFilteredForSp.length;
+  const totalCommissionAll = allFilteredForSp.reduce((s, c) => s + calcCommission(c), 0);
   const monthSold = filteredSoldCars.length;
-  const monthCommission = monthSold * COMMISSION_PER_CAR;
+  const monthCommission = filteredSoldCars.reduce((s, c) => s + calcCommission(c), 0);
 
   const getSalesName = (id?: string) => {
     if (!id) return 'Unassigned';
@@ -77,7 +90,7 @@ export default function Commission() {
     <div className="space-y-5">
       <div>
         <h1 className="text-white text-xl font-bold">Commission & Reminders</h1>
-        <p className="text-gray-500 text-sm mt-0.5">RM{COMMISSION_PER_CAR} commission per car sold</p>
+        <p className="text-gray-500 text-sm mt-0.5">Tiered commission based on deal price and profit</p>
       </div>
 
       {/* Tabs */}
@@ -172,7 +185,7 @@ export default function Commission() {
                       <td className="px-5 py-3 text-right text-gold-400 font-semibold">
                         {formatRM(c.finalDeal?.dealPrice ?? c.sellingPrice)}
                       </td>
-                      <td className="px-5 py-3 text-right text-green-400 font-semibold">{formatRM(COMMISSION_PER_CAR)}</td>
+                      <td className="px-5 py-3 text-right text-green-400 font-semibold">{formatRM(calcCommission(c))}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -185,7 +198,7 @@ export default function Commission() {
                       {formatRM(filteredSoldCars.reduce((sum, c) => sum + (c.finalDeal?.dealPrice ?? c.sellingPrice), 0))}
                     </td>
                     <td className="px-5 py-3 text-right text-green-400 font-bold">
-                      {formatRM(filteredSoldCars.length * COMMISSION_PER_CAR)}
+                      {formatRM(filteredSoldCars.reduce((s, c) => s + calcCommission(c), 0))}
                     </td>
                   </tr>
                 </tfoot>

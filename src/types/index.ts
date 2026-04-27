@@ -180,7 +180,7 @@ export interface Car {
   purchasePrice: number;
   sellingPrice: number;
   transmission: 'auto' | 'manual';
-  status: 'coming_soon' | 'in_workshop' | 'ready' | 'photo_complete' | 'submitted' | 'deal_pending' | 'sold' | 'available' | 'reserved';
+  status: 'coming_soon' | 'in_workshop' | 'ready' | 'photo_complete' | 'submitted' | 'deal_pending' | 'sold' | 'available' | 'reserved' | 'delivered';
   photo?: string;
   photos?: string[];
   greenCard?: string;
@@ -196,6 +196,7 @@ export interface Car {
   deliveryPhoto?: string;
   deliveryCollected?: boolean;
   consignment?: Consignment;
+  priceFloor?: number;
 }
 
 export interface RepairJob {

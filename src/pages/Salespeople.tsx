@@ -20,8 +20,6 @@ function FormField({ label, children, error, className }: { label: string; child
   );
 }
 
-const COMMISSION_PER_CAR = 500;
-
 const emptyForm = {
   name: '',
   username: '',
@@ -33,19 +31,33 @@ const emptyForm = {
 export default function Salespeople() {
   const users = useStore((s) => s.users);
   const cars = useStore((s) => s.cars);
+  const repairs = useStore((s) => s.repairs);
   const currentUser = useStore((s) => s.currentUser);
   const addUser = useStore((s) => s.addUser);
   const updateUser = useStore((s) => s.updateUser);
   const deleteUser = useStore((s) => s.deleteUser);
 
   const salespeople = users.filter((u) => u.role === 'salesperson');
-  const soldCars = cars.filter((c) => c.status === 'sold');
+  const soldCars = cars.filter((c) => c.status === 'delivered');
 
   const [showModal, setShowModal] = useState(false);
   const [editTarget, setEditTarget] = useState<User | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const getRepairCosts = (carId: string) =>
+    repairs.filter(r => r.carId === carId && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
+
+  const calcCommission = (car: typeof cars[0]): number => {
+    const dealPrice = car.finalDeal?.dealPrice ?? car.sellingPrice;
+    const repairCosts = getRepairCosts(car.id);
+    const netBeforeComm = dealPrice - car.purchasePrice - repairCosts;
+    if (car.priceFloor != null) {
+      return dealPrice >= car.priceFloor ? (netBeforeComm >= 10000 ? 2000 : 1500) : 1000;
+    }
+    return netBeforeComm >= 10000 ? 1500 : 1000;
+  };
 
   const getCarsSoldByPerson = (userId: string) =>
     soldCars.filter((c) => c.assignedSalesperson === userId).length;
@@ -139,7 +151,7 @@ export default function Salespeople() {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {salespeople.map((sp) => {
             const soldCount = getCarsSoldByPerson(sp.id);
-            const commission = soldCount * COMMISSION_PER_CAR;
+            const commission = soldCars.filter(c => c.assignedSalesperson === sp.id).reduce((s, c) => s + calcCommission(c), 0);
             const progress = Math.min(100, (sp.carsInMonth / sp.monthlyTarget) * 100);
 
             return (

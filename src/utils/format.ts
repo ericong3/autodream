@@ -1,15 +1,12 @@
 export function formatRM(amount: number): string {
   return `RM ${amount.toLocaleString('en-MY', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   })}`;
 }
 
 export function formatRMDecimal(amount: number): string {
-  return `RM ${amount.toLocaleString('en-MY', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+  return formatRM(amount);
 }
 
 export function formatMileage(mileage: number): string {

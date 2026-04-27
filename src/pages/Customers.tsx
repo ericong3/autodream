@@ -337,7 +337,7 @@ export default function Customers() {
     });
     // Auto-update car: sold + deliveryCollected
     if (car) {
-      updateCar(car.id, { status: 'sold', deliveryCollected: true, deliveryPhoto: deliveryPhotoUrl || undefined });
+      updateCar(car.id, { status: 'delivered', deliveryCollected: true, deliveryPhoto: deliveryPhotoUrl || undefined });
     }
     setShowDeliveryModal(false);
     setDeliveryPhotoUrl('');
@@ -1927,7 +1927,7 @@ export default function Customers() {
                 </button>
                 <p className="text-gray-400 text-sm">Select the car to submit for loan. You can change the car or keep the current one.</p>
                 <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                  {cars.filter(c => c.status !== 'sold').map(c => {
+                  {cars.filter(c => c.status !== 'sold' && c.status !== 'delivered').map(c => {
                     const isSelected = loanForm.carId === c.id;
                     const statusColors: Record<string, string> = {
                       coming_soon: 'text-purple-400 bg-purple-500/10 border-purple-500/20',

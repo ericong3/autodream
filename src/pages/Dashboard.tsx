@@ -24,7 +24,7 @@ export default function Dashboard() {
   const staleStock = useMemo(() => {
     const threshold = Date.now() - 15 * 86400000;
     return cars.filter(c => {
-      if (['sold', 'coming_soon'].includes(c.status)) return false;
+      if (['sold', 'delivered', 'coming_soon'].includes(c.status)) return false;
       const addedDate = new Date(c.dateAdded).getTime();
       if (addedDate > threshold) return false;
       const hasLead = customers.some(cust => cust.interestedCarId === c.id);
@@ -32,7 +32,7 @@ export default function Dashboard() {
     });
   }, [cars, customers]);
 
-  const soldCars = cars.filter((c) => c.status === 'sold');
+  const soldCars = cars.filter((c) => c.status === 'delivered');
   const availableCars = cars.filter((c) => c.status === 'available');
   const totalRepairCosts = repairs.reduce((sum, r) => sum + r.totalCost, 0);
   const commission = soldCars.length * 500;
@@ -150,7 +150,7 @@ export default function Dashboard() {
             </button>
           </div>
           <div className="p-5 space-y-4">
-            {(['available', 'reserved', 'sold'] as const).map((status) => {
+            {(['available', 'reserved', 'delivered'] as const).map((status) => {
               const count = cars.filter((c) => c.status === status).length;
               const pct = cars.length > 0 ? (count / cars.length) * 100 : 0;
               const bar = status === 'available'
@@ -166,7 +166,7 @@ export default function Dashboard() {
               return (
                 <div key={status}>
                   <div className="flex justify-between items-center mb-1.5">
-                    <span className={`text-xs font-semibold uppercase tracking-wider ${text}`}>{status}</span>
+                    <span className={`text-xs font-semibold uppercase tracking-wider ${text}`}>{status === 'delivered' ? 'Delivered' : status}</span>
                     <span className="text-white text-sm font-bold">{count}</span>
                   </div>
                   <div className="h-2.5 rounded-full bg-obsidian-700 overflow-hidden">

@@ -26,10 +26,11 @@ import {
   Banknote,
   CheckCircle,
   XCircle,
+  Pencil,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
-import { Car, RepairJob, ChecklistItem, REPAIR_TYPES, DEFAULT_CHECKLIST_LABELS } from '../types';
+import { Car, RepairJob, ChecklistItem, REPAIR_TYPES, DEFAULT_CHECKLIST_LABELS, WorkOrderItem } from '../types';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, formatMileage, generateId } from '../utils/format';
@@ -45,6 +46,7 @@ const STATUS_BADGE: Record<string, string> = {
   available: 'bg-green-500/20 text-green-400',
   reserved: 'bg-yellow-500/20 text-yellow-400',
   sold: 'bg-gray-500/20 text-gray-400',
+  delivered: 'bg-violet-500/20 text-violet-400',
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -57,6 +59,7 @@ const STATUS_LABEL: Record<string, string> = {
   available: 'Available',
   reserved: 'Reserved',
   sold: 'Sold',
+  delivered: 'Delivered',
 };
 
 const REPAIR_STATUS_BADGE: Record<string, string> = {
@@ -146,7 +149,62 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
 
   // ── Repair / Loans tab ──
   const [jobTab, setJobTab] = useState<'repairs' | 'loans' | 'final_deal'>(initialTab ?? 'repairs');
+  const [dealView, setDealView] = useState<'salesman' | 'director'>('salesman');
   const [showConsignment, setShowConsignment] = useState(false);
+
+  // ── Final Deal — derived data (needed by edit handler) ──
+  const dealCustomer = car ? customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder)) : undefined;
+  const dealWo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
+  const dealIsLoan = !!dealCustomer?.loanWorkOrder;
+
+  // ── Edit Deal Modal ──
+  const [showEditDeal, setShowEditDeal] = useState(false);
+  const [editDealForm, setEditDealForm] = useState({
+    bank: '', sellingPrice: 0, discount: 0, insurance: 0,
+    bankProduct: 0, loanAmount: 0, downpayment: 0, bookingFee: 0,
+    additionalItems: [] as WorkOrderItem[],
+  });
+  const [savingDeal, setSavingDeal] = useState(false);
+
+  const openEditDeal = () => {
+    if (!car) return;
+    const deal = car.finalDeal!;
+    setEditDealForm({
+      bank: dealWo && 'bank' in dealWo ? (dealWo as any).bank : deal.bank ?? '',
+      sellingPrice: dealWo?.sellingPrice ?? deal.dealPrice,
+      discount: dealWo?.discount ?? 0,
+      insurance: dealWo?.insurance ?? 0,
+      bankProduct: dealWo?.bankProduct ?? 0,
+      loanAmount: (dealWo as any)?.loanAmount ?? 0,
+      downpayment: (dealWo as any)?.downpayment ?? 0,
+      bookingFee: dealWo?.bookingFee ?? 0,
+      additionalItems: [...(dealWo?.additionalItems ?? [])],
+    });
+    setShowEditDeal(true);
+  };
+
+  const handleSaveDeal = async () => {
+    if (!car || !dealCustomer || !dealWo) return;
+    setSavingDeal(true);
+    try {
+      const updatedWo = { ...dealWo, ...editDealForm } as any;
+      if (dealIsLoan) {
+        await updateCustomer(dealCustomer.id, { loanWorkOrder: updatedWo });
+      } else {
+        await updateCustomer(dealCustomer.id, { cashWorkOrder: updatedWo });
+      }
+      await updateCar(car.id, {
+        finalDeal: {
+          ...car.finalDeal!,
+          dealPrice: editDealForm.sellingPrice - editDealForm.discount,
+          bank: editDealForm.bank,
+        },
+      });
+      setShowEditDeal(false);
+    } finally {
+      setSavingDeal(false);
+    }
+  };
 
   // ── Delivery Modal ──
   const [showDeliveryModal, setShowDeliveryModal] = useState(false);
@@ -384,6 +442,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const handleDeliverySubmit = () => {
     setShowDeliveryModal(false);
     updateCar(car.id, {
+      status: 'delivered',
       deliveryPhoto: deliveryPhoto || undefined,
       deliveryCollected: true,
     });
@@ -533,6 +592,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 <>
                   <InfoItem label="Purchase Price" value={formatRM(car.purchasePrice)} />
                   <InfoItem label="Repair Costs" value={formatRM(totalRepairCost)} valueClass="text-orange-400" />
+                  {car.priceFloor != null && (
+                    <InfoItem label="Floor Price" value={formatRM(car.priceFloor)} valueClass="text-blue-400 font-semibold" />
+                  )}
                   <InfoItem label="Net Profit" value={formatRM(netProfit)} valueClass={netProfit >= 0 ? 'text-green-400 font-bold' : 'text-red-400 font-bold'} />
                 </>
               )}
@@ -605,7 +667,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             }`}
           >
             <Banknote size={14} /> Loan Log
-            {(() => { const isSoldDelivered = car.status === 'sold' && car.deliveryCollected; const n = isSoldDelivered ? 0 : customers.filter(c => c.interestedCarId === car.id && c.loanApplications?.length && !c.isTrashed).length; return n > 0 ? <span className="text-xs bg-obsidian-700/60 px-1.5 py-0.5 rounded-full">{n}</span> : null; })()}
+            {(() => { const isSoldDelivered = car.status === 'delivered'; const n = isSoldDelivered ? 0 : customers.filter(c => c.interestedCarId === car.id && c.loanApplications?.length && !c.isTrashed).length; return n > 0 ? <span className="text-xs bg-obsidian-700/60 px-1.5 py-0.5 rounded-full">{n}</span> : null; })()}
           </button>
           {car.finalDeal && (
             <button
@@ -615,6 +677,14 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               }`}
             >
               <CheckCircle size={14} /> Final Deal
+            </button>
+          )}
+          {car.finalDeal && jobTab === 'final_deal' && isDirector && dealWo && (
+            <button
+              onClick={openEditDeal}
+              className="ml-auto flex items-center gap-1.5 px-3 py-1.5 mb-1 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-obsidian-600/50 transition-colors border border-obsidian-400/40"
+            >
+              <Pencil size={12} /> Edit Deal
             </button>
           )}
         </div>
@@ -738,7 +808,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             approved:  <CheckCircle size={10} />,
             rejected:  <XCircle size={10} />,
           };
-          const isCarSoldDelivered = car.status === 'sold' && car.deliveryCollected;
+          const isCarSoldDelivered = car.status === 'delivered';
           const loanCustomers = customers
             .filter(c => c.interestedCarId === car.id && c.loanApplications?.length && !isCarSoldDelivered)
             .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -837,6 +907,31 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             </div>
           );
 
+          const sellingPrice = wo?.sellingPrice ?? deal.dealPrice;
+          const purchasePrice = car.purchasePrice;
+          const discount = wo?.discount ?? 0;
+          const insurance = wo?.insurance ?? 0;
+          const bankProduct = wo?.bankProduct ?? 0;
+          const additionalItems = wo?.additionalItems ?? [];
+          const additionalTotal = additionalItems.reduce((s, i) => s + i.amount, 0);
+          const loanAmount = isLoan ? ((wo as any)?.loanAmount ?? 0) : 0;
+          // Salesman balance: total payable minus loan amount = amount to collect from customer
+          const balance = sellingPrice - discount + insurance + bankProduct + additionalTotal - loanAmount;
+
+
+          // Director profit
+          const dealNetPrice = sellingPrice - discount;
+          const profitBeforeCommission = dealNetPrice - purchasePrice - totalRepairCost - additionalTotal;
+          const commission = (() => {
+            if (car.priceFloor != null) {
+              return dealNetPrice >= car.priceFloor
+                ? (profitBeforeCommission >= 10000 ? 2000 : 1500)
+                : 1000;
+            }
+            return profitBeforeCommission >= 10000 ? 1500 : 1000;
+          })();
+          const netProfit = profitBeforeCommission - commission;
+
           return (
             <div className="divide-y-0">
               {/* Deal approval summary */}
@@ -857,62 +952,127 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 {deal.notes && <DRow label="Notes" value={deal.notes} border={false} />}
               </Section>
 
-              {/* Financials */}
-              {(() => {
-                const sellingPrice = wo?.sellingPrice ?? deal.dealPrice;
-                const purchasePrice = car.purchasePrice;
-                const discount = wo?.discount ?? 0;
-                const insurance = wo?.insurance ?? 0;
-                const bankProduct = wo?.bankProduct ?? 0;
-                const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
-                const profitBeforeCommission = sellingPrice - purchasePrice - discount - insurance - bankProduct - totalRepairCost - additionalTotal;
-                const commission = profitBeforeCommission < 10000 ? 1000 : profitBeforeCommission < 15000 ? 1500 : 2000;
-                const netProfit = profitBeforeCommission - commission;
-                return (
-                  <Section title="Deal Financials">
-                    <DRow label="Bank" value={deal.bank} valueClass="text-blue-400" />
-                    <DRow label="Selling Price" value={formatRM(sellingPrice)} valueClass="text-gold-400 font-bold" />
-                    {isDirector && (
-                      <>
-                        <DRow label="Purchase Price" value={`− ${formatRM(purchasePrice)}`} valueClass="text-red-400" />
-                        {discount > 0 && <DRow label="Discount" value={`− ${formatRM(discount)}`} valueClass="text-red-400" />}
-                        {insurance > 0 && <DRow label="Insurance" value={`− ${formatRM(insurance)}`} valueClass="text-red-400" />}
-                        {bankProduct > 0 && <DRow label="Bank Product" value={`− ${formatRM(bankProduct)}`} valueClass="text-red-400" />}
-                        <DRow label="Salesman Commission" value={`− ${formatRM(commission)}`} valueClass="text-red-400" />
-                        {totalRepairCost > 0 && <DRow label="Repair Expenses" value={`− ${formatRM(totalRepairCost)}`} valueClass="text-red-400" />}
-                        {additionalTotal > 0 && <DRow label="Additional Expenses" value={`− ${formatRM(additionalTotal)}`} valueClass="text-red-400" />}
-                        <div className="flex justify-between items-center pt-3 mt-1 border-t-2 border-obsidian-400/50">
-                          <span className="text-white font-semibold">Net Profit</span>
-                          <span className={`text-lg font-bold ${netProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {netProfit >= 0 ? '' : '− '}{formatRM(Math.abs(netProfit))}
-                          </span>
-                        </div>
-                      </>
-                    )}
-                  </Section>
-                );
-              })()}
+              {/* View toggle (director only) */}
+              {isDirector && (
+                <div className="px-5 py-3 border-b border-obsidian-400/30 flex gap-2">
+                  <button
+                    onClick={() => setDealView('salesman')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${dealView === 'salesman' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white bg-obsidian-600/40'}`}
+                  >
+                    Salesman View
+                  </button>
+                  <button
+                    onClick={() => setDealView('director')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${dealView === 'director' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white bg-obsidian-600/40'}`}
+                  >
+                    Director View
+                  </button>
+                </div>
+              )}
+
+              {/* ── Salesman View: collection balance (loan only) ── */}
+              {(dealView === 'salesman' || !isDirector) && isLoan && wo && (
+                <Section title="Collection Balance">
+                  <DRow label="Selling Price" value={formatRM(sellingPrice)} valueClass="text-gold-400 font-bold" />
+                  {discount > 0 && <DRow label="− Discount" value={formatRM(discount)} valueClass="text-red-400" />}
+                  {insurance > 0 && <DRow label="+ Insurance" value={formatRM(insurance)} valueClass="text-white" />}
+                  {bankProduct > 0 && <DRow label="+ Bank Product" value={formatRM(bankProduct)} valueClass="text-white" />}
+                  {additionalItems.map((item, i) => (
+                    <DRow key={i} label={`+ ${item.label}`} value={formatRM(item.amount)} valueClass="text-white" />
+                  ))}
+                  {loanAmount > 0 && <DRow label="− Loan Amount" value={formatRM(loanAmount)} valueClass="text-red-400" />}
+                  <div className={`flex justify-between items-center pt-3 mt-1 border-t-2 ${Math.abs(balance) < 0.01 ? 'border-green-500/40' : 'border-red-500/40'}`}>
+                    <span className="text-white font-semibold text-sm">Balance</span>
+                    <div className="text-right">
+                      <span className={`text-lg font-bold ${Math.abs(balance) < 0.01 ? 'text-green-400' : 'text-red-400'}`}>
+                        {formatRM(balance)}
+                      </span>
+                      <p className={`text-xs mt-0.5 ${Math.abs(balance) < 0.01 ? 'text-green-500' : 'text-red-400'}`}>
+                        {Math.abs(balance) < 0.01 ? '✓ Balanced' : 'Amounts do not balance'}
+                      </p>
+                    </div>
+                  </div>
+                </Section>
+              )}
+
+              {/* ── Director View: profit breakdown ── */}
+              {(dealView === 'director' && isDirector) && (
+                <Section title="Deal Financials">
+                  {car.priceFloor != null && (
+                    <div className="flex justify-between items-center px-5 py-1.5 mb-1 bg-blue-500/5 rounded-lg border border-blue-500/20 mx-5">
+                      <span className="text-blue-400 text-xs font-medium">Floor Price</span>
+                      <span className="text-blue-400 text-xs font-bold">{formatRM(car.priceFloor)}</span>
+                    </div>
+                  )}
+                  <DRow label="Selling Price" value={formatRM(sellingPrice)} valueClass="text-gold-400 font-bold" />
+                  {discount > 0 && <DRow label="− Discount" value={formatRM(discount)} valueClass="text-red-400" />}
+                  <DRow label="− Purchase Price" value={formatRM(purchasePrice)} valueClass="text-red-400" />
+                  {totalRepairCost > 0 && <DRow label="− Repair Expenses" value={formatRM(totalRepairCost)} valueClass="text-red-400" />}
+                  {additionalTotal > 0 && <DRow label="− Additional Expenses" value={formatRM(additionalTotal)} valueClass="text-red-400" />}
+                  <DRow label="− Salesman Commission" value={formatRM(commission)} valueClass="text-purple-400" />
+                  {car.priceFloor != null && (
+                    <p className="text-xs text-gray-500 text-right pr-5 pb-1">
+                      Deal ({formatRM(dealNetPrice)}) {dealNetPrice >= car.priceFloor ? '≥' : '<'} floor → {commission === 1000 ? 'RM 1,000 fixed' : commission === 2000 ? 'RM 2,000 (profit ≥ 10k)' : 'RM 1,500 (profit < 10k)'}
+                    </p>
+                  )}
+                  <div className="flex justify-between items-center pt-3 mt-1 border-t-2 border-obsidian-400/50">
+                    <span className="text-white font-semibold">Net Profit</span>
+                    <span className={`text-lg font-bold ${netProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {netProfit < 0 ? `− ${formatRM(Math.abs(netProfit))}` : formatRM(netProfit)}
+                    </span>
+                  </div>
+                </Section>
+              )}
+
+              {/* For non-loan deals, always show regular financials */}
+              {!isLoan && (
+                <Section title="Deal Financials">
+                  <DRow label="Selling Price" value={formatRM(sellingPrice)} valueClass="text-gold-400 font-bold" />
+                  {isDirector && (
+                    <>
+                      <DRow label="Purchase Price" value={`− ${formatRM(purchasePrice)}`} valueClass="text-red-400" />
+                      {discount > 0 && <DRow label="Discount" value={`− ${formatRM(discount)}`} valueClass="text-red-400" />}
+                      {insurance > 0 && <DRow label="Insurance" value={`− ${formatRM(insurance)}`} valueClass="text-red-400" />}
+                      {bankProduct > 0 && <DRow label="Bank Product" value={`− ${formatRM(bankProduct)}`} valueClass="text-red-400" />}
+                      <DRow label="Salesman Commission" value={`− ${formatRM(commission)}`} valueClass="text-red-400" />
+                      {totalRepairCost > 0 && <DRow label="Repair Expenses" value={`− ${formatRM(totalRepairCost)}`} valueClass="text-red-400" />}
+                      {additionalTotal > 0 && <DRow label="Additional Expenses" value={`− ${formatRM(additionalTotal)}`} valueClass="text-red-400" />}
+                      <div className="flex justify-between items-center pt-3 mt-1 border-t-2 border-obsidian-400/50">
+                        <span className="text-white font-semibold">Net Profit</span>
+                        <span className={`text-lg font-bold ${netProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {netProfit >= 0 ? '' : '− '}{formatRM(Math.abs(netProfit))}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </Section>
+              )}
 
               {/* Work order breakdown */}
               {wo && (
                 <Section title={isLoan ? 'Loan Work Order' : 'Cash Work Order'}>
-                  <DRow label="Selling Price" value={formatRM(wo.sellingPrice)} />
-                  {wo.discount > 0 && <DRow label="Discount" value={`− ${formatRM(wo.discount)}`} valueClass="text-red-400" />}
-                  {wo.insurance > 0 && <DRow label="Insurance" value={formatRM(wo.insurance)} />}
-                  {wo.bankProduct > 0 && <DRow label="Bank Product" value={formatRM(wo.bankProduct)} />}
-                  {wo.bookingFee > 0 && <DRow label="Booking Fee" value={formatRM(wo.bookingFee)} />}
-                  {(wo as any).downpayment > 0 && <DRow label="Downpayment" value={formatRM((wo as any).downpayment)} />}
-                  {(wo as any).loanAmount > 0 && <DRow label="Loan Amount" value={formatRM((wo as any).loanAmount)} />}
-                  {wo.additionalItems?.length > 0 && wo.additionalItems.map((item, i) => (
-                    <DRow key={i} label={item.label} value={formatRM(item.amount)} />
-                  ))}
-                  {/* Net deal */}
-                  <div className="mt-3 pt-3 border-t border-obsidian-400/40 flex justify-between items-center">
-                    <span className="text-white text-sm font-semibold">Final Amount</span>
-                    <span className="text-gold-400 text-base font-bold">
-                      {formatRM(wo.sellingPrice - wo.discount + wo.insurance + wo.bankProduct + (wo.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0))}
-                    </span>
-                  </div>
+                  {isLoan
+                    ? <DRow label="Loan Amount" value={formatRM((wo as any).loanAmount ?? 0)} valueClass="text-gold-400 font-bold" border={false} />
+                    : (
+                      <>
+                        <DRow label="Selling Price" value={formatRM(wo.sellingPrice)} />
+                        {wo.discount > 0 && <DRow label="Discount" value={`− ${formatRM(wo.discount)}`} valueClass="text-red-400" />}
+                        {wo.insurance > 0 && <DRow label="Insurance" value={formatRM(wo.insurance)} />}
+                        {wo.bankProduct > 0 && <DRow label="Bank Product" value={formatRM(wo.bankProduct)} />}
+                        {wo.bookingFee > 0 && <DRow label="Booking Fee / Deposit" value={formatRM(wo.bookingFee)} />}
+                        {(wo as any).downpayment > 0 && <DRow label="Downpayment" value={formatRM((wo as any).downpayment)} />}
+                        {wo.additionalItems?.length > 0 && wo.additionalItems.map((item, i) => (
+                          <DRow key={i} label={item.label} value={formatRM(item.amount)} />
+                        ))}
+                        <div className="mt-3 pt-3 border-t border-obsidian-400/40 flex justify-between items-center">
+                          <span className="text-white text-sm font-semibold">Final Amount</span>
+                          <span className="text-gold-400 text-base font-bold">
+                            {formatRM(wo.sellingPrice - wo.discount + wo.insurance + wo.bankProduct + additionalTotal)}
+                          </span>
+                        </div>
+                      </>
+                    )
+                  }
                 </Section>
               )}
 
@@ -1107,6 +1267,18 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           <FormField label="Selling Price (RM)">
             <input type="number" className={inputCls()} value={editForm.sellingPrice ?? ''} onChange={(e) => setEditForm({ ...editForm, sellingPrice: Number(e.target.value) })} />
           </FormField>
+          {isDirector && (
+            <FormField label="Floor Price (RM) — Lowest acceptable deal" className="col-span-2">
+              <input
+                type="number"
+                className={inputCls()}
+                value={editForm.priceFloor ?? ''}
+                onChange={(e) => setEditForm({ ...editForm, priceFloor: e.target.value ? Number(e.target.value) : undefined })}
+                placeholder="e.g. 55800 — below this = RM1k commission"
+              />
+              <p className="text-gray-600 text-xs mt-1">Deal ≥ floor → 2k or 1.5k commission · Deal below floor → 1k commission</p>
+            </FormField>
+          )}
           <FormField label="Transmission">
             <select className={inputCls()} value={editForm.transmission ?? 'auto'} onChange={(e) => setEditForm({ ...editForm, transmission: e.target.value as Car['transmission'] })}>
               <option value="auto">Automatic</option>
@@ -1415,6 +1587,120 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
         onConfirm={async () => { if (deleteTarget) await deleteTarget.action(); }}
         itemName={deleteTarget?.label ?? ''}
       />
+
+      {/* ── Edit Deal Modal ── */}
+      <Modal isOpen={showEditDeal} onClose={() => setShowEditDeal(false)} title="Edit Deal Details" maxWidth="max-w-md">
+        <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+
+          {/* Bank (loan only) */}
+          {dealIsLoan && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Bank</label>
+              <input
+                className="input w-full"
+                value={editDealForm.bank}
+                onChange={e => setEditDealForm(f => ({ ...f, bank: e.target.value }))}
+                placeholder="Bank name"
+              />
+            </div>
+          )}
+
+          {/* Core financials */}
+          {([
+            { key: 'sellingPrice', label: 'Selling Price' },
+            { key: 'discount', label: 'Discount' },
+            { key: 'insurance', label: 'Insurance' },
+            { key: 'bankProduct', label: 'Bank Product' },
+            ...(dealIsLoan ? [{ key: 'loanAmount', label: 'Loan Amount' }] : [{ key: 'downpayment', label: 'Downpayment' }]),
+            { key: 'bookingFee', label: 'Deposit / Booking Fee' },
+          ] as { key: keyof typeof editDealForm; label: string }[]).map(({ key, label }) => (
+            <div key={key}>
+              <label className="block text-xs text-gray-500 mb-1">{label}</label>
+              <input
+                type="number"
+                className="input w-full"
+                value={(editDealForm[key] as number) || ''}
+                onChange={e => setEditDealForm(f => ({ ...f, [key]: Number(e.target.value) }))}
+                placeholder="0.00"
+                min={0}
+              />
+            </div>
+          ))}
+
+          {/* Additional items */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs text-gray-500">Additional Items</label>
+              <button
+                onClick={() => setEditDealForm(f => ({ ...f, additionalItems: [...f.additionalItems, { label: '', amount: 0 }] }))}
+                className="text-xs text-gold-400 hover:text-gold-300 flex items-center gap-1"
+              >
+                <Plus size={12} /> Add
+              </button>
+            </div>
+            {editDealForm.additionalItems.length === 0 && (
+              <p className="text-xs text-gray-600 italic">No additional items</p>
+            )}
+            {editDealForm.additionalItems.map((item, i) => (
+              <div key={i} className="flex gap-2 mb-2">
+                <input
+                  className="input flex-1 text-sm"
+                  value={item.label}
+                  onChange={e => setEditDealForm(f => ({ ...f, additionalItems: f.additionalItems.map((x, j) => j === i ? { ...x, label: e.target.value } : x) }))}
+                  placeholder="Item name"
+                />
+                <input
+                  type="number"
+                  className="input w-28 text-sm"
+                  value={item.amount || ''}
+                  onChange={e => setEditDealForm(f => ({ ...f, additionalItems: f.additionalItems.map((x, j) => j === i ? { ...x, amount: Number(e.target.value) } : x) }))}
+                  placeholder="0.00"
+                  min={0}
+                />
+                <button
+                  onClick={() => setEditDealForm(f => ({ ...f, additionalItems: f.additionalItems.filter((_, j) => j !== i) }))}
+                  className="p-2 text-gray-500 hover:text-red-400 transition-colors"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Balance preview (loan only) */}
+          {dealIsLoan && (() => {
+            const { sellingPrice, discount, insurance, bankProduct, loanAmount, additionalItems } = editDealForm;
+            const addTotal = additionalItems.reduce((s, x) => s + x.amount, 0);
+            const bal = sellingPrice - discount + insurance + bankProduct + addTotal - loanAmount;
+            return (
+              <div className={`rounded-lg px-4 py-3 border ${Math.abs(bal) < 0.01 ? 'border-green-500/30 bg-green-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-gray-400">Balance</span>
+                  <span className={`text-sm font-bold ${Math.abs(bal) < 0.01 ? 'text-green-400' : 'text-red-400'}`}>
+                    {formatRM(bal)}
+                  </span>
+                </div>
+                <p className={`text-xs mt-0.5 ${Math.abs(bal) < 0.01 ? 'text-green-600' : 'text-red-500'}`}>
+                  {Math.abs(bal) < 0.01 ? '✓ Balanced' : 'Amounts do not balance to zero'}
+                </p>
+              </div>
+            );
+          })()}
+        </div>
+
+        <div className="flex gap-3 mt-5 pt-4 border-t border-obsidian-400/30">
+          <button onClick={() => setShowEditDeal(false)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">
+            Cancel
+          </button>
+          <button
+            onClick={handleSaveDeal}
+            disabled={savingDeal}
+            className="flex-1 px-4 py-2.5 btn-gold rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {savingDeal ? 'Saving…' : 'Save Changes'}
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }

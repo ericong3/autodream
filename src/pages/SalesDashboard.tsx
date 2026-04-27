@@ -5,10 +5,9 @@ import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, generateId } from '../utils/format';
 
-const COMMISSION_PER_CAR = 500;
-
 export default function SalesDashboard() {
   const cars = useStore((s) => s.cars);
+  const repairs = useStore((s) => s.repairs);
   const currentUser = useStore((s) => s.currentUser);
   const customers = useStore((s) => s.customers);
   const testDrives = useStore((s) => s.testDrives);
@@ -38,6 +37,22 @@ export default function SalesDashboard() {
 
   const myId = currentUser?.id ?? '';
   const today = new Date().toISOString().split('T')[0];
+
+  const getRepairCosts = (carId: string) =>
+    repairs.filter(r => r.carId === carId && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
+  const calcCarCommission = (carId?: string): number => {
+    const car = cars.find(c => c.id === carId);
+    if (!car) return 0;
+    const dealPrice = car.finalDeal?.dealPrice ?? car.sellingPrice;
+    const repairCosts = getRepairCosts(car.id);
+    const netBeforeComm = dealPrice - car.purchasePrice - repairCosts;
+    if (car.priceFloor != null) {
+      return dealPrice >= car.priceFloor ? (netBeforeComm >= 10000 ? 2000 : 1500) : 1000;
+    }
+    return netBeforeComm >= 10000 ? 1500 : 1000;
+  };
+  const getCustomerCommission = (c: typeof customers[0]) =>
+    c.commission ?? calcCarCommission(c.interestedCarId);
 
   // My customers
   const myCustomers = useMemo(() =>
@@ -70,13 +85,13 @@ export default function SalesDashboard() {
   );
 
   const totalCommission = useMemo(() =>
-    myDeliveredCustomers.reduce((s, c) => s + (c.commission ?? COMMISSION_PER_CAR), 0),
-    [myDeliveredCustomers]
+    myDeliveredCustomers.reduce((s, c) => s + getCustomerCommission(c), 0),
+    [myDeliveredCustomers, cars, repairs]
   );
 
   const monthCommission = useMemo(() =>
-    deliveredThisMonth.reduce((s, c) => s + (c.commission ?? COMMISSION_PER_CAR), 0),
-    [deliveredThisMonth]
+    deliveredThisMonth.reduce((s, c) => s + getCustomerCommission(c), 0),
+    [deliveredThisMonth, cars, repairs]
   );
 
   // My reminders
@@ -323,7 +338,7 @@ export default function SalesDashboard() {
                           </td>
                           <td className="px-4 py-2.5 text-gray-400 text-xs">{new Date(c.deliveredAt!).toLocaleDateString('en-MY')}</td>
                           <td className="px-4 py-2.5 text-right text-gold-400 font-semibold">{formatRM(dealPrice)}</td>
-                          <td className="px-4 py-2.5 text-right text-green-400 font-semibold">{formatRM(c.commission ?? COMMISSION_PER_CAR)}</td>
+                          <td className="px-4 py-2.5 text-right text-green-400 font-semibold">{formatRM(getCustomerCommission(c))}</td>
                         </tr>
                       );
                     })}

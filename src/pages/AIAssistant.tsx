@@ -193,8 +193,8 @@ function ruleBasedResponse(
   if (q.includes('how many car') || q.includes('total car') || q.includes('cars do we have')) {
     const avail = cars.filter((c) => c.status === 'available').length;
     const reserved = cars.filter((c) => c.status === 'reserved').length;
-    const sold = cars.filter((c) => c.status === 'sold').length;
-    return `We currently have **${cars.length} cars** in total:\n• ${avail} available\n• ${reserved} reserved\n• ${sold} sold`;
+    const delivered = cars.filter((c) => c.status === 'delivered').length;
+    return `We currently have **${cars.length} cars** in total:\n• ${avail} available\n• ${reserved} reserved\n• ${delivered} delivered`;
   }
   if (q.includes('available car')) {
     const avail = cars.filter((c) => c.status === 'available');
@@ -207,7 +207,7 @@ function ruleBasedResponse(
     return `**${reserved.length} reserved cars**:\n${reserved.map((c) => `• ${c.year} ${c.make} ${c.model} — ${formatRM(c.sellingPrice)}`).join('\n')}`;
   }
   if (q.includes('sold car') || q.includes('cars sold')) {
-    const sold = cars.filter((c) => c.status === 'sold');
+    const sold = cars.filter((c) => c.status === 'delivered');
     if (sold.length === 0) return 'No cars sold yet.';
     return `**${sold.length} cars sold**:\n${sold.map((c) => `• ${c.year} ${c.make} ${c.model} — ${formatRM(c.sellingPrice)}`).join('\n')}`;
   }
@@ -261,7 +261,7 @@ function ruleBasedResponse(
     return `**Workshop Summary**:\n• Total jobs: ${repairs.length}\n• Active: ${active}\n• Completed: ${done}`;
   }
   if (isDirector && (q.includes('revenue') || q.includes('profit') || q.includes('earn'))) {
-    const soldCars = cars.filter((c) => c.status === 'sold');
+    const soldCars = cars.filter((c) => c.status === 'delivered');
     const revenue = soldCars.reduce((s, c) => s + c.sellingPrice, 0);
     const costs = soldCars.reduce((s, c) => s + c.purchasePrice, 0);
     const repairCosts = repairs.reduce((s, r) => s + r.totalCost, 0);

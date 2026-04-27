@@ -4,8 +4,6 @@ import { useStore } from '../store';
 import StatCard from '../components/StatCard';
 import { formatRM } from '../utils/format';
 
-const COMMISSION_PER_CAR = 500;
-
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -37,7 +35,7 @@ export default function Finance() {
 
   // Cars sold in selected month
   const soldCarsThisMonth = cars.filter((c) => {
-    if (c.status !== 'sold') return false;
+    if (c.status !== 'delivered') return false;
     const d = getSoldDateFor(c);
     return d.getFullYear() === selectedYear && d.getMonth() === selectedMonth;
   });
@@ -51,32 +49,42 @@ export default function Finance() {
   const getSalesperson = (id?: string) =>
     id ? users.find((u) => u.id === id) : null;
 
-  // Aggregates for selected month
-  const totalRevenue = soldCarsThisMonth.reduce(
-    (s, c) => s + (c.finalDeal?.dealPrice ?? c.sellingPrice), 0
-  );
-  const totalPurchaseCosts = soldCarsThisMonth.reduce((s, c) => s + c.purchasePrice, 0);
-  const totalRepairCosts = soldCarsThisMonth.reduce((s, c) => s + getRepairCosts(c.id), 0);
-  const totalCommission = soldCarsThisMonth.length * COMMISSION_PER_CAR;
-  const netProfit = totalRevenue - totalPurchaseCosts - totalRepairCosts - totalCommission;
-  const avgProfitPerCar = soldCarsThisMonth.length > 0 ? netProfit / soldCarsThisMonth.length : 0;
+  const calcCommission = (car: typeof cars[0], repairCosts: number): number => {
+    const dealPrice = car.finalDeal?.dealPrice ?? car.sellingPrice;
+    const netBeforeComm = dealPrice - car.purchasePrice - repairCosts;
+    if (car.priceFloor != null) {
+      return dealPrice >= car.priceFloor
+        ? (netBeforeComm >= 10000 ? 2000 : 1500)
+        : 1000;
+    }
+    return netBeforeComm >= 10000 ? 1500 : 1000;
+  };
 
-  // Per-car data for the table
+  // Per-car data (compute first so totals derive from it)
   const carData = soldCarsThisMonth.map((car) => {
     const repairCosts = getRepairCosts(car.id);
     const dealPrice = car.finalDeal?.dealPrice ?? car.sellingPrice;
-    const commission = COMMISSION_PER_CAR;
+    const commission = calcCommission(car, repairCosts);
     const profit = dealPrice - car.purchasePrice - repairCosts - commission;
     const sp = getSalesperson(car.assignedSalesperson);
     return { car, dealPrice, repairCosts, commission, profit, sp };
   });
 
+  // Aggregates derived from carData
+  const totalRevenue = carData.reduce((s, d) => s + d.dealPrice, 0);
+  const totalPurchaseCosts = carData.reduce((s, d) => s + d.car.purchasePrice, 0);
+  const totalRepairCosts = carData.reduce((s, d) => s + d.repairCosts, 0);
+  const totalCommission = carData.reduce((s, d) => s + d.commission, 0);
+  const netProfit = carData.reduce((s, d) => s + d.profit, 0);
+  const avgProfitPerCar = carData.length > 0 ? netProfit / carData.length : 0;
+
   // Commission per salesperson (this month)
   const commissionBySalesperson = users
     .filter((u) => u.role === 'salesperson')
     .map((sp) => {
-      const soldCount = soldCarsThisMonth.filter((c) => c.assignedSalesperson === sp.id).length;
-      return { sp, soldCount, commission: soldCount * COMMISSION_PER_CAR };
+      const soldBySp = soldCarsThisMonth.filter((c) => c.assignedSalesperson === sp.id);
+      const commission = soldBySp.reduce((sum, car) => sum + calcCommission(car, getRepairCosts(car.id)), 0);
+      return { sp, soldCount: soldBySp.length, commission };
     })
     .filter((x) => x.soldCount > 0);
 
@@ -144,9 +152,9 @@ export default function Finance() {
           iconColor="text-orange-400"
         />
         <StatCard
-          title="Total Commission"
+          title="Salesman Commission"
           value={formatRM(totalCommission)}
-          subtitle={`${soldCarsThisMonth.length} × RM ${COMMISSION_PER_CAR}`}
+          subtitle={`${soldCarsThisMonth.length} car${soldCarsThisMonth.length !== 1 ? 's' : ''} delivered`}
           icon={Award}
           borderColor="border-l-purple-400"
           iconColor="text-purple-400"
@@ -162,7 +170,7 @@ export default function Finance() {
             <PLRow label="Revenue (Sales)" value={totalRevenue} positive />
             <PLRow label="Purchase Costs" value={-totalPurchaseCosts} />
             <PLRow label="Repair & Workshop" value={-totalRepairCosts} />
-            <PLRow label="Commission Paid" value={-totalCommission} />
+            <PLRow label="Salesman Commission" value={-totalCommission} />
             <div className="border-t border-obsidian-400/60 pt-3">
               <div className="flex justify-between items-center">
                 <span className="text-white font-semibold">Net Profit</span>
@@ -211,7 +219,7 @@ export default function Finance() {
             {[
               { label: 'Purchase Costs', value: totalPurchaseCosts, pct: totalRevenue > 0 ? (totalPurchaseCosts / totalRevenue) * 100 : 0, color: 'bg-blue-500' },
               { label: 'Repair Costs', value: totalRepairCosts, pct: totalRevenue > 0 ? (totalRepairCosts / totalRevenue) * 100 : 0, color: 'bg-orange-500' },
-              { label: 'Commission', value: totalCommission, pct: totalRevenue > 0 ? (totalCommission / totalRevenue) * 100 : 0, color: 'bg-purple-500' },
+              { label: 'Salesman Commission', value: totalCommission, pct: totalRevenue > 0 ? (totalCommission / totalRevenue) * 100 : 0, color: 'bg-purple-500' },
               { label: 'Net Profit', value: Math.max(0, netProfit), pct: totalRevenue > 0 ? (Math.max(0, netProfit) / totalRevenue) * 100 : 0, color: 'bg-green-500' },
             ].map(({ label, value, pct, color }) => (
               <div key={label}>
@@ -304,7 +312,7 @@ export default function Finance() {
                   <th className="text-right px-5 py-3 font-medium">Deal Price</th>
                   <th className="text-right px-5 py-3 font-medium">Buy Price</th>
                   <th className="text-right px-5 py-3 font-medium">Repair Costs</th>
-                  <th className="text-right px-5 py-3 font-medium">Commission</th>
+                  <th className="text-right px-5 py-3 font-medium">Salesman Commission</th>
                   <th className="text-right px-5 py-3 font-medium">Net Profit</th>
                   <th className="text-left px-5 py-3 font-medium">Salesperson</th>
                 </tr>

@@ -30,10 +30,12 @@ import { formatRM, formatMileage, generateId } from '../utils/format';
 interface DealBadge { cls: string; label: string }
 
 function getDealBadge(car: Car): DealBadge {
-  // Deal confirmed → sold, pending delivery/puspakom/etc.
+  // Deal confirmed → sold (pending delivery) or delivered
+  if (car.status === 'delivered') {
+    return { cls: 'bg-violet-500/90 text-white', label: 'Sold · Delivered' };
+  }
   if (car.status === 'sold' || car.finalDeal?.approvalStatus === 'approved') {
-    const pendingLabel = !car.deliveryCollected ? 'Pending Delivery' : 'Delivered';
-    return { cls: 'bg-violet-500/90 text-white', label: `Sold · ${pendingLabel}` };
+    return { cls: 'bg-violet-500/90 text-white', label: 'Sold · Pending Delivery' };
   }
 
   const submissions = car.loanSubmissions ?? [];
@@ -200,7 +202,7 @@ export default function Inventory() {
 
   const filtered = useMemo(() => {
     // Show all cars except fully delivered sold cars
-    let result = cars.filter((c) => c.status !== 'sold' || !c.deliveryCollected);
+    let result = cars.filter((c) => c.status !== 'delivered');
 
     if (search) {
       const q = search.toLowerCase();
@@ -352,7 +354,7 @@ export default function Inventory() {
 
       {/* Count */}
       <p className="text-gray-500 text-sm">
-        Showing <span className="text-white font-medium">{filtered.length}</span> of {cars.filter(c => c.status !== 'sold' || !c.deliveryCollected).length} active stock
+        Showing <span className="text-white font-medium">{filtered.length}</span> of {cars.filter(c => c.status !== 'delivered').length} active stock
       </p>
 
       {/* Empty state */}
@@ -727,6 +729,18 @@ export default function Inventory() {
               style={!isDirector ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
             />
           </FormField>
+          {isDirector && (
+            <FormField label="Floor Price (RM) — Lowest acceptable deal" className="col-span-2">
+              <input
+                type="number"
+                className={inputCls()}
+                value={form.priceFloor ?? ''}
+                onChange={(e) => setForm({ ...form, priceFloor: e.target.value ? Number(e.target.value) : undefined })}
+                placeholder="e.g. 55800"
+              />
+              <p className="text-gray-600 text-xs mt-1">Deal ≥ floor → 2k or 1.5k commission · Deal below floor → 1k commission</p>
+            </FormField>
+          )}
           <FormField label="Transmission">
             <select
               className={inputCls()}
