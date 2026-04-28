@@ -315,7 +315,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     );
   }
 
-  const assignedSalesperson = car.assignedSalesperson ? users.find((u) => u.id === car.assignedSalesperson) : null;
+  const assignedSalespersonId = car.assignedSalesperson || dealCustomer?.assignedSalesId;
+  const assignedSalesperson = assignedSalespersonId ? users.find((u) => u.id === assignedSalespersonId) : null;
 
   // Net profit matching director view formula
   const _wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
