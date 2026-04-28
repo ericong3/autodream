@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
-import { Car, RepairJob, ChecklistItem, REPAIR_TYPES, DEFAULT_CHECKLIST_LABELS, WorkOrderItem } from '../types';
+import { Car, RepairJob, ChecklistItem, DEFAULT_CHECKLIST_LABELS, WorkOrderItem } from '../types';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, formatMileage, generateId } from '../utils/format';
@@ -1312,45 +1312,53 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       {/* ── Add Repair Modal ── */}
       <Modal isOpen={showRepairModal} onClose={() => setShowRepairModal(false)} title="Add Repair Job" maxWidth="max-w-xl">
         <div className="space-y-4">
-          <FormField label="Type of Repair" error={repairErrors.typeOfRepair}>
-            <select className={inputCls(repairErrors.typeOfRepair)} value={repairForm.typeOfRepair} onChange={(e) => setRepairForm({ ...repairForm, typeOfRepair: e.target.value })}>
-              <option value="">Select type...</option>
-              {REPAIR_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </FormField>
+          {(() => {
+            const repairTypes = Array.from(new Set(workshops.map(w => w.speciality).filter(Boolean))) as string[];
+            const filteredWorkshops = repairForm.typeOfRepair
+              ? workshops.filter(w => w.speciality === repairForm.typeOfRepair)
+              : [];
+            return (
+              <>
+                <FormField label="Type of Repair" error={repairErrors.typeOfRepair}>
+                  {repairTypes.length === 0 ? (
+                    <p className="text-xs text-gray-500 py-2">
+                      No repair types yet — add workshops with a speciality in <span className="text-gold-400">Data → Workshops</span>
+                    </p>
+                  ) : (
+                    <select
+                      className={inputCls(repairErrors.typeOfRepair)}
+                      value={repairForm.typeOfRepair}
+                      onChange={(e) => setRepairForm({ ...repairForm, typeOfRepair: e.target.value, location: '' })}
+                    >
+                      <option value="">Select type...</option>
+                      {repairTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  )}
+                </FormField>
 
-          <FormField label="Send to Workshop" error={repairErrors.location}>
-            <select className={inputCls(repairErrors.location)} value={repairForm.location} onChange={(e) => setRepairForm({ ...repairForm, location: e.target.value })}>
-              <option value="">Select workshop...</option>
-              {workshops.length === 0 ? (
-                <option disabled>No workshops — add them in Data page</option>
-              ) : (
-                (() => {
-                  const categories = Array.from(new Set(workshops.map((w) => w.speciality).filter(Boolean)));
-                  const uncategorised = workshops.filter((w) => !w.speciality);
-                  return <>
-                    {categories.map((cat) => (
-                      <optgroup key={cat} label={cat as string}>
-                        {workshops.filter((w) => w.speciality === cat).map((w) => (
-                          <option key={w.id} value={w.name}>{w.name}</option>
-                        ))}
-                      </optgroup>
-                    ))}
-                    {uncategorised.length > 0 && (
-                      <optgroup label="Other">
-                        {uncategorised.map((w) => (
-                          <option key={w.id} value={w.name}>{w.name}</option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </>;
-                })()
-              )}
-            </select>
-            {workshops.length === 0 && (
-              <p className="text-xs text-gray-500 mt-1">Add workshops in <span className="text-gold-400">Data → Workshops</span></p>
-            )}
-          </FormField>
+                <FormField label="Send to Workshop" error={repairErrors.location}>
+                  {!repairForm.typeOfRepair ? (
+                    <p className="text-xs text-gray-500 py-2">Select a repair type first</p>
+                  ) : filteredWorkshops.length === 0 ? (
+                    <p className="text-xs text-gray-500 py-2">
+                      No <span className="text-white">{repairForm.typeOfRepair}</span> workshops — add one in <span className="text-gold-400">Data → Workshops</span>
+                    </p>
+                  ) : (
+                    <select
+                      className={inputCls(repairErrors.location)}
+                      value={repairForm.location}
+                      onChange={(e) => setRepairForm({ ...repairForm, location: e.target.value })}
+                    >
+                      <option value="">Select workshop...</option>
+                      {filteredWorkshops.map((w) => (
+                        <option key={w.id} value={w.name}>{w.name}{w.phone ? ` — ${w.phone}` : ''}</option>
+                      ))}
+                    </select>
+                  )}
+                </FormField>
+              </>
+            );
+          })()}
 
           <div>
             <label className="block text-gray-300 text-xs font-medium mb-2">Parts (optional)</label>

@@ -87,12 +87,13 @@ export default function History() {
       const w = wo?.loanWorkOrder ?? wo?.cashWorkOrder;
       const sellingPrice = (w?.sellingPrice && w.sellingPrice > 0) ? w.sellingPrice : c.sellingPrice;
       const discount = w?.discount ?? 0;
-      const insurance = w?.insurance ?? 0;
-      const bankProduct = w?.bankProduct ?? 0;
       const additionalTotal = w?.additionalItems?.reduce((a, i) => a + i.amount, 0) ?? 0;
-      const repairCosts = repairs.filter(r => r.carId === c.id).reduce((a, r) => a + r.totalCost, 0);
-      const profitBeforeCommission = sellingPrice - c.purchasePrice - discount - insurance - bankProduct - repairCosts - additionalTotal;
-      const commission = profitBeforeCommission < 10000 ? 1000 : profitBeforeCommission < 15000 ? 1500 : 2000;
+      const repairCosts = repairs.filter(r => r.carId === c.id && r.status === 'done').reduce((a, r) => a + (r.actualCost ?? r.totalCost), 0);
+      const dealNetPrice = sellingPrice - discount;
+      const profitBeforeCommission = dealNetPrice - c.purchasePrice - repairCosts - additionalTotal;
+      const commission = c.priceFloor != null
+        ? (dealNetPrice >= c.priceFloor ? (profitBeforeCommission >= 10000 ? 2000 : 1500) : 1000)
+        : (profitBeforeCommission >= 10000 ? 1500 : 1000);
       map[c.id] = { sellingPrice, profit: profitBeforeCommission - commission };
     }
     return map;
