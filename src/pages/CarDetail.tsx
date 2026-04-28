@@ -1449,7 +1449,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             );
           })()}
 
-          <FormField label="Description *" error={miscErrors.description}>
+          <FormField label="Description" error={miscErrors.description}>
             <input
               className={inputCls(miscErrors.description)}
               placeholder="e.g. Road tax renewal, JPJ fee..."
@@ -1484,13 +1484,12 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           <button
             onClick={async () => {
               const errs: Record<string, string> = {};
-              if (!miscForm.description.trim()) errs.description = 'Description is required';
               const amt = parseFloat(miscForm.amount);
               if (!miscForm.amount || isNaN(amt) || amt <= 0) errs.amount = 'Enter a valid amount';
               if (Object.keys(errs).length) { setMiscErrors(errs); return; }
               await addMiscCost(car!.id, {
                 id: generateId(),
-                description: miscForm.description.trim(),
+                description: miscForm.description.trim() || miscForm.merchantName || miscForm.category || 'Misc',
                 amount: amt,
                 createdAt: new Date().toISOString(),
                 createdBy: currentUser?.id,
