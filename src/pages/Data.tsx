@@ -163,7 +163,6 @@ const WORKSHOP_CATEGORIES = [
   'Tyre & Rim',
   'Windscreen',
   'Upholstery',
-  'Others',
 ];
 
 function WorkshopsTab({
@@ -176,6 +175,25 @@ function WorkshopsTab({
   deleteWorkshop: (id: string) => void;
 }) {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
+  const [customMode, setCustomMode] = useState(false);
+  const [customCat, setCustomCat] = useState('');
+
+  const allCategories = [
+    ...WORKSHOP_CATEGORIES,
+    ...workshops
+      .map((w) => w.speciality)
+      .filter((s): s is string => !!s && !WORKSHOP_CATEGORIES.includes(s))
+      .filter((s, i, arr) => arr.indexOf(s) === i),
+  ];
+
+  const handleAdd = () => {
+    const speciality = customMode ? customCat.trim() : workshopForm.speciality;
+    if (!workshopForm.name.trim() || !speciality) return;
+    addWorkshop({ id: generateId(), name: workshopForm.name.trim(), phone: workshopForm.phone || undefined, speciality });
+    setWorkshopForm({ name: '', phone: '', speciality: '' });
+    setCustomMode(false);
+    setCustomCat('');
+  };
 
   return (
     <div className="space-y-4">
@@ -200,20 +218,43 @@ function WorkshopsTab({
             onChange={(e) => setWorkshopForm({ ...workshopForm, phone: e.target.value })}
           />
           <div className="flex gap-2">
-            <select
-              className={inputCls()}
-              value={workshopForm.speciality}
-              onChange={(e) => setWorkshopForm({ ...workshopForm, speciality: e.target.value })}
-            >
-              <option value="">— Select category —</option>
-              {WORKSHOP_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
+            {customMode ? (
+              <div className="flex gap-2 flex-1">
+                <input
+                  className={inputCls()}
+                  placeholder="New category name *"
+                  value={customCat}
+                  autoFocus
+                  onChange={(e) => setCustomCat(e.target.value)}
+                />
+                <button
+                  onClick={() => { setCustomMode(false); setCustomCat(''); setWorkshopForm({ ...workshopForm, speciality: '' }); }}
+                  className="px-3 py-2 rounded-lg text-sm text-gray-400 hover:text-white bg-obsidian-700/60 border border-obsidian-400/60 shrink-0"
+                  title="Cancel"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ) : (
+              <select
+                className={inputCls()}
+                value={workshopForm.speciality}
+                onChange={(e) => {
+                  if (e.target.value === '__custom__') {
+                    setCustomMode(true);
+                    setWorkshopForm({ ...workshopForm, speciality: '' });
+                  } else {
+                    setWorkshopForm({ ...workshopForm, speciality: e.target.value });
+                  }
+                }}
+              >
+                <option value="">— Select category —</option>
+                {WORKSHOP_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                <option value="__custom__">＋ Add category…</option>
+              </select>
+            )}
             <button
-              onClick={() => {
-                if (!workshopForm.name.trim() || !workshopForm.speciality) return;
-                addWorkshop({ id: generateId(), name: workshopForm.name.trim(), phone: workshopForm.phone || undefined, speciality: workshopForm.speciality });
-                setWorkshopForm({ name: '', phone: '', speciality: '' });
-              }}
+              onClick={handleAdd}
               className="btn-gold px-4 py-2 rounded-lg text-sm shrink-0"
             >
               <Plus size={15} />
@@ -223,7 +264,7 @@ function WorkshopsTab({
       </div>
 
       {/* Grouped by category */}
-      {WORKSHOP_CATEGORIES.map((cat) => {
+      {allCategories.map((cat) => {
         const items = workshops.filter((w) => w.speciality === cat);
         if (items.length === 0) return null;
         return (
