@@ -37,10 +37,13 @@ export default function Commission() {
     repairs.filter(r => r.carId === carId && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
 
   const calcCommission = (car: typeof cars[0]): number => {
-    const dealPrice = car.finalDeal?.dealPrice ?? car.sellingPrice;
+    const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
+    const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
+    const dealPrice = (wo?.sellingPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
     const repairCosts = getRepairCosts(car.id);
     const miscCosts = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
-    const netBeforeComm = dealPrice - car.purchasePrice - repairCosts - miscCosts;
+    const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
+    const netBeforeComm = dealPrice - car.purchasePrice - repairCosts - miscCosts - additionalTotal;
     if (car.priceFloor != null) {
       return dealPrice >= car.priceFloor ? (netBeforeComm >= 10000 ? 2000 : 1500) : 1000;
     }

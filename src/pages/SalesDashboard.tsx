@@ -43,10 +43,13 @@ export default function SalesDashboard() {
   const calcCarCommission = (carId?: string): number => {
     const car = cars.find(c => c.id === carId);
     if (!car) return 0;
-    const dealPrice = car.finalDeal?.dealPrice ?? car.sellingPrice;
+    const dealCustomer = customers.find(c => c.interestedCarId === carId && (c.cashWorkOrder || c.loanWorkOrder));
+    const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
+    const dealPrice = (wo?.sellingPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
     const repairCosts = getRepairCosts(car.id);
     const miscCosts = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
-    const netBeforeComm = dealPrice - car.purchasePrice - repairCosts - miscCosts;
+    const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
+    const netBeforeComm = dealPrice - car.purchasePrice - repairCosts - miscCosts - additionalTotal;
     if (car.priceFloor != null) {
       return dealPrice >= car.priceFloor ? (netBeforeComm >= 10000 ? 2000 : 1500) : 1000;
     }

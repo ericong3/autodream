@@ -55,9 +55,15 @@ export default function Finance() {
   const getSalesperson = (id?: string) =>
     id ? users.find((u) => u.id === id) : null;
 
-  const calcCommission = (car: typeof cars[0], repairCosts: number, miscCosts: number): number => {
-    const dealPrice = car.finalDeal?.dealPrice ?? car.sellingPrice;
-    const netBeforeComm = dealPrice - car.purchasePrice - repairCosts - miscCosts;
+  const getWorkOrder = (car: typeof cars[0]) => {
+    const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
+    return dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
+  };
+
+  const calcCommission = (car: typeof cars[0], repairCosts: number, miscCosts: number, additionalTotal: number): number => {
+    const wo = getWorkOrder(car);
+    const dealPrice = (wo?.sellingPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
+    const netBeforeComm = dealPrice - car.purchasePrice - repairCosts - miscCosts - additionalTotal;
     if (car.priceFloor != null) {
       return dealPrice >= car.priceFloor
         ? (netBeforeComm >= 10000 ? 2000 : 1500)
@@ -68,13 +74,15 @@ export default function Finance() {
 
   // Per-car data (compute first so totals derive from it)
   const carData = soldCarsThisMonth.map((car) => {
+    const wo = getWorkOrder(car);
     const repairCosts = getRepairCosts(car.id);
     const miscCosts = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
-    const dealPrice = car.finalDeal?.dealPrice ?? car.sellingPrice;
-    const commission = calcCommission(car, repairCosts, miscCosts);
-    const profit = dealPrice - car.purchasePrice - repairCosts - miscCosts - commission;
+    const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
+    const dealPrice = (wo?.sellingPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
+    const commission = calcCommission(car, repairCosts, miscCosts, additionalTotal);
+    const profit = dealPrice - car.purchasePrice - repairCosts - miscCosts - additionalTotal - commission;
     const sp = getSalesperson(getDealSalespersonId(car));
-    return { car, dealPrice, repairCosts, miscCosts, commission, profit, sp };
+    return { car, dealPrice, repairCosts, miscCosts, additionalTotal, commission, profit, sp };
   });
 
   // Aggregates derived from carData
@@ -90,7 +98,11 @@ export default function Finance() {
     .filter((u) => u.role === 'salesperson')
     .map((sp) => {
       const soldBySp = soldCarsThisMonth.filter((c) => getDealSalespersonId(c) === sp.id);
-      const commission = soldBySp.reduce((sum, car) => sum + calcCommission(car, getRepairCosts(car.id), (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0)), 0);
+      const commission = soldBySp.reduce((sum, car) => {
+        const wo = getWorkOrder(car);
+        const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
+        return sum + calcCommission(car, getRepairCosts(car.id), (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0), additionalTotal);
+      }, 0);
       return { sp, soldCount: soldBySp.length, commission };
     })
     .filter((x) => x.soldCount > 0);

@@ -601,6 +601,102 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         }
       })
       .subscribe();
+
+    supabase.channel('realtime-quotations')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'quotations' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          set((s) => ({
+            quotations: s.quotations.some((q) => q.id === (payload.new as any).id)
+              ? s.quotations
+              : [...s.quotations, rowToQuotation(payload.new)],
+          }));
+        } else if (payload.eventType === 'UPDATE') {
+          set((s) => ({ quotations: s.quotations.map((q) => q.id === (payload.new as any).id ? rowToQuotation(payload.new) : q) }));
+        } else if (payload.eventType === 'DELETE') {
+          set((s) => ({ quotations: s.quotations.filter((q) => q.id !== (payload.old as any).id) }));
+        }
+      })
+      .subscribe();
+
+    supabase.channel('realtime-instructions')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'instructions' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          set((s) => ({
+            instructions: s.instructions.some((i) => i.id === (payload.new as any).id)
+              ? s.instructions
+              : [...s.instructions, rowToInstruction(payload.new)],
+          }));
+        } else if (payload.eventType === 'UPDATE') {
+          set((s) => ({ instructions: s.instructions.map((i) => i.id === (payload.new as any).id ? rowToInstruction(payload.new) : i) }));
+        } else if (payload.eventType === 'DELETE') {
+          set((s) => ({ instructions: s.instructions.filter((i) => i.id !== (payload.old as any).id) }));
+        }
+      })
+      .subscribe();
+
+    supabase.channel('realtime-test-drives')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'test_drives' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          set((s) => ({
+            testDrives: s.testDrives.some((t) => t.id === (payload.new as any).id)
+              ? s.testDrives
+              : [...s.testDrives, rowToTestDrive(payload.new)],
+          }));
+        } else if (payload.eventType === 'UPDATE') {
+          set((s) => ({ testDrives: s.testDrives.map((t) => t.id === (payload.new as any).id ? rowToTestDrive(payload.new) : t) }));
+        } else if (payload.eventType === 'DELETE') {
+          set((s) => ({ testDrives: s.testDrives.filter((t) => t.id !== (payload.old as any).id) }));
+        }
+      })
+      .subscribe();
+
+    supabase.channel('realtime-personal-reminders')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'personal_reminders' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          set((s) => ({
+            personalReminders: s.personalReminders.some((r) => r.id === (payload.new as any).id)
+              ? s.personalReminders
+              : [...s.personalReminders, rowToReminder(payload.new)],
+          }));
+        } else if (payload.eventType === 'UPDATE') {
+          set((s) => ({ personalReminders: s.personalReminders.map((r) => r.id === (payload.new as any).id ? rowToReminder(payload.new) : r) }));
+        } else if (payload.eventType === 'DELETE') {
+          set((s) => ({ personalReminders: s.personalReminders.filter((r) => r.id !== (payload.old as any).id) }));
+        }
+      })
+      .subscribe();
+
+    supabase.channel('realtime-dealers')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dealers' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          set((s) => ({
+            dealers: s.dealers.some((d) => d.id === (payload.new as any).id)
+              ? s.dealers
+              : [...s.dealers, payload.new as Dealer],
+          }));
+        } else if (payload.eventType === 'UPDATE') {
+          set((s) => ({ dealers: s.dealers.map((d) => d.id === (payload.new as any).id ? payload.new as Dealer : d) }));
+        } else if (payload.eventType === 'DELETE') {
+          set((s) => ({ dealers: s.dealers.filter((d) => d.id !== (payload.old as any).id) }));
+        }
+      })
+      .subscribe();
+
+    supabase.channel('realtime-suppliers')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'suppliers' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          set((s) => ({
+            suppliers: s.suppliers.some((x) => x.id === (payload.new as any).id)
+              ? s.suppliers
+              : [...s.suppliers, payload.new as Supplier],
+          }));
+        } else if (payload.eventType === 'UPDATE') {
+          set((s) => ({ suppliers: s.suppliers.map((x) => x.id === (payload.new as any).id ? payload.new as Supplier : x) }));
+        } else if (payload.eventType === 'DELETE') {
+          set((s) => ({ suppliers: s.suppliers.filter((x) => x.id !== (payload.old as any).id) }));
+        }
+      })
+      .subscribe();
   },
 
   login: async (username, password) => {
