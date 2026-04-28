@@ -563,10 +563,12 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
 
   // Repairs
   addRepair: async (repair) => {
+    const car = get().cars.find((c) => c.id === repair.carId);
+    const isDelivered = car?.status === 'delivered';
     const updatedCars = repair.location && repair.status !== 'queued'
       ? get().cars.map((c) =>
           c.id === repair.carId
-            ? { ...c, currentLocation: repair.location, status: 'in_workshop' as Car['status'] }
+            ? { ...c, currentLocation: repair.location, ...(isDelivered ? {} : { status: 'in_workshop' as Car['status'] }) }
             : c
         )
       : get().cars;
@@ -574,7 +576,9 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     const { error } = await supabase.from('repairs').insert(repairToRow(repair));
     if (error) console.error('addRepair failed:', error.message);
     if (repair.location && repair.status !== 'queued') {
-      await supabase.from('cars').update({ current_location: repair.location, status: 'in_workshop' }).eq('id', repair.carId);
+      const dbUpdate: any = { current_location: repair.location };
+      if (!isDelivered) dbUpdate.status = 'in_workshop';
+      await supabase.from('cars').update(dbUpdate).eq('id', repair.carId);
     }
   },
   updateRepair: async (id, repair) => {
@@ -592,9 +596,10 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         } else if (repair.status === 'pending' && existing.status === 'queued') {
           const location = repair.location ?? existing.location;
           if (location) {
-            updatedCars = s.cars.map((c) =>
-              c.id === existing.carId ? { ...c, currentLocation: location, status: 'in_workshop' as Car['status'] } : c
-            );
+            updatedCars = s.cars.map((c) => {
+              if (c.id !== existing.carId) return c;
+              return { ...c, currentLocation: location, ...(c.status === 'delivered' ? {} : { status: 'in_workshop' as Car['status'] }) };
+            });
           }
         } else if (repair.location) {
           updatedCars = s.cars.map((c) =>

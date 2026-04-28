@@ -1387,7 +1387,10 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           </FormField>
 
           <div className="bg-orange-500/5 border border-orange-500/20 rounded-lg p-3 text-xs text-orange-300">
-            Adding this repair will mark the car as <span className="font-semibold">In Workshop</span> and update its location to the garage above.
+            {car.status === 'delivered'
+              ? 'Repair will be logged against this delivered unit. Status remains Delivered.'
+              : <>Adding this repair will mark the car as <span className="font-semibold">In Workshop</span> and update its location to the garage above.</>
+            }
           </div>
         </div>
         <div className="flex gap-3 mt-5">
