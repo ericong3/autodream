@@ -76,6 +76,7 @@ export default function Inventory() {
   const cars = useStore((s) => s.cars);
   const users = useStore((s) => s.users);
   const customers = useStore((s) => s.customers);
+  const repairs = useStore((s) => s.repairs);
   const currentUser = useStore((s) => s.currentUser);
   const addCar = useStore((s) => s.addCar);
   const deleteCar = useStore((s) => s.deleteCar);
@@ -83,6 +84,12 @@ export default function Inventory() {
   const viewPreference = useStore((s) => s.viewPreference);
   const setViewPreference = useStore((s) => s.setViewPreference);
   const navigate = useNavigate();
+
+  const getLocation = (car: Car): string => {
+    if (car.status === 'delivered') return 'Delivered';
+    const activeRepair = repairs.some(r => r.carId === car.id && (r.status === 'pending' || r.status === 'in_progress'));
+    return activeRepair ? (car.currentLocation ?? 'Showroom') : 'Showroom';
+  };
 
   const isDirector = currentUser?.role === 'director';
   const canAddCar = currentUser?.role === 'director' || currentUser?.role === 'salesperson';
@@ -480,7 +487,7 @@ export default function Inventory() {
                 </div>
                 <div className="flex items-center gap-1 mt-1">
                   <MapPin size={11} className="text-gray-500 flex-shrink-0" />
-                  <span className="text-gray-400 text-xs truncate">{car.currentLocation ?? 'Showroom'}</span>
+                  <span className="text-gray-400 text-xs truncate">{getLocation(car)}</span>
                 </div>
 
                 <p className="text-gray-400 text-xs mt-2">{formatMileage(car.mileage)}</p>
@@ -592,7 +599,7 @@ export default function Inventory() {
                   <div className="flex items-center gap-3 mt-1 flex-wrap">
                     <span className="text-gray-500 text-xs">{car.colour} · {car.transmission} · {formatMileage(car.mileage)}</span>
                     <span className="flex items-center gap-1 text-gray-500 text-xs">
-                      <MapPin size={10} />{car.currentLocation ?? 'Showroom'}
+                      <MapPin size={10} />{getLocation(car)}
                     </span>
                   </div>
                 </div>
