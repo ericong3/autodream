@@ -23,7 +23,7 @@ import { supabase } from '../lib/supabase';
 import { Car } from '../types';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
-import { formatRM, formatMileage, generateId } from '../utils/format';
+import { formatRM, formatMileage, generateId, shortName } from '../utils/format';
 
 
 // Loan/deal pipeline badge — based purely on case/loan progress, not car location
@@ -308,8 +308,10 @@ export default function Inventory() {
     }
   };
 
-  const getSalesperson = (id?: string) =>
-    id ? users.find((u) => u.id === id)?.name ?? 'Unassigned' : 'Unassigned';
+  const getSalesperson = (id?: string) => {
+    const name = id ? users.find((u) => u.id === id)?.name : undefined;
+    return name ? shortName(name) : 'Unassigned';
+  };
 
   return (
     <div className="space-y-5">

@@ -13,7 +13,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { useStore } from '../store';
-import { formatRM, formatMileage } from '../utils/format';
+import { formatRM, formatMileage, shortName } from '../utils/format';
 import StatCard from '../components/StatCard';
 import { CarDetailContent } from './CarDetail';
 
@@ -102,8 +102,10 @@ export default function History() {
   const totalRevenue = soldCars.reduce((s, c) => s + (carCalcMap[c.id]?.sellingPrice ?? c.sellingPrice), 0);
   const totalProfit = soldCars.reduce((s, c) => s + (carCalcMap[c.id]?.profit ?? 0), 0);
 
-  const getSalesperson = (id?: string) =>
-    id ? users.find((u) => u.id === id)?.name ?? 'Unassigned' : 'Unassigned';
+  const getSalesperson = (id?: string) => {
+    const name = id ? users.find((u) => u.id === id)?.name : undefined;
+    return name ? shortName(name) : 'Unassigned';
+  };
 
   const monthLabel = monthFilter
     ? new Date(monthFilter + '-01').toLocaleString('en-MY', { month: 'long', year: 'numeric' })

@@ -33,7 +33,7 @@ import { supabase } from '../lib/supabase';
 import { Car, RepairJob, ChecklistItem, DEFAULT_CHECKLIST_LABELS, WorkOrderItem } from '../types';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
-import { formatRM, formatMileage, generateId } from '../utils/format';
+import { formatRM, formatMileage, generateId, shortName } from '../utils/format';
 
 
 const STATUS_BADGE: Record<string, string> = {
@@ -618,7 +618,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   <InfoItem label="Net Profit" value={formatRM(netProfit)} valueClass={netProfit >= 0 ? 'text-green-400 font-bold' : 'text-red-400 font-bold'} />
                 </>
               )}
-              <InfoItem label="Assigned Salesperson" value={assignedSalesperson?.name ?? 'Unassigned'} />
+              <InfoItem label="Assigned Salesperson" value={assignedSalesperson ? shortName(assignedSalesperson.name) : 'Unassigned'} />
             </div>
 
             {car.notes && (

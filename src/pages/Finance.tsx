@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { DollarSign, TrendingUp, Car, Wrench, Award, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useStore } from '../store';
 import StatCard from '../components/StatCard';
-import { formatRM } from '../utils/format';
+import { formatRM, shortName } from '../utils/format';
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -197,10 +197,10 @@ export default function Finance() {
                 <div key={sp.id} className="flex items-center justify-between p-3 bg-obsidian-700/60 rounded-lg border border-obsidian-400/60">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-gold-500/20 rounded-full flex items-center justify-center text-gold-400 font-bold text-sm uppercase">
-                      {sp.name.charAt(0)}
+                      {shortName(sp.name).charAt(0)}
                     </div>
                     <div>
-                      <p className="text-white text-sm font-medium">{sp.name}</p>
+                      <p className="text-white text-sm font-medium">{shortName(sp.name)}</p>
                       <p className="text-gray-500 text-xs">{soldCount} car{soldCount !== 1 ? 's' : ''} sold</p>
                     </div>
                   </div>
@@ -331,7 +331,7 @@ export default function Finance() {
                     <td className={`px-5 py-3 font-bold text-right ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {profit < 0 ? `-${formatRM(Math.abs(profit))}` : formatRM(profit)}
                     </td>
-                    <td className="px-5 py-3 text-gray-400">{sp?.name ?? 'N/A'}</td>
+                    <td className="px-5 py-3 text-gray-400">{sp ? shortName(sp.name) : 'N/A'}</td>
                   </tr>
                 ))}
               </tbody>
