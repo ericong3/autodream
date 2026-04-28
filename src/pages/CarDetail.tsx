@@ -27,6 +27,7 @@ import {
   CheckCircle,
   XCircle,
   Pencil,
+  Receipt,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
@@ -114,9 +115,12 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const addRepair = useStore((s) => s.addRepair);
   const updateRepair = useStore((s) => s.updateRepair);
   const deleteRepair = useStore((s) => s.deleteRepair);
+  const addMiscCost = useStore((s) => s.addMiscCost);
+  const deleteMiscCost = useStore((s) => s.deleteMiscCost);
 
   const car = cars.find((c) => c.id === id);
   const isDirector = currentUser?.role === 'director';
+  const isAdmin = currentUser?.role === 'admin';
   const isMechanic = currentUser?.role === 'mechanic';
   const isSalesperson = currentUser?.role === 'salesperson';
   const salespeople = users.filter((u) => u.role === 'salesperson');
@@ -147,8 +151,13 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   // ── Delete confirmation ──
   const [deleteTarget, setDeleteTarget] = useState<{ action: () => void | Promise<void>; label: string } | null>(null);
 
+  // ── Misc Cost Modal ──
+  const [showMiscModal, setShowMiscModal] = useState(false);
+  const [miscForm, setMiscForm] = useState({ description: '', amount: '' });
+  const [miscError, setMiscError] = useState('');
+
   // ── Repair / Loans tab ──
-  const [jobTab, setJobTab] = useState<'repairs' | 'loans' | 'final_deal'>(initialTab ?? 'repairs');
+  const [jobTab, setJobTab] = useState<'repairs' | 'loans' | 'final_deal' | 'misc'>(initialTab ?? 'repairs');
   const [dealView, setDealView] = useState<'salesman' | 'director'>('salesman');
   const [showConsignment, setShowConsignment] = useState(false);
 
@@ -479,6 +488,15 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               Add Repair
             </button>
           )}
+          {(isAdmin || isDirector) && (
+            <button
+              onClick={() => { setMiscForm({ description: '', amount: '' }); setMiscError(''); setShowMiscModal(true); }}
+              className="flex items-center gap-2 bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/60 text-gray-300 hover:text-white px-4 py-2 rounded-lg text-sm transition-colors"
+            >
+              <Receipt size={15} />
+              Misc Cost
+            </button>
+          )}
           {isDirector && (
             <button
               onClick={openEdit}
@@ -689,6 +707,17 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             <Banknote size={14} /> Loan Log
             {(() => { const isSoldDelivered = car.status === 'delivered'; const n = isSoldDelivered ? 0 : customers.filter(c => c.interestedCarId === car.id && c.loanApplications?.length && !c.isTrashed).length; return n > 0 ? <span className="text-xs bg-obsidian-700/60 px-1.5 py-0.5 rounded-full">{n}</span> : null; })()}
           </button>
+          {(isAdmin || isDirector) && (
+            <button
+              onClick={() => setJobTab('misc')}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors -mb-px ${
+                jobTab === 'misc' ? 'border-purple-400 text-purple-400' : 'border-transparent text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              <Receipt size={14} /> Misc
+              {(car.miscCosts?.length ?? 0) > 0 && <span className="text-xs bg-obsidian-700/60 px-1.5 py-0.5 rounded-full">{car.miscCosts!.length}</span>}
+            </button>
+          )}
           {car.finalDeal && (
             <button
               onClick={() => setJobTab('final_deal')}
@@ -813,6 +842,42 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             <p className="text-sm text-gray-400">
               Total Repair Cost: <span className="text-orange-400 font-semibold">{formatRM(totalRepairCost)}</span>
             </p>
+          </div>
+        )}
+
+        {/* ── Misc tab ── */}
+        {jobTab === 'misc' && (
+          <div>
+            {(car.miscCosts?.length ?? 0) === 0 ? (
+              <div className="text-center py-10 text-gray-600 text-sm">No misc costs recorded</div>
+            ) : (
+              <div className="divide-y divide-obsidian-400/60/50">
+                {car.miscCosts!.map((m) => (
+                  <div key={m.id} className="flex items-center justify-between px-5 py-3 hover:bg-obsidian-700/20 transition-colors">
+                    <div>
+                      <p className="text-white text-sm font-medium">{m.description}</p>
+                      <p className="text-gray-500 text-xs mt-0.5">{new Date(m.createdAt).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-purple-400 font-semibold text-sm">{formatRM(m.amount)}</span>
+                      {(isAdmin || isDirector) && (
+                        <button
+                          onClick={() => setDeleteTarget({ label: `misc cost "${m.description}"`, action: () => deleteMiscCost(car.id, m.id) })}
+                          className="text-red-400 hover:text-red-300 transition-colors"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="px-5 py-3 border-t border-obsidian-400/60 text-right">
+              <p className="text-sm text-gray-400">
+                Total Misc Cost: <span className="text-purple-400 font-semibold">{formatRM((car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0))}</span>
+              </p>
+            </div>
           </div>
         )}
 
@@ -1327,6 +1392,52 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
         <div className="flex gap-3 mt-6">
           <button onClick={() => setShowEditModal(false)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
           <button onClick={handleEditSubmit} className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm">Save Changes</button>
+        </div>
+      </Modal>
+
+      {/* ── Misc Cost Modal ── */}
+      <Modal isOpen={showMiscModal} onClose={() => setShowMiscModal(false)} title="Add Misc Cost" maxWidth="max-w-sm">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-gray-300 text-xs font-medium mb-1.5">Description *</label>
+            <input
+              className="w-full bg-obsidian-700/60 border border-obsidian-400/60 text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500 transition-colors"
+              placeholder="e.g. Road tax, JPJ fee, tinting..."
+              value={miscForm.description}
+              onChange={(e) => setMiscForm({ ...miscForm, description: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="block text-gray-300 text-xs font-medium mb-1.5">Amount (RM) *</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className="w-full bg-obsidian-700/60 border border-obsidian-400/60 text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500 transition-colors"
+              placeholder="0.00"
+              value={miscForm.amount}
+              onChange={(e) => setMiscForm({ ...miscForm, amount: e.target.value })}
+            />
+          </div>
+          {miscError && <p className="text-red-400 text-xs flex items-center gap-1"><AlertCircle size={12} />{miscError}</p>}
+          <button
+            onClick={async () => {
+              if (!miscForm.description.trim()) { setMiscError('Description is required'); return; }
+              const amt = parseFloat(miscForm.amount);
+              if (!miscForm.amount || isNaN(amt) || amt <= 0) { setMiscError('Enter a valid amount'); return; }
+              await addMiscCost(car!.id, {
+                id: generateId(),
+                description: miscForm.description.trim(),
+                amount: amt,
+                createdAt: new Date().toISOString(),
+                createdBy: currentUser?.id,
+              });
+              setShowMiscModal(false);
+            }}
+            className="w-full btn-gold py-2 rounded-lg text-sm font-medium"
+          >
+            Add Misc Cost
+          </button>
         </div>
       </Modal>
 

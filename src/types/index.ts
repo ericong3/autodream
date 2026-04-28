@@ -197,6 +197,15 @@ export interface Car {
   deliveryCollected?: boolean;
   consignment?: Consignment;
   priceFloor?: number;
+  miscCosts?: MiscCost[];
+}
+
+export interface MiscCost {
+  id: string;
+  description: string;
+  amount: number;
+  createdAt: string;
+  createdBy?: string;
 }
 
 export interface RepairJob {

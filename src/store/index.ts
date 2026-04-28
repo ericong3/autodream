@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
-import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier } from '../types';
+import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, MiscCost } from '../types';
 
 interface StoreState {
   currentUser: User | null;
@@ -78,6 +78,10 @@ interface StoreState {
   addSupplier: (supplier: Supplier) => Promise<void>;
   deleteSupplier: (id: string) => Promise<void>;
 
+  // Misc Costs
+  addMiscCost: (carId: string, misc: MiscCost) => Promise<void>;
+  deleteMiscCost: (carId: string, miscId: string) => Promise<void>;
+
   // View preference
   setViewPreference: (userId: string, page: string, view: 'grid' | 'list') => void;
 }
@@ -113,6 +117,7 @@ function rowToCar(r: any): Car {
     deliveryCollected: r.delivery_collected,
     consignment: r.consignment ?? undefined,
     priceFloor: r.price_floor ?? undefined,
+    miscCosts: r.misc_costs ?? [],
   };
 }
 
@@ -146,6 +151,7 @@ function carToRow(c: Partial<Car>) {
   if (c.deliveryCollected !== undefined) row.delivery_collected = c.deliveryCollected;
   if (c.consignment !== undefined) row.consignment = c.consignment;
   if (c.priceFloor !== undefined) row.price_floor = c.priceFloor;
+  if (c.miscCosts !== undefined) row.misc_costs = c.miscCosts;
   return row;
 }
 
@@ -753,6 +759,18 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   deleteSupplier: async (id) => {
     set((s) => ({ suppliers: s.suppliers.filter((s2) => s2.id !== id) }));
     await supabase.from('suppliers').delete().eq('id', id);
+  },
+
+  addMiscCost: async (carId, misc) => {
+    const car = get().cars.find((c) => c.id === carId);
+    if (!car) return;
+    await get().updateCar(carId, { miscCosts: [...(car.miscCosts ?? []), misc] });
+  },
+
+  deleteMiscCost: async (carId, miscId) => {
+    const car = get().cars.find((c) => c.id === carId);
+    if (!car) return;
+    await get().updateCar(carId, { miscCosts: (car.miscCosts ?? []).filter((m) => m.id !== miscId) });
   },
 }), {
   name: 'autodream-session',
