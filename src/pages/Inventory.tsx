@@ -207,6 +207,24 @@ export default function Inventory() {
     return map;
   }, [customers]);
 
+  // Net profit per car matching director view formula
+  const carProfitMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const car of cars) {
+      const customer = customers.find(c => c.interestedCarId === car.id && (c.loanWorkOrder || c.cashWorkOrder));
+      const wo = customer?.loanWorkOrder ?? customer?.cashWorkOrder;
+      const dealPrice = confirmedDealPrice[car.id] ?? car.finalDeal?.dealPrice ?? car.sellingPrice;
+      const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
+      const repairCosts = repairs.filter(r => r.carId === car.id && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
+      const profitBeforeComm = dealPrice - car.purchasePrice - repairCosts - additionalTotal;
+      const commission = car.priceFloor != null
+        ? (dealPrice >= car.priceFloor ? (profitBeforeComm >= 10000 ? 2000 : 1500) : 1000)
+        : (profitBeforeComm >= 10000 ? 1500 : 1000);
+      map[car.id] = profitBeforeComm - commission;
+    }
+    return map;
+  }, [cars, customers, repairs, confirmedDealPrice]);
+
   const filtered = useMemo(() => {
     // Show all cars except fully delivered sold cars
     let result = cars.filter((c) => c.status !== 'delivered');
@@ -505,8 +523,8 @@ export default function Inventory() {
                       <p className="text-gold-400 text-lg font-bold">{formatRM(car.sellingPrice)}</p>
                     )}
                     {isDirector && (
-                      <p className="text-green-400 text-xs font-medium mt-0.5">
-                        Profit: {formatRM((confirmedDealPrice[car.id] ?? car.sellingPrice) - car.purchasePrice)}
+                      <p className={`text-xs font-medium mt-0.5 ${(carProfitMap[car.id] ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        Profit: {formatRM(carProfitMap[car.id] ?? 0)}
                       </p>
                     )}
                   </div>
@@ -567,7 +585,7 @@ export default function Inventory() {
             const pending  = submissions.filter((s) => s.status === 'submitted');
             const deal = car.finalDeal;
             const price = confirmedDealPrice[car.id] ?? car.sellingPrice;
-            const profit = price - car.purchasePrice;
+            const profit = carProfitMap[car.id] ?? 0;
 
             return (
               <div
