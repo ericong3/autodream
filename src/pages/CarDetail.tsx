@@ -958,11 +958,11 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               <Section title="Deal Approval">
                 <DRow label="Status" value={
                   <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-                    deal.approvalStatus === 'approved' ? 'bg-green-500/20 text-green-400' :
+                    car.status === 'sold' || car.status === 'delivered' ? 'bg-green-500/20 text-green-400' :
                     deal.approvalStatus === 'rejected' ? 'bg-red-500/20 text-red-400' :
                     'bg-yellow-500/20 text-yellow-400'
                   }`}>
-                    {deal.approvalStatus === 'approved' ? 'Approved' : deal.approvalStatus === 'rejected' ? 'Rejected' : 'Pending'}
+                    {deal.approvalStatus === 'rejected' ? 'Rejected' : (STATUS_LABEL[car.status] ?? car.status)}
                   </span>
                 } />
                 <DRow label="Submitted At" value={new Date(deal.submittedAt).toLocaleString('en-MY', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })} />
