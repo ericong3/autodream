@@ -103,6 +103,11 @@ export default function History() {
   const totalRevenue = soldCars.reduce((s, c) => s + (carCalcMap[c.id]?.sellingPrice ?? c.sellingPrice), 0);
   const totalProfit = soldCars.reduce((s, c) => s + (carCalcMap[c.id]?.profit ?? 0), 0);
 
+  const getDealSalespersonId = (car: typeof cars[0]): string | undefined => {
+    const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
+    return car.assignedSalesperson || dealCustomer?.assignedSalesId;
+  };
+
   const getSalesperson = (id?: string) => {
     const name = id ? users.find((u) => u.id === id)?.name : undefined;
     return name ? shortName(name) : 'Unassigned';
@@ -261,7 +266,7 @@ export default function History() {
                     </div>
                   </div>
 
-                  <p className="text-gray-600 text-xs mt-1 truncate">{getSalesperson(car.assignedSalesperson)}</p>
+                  <p className="text-gray-600 text-xs mt-1 truncate">{getSalesperson(getDealSalespersonId(car))}</p>
 
                   {/* Deal strip */}
                   {car.finalDeal && (
@@ -322,7 +327,7 @@ export default function History() {
 
                 {/* Deal info */}
                 <div className="hidden md:flex flex-col gap-0.5 min-w-[120px]">
-                  <span className="text-xs text-gray-500">{getSalesperson(car.assignedSalesperson)}</span>
+                  <span className="text-xs text-gray-500">{getSalesperson(getDealSalespersonId(car))}</span>
                   {car.finalDeal?.bank && <p className="text-xs text-violet-400">{car.finalDeal.bank}</p>}
                 </div>
 

@@ -13,6 +13,7 @@ export default function Finance() {
   const cars = useStore((s) => s.cars);
   const repairs = useStore((s) => s.repairs);
   const users = useStore((s) => s.users);
+  const customers = useStore((s) => s.customers);
 
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
@@ -46,6 +47,11 @@ export default function Finance() {
       .filter((r) => r.carId === carId && r.status === 'done')
       .reduce((sum, r) => sum + (r.actualCost ?? r.totalCost), 0);
 
+  const getDealSalespersonId = (car: typeof cars[0]): string | undefined => {
+    const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
+    return car.assignedSalesperson || dealCustomer?.assignedSalesId;
+  };
+
   const getSalesperson = (id?: string) =>
     id ? users.find((u) => u.id === id) : null;
 
@@ -67,7 +73,7 @@ export default function Finance() {
     const dealPrice = car.finalDeal?.dealPrice ?? car.sellingPrice;
     const commission = calcCommission(car, repairCosts, miscCosts);
     const profit = dealPrice - car.purchasePrice - repairCosts - miscCosts - commission;
-    const sp = getSalesperson(car.assignedSalesperson);
+    const sp = getSalesperson(getDealSalespersonId(car));
     return { car, dealPrice, repairCosts, miscCosts, commission, profit, sp };
   });
 
@@ -83,7 +89,7 @@ export default function Finance() {
   const commissionBySalesperson = users
     .filter((u) => u.role === 'salesperson')
     .map((sp) => {
-      const soldBySp = soldCarsThisMonth.filter((c) => c.assignedSalesperson === sp.id);
+      const soldBySp = soldCarsThisMonth.filter((c) => getDealSalespersonId(c) === sp.id);
       const commission = soldBySp.reduce((sum, car) => sum + calcCommission(car, getRepairCosts(car.id), (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0)), 0);
       return { sp, soldCount: soldBySp.length, commission };
     })
