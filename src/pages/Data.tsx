@@ -249,7 +249,7 @@ function WorkshopsTab({
                 }}
               >
                 <option value="">— Select category —</option>
-                {WORKSHOP_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                {allCategories.map((c) => <option key={c} value={c}>{c}</option>)}
                 <option value="__custom__">＋ Add category…</option>
               </select>
             )}
