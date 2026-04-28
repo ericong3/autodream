@@ -147,7 +147,7 @@ export default function Customers() {
 
   // Detail drawer
   const [detailLead, setDetailLead] = useState<Customer | null>(null);
-  const [detailTab, setDetailTab] = useState<'details' | 'calculation' | 'postsale'>('details');
+  const [detailTab, setDetailTab] = useState<'details' | 'calculation' | 'postsale' | 'timeline'>('details');
   const [showDeliveryModal, setShowDeliveryModal] = useState(false);
   const [deliveryPhotoUrl, setDeliveryPhotoUrl] = useState('');
   const [deliveryUploading, setDeliveryUploading] = useState(false);
@@ -1230,29 +1230,37 @@ export default function Customers() {
                     </button>
                   </div>
 
-                  {/* Tabs — only show when there's a work order */}
-                  {hasWorkOrder && (
-                    <div className="flex border-b border-obsidian-400/60 shrink-0">
-                      <button
-                        onClick={() => setDetailTab('details')}
-                        className={`flex-1 py-2.5 text-xs font-medium transition-colors ${detailTab === 'details' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}
-                      >
-                        Details
-                      </button>
+                  {/* Tabs */}
+                  <div className="flex border-b border-obsidian-400/60 shrink-0">
+                    <button
+                      onClick={() => setDetailTab('details')}
+                      className={`flex-1 py-2.5 text-xs font-medium transition-colors ${detailTab === 'details' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}
+                    >
+                      Details
+                    </button>
+                    {hasWorkOrder && (
                       <button
                         onClick={() => setDetailTab('calculation')}
                         className={`flex-1 py-2.5 text-xs font-medium transition-colors ${detailTab === 'calculation' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}
                       >
-                        Calculation
+                        Calc
                       </button>
+                    )}
+                    {hasWorkOrder && (
                       <button
                         onClick={() => setDetailTab('postsale')}
                         className={`flex-1 py-2.5 text-xs font-medium transition-colors ${detailTab === 'postsale' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}
                       >
                         Post-Sale
                       </button>
-                    </div>
-                  )}
+                    )}
+                    <button
+                      onClick={() => setDetailTab('timeline')}
+                      className={`flex-1 py-2.5 text-xs font-medium transition-colors ${detailTab === 'timeline' ? 'text-white border-b-2 border-blue-500' : 'text-gray-500 hover:text-gray-300'}`}
+                    >
+                      Timeline
+                    </button>
+                  </div>
 
                   {/* Calculation Tab */}
                   {hasWorkOrder && detailTab === 'calculation' && (() => {
@@ -1721,6 +1729,63 @@ export default function Customers() {
                   </button>
                 )}
               </div>}
+
+              {/* Timeline tab */}
+              {detailTab === 'timeline' && (() => {
+                const tlWo = detailLead.loanWorkOrder ?? detailLead.cashWorkOrder;
+                const tlTd = testDrives.filter(t => t.customerId === detailLead.id).sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt));
+                const events: { date: string; label: string; sub?: string; color: string; dot: string }[] = [];
+
+                if (detailLead.deliveredAt) {
+                  events.push({ date: detailLead.deliveredAt, label: 'Car Delivered', sub: new Date(detailLead.deliveredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }), color: 'text-green-400', dot: 'bg-green-400' });
+                }
+                if (tlWo?.createdAt) {
+                  events.push({ date: tlWo.createdAt, label: detailLead.loanWorkOrder ? `Loan Work Order · ${detailLead.loanWorkOrder.bank ?? ''}` : 'Cash Work Order', sub: formatRM(tlWo.sellingPrice), color: 'text-violet-400', dot: 'bg-violet-400' });
+                }
+                (detailLead.loanApplications ?? []).forEach(app => {
+                  const statusLabel = app.status === 'approved' ? 'Loan Approved' : app.status === 'rejected' ? 'Loan Rejected' : 'Loan Submitted';
+                  const dotColor = app.status === 'approved' ? 'bg-green-400' : app.status === 'rejected' ? 'bg-red-400' : 'bg-blue-400';
+                  const textColor = app.status === 'approved' ? 'text-green-400' : app.status === 'rejected' ? 'text-red-400' : 'text-blue-400';
+                  events.push({ date: detailLead.createdAt, label: `${statusLabel} · ${app.bank}`, color: textColor, dot: dotColor });
+                });
+                tlTd.forEach(td => {
+                  const tdStatus = td.status === 'completed' ? 'Test Drive Done' : td.status === 'cancelled' ? 'Test Drive Cancelled' : 'Test Drive Scheduled';
+                  const tdCar = cars.find(c => c.id === td.carId);
+                  events.push({ date: td.scheduledAt, label: tdStatus, sub: tdCar ? `${tdCar.year} ${tdCar.make} ${tdCar.model}` : undefined, color: 'text-yellow-400', dot: 'bg-yellow-400' });
+                });
+                if (detailLead.lastActionAt && detailLead.lastActionAt !== detailLead.createdAt) {
+                  events.push({ date: detailLead.lastActionAt, label: 'Last Activity', color: 'text-gray-400', dot: 'bg-gray-500' });
+                }
+                if (detailLead.followUpDate) {
+                  const isPast = detailLead.followUpDate < new Date().toISOString().slice(0, 10);
+                  events.push({ date: detailLead.followUpDate + 'T00:00:00', label: isPast ? 'Follow-up (overdue)' : 'Follow-up Scheduled', sub: detailLead.followUpRemark || undefined, color: isPast ? 'text-red-400' : 'text-gold-400', dot: isPast ? 'bg-red-400' : 'bg-gold-400' });
+                }
+                events.push({ date: detailLead.createdAt, label: 'Lead Created', sub: SOURCE_LABELS[detailLead.source], color: 'text-gray-400', dot: 'bg-gray-600' });
+
+                events.sort((a, b) => b.date.localeCompare(a.date));
+
+                return (
+                  <div className="flex-1 overflow-y-auto min-h-0 p-5">
+                    <div className="relative">
+                      <div className="absolute left-3 top-2 bottom-2 w-px bg-obsidian-400/40" />
+                      <div className="space-y-5">
+                        {events.map((ev, i) => (
+                          <div key={i} className="flex gap-3 relative">
+                            <span className={`w-6 h-6 rounded-full ${ev.dot} flex-shrink-0 flex items-center justify-center z-10 mt-0.5`}>
+                              <span className="w-2 h-2 rounded-full bg-white/30" />
+                            </span>
+                            <div className="min-w-0">
+                              <p className={`text-xs font-semibold ${ev.color}`}>{ev.label}</p>
+                              {ev.sub && <p className="text-gray-500 text-xs mt-0.5">{ev.sub}</p>}
+                              <p className="text-gray-700 text-[10px] mt-0.5">{new Date(ev.date).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Action Footer */}
               <div className="p-4 border-t border-obsidian-400/60 space-y-2">

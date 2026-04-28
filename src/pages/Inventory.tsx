@@ -4,6 +4,7 @@ import {
   Search,
   LayoutGrid,
   List,
+  Columns,
   Plus,
   Filter,
   ChevronDown,
@@ -17,6 +18,7 @@ import {
   Trash2,
   Users,
   Building2,
+  Clock,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
@@ -363,14 +365,23 @@ export default function Inventory() {
           <button
             onClick={() => setViewPreference(currentUser!.id, 'inventory', 'grid')}
             className={`p-1.5 rounded-md transition-colors ${view === 'grid' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
+            title="Grid view"
           >
             <LayoutGrid size={16} />
           </button>
           <button
             onClick={() => setViewPreference(currentUser!.id, 'inventory', 'list')}
             className={`p-1.5 rounded-md transition-colors ${view === 'list' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
+            title="List view"
           >
             <List size={16} />
+          </button>
+          <button
+            onClick={() => setViewPreference(currentUser!.id, 'inventory', 'kanban')}
+            className={`p-1.5 rounded-md transition-colors ${view === 'kanban' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
+            title="Kanban view"
+          >
+            <Columns size={16} />
           </button>
         </div>
 
@@ -386,12 +397,14 @@ export default function Inventory() {
       </div>
 
       {/* Count */}
-      <p className="text-gray-500 text-sm">
-        Showing <span className="text-white font-medium">{filtered.length}</span> of {cars.filter(c => c.status !== 'delivered').length} active stock
-      </p>
+      {view !== 'kanban' && (
+        <p className="text-gray-500 text-sm">
+          Showing <span className="text-white font-medium">{filtered.length}</span> of {cars.filter(c => c.status !== 'delivered').length} active stock
+        </p>
+      )}
 
       {/* Empty state */}
-      {filtered.length === 0 && (
+      {view !== 'kanban' && filtered.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <CarIcon size={40} className="text-gray-600 mb-3" />
           <p className="text-gray-400 font-medium">No cars found</p>
@@ -516,7 +529,24 @@ export default function Inventory() {
                   <span className="text-gray-400 text-xs truncate">{getLocation(car)}</span>
                 </div>
 
-                <p className="text-gray-400 text-xs mt-2">{formatMileage(car.mileage)}</p>
+                <div className="flex items-center gap-2 mt-2">
+                  <p className="text-gray-400 text-xs">{formatMileage(car.mileage)}</p>
+                  {(() => {
+                    if (car.status === 'delivered' || car.status === 'sold') return null;
+                    const days = Math.floor((Date.now() - new Date(car.dateAdded).getTime()) / 86400000);
+                    if (days < 30) return null;
+                    const cls = days >= 90
+                      ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                      : days >= 60
+                      ? 'bg-orange-500/20 text-orange-400 border-orange-500/30'
+                      : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
+                    return (
+                      <span className={`flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded border font-medium ${cls}`}>
+                        <Clock size={9} />{days}d
+                      </span>
+                    );
+                  })()}
+                </div>
 
                 <div className="mt-3 flex items-end justify-between">
                   <div>
@@ -627,6 +657,13 @@ export default function Inventory() {
                     <span className="flex items-center gap-1 text-gray-500 text-xs">
                       <MapPin size={10} />{getLocation(car)}
                     </span>
+                    {(() => {
+                      if (car.status === 'delivered' || car.status === 'sold') return null;
+                      const days = Math.floor((Date.now() - new Date(car.dateAdded).getTime()) / 86400000);
+                      if (days < 30) return null;
+                      const cls = days >= 90 ? 'text-red-400' : days >= 60 ? 'text-orange-400' : 'text-yellow-400';
+                      return <span className={`flex items-center gap-0.5 text-[10px] font-medium ${cls}`}><Clock size={9} />{days}d</span>;
+                    })()}
                   </div>
                 </div>
 
@@ -674,6 +711,76 @@ export default function Inventory() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Kanban view */}
+      {view === 'kanban' && (
+        <div className="overflow-x-auto pb-4 -mx-1">
+          <div className="flex gap-3 min-w-max px-1">
+            {([
+              { key: 'incoming',    label: 'Incoming',     statuses: ['coming_soon'],                          color: 'border-gray-500/40',   dot: 'bg-gray-500',    hdr: 'text-gray-400' },
+              { key: 'workshop',    label: 'Workshop',     statuses: ['in_workshop'],                          color: 'border-yellow-500/40', dot: 'bg-yellow-400',  hdr: 'text-yellow-400' },
+              { key: 'ready',       label: 'Ready',        statuses: ['ready', 'photo_complete', 'submitted'], color: 'border-blue-500/40',   dot: 'bg-blue-400',    hdr: 'text-blue-400' },
+              { key: 'available',   label: 'Available',    statuses: ['available', 'reserved'],                color: 'border-teal-500/40',   dot: 'bg-teal-400',    hdr: 'text-teal-400' },
+              { key: 'deal_active', label: 'Deal Active',  statuses: ['deal_pending', 'sold'],                 color: 'border-orange-500/40', dot: 'bg-orange-400',  hdr: 'text-orange-400' },
+              { key: 'delivered',   label: 'Delivered',    statuses: ['delivered'],                            color: 'border-violet-500/40', dot: 'bg-violet-400',  hdr: 'text-violet-400' },
+            ] as const).map(col => {
+              const colCars = cars.filter(c => (col.statuses as readonly string[]).includes(c.status) && (
+                !search ||
+                c.make.toLowerCase().includes(search.toLowerCase()) ||
+                c.model.toLowerCase().includes(search.toLowerCase()) ||
+                (c.carPlate ?? '').toLowerCase().includes(search.toLowerCase())
+              ));
+              return (
+                <div key={col.key} className={`w-60 flex-shrink-0 bg-obsidian-800/60 border ${col.color} rounded-xl flex flex-col overflow-hidden`}>
+                  {/* Column header */}
+                  <div className="flex items-center gap-2 px-3 py-2.5 border-b border-obsidian-400/40">
+                    <span className={`w-2 h-2 rounded-full ${col.dot} flex-shrink-0`} />
+                    <span className={`text-xs font-semibold ${col.hdr} flex-1`}>{col.label}</span>
+                    <span className="text-xs text-gray-600 font-medium">{colCars.length}</span>
+                  </div>
+                  {/* Cards */}
+                  <div className="flex flex-col gap-2 p-2 overflow-y-auto max-h-[70vh]">
+                    {colCars.length === 0 && (
+                      <p className="text-gray-700 text-xs text-center py-6">Empty</p>
+                    )}
+                    {colCars.map(car => {
+                      const days = Math.floor((Date.now() - new Date(car.dateAdded).getTime()) / 86400000);
+                      const showAge = car.status !== 'delivered' && car.status !== 'sold' && days >= 30;
+                      const ageCls = days >= 90 ? 'text-red-400' : days >= 60 ? 'text-orange-400' : 'text-yellow-400';
+                      return (
+                        <div
+                          key={car.id}
+                          onClick={() => navigate(`/inventory/${car.id}`)}
+                          className="bg-obsidian-700/60 border border-obsidian-400/50 rounded-lg p-2.5 cursor-pointer hover:border-gold-500/40 hover:bg-obsidian-700/90 transition-all space-y-1.5"
+                        >
+                          {car.photo && (
+                            <div className="w-full h-24 rounded-md overflow-hidden bg-obsidian-800">
+                              <img src={car.photo} alt="" className="w-full h-full object-cover" loading="lazy" />
+                            </div>
+                          )}
+                          <p className="text-white text-xs font-semibold leading-snug">{car.year} {car.make} {car.model}</p>
+                          {car.carPlate && (
+                            <span className="inline-block text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-[#2C2415] text-gold-300 border border-[#3C321E] tracking-wider">{car.carPlate}</span>
+                          )}
+                          <div className="flex items-center justify-between">
+                            <span className="text-gold-400 text-xs font-bold">{formatRM(confirmedDealPrice[car.id] ?? car.sellingPrice)}</span>
+                            {showAge && (
+                              <span className={`flex items-center gap-0.5 text-[10px] font-medium ${ageCls}`}>
+                                <Clock size={9} />{days}d
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-gray-600 text-[10px] truncate">{getSalesperson(getDealSalespersonId(car))}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

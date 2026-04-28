@@ -17,7 +17,7 @@ interface StoreState {
   workshops: Workshop[];
   suppliers: Supplier[];
   merchants: Merchant[];
-  viewPreference: Record<string, 'grid' | 'list'>;
+  viewPreference: Record<string, 'grid' | 'list' | 'kanban'>;
   loaded: boolean;
 
   // Init
@@ -88,7 +88,7 @@ interface StoreState {
   deleteMiscCost: (carId: string, miscId: string) => Promise<void>;
 
   // View preference
-  setViewPreference: (userId: string, page: string, view: 'grid' | 'list') => void;
+  setViewPreference: (userId: string, page: string, view: 'grid' | 'list' | 'kanban') => void;
 }
 
 // Map snake_case DB row to camelCase Car

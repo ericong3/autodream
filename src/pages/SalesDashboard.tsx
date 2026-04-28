@@ -98,6 +98,16 @@ export default function SalesDashboard() {
     [deliveredThisMonth, cars, repairs]
   );
 
+  // Pipeline: confirmed (work order exists) but not yet delivered — forecast commission
+  const myPipelineCustomers = useMemo(() =>
+    customers.filter(c => c.assignedSalesId === myId && !c.delivered && (c.cashWorkOrder || c.loanWorkOrder)),
+    [customers, myId]
+  );
+  const pipelineCommission = useMemo(() =>
+    myPipelineCustomers.reduce((s, c) => s + calcCarCommission(c.interestedCarId), 0),
+    [myPipelineCustomers, cars, repairs]
+  );
+
   // My reminders
   const myReminders = useMemo(() =>
     personalReminders.filter(r => r.userId === myId),
@@ -162,7 +172,14 @@ export default function SalesDashboard() {
           sub={overdueFollowUps.length > 0 ? `${overdueFollowUps.length} overdue` : undefined}
         />
         <StatCard icon={Car} label="Test Drives This Week" value={upcomingTds.length} color="text-purple-400" iconBg="bg-purple-500/10" />
-        <StatCard icon={Banknote} label={`Commission (${monthLabel.split(' ')[0]})`} value={`RM ${monthCommission.toLocaleString()}`} color="text-green-400" iconBg="bg-green-500/10" />
+        <StatCard
+          icon={Banknote}
+          label={`Commission (${monthLabel.split(' ')[0]})`}
+          value={`RM ${monthCommission.toLocaleString()}`}
+          color="text-green-400"
+          iconBg="bg-green-500/10"
+          sub={pipelineCommission > 0 ? `+RM ${pipelineCommission.toLocaleString()} pending` : undefined}
+        />
       </div>
 
       {/* Follow-ups & Test drives row */}
@@ -427,7 +444,7 @@ function StatCard({ icon: Icon, label, value, color, iconBg, sub }: {
       <div className="min-w-0">
         <p className={`text-xl font-bold ${color}`}>{value}</p>
         <p className="text-gray-400 text-xs leading-tight">{label}</p>
-        {sub && <p className="text-red-400 text-xs mt-0.5">{sub}</p>}
+        {sub && <p className="text-yellow-400 text-xs mt-0.5">{sub}</p>}
       </div>
     </div>
   );
