@@ -499,7 +499,17 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
               : [...s.cars, rowToCar(payload.new)],
           }));
         } else if (payload.eventType === 'UPDATE') {
-          set((s) => ({ cars: s.cars.map((c) => c.id === (payload.new as any).id ? rowToCar(payload.new) : c) }));
+          set((s) => ({
+            cars: s.cars.map((c) => {
+              if (c.id !== (payload.new as any).id) return c;
+              const incoming = rowToCar(payload.new);
+              // Preserve locally-stored miscCosts if the real-time payload omits the column
+              if (!('misc_costs' in (payload.new as any))) {
+                incoming.miscCosts = c.miscCosts;
+              }
+              return incoming;
+            }),
+          }));
         } else if (payload.eventType === 'DELETE') {
           set((s) => ({ cars: s.cars.filter((c) => c.id !== (payload.old as any).id) }));
         }
@@ -783,13 +793,26 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   addMiscCost: async (carId, misc) => {
     const car = get().cars.find((c) => c.id === carId);
     if (!car) return;
-    await get().updateCar(carId, { miscCosts: [...(car.miscCosts ?? []), misc] });
+    const updated = [...(car.miscCosts ?? []), misc];
+    set((s) => ({ cars: s.cars.map((c) => c.id === carId ? { ...c, miscCosts: updated } : c) }));
+    const { error } = await supabase.from('cars').update({ misc_costs: updated }).eq('id', carId);
+    if (error) {
+      console.error('addMiscCost failed:', error.message);
+      // Rollback
+      set((s) => ({ cars: s.cars.map((c) => c.id === carId ? { ...c, miscCosts: car.miscCosts ?? [] } : c) }));
+    }
   },
 
   deleteMiscCost: async (carId, miscId) => {
     const car = get().cars.find((c) => c.id === carId);
     if (!car) return;
-    await get().updateCar(carId, { miscCosts: (car.miscCosts ?? []).filter((m) => m.id !== miscId) });
+    const updated = (car.miscCosts ?? []).filter((m) => m.id !== miscId);
+    set((s) => ({ cars: s.cars.map((c) => c.id === carId ? { ...c, miscCosts: updated } : c) }));
+    const { error } = await supabase.from('cars').update({ misc_costs: updated }).eq('id', carId);
+    if (error) {
+      console.error('deleteMiscCost failed:', error.message);
+      set((s) => ({ cars: s.cars.map((c) => c.id === carId ? { ...c, miscCosts: car.miscCosts ?? [] } : c) }));
+    }
   },
 }), {
   name: 'autodream-session',

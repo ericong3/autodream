@@ -1508,6 +1508,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 createdBy: currentUser?.id,
               });
               setShowMiscModal(false);
+              setJobTab('misc');
             }}
             className="flex-1 bg-purple-600 hover:bg-purple-500 px-4 py-2.5 rounded-lg text-sm text-white"
           >
