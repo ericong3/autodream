@@ -216,7 +216,8 @@ export default function Inventory() {
       const dealPrice = confirmedDealPrice[car.id] ?? car.finalDeal?.dealPrice ?? car.sellingPrice;
       const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
       const repairCosts = repairs.filter(r => r.carId === car.id && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
-      const profitBeforeComm = dealPrice - car.purchasePrice - repairCosts - additionalTotal;
+      const miscCosts = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
+      const profitBeforeComm = dealPrice - car.purchasePrice - repairCosts - miscCosts - additionalTotal;
       const commission = car.priceFloor != null
         ? (dealPrice >= car.priceFloor ? (profitBeforeComm >= 10000 ? 2000 : 1500) : 1000)
         : (profitBeforeComm >= 10000 ? 1500 : 1000);

@@ -49,9 +49,9 @@ export default function Finance() {
   const getSalesperson = (id?: string) =>
     id ? users.find((u) => u.id === id) : null;
 
-  const calcCommission = (car: typeof cars[0], repairCosts: number): number => {
+  const calcCommission = (car: typeof cars[0], repairCosts: number, miscCosts: number): number => {
     const dealPrice = car.finalDeal?.dealPrice ?? car.sellingPrice;
-    const netBeforeComm = dealPrice - car.purchasePrice - repairCosts;
+    const netBeforeComm = dealPrice - car.purchasePrice - repairCosts - miscCosts;
     if (car.priceFloor != null) {
       return dealPrice >= car.priceFloor
         ? (netBeforeComm >= 10000 ? 2000 : 1500)
@@ -63,11 +63,12 @@ export default function Finance() {
   // Per-car data (compute first so totals derive from it)
   const carData = soldCarsThisMonth.map((car) => {
     const repairCosts = getRepairCosts(car.id);
+    const miscCosts = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
     const dealPrice = car.finalDeal?.dealPrice ?? car.sellingPrice;
-    const commission = calcCommission(car, repairCosts);
-    const profit = dealPrice - car.purchasePrice - repairCosts - commission;
+    const commission = calcCommission(car, repairCosts, miscCosts);
+    const profit = dealPrice - car.purchasePrice - repairCosts - miscCosts - commission;
     const sp = getSalesperson(car.assignedSalesperson);
-    return { car, dealPrice, repairCosts, commission, profit, sp };
+    return { car, dealPrice, repairCosts, miscCosts, commission, profit, sp };
   });
 
   // Aggregates derived from carData
@@ -83,7 +84,7 @@ export default function Finance() {
     .filter((u) => u.role === 'salesperson')
     .map((sp) => {
       const soldBySp = soldCarsThisMonth.filter((c) => c.assignedSalesperson === sp.id);
-      const commission = soldBySp.reduce((sum, car) => sum + calcCommission(car, getRepairCosts(car.id)), 0);
+      const commission = soldBySp.reduce((sum, car) => sum + calcCommission(car, getRepairCosts(car.id), (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0)), 0);
       return { sp, soldCount: soldBySp.length, commission };
     })
     .filter((x) => x.soldCount > 0);

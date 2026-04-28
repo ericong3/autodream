@@ -334,7 +334,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const _wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
   const _dealPrice = (_wo?.sellingPrice ?? car.sellingPrice) - (_wo?.discount ?? 0);
   const _additionalTotal = _wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
-  const _profitBeforeComm = _dealPrice - car.purchasePrice - totalRepairCost - _additionalTotal;
+  const _profitBeforeComm = _dealPrice - car.purchasePrice - totalRepairCost - totalMiscCost - _additionalTotal;
   const _commission = car.priceFloor != null
     ? (_dealPrice >= car.priceFloor ? (_profitBeforeComm >= 10000 ? 2000 : 1500) : 1000)
     : (_profitBeforeComm >= 10000 ? 1500 : 1000);
@@ -1010,7 +1010,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
 
           // Director profit
           const dealNetPrice = sellingPrice - discount;
-          const profitBeforeCommission = dealNetPrice - purchasePrice - totalRepairCost - additionalTotal;
+          const profitBeforeCommission = dealNetPrice - purchasePrice - totalRepairCost - totalMiscCost - additionalTotal;
           const commission = (() => {
             if (car.priceFloor != null) {
               return dealNetPrice >= car.priceFloor

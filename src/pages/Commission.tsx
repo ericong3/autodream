@@ -33,7 +33,8 @@ export default function Commission() {
   const calcCommission = (car: typeof cars[0]): number => {
     const dealPrice = car.finalDeal?.dealPrice ?? car.sellingPrice;
     const repairCosts = getRepairCosts(car.id);
-    const netBeforeComm = dealPrice - car.purchasePrice - repairCosts;
+    const miscCosts = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
+    const netBeforeComm = dealPrice - car.purchasePrice - repairCosts - miscCosts;
     if (car.priceFloor != null) {
       return dealPrice >= car.priceFloor ? (netBeforeComm >= 10000 ? 2000 : 1500) : 1000;
     }

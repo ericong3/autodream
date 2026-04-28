@@ -89,8 +89,9 @@ export default function History() {
       const discount = w?.discount ?? 0;
       const additionalTotal = w?.additionalItems?.reduce((a, i) => a + i.amount, 0) ?? 0;
       const repairCosts = repairs.filter(r => r.carId === c.id && r.status === 'done').reduce((a, r) => a + (r.actualCost ?? r.totalCost), 0);
+      const miscCosts = (c.miscCosts ?? []).reduce((a, m) => a + m.amount, 0);
       const dealNetPrice = sellingPrice - discount;
-      const profitBeforeCommission = dealNetPrice - c.purchasePrice - repairCosts - additionalTotal;
+      const profitBeforeCommission = dealNetPrice - c.purchasePrice - repairCosts - miscCosts - additionalTotal;
       const commission = c.priceFloor != null
         ? (dealNetPrice >= c.priceFloor ? (profitBeforeCommission >= 10000 ? 2000 : 1500) : 1000)
         : (profitBeforeCommission >= 10000 ? 1500 : 1000);
