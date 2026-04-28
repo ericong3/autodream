@@ -31,7 +31,9 @@ import { formatRM, formatMileage, generateId, shortName } from '../utils/format'
 interface DealBadge { cls: string; label: string }
 
 function getDealBadge(car: Car): DealBadge {
-  // Deal confirmed → sold (pending delivery) or delivered
+  if (car.status === 'coming_soon') {
+    return { cls: 'bg-gray-500/80 text-white', label: 'Coming Soon' };
+  }
   if (car.status === 'delivered') {
     return { cls: 'bg-violet-500/90 text-white', label: 'Sold · Delivered' };
   }
