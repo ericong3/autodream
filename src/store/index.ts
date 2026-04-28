@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
-import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, MiscCost } from '../types';
+import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, MiscCost } from '../types';
 
 interface StoreState {
   currentUser: User | null;
@@ -16,6 +16,7 @@ interface StoreState {
   dealers: Dealer[];
   workshops: Workshop[];
   suppliers: Supplier[];
+  merchants: Merchant[];
   viewPreference: Record<string, 'grid' | 'list'>;
   loaded: boolean;
 
@@ -77,6 +78,10 @@ interface StoreState {
   // Suppliers
   addSupplier: (supplier: Supplier) => Promise<void>;
   deleteSupplier: (id: string) => Promise<void>;
+
+  // Merchants
+  addMerchant: (merchant: Merchant) => Promise<void>;
+  deleteMerchant: (id: string) => Promise<void>;
 
   // Misc Costs
   addMiscCost: (carId: string, misc: MiscCost) => Promise<void>;
@@ -426,11 +431,12 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   dealers: [],
   workshops: [],
   suppliers: [],
+  merchants: [],
   viewPreference: {},
   loaded: false,
 
   loadAll: async () => {
-    const [users, cars, repairs, quotations, instructions, customers, testDrives, reminders, dealers, workshops, suppliers] =
+    const [users, cars, repairs, quotations, instructions, customers, testDrives, reminders, dealers, workshops, suppliers, merchants] =
       await Promise.all([
         supabase.from('users').select('*'),
         supabase.from('cars').select('*'),
@@ -443,6 +449,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         supabase.from('dealers').select('*'),
         supabase.from('workshops').select('*'),
         supabase.from('suppliers').select('*'),
+        supabase.from('merchants').select('*'),
       ]);
 
     const allCars = (cars.data ?? []).map(rowToCar);
@@ -478,6 +485,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       dealers: (dealers.data ?? []) as Dealer[],
       workshops: (workshops.data ?? []) as Workshop[],
       suppliers: (suppliers.data ?? []) as Supplier[],
+      merchants: (merchants.data ?? []) as Merchant[],
       loaded: true,
     });
 
@@ -759,6 +767,17 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   deleteSupplier: async (id) => {
     set((s) => ({ suppliers: s.suppliers.filter((s2) => s2.id !== id) }));
     await supabase.from('suppliers').delete().eq('id', id);
+  },
+
+  addMerchant: async (merchant) => {
+    set((s) => ({ merchants: [...s.merchants, merchant] }));
+    const { error } = await supabase.from('merchants').insert(merchant);
+    if (error) console.error('addMerchant failed:', error.message);
+  },
+
+  deleteMerchant: async (id) => {
+    set((s) => ({ merchants: s.merchants.filter((m) => m.id !== id) }));
+    await supabase.from('merchants').delete().eq('id', id);
   },
 
   addMiscCost: async (carId, misc) => {

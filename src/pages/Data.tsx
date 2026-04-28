@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
-import { Plus, X, Building2, Wrench, Package } from 'lucide-react';
+import { Plus, X, Building2, Wrench, Package, ShoppingBag } from 'lucide-react';
 import { useStore } from '../store';
 import { generateId } from '../utils/format';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 
-type Tab = 'dealers' | 'workshops' | 'suppliers';
+type Tab = 'dealers' | 'workshops' | 'suppliers' | 'misc';
 
 const TABS: { key: Tab; label: string; icon: React.ElementType; color: string }[] = [
-  { key: 'dealers',   label: 'Car Dealers', icon: Building2, color: 'text-blue-400'   },
-  { key: 'workshops', label: 'Workshops',      icon: Wrench,    color: 'text-orange-400' },
-  { key: 'suppliers', label: 'Suppliers',      icon: Package,   color: 'text-green-400'  },
+  { key: 'dealers',   label: 'Car Dealers', icon: Building2,   color: 'text-blue-400'   },
+  { key: 'workshops', label: 'Workshops',   icon: Wrench,      color: 'text-orange-400' },
+  { key: 'suppliers', label: 'Suppliers',   icon: Package,     color: 'text-green-400'  },
+  { key: 'misc',      label: 'Misc',        icon: ShoppingBag, color: 'text-purple-400' },
 ];
 
 function inputCls() {
@@ -29,10 +30,14 @@ export default function Data() {
   const deleteWorkshop = useStore((s) => s.deleteWorkshop);
   const addSupplier    = useStore((s) => s.addSupplier);
   const deleteSupplier = useStore((s) => s.deleteSupplier);
+  const merchants      = useStore((s) => s.merchants);
+  const addMerchant    = useStore((s) => s.addMerchant);
+  const deleteMerchant = useStore((s) => s.deleteMerchant);
 
   const [dealerForm,   setDealerForm]   = useState({ name: '', phone: '' });
   const [workshopForm, setWorkshopForm] = useState({ name: '', phone: '', speciality: '' });
   const [supplierForm, setSupplierForm] = useState({ name: '', phone: '', category: '' });
+  const [merchantForm, setMerchantForm] = useState({ name: '', phone: '', category: '' });
 
   const handleAdd = async (fn: () => Promise<void>) => {
     setError('');
@@ -147,6 +152,17 @@ export default function Data() {
           }))}
           onDelete={(id) => deleteSupplier(id)}
           emptyText="No suppliers added yet"
+        />
+      )}
+
+      {/* Misc (Merchants) */}
+      {activeTab === 'misc' && (
+        <MerchantsTab
+          merchants={merchants}
+          merchantForm={merchantForm}
+          setMerchantForm={setMerchantForm}
+          addMerchant={addMerchant}
+          deleteMerchant={deleteMerchant}
         />
       )}
     </div>
@@ -302,6 +318,174 @@ function WorkshopsTab({
         isOpen={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
         onConfirm={async () => { if (deleteTarget) deleteWorkshop(deleteTarget.id); }}
+        itemName={deleteTarget?.label ?? ''}
+      />
+    </div>
+  );
+}
+
+function MerchantsTab({
+  merchants, merchantForm, setMerchantForm, addMerchant, deleteMerchant,
+}: {
+  merchants: any[];
+  merchantForm: { name: string; phone: string; category: string };
+  setMerchantForm: (f: any) => void;
+  addMerchant: (m: any) => void;
+  deleteMerchant: (id: string) => void;
+}) {
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
+  const [customMode, setCustomMode] = useState(false);
+  const [customCat, setCustomCat] = useState('');
+
+  const allCategories = [
+    ...merchants
+      .map((m) => m.category)
+      .filter((c): c is string => !!c)
+      .filter((c, i, arr) => arr.indexOf(c) === i),
+  ];
+
+  const handleAdd = () => {
+    const category = customMode ? customCat.trim() : merchantForm.category;
+    if (!merchantForm.name.trim()) return;
+    addMerchant({ id: generateId(), name: merchantForm.name.trim(), phone: merchantForm.phone || undefined, category: category || undefined });
+    setMerchantForm({ name: '', phone: '', category: '' });
+    setCustomMode(false);
+    setCustomCat('');
+  };
+
+  const uncategorised = merchants.filter((m) => !m.category);
+
+  return (
+    <div className="space-y-4">
+      {/* Add form */}
+      <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="w-1 h-4 rounded-full bg-gold-gradient" />
+          <ShoppingBag size={15} className="text-purple-400" />
+          <h3 className="text-white font-semibold text-sm">Add Merchant</h3>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <input
+            className={inputCls()}
+            placeholder="Merchant name *"
+            value={merchantForm.name}
+            onChange={(e) => setMerchantForm({ ...merchantForm, name: e.target.value })}
+          />
+          <input
+            className={inputCls()}
+            placeholder="Phone (optional)"
+            value={merchantForm.phone}
+            onChange={(e) => setMerchantForm({ ...merchantForm, phone: e.target.value })}
+          />
+          <div className="flex gap-2">
+            {customMode ? (
+              <div className="flex gap-2 flex-1">
+                <input
+                  className={inputCls()}
+                  placeholder="New category name"
+                  value={customCat}
+                  autoFocus
+                  onChange={(e) => setCustomCat(e.target.value)}
+                />
+                <button
+                  onClick={() => { setCustomMode(false); setCustomCat(''); setMerchantForm({ ...merchantForm, category: '' }); }}
+                  className="px-3 py-2 rounded-lg text-sm text-gray-400 hover:text-white bg-obsidian-700/60 border border-obsidian-400/60 shrink-0"
+                  title="Cancel"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ) : (
+              <select
+                className={inputCls()}
+                value={merchantForm.category}
+                onChange={(e) => {
+                  if (e.target.value === '__custom__') {
+                    setCustomMode(true);
+                    setMerchantForm({ ...merchantForm, category: '' });
+                  } else {
+                    setMerchantForm({ ...merchantForm, category: e.target.value });
+                  }
+                }}
+              >
+                <option value="">— Category (optional) —</option>
+                {allCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+                <option value="__custom__">＋ Add category…</option>
+              </select>
+            )}
+            <button onClick={handleAdd} className="btn-gold px-4 py-2 rounded-lg text-sm shrink-0">
+              <Plus size={15} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Grouped by category */}
+      {allCategories.map((cat) => {
+        const items = merchants.filter((m) => m.category === cat);
+        if (items.length === 0) return null;
+        return (
+          <div key={cat} className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card">
+            <div className="flex items-center gap-2 px-5 py-3 border-b border-obsidian-400/60">
+              <ShoppingBag size={13} className="text-purple-400" />
+              <span className="text-white font-medium text-sm">{cat}</span>
+              <span className="ml-auto text-xs text-gray-500">{items.length}</span>
+            </div>
+            <div className="divide-y divide-obsidian-400/40">
+              {items.map((m) => (
+                <div key={m.id} className="flex items-center justify-between px-5 py-3 hover:bg-obsidian-700/30 transition-colors">
+                  <div>
+                    <p className="text-white text-sm font-medium">{m.name}</p>
+                    {m.phone && <p className="text-gray-500 text-xs mt-0.5">{m.phone}</p>}
+                  </div>
+                  <button
+                    onClick={() => setDeleteTarget({ id: m.id, label: m.name })}
+                    className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Uncategorised */}
+      {uncategorised.length > 0 && (
+        <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card">
+          <div className="flex items-center gap-2 px-5 py-3 border-b border-obsidian-400/60">
+            <ShoppingBag size={13} className="text-gray-500" />
+            <span className="text-gray-400 font-medium text-sm">Uncategorised</span>
+            <span className="ml-auto text-xs text-gray-500">{uncategorised.length}</span>
+          </div>
+          <div className="divide-y divide-obsidian-400/40">
+            {uncategorised.map((m) => (
+              <div key={m.id} className="flex items-center justify-between px-5 py-3 hover:bg-obsidian-700/30 transition-colors">
+                <div>
+                  <p className="text-white text-sm font-medium">{m.name}</p>
+                  {m.phone && <p className="text-gray-500 text-xs mt-0.5">{m.phone}</p>}
+                </div>
+                <button
+                  onClick={() => setDeleteTarget({ id: m.id, label: m.name })}
+                  className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {merchants.length === 0 && (
+        <div className="text-center py-10 text-gray-600 text-sm">No merchants added yet</div>
+      )}
+
+      <DeleteConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={async () => { if (deleteTarget) deleteMerchant(deleteTarget.id); }}
         itemName={deleteTarget?.label ?? ''}
       />
     </div>

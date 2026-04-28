@@ -160,6 +160,13 @@ export interface Supplier {
   category?: string;
 }
 
+export interface Merchant {
+  id: string;
+  name: string;
+  phone?: string;
+  category?: string;
+}
+
 export interface Consignment {
   dealer: string;
   terms: 'fixed_amount' | 'profit_split';
