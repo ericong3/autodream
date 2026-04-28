@@ -547,6 +547,60 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         }
       })
       .subscribe();
+
+    supabase.channel('realtime-users')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          set((s) => ({
+            users: s.users.some((u) => u.id === (payload.new as any).id)
+              ? s.users
+              : [...s.users, rowToUser(payload.new)],
+          }));
+        } else if (payload.eventType === 'UPDATE') {
+          set((s) => ({
+            users: s.users.map((u) => u.id === (payload.new as any).id ? rowToUser(payload.new) : u),
+          }));
+        } else if (payload.eventType === 'DELETE') {
+          set((s) => ({ users: s.users.filter((u) => u.id !== (payload.old as any).id) }));
+        }
+      })
+      .subscribe();
+
+    supabase.channel('realtime-workshops')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'workshops' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          set((s) => ({
+            workshops: s.workshops.some((w) => w.id === (payload.new as any).id)
+              ? s.workshops
+              : [...s.workshops, payload.new as Workshop],
+          }));
+        } else if (payload.eventType === 'UPDATE') {
+          set((s) => ({
+            workshops: s.workshops.map((w) => w.id === (payload.new as any).id ? payload.new as Workshop : w),
+          }));
+        } else if (payload.eventType === 'DELETE') {
+          set((s) => ({ workshops: s.workshops.filter((w) => w.id !== (payload.old as any).id) }));
+        }
+      })
+      .subscribe();
+
+    supabase.channel('realtime-merchants')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'merchants' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          set((s) => ({
+            merchants: s.merchants.some((m) => m.id === (payload.new as any).id)
+              ? s.merchants
+              : [...s.merchants, payload.new as Merchant],
+          }));
+        } else if (payload.eventType === 'UPDATE') {
+          set((s) => ({
+            merchants: s.merchants.map((m) => m.id === (payload.new as any).id ? payload.new as Merchant : m),
+          }));
+        } else if (payload.eventType === 'DELETE') {
+          set((s) => ({ merchants: s.merchants.filter((m) => m.id !== (payload.old as any).id) }));
+        }
+      })
+      .subscribe();
   },
 
   login: async (username, password) => {

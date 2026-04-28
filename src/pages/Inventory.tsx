@@ -314,6 +314,11 @@ export default function Inventory() {
     return name ? shortName(name) : 'Unassigned';
   };
 
+  const getDealSalespersonId = (car: typeof cars[0]): string | undefined => {
+    const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
+    return car.assignedSalesperson || dealCustomer?.assignedSalesId;
+  };
+
   return (
     <div className="space-y-5">
       {/* Top bar */}
@@ -533,7 +538,7 @@ export default function Inventory() {
                   </div>
                 </div>
 
-                <p className="text-gray-600 text-xs mt-1 truncate">{getSalesperson(car.assignedSalesperson)}</p>
+                <p className="text-gray-600 text-xs mt-1 truncate">{getSalesperson(getDealSalespersonId(car))}</p>
 
                 {/* Deal summary strip */}
                 {(() => {

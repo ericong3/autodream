@@ -32,6 +32,7 @@ export default function Salespeople() {
   const users = useStore((s) => s.users);
   const cars = useStore((s) => s.cars);
   const repairs = useStore((s) => s.repairs);
+  const customers = useStore((s) => s.customers);
   const currentUser = useStore((s) => s.currentUser);
   const addUser = useStore((s) => s.addUser);
   const updateUser = useStore((s) => s.updateUser);
@@ -60,8 +61,13 @@ export default function Salespeople() {
     return netBeforeComm >= 10000 ? 1500 : 1000;
   };
 
+  const getDealSalespersonId = (car: typeof cars[0]): string | undefined => {
+    const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
+    return car.assignedSalesperson || dealCustomer?.assignedSalesId;
+  };
+
   const getCarsSoldByPerson = (userId: string) =>
-    soldCars.filter((c) => c.assignedSalesperson === userId).length;
+    soldCars.filter((c) => getDealSalespersonId(c) === userId).length;
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -152,7 +158,7 @@ export default function Salespeople() {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {salespeople.map((sp) => {
             const soldCount = getCarsSoldByPerson(sp.id);
-            const commission = soldCars.filter(c => c.assignedSalesperson === sp.id).reduce((s, c) => s + calcCommission(c), 0);
+            const commission = soldCars.filter(c => getDealSalespersonId(c) === sp.id).reduce((s, c) => s + calcCommission(c), 0);
             const progress = Math.min(100, (sp.carsInMonth / sp.monthlyTarget) * 100);
 
             return (

@@ -74,7 +74,11 @@ function EmployeeDetailModal({ member, onClose, currentUserId }: { member: User;
   const cfg = ROLE_CONFIG[member.role as keyof typeof ROLE_CONFIG];
   const isSelf = member.id === currentUserId;
 
-  const soldCars = cars.filter((c) => c.status === 'delivered' && c.assignedSalesperson === member.id);
+  const getDealSalespersonId = (car: typeof cars[0]): string | undefined => {
+    const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
+    return car.assignedSalesperson || dealCustomer?.assignedSalesId;
+  };
+  const soldCars = cars.filter((c) => c.status === 'delivered' && getDealSalespersonId(c) === member.id);
   const activeCars = cars.filter((c) => c.status !== 'delivered' && c.assignedSalesperson === member.id);
 
   const getRepairCosts = (carId: string) =>
@@ -277,12 +281,18 @@ export default function TeamMembers() {
   const users = useStore((s) => s.users);
   const cars = useStore((s) => s.cars);
   const repairs = useStore((s) => s.repairs);
+  const customers = useStore((s) => s.customers);
   const currentUser = useStore((s) => s.currentUser);
   const addUser = useStore((s) => s.addUser);
   const updateUser = useStore((s) => s.updateUser);
   const deleteUser = useStore((s) => s.deleteUser);
 
   const soldCars = cars.filter((c) => c.status === 'delivered');
+
+  const getDealSalespersonId = (car: typeof cars[0]): string | undefined => {
+    const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
+    return car.assignedSalesperson || dealCustomer?.assignedSalesId;
+  };
 
   const getRepairCosts = (carId: string) =>
     repairs.filter(r => r.carId === carId && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
@@ -306,7 +316,7 @@ export default function TeamMembers() {
   const [selectedEmployee, setSelectedEmployee] = useState<User | null>(null);
 
   const getCarsSoldByPerson = (userId: string) =>
-    soldCars.filter((c) => c.assignedSalesperson === userId).length;
+    soldCars.filter((c) => getDealSalespersonId(c) === userId).length;
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -449,7 +459,7 @@ export default function TeamMembers() {
           {filteredUsers.map((member) => {
             const cfg = ROLE_CONFIG[member.role as keyof typeof ROLE_CONFIG];
             const soldCount = getCarsSoldByPerson(member.id);
-            const commission = soldCars.filter(c => c.assignedSalesperson === member.id).reduce((s, c) => s + calcCommission(c), 0);
+            const commission = soldCars.filter(c => getDealSalespersonId(c) === member.id).reduce((s, c) => s + calcCommission(c), 0);
             const isSelf = member.id === currentUser?.id;
 
             return (

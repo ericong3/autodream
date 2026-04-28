@@ -10,6 +10,7 @@ export default function Commission() {
   const repairs = useStore((s) => s.repairs);
   const currentUser = useStore((s) => s.currentUser);
   const users = useStore((s) => s.users);
+  const customers = useStore((s) => s.customers);
   const personalReminders = useStore((s) => s.personalReminders);
   const addPersonalReminder = useStore((s) => s.addPersonalReminder);
   const updatePersonalReminder = useStore((s) => s.updatePersonalReminder);
@@ -27,6 +28,11 @@ export default function Commission() {
 
   const allSoldCars = cars.filter(c => c.status === 'delivered');
 
+  const getDealSalespersonId = (car: typeof cars[0]): string | undefined => {
+    const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
+    return car.assignedSalesperson || dealCustomer?.assignedSalesId;
+  };
+
   const getRepairCosts = (carId: string) =>
     repairs.filter(r => r.carId === carId && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
 
@@ -42,12 +48,12 @@ export default function Commission() {
   };
 
   const filteredSoldCars = useMemo(() => allSoldCars.filter(c => {
-    const matchSales = !salesFilter || c.assignedSalesperson === salesFilter;
+    const matchSales = !salesFilter || getDealSalespersonId(c) === salesFilter;
     const matchMonth = !monthFilter || c.dateAdded.startsWith(monthFilter);
     return matchSales && matchMonth;
-  }), [allSoldCars, salesFilter, monthFilter]);
+  }), [allSoldCars, salesFilter, monthFilter, customers]);
 
-  const allFilteredForSp = allSoldCars.filter(c => !salesFilter || c.assignedSalesperson === salesFilter);
+  const allFilteredForSp = allSoldCars.filter(c => !salesFilter || getDealSalespersonId(c) === salesFilter);
   const totalSoldAll = allFilteredForSp.length;
   const totalCommissionAll = allFilteredForSp.reduce((s, c) => s + calcCommission(c), 0);
   const monthSold = filteredSoldCars.length;
@@ -182,7 +188,7 @@ export default function Commission() {
                         <p className="text-gray-500 text-xs capitalize">{c.colour} · {c.transmission}</p>
                       </td>
                       <td className="px-5 py-3 text-gray-400">{new Date(c.dateAdded).toLocaleDateString('en-MY')}</td>
-                      {isDirector && <td className="px-5 py-3 text-gray-400">{getSalesName(c.assignedSalesperson)}</td>}
+                      {isDirector && <td className="px-5 py-3 text-gray-400">{getSalesName(getDealSalespersonId(c))}</td>}
                       <td className="px-5 py-3 text-right text-gold-400 font-semibold">
                         {formatRM(c.finalDeal?.dealPrice ?? c.sellingPrice)}
                       </td>
