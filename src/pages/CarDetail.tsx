@@ -1296,6 +1296,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               <option value="available">Available</option>
               <option value="reserved">Reserved</option>
               <option value="sold">Sold</option>
+              <option value="delivered">Delivered</option>
             </select>
           </FormField>
 
