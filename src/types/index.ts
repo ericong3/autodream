@@ -211,6 +211,8 @@ export interface MiscCost {
   id: string;
   description: string;
   amount: number;
+  category?: string;
+  merchant?: string;
   createdAt: string;
   createdBy?: string;
 }

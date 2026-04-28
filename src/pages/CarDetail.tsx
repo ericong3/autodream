@@ -859,7 +859,15 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 {car.miscCosts!.map((m) => (
                   <div key={m.id} className="flex items-center justify-between px-5 py-3 hover:bg-obsidian-700/20 transition-colors">
                     <div>
-                      <p className="text-white text-sm font-medium">{m.description}</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-white text-sm font-medium">{m.description}</p>
+                        {m.category && (
+                          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/20 text-purple-400 border border-purple-500/30">{m.category}</span>
+                        )}
+                        {m.merchant && (
+                          <span className="text-gray-400 text-xs">{m.merchant}</span>
+                        )}
+                      </div>
                       <p className="text-gray-500 text-xs mt-0.5">{new Date(m.createdAt).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
                     </div>
                     <div className="flex items-center gap-3">
@@ -1494,6 +1502,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 id: generateId(),
                 description: miscForm.description.trim() || miscForm.merchantName || miscForm.category || 'Misc',
                 amount: amt,
+                category: miscForm.category || undefined,
+                merchant: miscForm.merchantName || undefined,
                 createdAt: new Date().toISOString(),
                 createdBy: currentUser?.id,
               });
