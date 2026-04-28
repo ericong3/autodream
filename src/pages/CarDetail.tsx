@@ -325,6 +325,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     );
   }
 
+  const totalMiscCost = (car.miscCosts ?? []).reduce((sum, m) => sum + m.amount, 0);
+
   const assignedSalespersonId = car.assignedSalesperson || dealCustomer?.assignedSalesId;
   const assignedSalesperson = assignedSalespersonId ? users.find((u) => u.id === assignedSalespersonId) : null;
 
@@ -631,6 +633,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 <>
                   <InfoItem label="Purchase Price" value={formatRM(car.purchasePrice)} />
                   <InfoItem label="Repair Costs" value={formatRM(totalRepairCost)} valueClass="text-orange-400" />
+                  <InfoItem label="Misc Costs" value={formatRM(totalMiscCost)} valueClass="text-purple-400" />
                   {car.priceFloor != null && (
                     <InfoItem label="Floor Price" value={formatRM(car.priceFloor)} valueClass="text-blue-400 font-semibold" />
                   )}
