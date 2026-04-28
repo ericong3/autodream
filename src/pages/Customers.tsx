@@ -183,6 +183,7 @@ export default function Customers() {
     ), [testDrives, todayStr, isDirector, currentUser]);
 
   const leadsFiltered = useMemo(() => myCustomers.filter(c => {
+    if (c.cashWorkOrder || c.loanWorkOrder) return false; // moved to Confirmed
     if (c.leadStatus === 'loan_submitted') return false;
     if (c.isDead) return false;
     const matchStatus = statusFilter === 'all' || c.leadStatus === statusFilter;
@@ -192,11 +193,12 @@ export default function Customers() {
   }), [myCustomers, statusFilter, sourceFilter, search]);
 
   const deadLeads = useMemo(() => myCustomers.filter(c =>
-    c.isDead && c.leadStatus !== 'loan_submitted' &&
+    c.isDead && !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus !== 'loan_submitted' &&
     (!search || c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search))
   ), [myCustomers, search]);
 
   const loanFiltered = useMemo(() => myCustomers.filter(c => {
+    if (c.cashWorkOrder || c.loanWorkOrder) return false; // moved to Confirmed
     if (c.leadStatus !== 'loan_submitted') return false;
     if (c.isTrashed) return false;
     const matchSource = sourceFilter === 'all' || c.source === sourceFilter;
@@ -212,6 +214,7 @@ export default function Customers() {
   }), [myCustomers, binMonth, search]);
 
   const confirmedFiltered = useMemo(() => myCustomers.filter(c => {
+    if (c.delivered) return false; // delivered = archived in History
     const hasWorkOrder = !!(c.cashWorkOrder || c.loanWorkOrder);
     const legacyConfirmed = !!c.dealPrice && !!cars.find(x => x.id === c.interestedCarId)?.finalDeal;
     if (!hasWorkOrder && !legacyConfirmed) return false;
@@ -224,7 +227,7 @@ export default function Customers() {
   const getCar = (id?: string) => cars.find(c => c.id === id);
 
   const statusCounts = useMemo(() => {
-    const leads = myCustomers.filter(c => c.leadStatus !== 'loan_submitted' && !c.isDead);
+    const leads = myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus !== 'loan_submitted' && !c.isDead);
     const counts: Partial<Record<Customer['leadStatus'] | 'all', number>> = { all: leads.length };
     leads.forEach(c => { counts[c.leadStatus] = (counts[c.leadStatus] ?? 0) + 1; });
     return counts;
@@ -669,22 +672,22 @@ export default function Customers() {
             className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'leads' ? 'bg-gold-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
             Leads
-            <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'leads' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => c.leadStatus !== 'loan_submitted' && !c.isDead).length}</span>
-            {myCustomers.filter(c => c.leadStatus !== 'loan_submitted' && isStale(c)).length > 0 && (
-              <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-400">{myCustomers.filter(c => c.leadStatus !== 'loan_submitted' && isStale(c)).length} stale</span>
+            <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'leads' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus !== 'loan_submitted' && !c.isDead).length}</span>
+            {myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus !== 'loan_submitted' && isStale(c)).length > 0 && (
+              <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-400">{myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus !== 'loan_submitted' && isStale(c)).length} stale</span>
             )}
           </button>
           <button
             onClick={() => { setTab('loan'); setStatusFilter('all'); }}
             className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'loan' ? 'bg-green-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
-            Loan <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'loan' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => c.leadStatus === 'loan_submitted').length}</span>
+            Loan <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'loan' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus === 'loan_submitted').length}</span>
           </button>
           <button
             onClick={() => { setTab('confirmed'); setStatusFilter('all'); }}
             className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'confirmed' ? 'bg-violet-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
-            Confirmed <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'confirmed' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !!(c.cashWorkOrder || c.loanWorkOrder) || (!!c.dealPrice && !!cars.find(x => x.id === c.interestedCarId)?.finalDeal)).length}</span>
+            Confirmed <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'confirmed' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !c.delivered && (!!(c.cashWorkOrder || c.loanWorkOrder) || (!!c.dealPrice && !!cars.find(x => x.id === c.interestedCarId)?.finalDeal))).length}</span>
           </button>
           <button
             onClick={() => { setTab('bin'); setStatusFilter('all'); }}
