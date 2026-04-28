@@ -121,7 +121,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const isSalesperson = currentUser?.role === 'salesperson';
   const salespeople = users.filter((u) => u.role === 'salesperson');
   const carRepairs = repairs.filter((r) => r.carId === id);
-  const totalRepairCost = carRepairs.reduce((sum, r) => sum + r.totalCost, 0);
+  const totalRepairCost = carRepairs.filter(r => r.status === 'done').reduce((sum, r) => sum + (r.actualCost ?? r.totalCost), 0);
 
   // ── Edit Car Modal ──
   const [showEditModal, setShowEditModal] = useState(false);
@@ -316,7 +316,16 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   }
 
   const assignedSalesperson = car.assignedSalesperson ? users.find((u) => u.id === car.assignedSalesperson) : null;
-  const netProfit = car.sellingPrice - car.purchasePrice - totalRepairCost;
+
+  // Net profit matching director view formula
+  const _wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
+  const _dealPrice = (_wo?.sellingPrice ?? car.sellingPrice) - (_wo?.discount ?? 0);
+  const _additionalTotal = _wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
+  const _profitBeforeComm = _dealPrice - car.purchasePrice - totalRepairCost - _additionalTotal;
+  const _commission = car.priceFloor != null
+    ? (_dealPrice >= car.priceFloor ? (_profitBeforeComm >= 10000 ? 2000 : 1500) : 1000)
+    : (_profitBeforeComm >= 10000 ? 1500 : 1000);
+  const netProfit = _profitBeforeComm - _commission;
 
   // Checklist helpers
   const checklist: ChecklistItem[] = car.checklistItems ?? DEFAULT_CHECKLIST_LABELS.map((label, i) => ({
