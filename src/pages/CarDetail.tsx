@@ -109,6 +109,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const customers = useStore((s) => s.customers);
   const repairs = useStore((s) => s.repairs);
   const workshops = useStore((s) => s.workshops);
+  const merchants = useStore((s) => s.merchants);
   const currentUser = useStore((s) => s.currentUser);
   const updateCar = useStore((s) => s.updateCar);
   const updateCustomer = useStore((s) => s.updateCustomer);
@@ -153,8 +154,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
 
   // ── Misc Cost Modal ──
   const [showMiscModal, setShowMiscModal] = useState(false);
-  const [miscForm, setMiscForm] = useState({ description: '', amount: '' });
-  const [miscError, setMiscError] = useState('');
+  const [miscForm, setMiscForm] = useState({ category: '', merchantName: '', description: '', amount: '', notes: '' });
+  const [miscErrors, setMiscErrors] = useState<Record<string, string>>({});
 
   // ── Repair / Loans tab ──
   const [jobTab, setJobTab] = useState<'repairs' | 'loans' | 'final_deal' | 'misc'>(initialTab ?? 'repairs');
@@ -490,7 +491,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           )}
           {(isAdmin || isDirector) && (
             <button
-              onClick={() => { setMiscForm({ description: '', amount: '' }); setMiscError(''); setShowMiscModal(true); }}
+              onClick={() => { setMiscForm({ category: '', merchantName: '', description: '', amount: '', notes: '' }); setMiscErrors({}); setShowMiscModal(true); }}
               className="flex items-center gap-2 bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/60 text-gray-300 hover:text-white px-4 py-2 rounded-lg text-sm transition-colors"
             >
               <Receipt size={15} />
@@ -1396,35 +1397,97 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       </Modal>
 
       {/* ── Misc Cost Modal ── */}
-      <Modal isOpen={showMiscModal} onClose={() => setShowMiscModal(false)} title="Add Misc Cost" maxWidth="max-w-sm">
+      <Modal isOpen={showMiscModal} onClose={() => setShowMiscModal(false)} title="Add Misc Cost" maxWidth="max-w-xl">
         <div className="space-y-4">
-          <div>
-            <label className="block text-gray-300 text-xs font-medium mb-1.5">Description *</label>
+          {(() => {
+            const merchantCategories = Array.from(new Set(merchants.map(m => m.category).filter(Boolean))) as string[];
+            const filteredMerchants = miscForm.category
+              ? merchants.filter(m => m.category === miscForm.category)
+              : merchants;
+            return (
+              <>
+                <FormField label="Category" error={miscErrors.category}>
+                  {merchantCategories.length === 0 ? (
+                    <p className="text-xs text-gray-500 py-2">
+                      No categories yet — add merchants in <span className="text-gold-400">Data → Misc</span>
+                    </p>
+                  ) : (
+                    <select
+                      className={inputCls(miscErrors.category)}
+                      value={miscForm.category}
+                      onChange={(e) => setMiscForm({ ...miscForm, category: e.target.value, merchantName: '' })}
+                    >
+                      <option value="">All categories</option>
+                      {merchantCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  )}
+                </FormField>
+
+                <FormField label="Merchant" error={miscErrors.merchantName}>
+                  {merchants.length === 0 ? (
+                    <p className="text-xs text-gray-500 py-2">
+                      No merchants yet — add one in <span className="text-gold-400">Data → Misc</span>
+                    </p>
+                  ) : filteredMerchants.length === 0 ? (
+                    <p className="text-xs text-gray-500 py-2">
+                      No merchants under <span className="text-white">{miscForm.category}</span> — add one in <span className="text-gold-400">Data → Misc</span>
+                    </p>
+                  ) : (
+                    <select
+                      className={inputCls(miscErrors.merchantName)}
+                      value={miscForm.merchantName}
+                      onChange={(e) => setMiscForm({ ...miscForm, merchantName: e.target.value })}
+                    >
+                      <option value="">Select merchant...</option>
+                      {filteredMerchants.map((m) => (
+                        <option key={m.id} value={m.name}>{m.name}{m.phone ? ` — ${m.phone}` : ''}</option>
+                      ))}
+                    </select>
+                  )}
+                </FormField>
+              </>
+            );
+          })()}
+
+          <FormField label="Description *" error={miscErrors.description}>
             <input
-              className="w-full bg-obsidian-700/60 border border-obsidian-400/60 text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500 transition-colors"
-              placeholder="e.g. Road tax, JPJ fee, tinting..."
+              className={inputCls(miscErrors.description)}
+              placeholder="e.g. Road tax renewal, JPJ fee..."
               value={miscForm.description}
               onChange={(e) => setMiscForm({ ...miscForm, description: e.target.value })}
             />
-          </div>
-          <div>
-            <label className="block text-gray-300 text-xs font-medium mb-1.5">Amount (RM) *</label>
+          </FormField>
+
+          <FormField label="Amount (RM) *" error={miscErrors.amount}>
             <input
               type="number"
               min="0"
               step="0.01"
-              className="w-full bg-obsidian-700/60 border border-obsidian-400/60 text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500 transition-colors"
+              className={inputCls(miscErrors.amount)}
               placeholder="0.00"
               value={miscForm.amount}
               onChange={(e) => setMiscForm({ ...miscForm, amount: e.target.value })}
             />
-          </div>
-          {miscError && <p className="text-red-400 text-xs flex items-center gap-1"><AlertCircle size={12} />{miscError}</p>}
+          </FormField>
+
+          <FormField label="Notes">
+            <textarea
+              className={`${inputCls()} h-16 resize-none`}
+              placeholder="Additional notes..."
+              value={miscForm.notes}
+              onChange={(e) => setMiscForm({ ...miscForm, notes: e.target.value })}
+            />
+          </FormField>
+        </div>
+        <div className="flex gap-3 mt-5">
+          <button onClick={() => setShowMiscModal(false)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
           <button
             onClick={async () => {
-              if (!miscForm.description.trim()) { setMiscError('Description is required'); return; }
+              const errs: Record<string, string> = {};
+              if (!miscForm.description.trim()) errs.description = 'Description is required';
               const amt = parseFloat(miscForm.amount);
-              if (!miscForm.amount || isNaN(amt) || amt <= 0) { setMiscError('Enter a valid amount'); return; }
+              if (!miscForm.amount || isNaN(amt) || amt <= 0) errs.amount = 'Enter a valid amount';
+              if (Object.keys(errs).length) { setMiscErrors(errs); return; }
               await addMiscCost(car!.id, {
                 id: generateId(),
                 description: miscForm.description.trim(),
@@ -1434,7 +1497,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               });
               setShowMiscModal(false);
             }}
-            className="w-full btn-gold py-2 rounded-lg text-sm font-medium"
+            className="flex-1 bg-purple-600 hover:bg-purple-500 px-4 py-2.5 rounded-lg text-sm text-white"
           >
             Add Misc Cost
           </button>
