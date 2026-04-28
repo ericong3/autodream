@@ -572,12 +572,22 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             </div>
 
             {/* Current location banner */}
-            {car.currentLocation && (
+            {car.status === 'delivered' ? (
+              <div className="mt-4 flex items-center gap-2 bg-violet-500/10 border border-violet-500/20 rounded-lg px-3 py-2">
+                <MapPin size={14} className="text-violet-400 flex-shrink-0" />
+                <span className="text-violet-300 text-sm font-semibold">Delivered</span>
+              </div>
+            ) : hasActiveRepair && car.currentLocation ? (
               <div className="mt-4 flex items-center gap-2 bg-orange-500/10 border border-orange-500/20 rounded-lg px-3 py-2">
                 <MapPin size={14} className="text-orange-400 flex-shrink-0" />
                 <span className="text-orange-300 text-sm">
                   Currently at: <span className="font-semibold">{car.currentLocation}</span>
                 </span>
+              </div>
+            ) : (
+              <div className="mt-4 flex items-center gap-2 bg-obsidian-700/40 border border-obsidian-400/40 rounded-lg px-3 py-2">
+                <MapPin size={14} className="text-gray-500 flex-shrink-0" />
+                <span className="text-gray-400 text-sm">Showroom</span>
               </div>
             )}
 
