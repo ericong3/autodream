@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { createPortal } from 'react-dom';
-import { X, Camera, User as UserIcon, QrCode, Phone, Mail, Globe, Instagram, Facebook, MessageCircle, Briefcase, FileText } from 'lucide-react';
+import { X, Camera, User as UserIcon, QrCode, Phone, Mail, Globe, Instagram, Facebook, MessageCircle, Briefcase, FileText, Eye, EyeOff, Lock, CheckCircle2, AlertCircle } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useStore } from '../store';
 
@@ -32,6 +32,17 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
   const [saved, setSaved] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Change password state
+  const [oldPw, setOldPw] = useState('');
+  const [newPw, setNewPw] = useState('');
+  const [confirmPw, setConfirmPw] = useState('');
+  const [showOldPw, setShowOldPw] = useState(false);
+  const [showNewPw, setShowNewPw] = useState(false);
+  const [showConfirmPw, setShowConfirmPw] = useState(false);
+  const [pwError, setPwError] = useState('');
+  const [pwSuccess, setPwSuccess] = useState(false);
+  const [pwSaving, setPwSaving] = useState(false);
+
   if (!isOpen || !currentUser) return null;
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -58,6 +69,22 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleChangePassword = async () => {
+    setPwError('');
+    if (!oldPw) { setPwError('Please enter your current password.'); return; }
+    if (oldPw !== currentUser.password) { setPwError('Current password is incorrect.'); return; }
+    if (!newPw) { setPwError('New password cannot be empty.'); return; }
+    if (newPw.length < 6) { setPwError('New password must be at least 6 characters.'); return; }
+    if (newPw === oldPw) { setPwError('New password must be different from the current one.'); return; }
+    if (newPw !== confirmPw) { setPwError('Passwords do not match.'); return; }
+    setPwSaving(true);
+    await updateUser(currentUser.id, { password: newPw });
+    setPwSaving(false);
+    setPwSuccess(true);
+    setOldPw(''); setNewPw(''); setConfirmPw('');
+    setTimeout(() => setPwSuccess(false), 3000);
   };
 
   const vCard = [
@@ -248,8 +275,113 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                 disabled={saving}
                 className="w-full py-2.5 rounded-lg bg-gold-gradient text-obsidian-950 text-sm font-bold shadow-gold-sm hover:opacity-90 active:scale-95 transition-all disabled:opacity-60"
               >
-                {saving ? 'Saving...' : saved ? 'Saved!' : 'Save Profile'}
+                {saving ? 'Saving...' : saved ? '✓ Saved!' : 'Save Profile'}
               </button>
+
+              {/* ── Change Password ── */}
+              <div className="pt-2">
+                <div className="border-t border-white/[0.07] pt-4">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Lock size={13} className="text-gray-400" />
+                    <span className="text-[11px] text-gray-400 font-semibold uppercase tracking-wider">Change Password</span>
+                  </div>
+
+                  <div className="space-y-3">
+                    {/* Current password */}
+                    <div>
+                      <label className="text-[11px] text-gray-400 font-medium uppercase tracking-wider block mb-1">Current Password</label>
+                      <div className="relative">
+                        <input
+                          type={showOldPw ? 'text' : 'password'}
+                          value={oldPw}
+                          onChange={(e) => { setOldPw(e.target.value); setPwError(''); }}
+                          placeholder="Enter current password"
+                          autoCapitalize="none"
+                          spellCheck={false}
+                          className="w-full px-3 py-2 pr-10 rounded-lg bg-obsidian-700/40 border border-white/[0.08] text-white text-sm placeholder-gray-600 focus:outline-none focus:border-gold-500/50 transition-colors"
+                        />
+                        <button type="button" onClick={() => setShowOldPw(v => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors">
+                          {showOldPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* New password */}
+                    <div>
+                      <label className="text-[11px] text-gray-400 font-medium uppercase tracking-wider block mb-1">New Password</label>
+                      <div className="relative">
+                        <input
+                          type={showNewPw ? 'text' : 'password'}
+                          value={newPw}
+                          onChange={(e) => { setNewPw(e.target.value); setPwError(''); }}
+                          placeholder="At least 6 characters"
+                          autoCapitalize="none"
+                          spellCheck={false}
+                          className="w-full px-3 py-2 pr-10 rounded-lg bg-obsidian-700/40 border border-white/[0.08] text-white text-sm placeholder-gray-600 focus:outline-none focus:border-gold-500/50 transition-colors"
+                        />
+                        <button type="button" onClick={() => setShowNewPw(v => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors">
+                          {showNewPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Confirm new password */}
+                    <div>
+                      <label className="text-[11px] text-gray-400 font-medium uppercase tracking-wider block mb-1">Confirm New Password</label>
+                      <div className="relative">
+                        <input
+                          type={showConfirmPw ? 'text' : 'password'}
+                          value={confirmPw}
+                          onChange={(e) => { setConfirmPw(e.target.value); setPwError(''); }}
+                          placeholder="Re-enter new password"
+                          autoCapitalize="none"
+                          spellCheck={false}
+                          className={`w-full px-3 py-2 pr-10 rounded-lg bg-obsidian-700/40 border text-white text-sm placeholder-gray-600 focus:outline-none transition-colors ${
+                            confirmPw && newPw && confirmPw === newPw
+                              ? 'border-green-500/40 focus:border-green-500/60'
+                              : confirmPw && newPw && confirmPw !== newPw
+                              ? 'border-red-500/40 focus:border-red-500/60'
+                              : 'border-white/[0.08] focus:border-gold-500/50'
+                          }`}
+                        />
+                        <button type="button" onClick={() => setShowConfirmPw(v => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors">
+                          {showConfirmPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                        {confirmPw && newPw && confirmPw === newPw && (
+                          <CheckCircle2 size={12} className="absolute right-9 top-1/2 -translate-y-1/2 text-green-400" />
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Error */}
+                    {pwError && (
+                      <div className="flex items-center gap-2 text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                        <AlertCircle size={12} className="shrink-0" />
+                        {pwError}
+                      </div>
+                    )}
+
+                    {/* Success */}
+                    {pwSuccess && (
+                      <div className="flex items-center gap-2 text-green-400 text-xs bg-green-500/10 border border-green-500/20 rounded-lg px-3 py-2">
+                        <CheckCircle2 size={12} className="shrink-0" />
+                        Password changed successfully!
+                      </div>
+                    )}
+
+                    <button
+                      onClick={handleChangePassword}
+                      disabled={pwSaving || !oldPw || !newPw || !confirmPw}
+                      className="w-full py-2.5 rounded-lg border border-white/10 bg-obsidian-700/60 hover:bg-obsidian-600/60 text-white text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {pwSaving ? 'Updating...' : 'Update Password'}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
