@@ -1397,6 +1397,38 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             </select>
           </FormField>
 
+          {isDirector && (() => {
+            const investors = users.filter(u => u.role === 'investor');
+            if (investors.length === 0) return null;
+            return (
+              <div className="col-span-2 space-y-3">
+                <FormField label="Investor">
+                  <select
+                    className={inputCls()}
+                    value={editForm.investorId ?? ''}
+                    onChange={(e) => setEditForm({ ...editForm, investorId: e.target.value || undefined, investorSplit: editForm.investorSplit ?? 50 })}
+                  >
+                    <option value="">— AutoDream (no investor) —</option>
+                    {investors.map(inv => (
+                      <option key={inv.id} value={inv.id}>{inv.name}</option>
+                    ))}
+                  </select>
+                </FormField>
+                {editForm.investorId && (
+                  <FormField label="Investor Profit Share (%)">
+                    <input
+                      type="number"
+                      className={inputCls()}
+                      value={editForm.investorSplit ?? 50}
+                      min={1} max={99}
+                      onChange={(e) => setEditForm({ ...editForm, investorSplit: Number(e.target.value) })}
+                    />
+                    <p className="text-gray-600 text-xs mt-1">AutoDream takes {100 - (editForm.investorSplit ?? 50)}%</p>
+                  </FormField>
+                )}
+              </div>
+            );
+          })()}
           <FormField label="Notes" className="col-span-2">
             <textarea className={`${inputCls()} h-20 resize-none`} value={editForm.notes ?? ''} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
           </FormField>

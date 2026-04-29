@@ -36,6 +36,14 @@ export default function Commission() {
   const getRepairCosts = (carId: string) =>
     repairs.filter(r => r.carId === carId && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
 
+  const getSaleDate = (car: typeof cars[0]): string => {
+    const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
+    return dealCustomer?.deliveredAt
+      ?? dealCustomer?.loanWorkOrder?.createdAt
+      ?? dealCustomer?.cashWorkOrder?.createdAt
+      ?? car.dateAdded;
+  };
+
   const calcCommission = (car: typeof cars[0]): number => {
     const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
     const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
@@ -52,7 +60,7 @@ export default function Commission() {
 
   const filteredSoldCars = useMemo(() => allSoldCars.filter(c => {
     const matchSales = !salesFilter || getDealSalespersonId(c) === salesFilter;
-    const matchMonth = !monthFilter || c.dateAdded.startsWith(monthFilter);
+    const matchMonth = !monthFilter || getSaleDate(c).startsWith(monthFilter);
     return matchSales && matchMonth;
   }), [allSoldCars, salesFilter, monthFilter, customers]);
 
@@ -177,7 +185,7 @@ export default function Commission() {
                 <thead>
                   <tr className="text-gray-500 text-xs border-b border-obsidian-400/60 bg-[#161410]">
                     <th className="text-left px-5 py-3 font-medium">Vehicle</th>
-                    <th className="text-left px-5 py-3 font-medium">Date Added</th>
+                    <th className="text-left px-5 py-3 font-medium">Sale Date</th>
                     {isDirector && <th className="text-left px-5 py-3 font-medium">Salesperson</th>}
                     <th className="text-right px-5 py-3 font-medium">Deal Price</th>
                     <th className="text-right px-5 py-3 font-medium">Commission</th>
@@ -190,7 +198,7 @@ export default function Commission() {
                         <p className="text-white font-medium">{c.year} {c.make} {c.model}</p>
                         <p className="text-gray-500 text-xs capitalize">{c.colour} · {c.transmission}</p>
                       </td>
-                      <td className="px-5 py-3 text-gray-400">{new Date(c.dateAdded).toLocaleDateString('en-MY')}</td>
+                      <td className="px-5 py-3 text-gray-400">{new Date(getSaleDate(c)).toLocaleDateString('en-MY')}</td>
                       {isDirector && <td className="px-5 py-3 text-gray-400">{getSalesName(getDealSalespersonId(c))}</td>}
                       <td className="px-5 py-3 text-right text-gold-400 font-semibold">
                         {formatRM(c.finalDeal?.dealPrice ?? c.sellingPrice)}

@@ -41,6 +41,13 @@ function RequireDirector({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function RequireDirectorOrAdmin({ children }: { children: React.ReactNode }) {
+  const currentUser = useStore((s) => s.currentUser);
+  if (!currentUser) return <Navigate to="/login" replace />;
+  if (currentUser.role !== 'director' && currentUser.role !== 'admin') return <Navigate to="/inventory" replace />;
+  return <>{children}</>;
+}
+
 function RequireSalesOrDirector({ children }: { children: React.ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
   if (!currentUser) return <Navigate to="/login" replace />;
@@ -86,11 +93,11 @@ export default function App() {
         <Route
           path="/dashboard"
           element={
-            <RequireDirector>
+            <RequireDirectorOrAdmin>
               <Layout>
                 <Dashboard />
               </Layout>
-            </RequireDirector>
+            </RequireDirectorOrAdmin>
           }
         />
         <Route
@@ -166,11 +173,11 @@ export default function App() {
         <Route
           path="/history"
           element={
-            <RequireDirector>
+            <RequireDirectorOrAdmin>
               <Layout>
                 <History />
               </Layout>
-            </RequireDirector>
+            </RequireDirectorOrAdmin>
           }
         />
         <Route

@@ -197,7 +197,7 @@ export default function Customers() {
   }), [myCustomers, statusFilter, sourceFilter, search]);
 
   const deadLeads = useMemo(() => myCustomers.filter(c =>
-    c.isDead && !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus !== 'loan_submitted' &&
+    c.isDead && !c.isTrashed && !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus !== 'loan_submitted' &&
     (!search || c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search))
   ), [myCustomers, search]);
 
