@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Car as CarIcon, TrendingUp, DollarSign, Package, CheckCircle2, Clock } from 'lucide-react';
+import { Car as CarIcon, Package, CheckCircle2 } from 'lucide-react';
 import { useStore } from '../store';
 import { formatRM } from '../utils/format';
 import { Car } from '../types';
@@ -127,7 +127,7 @@ export default function InvestorPortal() {
           </div>
         ) : (
           <div className="space-y-3">
-            {active.map(({ car, repairCost, miscCost, additionalTotal, commission, dealPrice, myShare, split }) => {
+            {active.map(({ car, repairCost, miscCost, commission, split }) => {
               const totalIn = car.purchasePrice + repairCost + miscCost;
               const estProfit = (car.sellingPrice - car.purchasePrice - repairCost - miscCost - commission) * split;
               return (
@@ -185,7 +185,7 @@ export default function InvestorPortal() {
             <CheckCircle2 size={13} /> Realized ({realized.length})
           </h2>
           <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl divide-y divide-obsidian-400/40">
-            {realized.map(({ car, repairCost, miscCost, additionalTotal, commission, dealPrice, netProfit, myShare, split }) => (
+            {realized.map(({ car, repairCost, miscCost, additionalTotal, commission, dealPrice, myShare, split }) => (
               <div key={car.id} className="flex items-center gap-3 px-4 py-3">
                 <div className="w-14 h-10 bg-obsidian-700/60 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center">
                   {car.photo

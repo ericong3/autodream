@@ -41,7 +41,7 @@ const emptyForm = {
   username: '',
   password: '',
   phone: '',
-  role: 'salesperson' as 'director' | 'salesperson' | 'mechanic' | 'admin',
+  role: 'salesperson' as User['role'],
   monthlyTarget: 4,
 };
 

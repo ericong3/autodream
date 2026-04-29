@@ -101,6 +101,7 @@ export default function Inventory() {
   const viewKey = `${currentUser?.id}-inventory`;
   const view = viewPreference[viewKey] ?? 'grid';
 
+  const [inventoryTab, setInventoryTab] = useState<'stock' | 'coming_soon'>('stock');
   const [search, setSearch] = useState('');
   const [filterMake, setFilterMake] = useState('All');
   const [filterTransmission, setFilterTransmission] = useState('All');
@@ -231,9 +232,25 @@ export default function Inventory() {
     return map;
   }, [cars, customers, repairs, confirmedDealPrice]);
 
+  const comingSoonFiltered = useMemo(() => {
+    let result = cars.filter((c) => c.status === 'coming_soon');
+    if (search) {
+      const q = search.toLowerCase();
+      result = result.filter((c) =>
+        c.make.toLowerCase().includes(q) ||
+        c.model.toLowerCase().includes(q) ||
+        c.colour.toLowerCase().includes(q) ||
+        String(c.year).includes(q) ||
+        (c.carPlate ?? '').toLowerCase().includes(q)
+      );
+    }
+    if (filterMake !== 'All') result = result.filter((c) => c.make === filterMake);
+    return result.sort((a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime());
+  }, [cars, search, filterMake]);
+
   const filtered = useMemo(() => {
-    // Show all cars except fully delivered sold cars
-    let result = cars.filter((c) => c.status !== 'delivered');
+    // Stock tab: exclude delivered and coming_soon
+    let result = cars.filter((c) => c.status !== 'delivered' && c.status !== 'coming_soon');
 
     if (search) {
       const q = search.toLowerCase();
@@ -326,6 +343,30 @@ export default function Inventory() {
 
   return (
     <div className="space-y-5">
+      {/* Tabs */}
+      <div className="flex gap-1 bg-[#0F0E0C] border border-obsidian-400/60 rounded-lg p-1 w-fit">
+        <button
+          onClick={() => setInventoryTab('stock')}
+          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${inventoryTab === 'stock' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
+        >
+          Stock
+          <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${inventoryTab === 'stock' ? 'bg-white/20' : 'bg-obsidian-600/60'}`}>
+            {cars.filter(c => c.status !== 'delivered' && c.status !== 'coming_soon').length}
+          </span>
+        </button>
+        <button
+          onClick={() => setInventoryTab('coming_soon')}
+          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${inventoryTab === 'coming_soon' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
+        >
+          Coming Soon
+          {cars.filter(c => c.status === 'coming_soon').length > 0 && (
+            <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${inventoryTab === 'coming_soon' ? 'bg-white/20' : 'bg-purple-500/20 text-purple-400'}`}>
+              {cars.filter(c => c.status === 'coming_soon').length}
+            </span>
+          )}
+        </button>
+      </div>
+
       {/* Top bar */}
       <div className="flex flex-wrap gap-3">
         {/* Search */}
@@ -342,19 +383,23 @@ export default function Inventory() {
 
         {/* Filters */}
         <Select value={filterMake} onChange={setFilterMake} options={CAR_MAKES} placeholder="Brand" />
-        <Select
-          value={filterTransmission}
-          onChange={setFilterTransmission}
-          options={['All', 'auto', 'manual']}
-          placeholder="Transmission"
-        />
-        <Select
-          value={filterStatus}
-          onChange={setFilterStatus}
-          options={['All', 'available', 'loan_in_process', 'approval_received', 'sold_pending']}
-          labels={['All Status', 'Available', 'Loan in Process', 'Approval Received', 'Sold']}
-          placeholder="Status"
-        />
+        {inventoryTab === 'stock' && (
+          <>
+            <Select
+              value={filterTransmission}
+              onChange={setFilterTransmission}
+              options={['All', 'auto', 'manual']}
+              placeholder="Transmission"
+            />
+            <Select
+              value={filterStatus}
+              onChange={setFilterStatus}
+              options={['All', 'available', 'loan_in_process', 'approval_received', 'sold_pending']}
+              labels={['All Status', 'Available', 'Loan in Process', 'Approval Received', 'Sold']}
+              placeholder="Status"
+            />
+          </>
+        )}
         <Select
           value={sortBy}
           onChange={setSortBy}
@@ -394,8 +439,89 @@ export default function Inventory() {
 
       {/* Count */}
       <p className="text-gray-500 text-sm">
-        Showing <span className="text-white font-medium">{filtered.length}</span> of {cars.filter(c => c.status !== 'delivered').length} active stock
+        {inventoryTab === 'coming_soon'
+          ? <>Showing <span className="text-white font-medium">{comingSoonFiltered.length}</span> coming soon</>
+          : <>Showing <span className="text-white font-medium">{filtered.length}</span> of {cars.filter(c => c.status !== 'delivered' && c.status !== 'coming_soon').length} active stock</>
+        }
       </p>
+
+      {/* ── Coming Soon tab ── */}
+      {inventoryTab === 'coming_soon' && (
+        <>
+          {comingSoonFiltered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <CarIcon size={40} className="text-gray-600 mb-3" />
+              <p className="text-gray-400 font-medium">No coming soon cars</p>
+              <p className="text-gray-500 text-sm mt-1">Add a car and mark it as Coming Soon</p>
+            </div>
+          ) : (
+            <div className="bg-card-gradient border border-purple-500/20 rounded-xl shadow-card divide-y divide-obsidian-400/60">
+              {comingSoonFiltered.map((car) => {
+                const inv = car.investorId ? users.find(u => u.id === car.investorId) : null;
+                return (
+                  <div
+                    key={car.id}
+                    onClick={() => navigate(`/inventory/${car.id}`)}
+                    className="flex items-center gap-4 px-4 py-3 hover:bg-obsidian-700/40 transition-colors cursor-pointer"
+                  >
+                    {/* Placeholder thumbnail */}
+                    <div className="w-16 h-11 bg-obsidian-700/60 rounded-lg flex-shrink-0 flex items-center justify-center">
+                      {car.photo
+                        ? <img src={car.photo} alt="" className="w-full h-full object-cover rounded-lg" loading="lazy" />
+                        : <CarIcon size={18} className="text-gray-600" />
+                      }
+                    </div>
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-white font-semibold text-sm">{car.year} {car.make} {car.model}</span>
+                        {car.variant && <span className="text-gray-500 text-xs">{car.variant}</span>}
+                        {car.carPlate && (
+                          <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-[#2C2415] text-gold-300 border border-[#3C321E] tracking-wider">
+                            {car.carPlate}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-500 flex-wrap">
+                        <span>{car.colour} · {car.transmission}</span>
+                        {car.notes && <span className="truncate max-w-[200px] italic">{car.notes}</span>}
+                        {isDirector && inv && (
+                          <span className="text-amber-400/80">{inv.name} · {car.investorSplit ?? 50}%</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Price + actions */}
+                    <div className="flex items-center gap-3 shrink-0" onClick={e => e.stopPropagation()}>
+                      <div className="text-right">
+                        <p className="text-gold-400 font-bold text-sm">{formatRM(car.sellingPrice)}</p>
+                        {isDirector && (
+                          <p className="text-gray-600 text-xs">Cost: {formatRM(car.purchasePrice)}</p>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 whitespace-nowrap">
+                        Coming Soon
+                      </span>
+                      {isDirector && (
+                        <button
+                          onClick={() => setDeleteCarId(car.id)}
+                          className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── Stock tab content (existing grid/list) ── */}
+      {inventoryTab === 'stock' && <>
 
       {/* Empty state */}
       {filtered.length === 0 && (
@@ -728,7 +854,7 @@ export default function Inventory() {
         </div>
       )}
 
-
+      </>}
 
       <DeleteConfirmModal
         isOpen={!!deleteCarId}

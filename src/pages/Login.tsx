@@ -10,7 +10,6 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const login = useStore((s) => s.login);
-  const currentUser = useStore((s) => s.currentUser);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {

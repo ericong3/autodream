@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import {
   Users, Plus, ChevronDown, ChevronUp, Car as CarIcon,
-  DollarSign, TrendingUp, Package, CheckCircle2, Edit2, X, Eye, EyeOff,
+  Package, CheckCircle2, Edit2, X, Eye, EyeOff,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { formatRM, generateId } from '../utils/format';
