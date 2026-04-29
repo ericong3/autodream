@@ -454,6 +454,70 @@ export default function Inventory() {
               <p className="text-gray-400 font-medium">No coming soon cars</p>
               <p className="text-gray-500 text-sm mt-1">Add a car and mark it as Coming Soon</p>
             </div>
+          ) : view === 'grid' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {comingSoonFiltered.map((car) => {
+                const inv = car.investorId ? users.find(u => u.id === car.investorId) : null;
+                return (
+                  <div key={car.id} className="relative group/card">
+                    {isDirector && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setDeleteCarId(car.id); }}
+                        className="absolute top-2 right-2 z-10 p-1.5 bg-red-500/80 hover:bg-red-500 text-white rounded-lg opacity-0 group-hover/card:opacity-100 transition-opacity"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                    <div
+                      onClick={() => navigate(`/inventory/${car.id}`)}
+                      className="bg-card-gradient border border-purple-500/30 hover:border-purple-400/60 rounded-xl shadow-card overflow-hidden cursor-pointer hover:shadow-xl transition-all group"
+                    >
+                      {/* Photo */}
+                      <div className="h-36 bg-obsidian-700/60 flex items-center justify-center relative">
+                        {car.photo ? (
+                          <img
+                            src={car.photo}
+                            alt={`${car.make} ${car.model}`}
+                            className="w-full h-full object-cover opacity-0 transition-opacity duration-300"
+                            loading="lazy"
+                            onLoad={(e) => e.currentTarget.classList.replace('opacity-0', 'opacity-100')}
+                          />
+                        ) : (
+                          <CarIcon size={40} className="text-gray-700 group-hover:text-gray-600 transition-colors" />
+                        )}
+                        <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                          Coming Soon
+                        </span>
+                      </div>
+                      {/* Info */}
+                      <div className="p-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-white font-semibold text-sm truncate">{car.year} {car.make} {car.model}</p>
+                            {car.variant && <p className="text-gray-500 text-xs truncate">{car.variant}</p>}
+                          </div>
+                          {car.carPlate && (
+                            <span className="shrink-0 text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-[#2C2415] text-gold-300 border border-[#3C321E] tracking-wider">
+                              {car.carPlate}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-gray-500 text-xs mt-1">{car.colour} · {car.transmission}</p>
+                        {isDirector && inv && (
+                          <p className="text-amber-400/80 text-xs mt-1">{inv.name} · {car.investorSplit ?? 50}%</p>
+                        )}
+                        <div className="mt-3 pt-3 border-t border-obsidian-400/40">
+                          <p className="text-gold-400 font-bold">{formatRM(car.sellingPrice)}</p>
+                          {isDirector && (
+                            <p className="text-gray-600 text-xs mt-0.5">Cost: {formatRM(car.purchasePrice)}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           ) : (
             <div className="bg-card-gradient border border-purple-500/20 rounded-xl shadow-card divide-y divide-obsidian-400/60">
               {comingSoonFiltered.map((car) => {
@@ -464,7 +528,7 @@ export default function Inventory() {
                     onClick={() => navigate(`/inventory/${car.id}`)}
                     className="flex items-center gap-4 px-4 py-3 hover:bg-obsidian-700/40 transition-colors cursor-pointer"
                   >
-                    {/* Placeholder thumbnail */}
+                    {/* Thumbnail */}
                     <div className="w-16 h-11 bg-obsidian-700/60 rounded-lg flex-shrink-0 flex items-center justify-center">
                       {car.photo
                         ? <img src={car.photo} alt="" className="w-full h-full object-cover rounded-lg" loading="lazy" />
