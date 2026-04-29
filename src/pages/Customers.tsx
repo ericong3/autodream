@@ -189,6 +189,7 @@ export default function Customers() {
     if (c.cashWorkOrder || c.loanWorkOrder) return false; // moved to Confirmed
     if (c.leadStatus === 'loan_submitted') return false;
     if (c.isDead) return false;
+    if (c.isTrashed) return false;
     const matchStatus = statusFilter === 'all' || c.leadStatus === statusFilter;
     const matchSource = sourceFilter === 'all' || c.source === sourceFilter;
     const matchSearch = !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search);
