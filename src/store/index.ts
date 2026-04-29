@@ -575,9 +575,14 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         } else if (payload.eventType === 'UPDATE') {
           set((s) => {
             const updated = rowToUser(payload.new);
+            // Only merge fields that actually exist in the payload (skip undefined so
+            // columns not yet in the DB don't wipe optimistic updates).
+            const definedFields = Object.fromEntries(
+              Object.entries(updated).filter(([, v]) => v !== undefined)
+            ) as Partial<User>;
             return {
-              users: s.users.map((u) => u.id === updated.id ? updated : u),
-              currentUser: s.currentUser?.id === updated.id ? { ...s.currentUser, ...updated } : s.currentUser,
+              users: s.users.map((u) => u.id === updated.id ? { ...u, ...definedFields } : u),
+              currentUser: s.currentUser?.id === updated.id ? { ...s.currentUser, ...definedFields } : s.currentUser,
             };
           });
         } else if (payload.eventType === 'DELETE') {
