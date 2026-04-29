@@ -10,6 +10,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const login = useStore((s) => s.login);
+  const currentUser = useStore((s) => s.currentUser);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -21,8 +22,10 @@ export default function Login() {
     await new Promise((r) => setTimeout(r, 400));
     const success = await login(username.trim(), password);
     setLoading(false);
-    if (success) { navigate('/inventory'); }
-    else { setError('Invalid username or password'); }
+    if (success) {
+      const role = useStore.getState().currentUser?.role;
+      navigate(role === 'investor' ? '/investor-portal' : '/inventory');
+    } else { setError('Invalid username or password'); }
   };
 
   return (
