@@ -37,21 +37,21 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 function RequireDirector({ children }: { children: React.ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
   if (!currentUser) return <Navigate to="/login" replace />;
-  if (currentUser.role !== 'director') return <Navigate to="/inventory" replace />;
+  if (currentUser.role !== 'director' && currentUser.role !== 'shareholder') return <Navigate to="/inventory" replace />;
   return <>{children}</>;
 }
 
 function RequireDirectorOrAdmin({ children }: { children: React.ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
   if (!currentUser) return <Navigate to="/login" replace />;
-  if (currentUser.role !== 'director' && currentUser.role !== 'admin') return <Navigate to="/inventory" replace />;
+  if (!['director', 'admin', 'shareholder'].includes(currentUser.role)) return <Navigate to="/inventory" replace />;
   return <>{children}</>;
 }
 
 function RequireSalesOrDirector({ children }: { children: React.ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
   if (!currentUser) return <Navigate to="/login" replace />;
-  if (currentUser.role !== 'director' && currentUser.role !== 'salesperson') return <Navigate to="/inventory" replace />;
+  if (!['director', 'salesperson', 'shareholder'].includes(currentUser.role)) return <Navigate to="/inventory" replace />;
   return <>{children}</>;
 }
 

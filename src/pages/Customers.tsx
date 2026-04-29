@@ -81,7 +81,9 @@ export default function Customers() {
 
   const isDirector = currentUser?.role === 'director';
   const isAdmin = currentUser?.role === 'admin';
+  const isShareHolder = currentUser?.role === 'shareholder';
   const isDirectorOrAdmin = isDirector || isAdmin;
+  const isDirectorLevel = isDirectorOrAdmin || isShareHolder;
 
   // ── Stale lead helpers ────────────────────────────────────
   const getDaysSinceAction = (c: Customer) => {
@@ -172,13 +174,14 @@ export default function Customers() {
   const myCustomers = useMemo(() =>
     customers
       .filter(c => {
-        if (!isDirectorOrAdmin) return c.assignedSalesId === currentUser?.id;
+        if (!isDirectorLevel) return c.assignedSalesId === currentUser?.id;
+        if (isShareHolder) return true;
         if (directorView === 'all') return true;
         if (directorView === 'own') return c.assignedSalesId === currentUser?.id;
         return c.assignedSalesId === directorView;
       })
       .map(c => STAGE_ORDER.includes(c.leadStatus) ? c : { ...c, leadStatus: 'contacted' as Customer['leadStatus'] }),
-    [customers, isDirectorOrAdmin, currentUser, directorView]
+    [customers, isDirectorLevel, isShareHolder, currentUser, directorView]
   );
 
   const todayTestDrives = useMemo(() =>
@@ -707,7 +710,7 @@ export default function Customers() {
             )}
           </button>
         </div>
-        {tab === 'leads' && (
+        {tab === 'leads' && !isShareHolder && (
           <button onClick={openAdd} className="flex items-center gap-2 btn-gold px-4 py-2.5 rounded-lg text-sm">
             <Plus size={16} />New Lead
           </button>
@@ -715,7 +718,7 @@ export default function Customers() {
       </div>
 
       {/* Director view toggle */}
-      {isDirectorOrAdmin && (
+      {isDirectorLevel && !isShareHolder && (
         <div className="flex gap-2 items-center">
           {(['all', 'own', 'salesman'] as const).map(opt => (
             <button
@@ -856,7 +859,7 @@ export default function Customers() {
                       <span className="text-white text-sm font-medium">{c.name}</span>
                       <span className="text-gray-600 text-xs hidden sm:inline">{c.phone}</span>
                       <span className="text-gray-700 text-xs px-1.5 py-0.5 bg-[#2C2415] rounded hidden md:inline">{SOURCE_LABELS[c.source]}</span>
-                      {isDirectorOrAdmin && <span className="text-gray-600 text-xs hidden lg:inline">{getSalesName(c.assignedSalesId)}</span>}
+                      {isDirectorLevel && <span className="text-gray-600 text-xs hidden lg:inline">{getSalesName(c.assignedSalesId)}</span>}
                       {isStale(c) && (
                         <span className="flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/25">
                           <Clock size={9} />{getDaysSinceAction(c)}d stale
@@ -923,12 +926,14 @@ export default function Customers() {
                     <button onClick={() => handleWhatsApp(c.phone, c.name)} className="flex items-center gap-1 px-2 py-1.5 text-xs text-green-400 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 hover:border-green-500/40 rounded-lg transition-colors">
                       <MessageCircle size={12} />WA
                     </button>
+                    {!isShareHolder && (<>
                     <button onClick={() => openEdit(c)} className="p-1.5 text-gray-600 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors">
                       <Edit2 size={14} />
                     </button>
                     <button onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })} className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors" title="Move to bin">
                       <Trash2 size={14} />
                     </button>
+                    </>)}
                   </div>
                 </div>
               );
@@ -1015,7 +1020,7 @@ export default function Customers() {
                       <div className="flex items-center gap-2">
                         <span className="text-white text-sm font-medium">{c.name}</span>
                         <span className="text-gray-600 text-xs hidden sm:inline">{c.phone}</span>
-                        {isDirectorOrAdmin && <span className="text-gray-600 text-xs hidden lg:inline">{getSalesName(c.assignedSalesId)}</span>}
+                        {isDirectorLevel && <span className="text-gray-600 text-xs hidden lg:inline">{getSalesName(c.assignedSalesId)}</span>}
                       </div>
                       <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                         {car && <span className="text-gray-400 text-xs">{car.year} {car.make} {car.model}</span>}
@@ -1061,6 +1066,7 @@ export default function Customers() {
                       <button onClick={() => handleWhatsApp(c.phone, c.name)} className="flex items-center gap-1 px-2 py-1.5 text-xs text-green-400 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 rounded-lg transition-colors">
                         <MessageCircle size={12} />WA
                       </button>
+                      {!isShareHolder && (<>
                       <button
                         onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })}
                         className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
@@ -1071,6 +1077,7 @@ export default function Customers() {
                       <button onClick={() => openEdit(c)} className="p-1.5 text-gray-600 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors">
                         <Edit2 size={14} />
                       </button>
+                      </>)}
                     </div>
                   </div>
 
@@ -1121,7 +1128,7 @@ export default function Customers() {
                       <div className="flex items-center gap-2">
                         <span className="text-white text-sm font-medium">{c.name}</span>
                         <span className="text-gray-600 text-xs">{c.phone}</span>
-                        {isDirectorOrAdmin && <span className="text-gray-600 text-xs hidden lg:inline">{getSalesName(c.assignedSalesId)}</span>}
+                        {isDirectorLevel && <span className="text-gray-600 text-xs hidden lg:inline">{getSalesName(c.assignedSalesId)}</span>}
                       </div>
                       <div className="flex items-center gap-3 mt-1 flex-wrap">
                         {car && <span className="text-gray-500 text-xs">{car.year} {car.make} {car.model}</span>}
@@ -1143,22 +1150,24 @@ export default function Customers() {
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => updateCustomer(c.id, { isTrashed: false, trashedAt: undefined })}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-400 hover:text-white bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/60 rounded-lg transition-colors"
-                        title="Restore case"
-                      >
-                        <RotateCcw size={12} /> Restore
-                      </button>
-                      <button
-                        onClick={() => setBinDeleteTarget({ id: c.id, label: c.name })}
-                        className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 rounded-lg transition-colors"
-                        title="Permanently delete"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
+                    {!isShareHolder && (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => updateCustomer(c.id, { isTrashed: false, trashedAt: undefined })}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-400 hover:text-white bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/60 rounded-lg transition-colors"
+                          title="Restore case"
+                        >
+                          <RotateCcw size={12} /> Restore
+                        </button>
+                        <button
+                          onClick={() => setBinDeleteTarget({ id: c.id, label: c.name })}
+                          className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 rounded-lg transition-colors"
+                          title="Permanently delete"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1196,7 +1205,7 @@ export default function Customers() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-white text-sm font-medium">{c.name}</span>
                       <span className="text-gray-500 text-xs">{c.phone}</span>
-                      {isDirectorOrAdmin && <span className="text-gray-600 text-xs">{getSalesName(c.assignedSalesId)}</span>}
+                      {isDirectorLevel && <span className="text-gray-600 text-xs">{getSalesName(c.assignedSalesId)}</span>}
                     </div>
                     <div className="flex items-center gap-3 mt-1 flex-wrap">
                       {car && <span className="text-gray-400 text-xs">{car.year} {car.make} {car.model}</span>}
@@ -1212,13 +1221,15 @@ export default function Customers() {
                       ? <span className="text-xs font-medium px-2.5 py-1 rounded-full border bg-green-500/10 border-green-500/30 text-green-400 flex items-center gap-1"><Truck size={10} />Delivered</span>
                       : <span className="text-xs font-medium px-2.5 py-1 rounded-full border bg-violet-500/10 border-violet-500/30 text-violet-400">Confirmed</span>
                     }
-                    <button
-                      onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })}
-                      className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                      title="Move to bin"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    {!isShareHolder && (
+                      <button
+                        onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })}
+                        className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                        title="Move to bin"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -1521,7 +1532,7 @@ export default function Customers() {
                       <span className="text-gray-500 text-xs">Stage</span>
                       <span className={`text-sm font-medium ${STAGE_COLORS[detailLead.leadStatus].text}`}>{LEAD_STATUS_LABELS[detailLead.leadStatus]}</span>
                     </div>
-                    {isDirectorOrAdmin && (
+                    {isDirectorLevel && (
                       <div className="flex items-center justify-between">
                         <span className="text-gray-500 text-xs">Assigned To</span>
                         <span className="text-white text-sm">{getSalesName(detailLead.assignedSalesId)}</span>
@@ -1835,7 +1846,7 @@ export default function Customers() {
                     <CheckCircle size={15} />Delivered · {detailLead.deliveredAt ? new Date(detailLead.deliveredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
                   </div>
                 )}
-                {getRevertLabel(detailLead) && (
+                {!isShareHolder && getRevertLabel(detailLead) && (
                   <button
                     onClick={() => handleRevert(detailLead)}
                     className="w-full flex items-center justify-center gap-2 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 text-orange-400 py-2.5 rounded-lg text-sm font-medium transition-colors"
@@ -1843,7 +1854,7 @@ export default function Customers() {
                     ← {getRevertLabel(detailLead)}
                   </button>
                 )}
-                {!detailLead.isDead && !detailLead.cashWorkOrder && !detailLead.loanWorkOrder && isStale(detailLead) && (
+                {!isShareHolder && !detailLead.isDead && !detailLead.cashWorkOrder && !detailLead.loanWorkOrder && isStale(detailLead) && (
                   <button
                     onClick={() => handleMarkDead(detailLead)}
                     className="w-full flex items-center justify-center gap-2 bg-gray-700/40 hover:bg-gray-700/60 border border-gray-600/40 text-gray-500 hover:text-gray-300 py-2.5 rounded-lg text-sm font-medium transition-colors"
@@ -1851,7 +1862,7 @@ export default function Customers() {
                     <Skull size={14} />Mark as Dead Lead
                   </button>
                 )}
-                {detailLead.isDead && (
+                {!isShareHolder && detailLead.isDead && (
                   <button
                     onClick={() => handleReviveLead(detailLead)}
                     className="w-full flex items-center justify-center gap-2 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-400 py-2.5 rounded-lg text-sm font-medium transition-colors"
@@ -1859,7 +1870,7 @@ export default function Customers() {
                     ↑ Revive Lead
                   </button>
                 )}
-                <div className="grid grid-cols-2 gap-2">
+                {!isShareHolder && <div className="grid grid-cols-2 gap-2">
                   {detailLead.leadStatus === 'contacted' && (
                     <button
                       onClick={() => { openTdSchedule(detailLead); setDetailLead(null); }}
@@ -1888,7 +1899,7 @@ export default function Customers() {
                   >
                     <Trash2 size={13} />Move to Bin
                   </button>
-                </div>
+                </div>}
               </div>
                 </div>
               </div>

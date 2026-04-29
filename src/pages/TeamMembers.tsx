@@ -64,6 +64,12 @@ const ROLE_CONFIG = {
     badgeBg: 'bg-orange-500/20 border-orange-500/30 text-orange-400',
     avatarBg: 'bg-orange-500/20 border-orange-500/30 text-orange-400',
   },
+  shareholder: {
+    label: 'Shareholder',
+    icon: TrendingUp,
+    badgeBg: 'bg-cyan-500/20 border-cyan-500/30 text-cyan-400',
+    avatarBg: 'bg-cyan-500/20 border-cyan-500/30 text-cyan-400',
+  },
 };
 
 function EmployeeDetailModal({ member, onClose, currentUserId }: { member: User; onClose: () => void; currentUserId?: string }) {
@@ -313,6 +319,8 @@ export default function TeamMembers() {
     return netBeforeComm >= 10000 ? 1500 : 1000;
   };
 
+  const isShareHolder = currentUser?.role === 'shareholder';
+
   const [showModal, setShowModal] = useState(false);
   const [editTarget, setEditTarget] = useState<User | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -441,18 +449,20 @@ export default function TeamMembers() {
           </div>
         </div>
 
-        <button
-          onClick={() => {
-            setEditTarget(null);
-            setForm(emptyForm);
-            setErrors({});
-            setShowModal(true);
-          }}
-          className="flex items-center gap-2 btn-gold px-4 py-2.5 rounded-lg text-sm"
-        >
-          <Plus size={16} />
-          Add Member
-        </button>
+        {!isShareHolder && (
+          <button
+            onClick={() => {
+              setEditTarget(null);
+              setForm(emptyForm);
+              setErrors({});
+              setShowModal(true);
+            }}
+            className="flex items-center gap-2 btn-gold px-4 py-2.5 rounded-lg text-sm"
+          >
+            <Plus size={16} />
+            Add Member
+          </button>
+        )}
       </div>
 
       {/* Members grid */}
@@ -497,21 +507,23 @@ export default function TeamMembers() {
                       <p className="text-gray-500 text-xs">{member.position || `@${member.username}`}</p>
                     </div>
                   </div>
-                  <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      onClick={() => openEdit(member)}
-                      className="p-1.5 text-gray-400 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors"
-                    >
-                      <Edit size={14} />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(member)}
-                      disabled={isSelf}
-                      className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
+                  {!isShareHolder && (
+                    <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => openEdit(member)}
+                        className="p-1.5 text-gray-400 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors"
+                      >
+                        <Edit size={14} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(member)}
+                        disabled={isSelf}
+                        className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Role badge */}
@@ -642,14 +654,16 @@ export default function TeamMembers() {
 
           {/* Role selector */}
           <FormField label="Role">
-            <div className="grid grid-cols-3 gap-2">
-              {(['salesperson', 'mechanic', 'director'] as const).map((role) => {
+            <div className="grid grid-cols-2 gap-2">
+              {(['salesperson', 'mechanic', 'director', 'shareholder'] as const).map((role) => {
                 const cfg = ROLE_CONFIG[role];
                 const selected = form.role === role;
                 const selectedStyle = role === 'director'
                   ? 'bg-purple-500/20 border-purple-500/50 text-purple-300'
                   : role === 'mechanic'
                   ? 'bg-orange-500/20 border-orange-500/50 text-orange-300'
+                  : role === 'shareholder'
+                  ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300'
                   : 'bg-gold-500/20 border-gold-500/50 text-gold-300';
                 return (
                   <button

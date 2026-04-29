@@ -97,6 +97,8 @@ export default function Inventory() {
   };
 
   const isDirector = currentUser?.role === 'director';
+  const isShareHolder = currentUser?.role === 'shareholder';
+  const isDirectorView = isDirector || isShareHolder;
   const canAddCar = currentUser?.role === 'director' || currentUser?.role === 'salesperson';
   const viewKey = `${currentUser?.id}-inventory`;
   const view = viewPreference[viewKey] ?? 'grid';
@@ -503,12 +505,12 @@ export default function Inventory() {
                           )}
                         </div>
                         <p className="text-gray-500 text-xs mt-1">{car.colour} · {car.transmission}</p>
-                        {isDirector && inv && (
+                        {isDirectorView && inv && (
                           <p className="text-amber-400/80 text-xs mt-1">{inv.name} · {car.investorSplit ?? 50}%</p>
                         )}
                         <div className="mt-3 pt-3 border-t border-obsidian-400/40">
                           <p className="text-gold-400 font-bold">{formatRM(car.sellingPrice)}</p>
-                          {isDirector && (
+                          {isDirectorView && (
                             <p className="text-gray-600 text-xs mt-0.5">Cost: {formatRM(car.purchasePrice)}</p>
                           )}
                         </div>
@@ -550,7 +552,7 @@ export default function Inventory() {
                       <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-500 flex-wrap">
                         <span>{car.colour} · {car.transmission}</span>
                         {car.notes && <span className="truncate max-w-[200px] italic">{car.notes}</span>}
-                        {isDirector && inv && (
+                        {isDirectorView && inv && (
                           <span className="text-amber-400/80">{inv.name} · {car.investorSplit ?? 50}%</span>
                         )}
                       </div>
@@ -560,7 +562,7 @@ export default function Inventory() {
                     <div className="flex items-center gap-3 shrink-0" onClick={e => e.stopPropagation()}>
                       <div className="text-right">
                         <p className="text-gold-400 font-bold text-sm">{formatRM(car.sellingPrice)}</p>
-                        {isDirector && (
+                        {isDirectorView && (
                           <p className="text-gray-600 text-xs">Cost: {formatRM(car.purchasePrice)}</p>
                         )}
                       </div>
@@ -746,7 +748,7 @@ export default function Inventory() {
                     ) : (
                       <p className="text-gold-400 text-lg font-bold">{formatRM(car.sellingPrice)}</p>
                     )}
-                    {isDirector && (
+                    {isDirectorView && (
                       <p className={`text-xs font-medium mt-0.5 ${(carProfitMap[car.id] ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                         Profit: {formatRM(carProfitMap[car.id] ?? 0)}
                       </p>
@@ -755,7 +757,7 @@ export default function Inventory() {
                 </div>
 
                 <p className="text-gray-600 text-xs mt-1 truncate">{getSalesperson(getDealSalespersonId(car))}</p>
-                {isDirector && car.investorId && (() => {
+                {isDirectorView && car.investorId && (() => {
                   const inv = users.find(u => u.id === car.investorId);
                   return inv ? (
                     <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
@@ -845,7 +847,7 @@ export default function Inventory() {
                         <Building2 size={9} /> CONSIGN
                       </span>
                     )}
-                    {isDirector && car.investorId && (() => {
+                    {isDirectorView && car.investorId && (() => {
                       const inv = users.find(u => u.id === car.investorId);
                       return inv ? (
                         <span className="flex items-center gap-1 bg-amber-500/10 text-amber-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-500/20">
@@ -896,7 +898,7 @@ export default function Inventory() {
                     <p className="text-gray-600 text-xs line-through">{formatRM(car.sellingPrice)}</p>
                   )}
                   <p className="text-gold-400 font-bold text-sm">{formatRM(price)}</p>
-                  {isDirector && (
+                  {isDirectorView && (
                     <p className={`text-xs font-medium mt-0.5 ${profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                       {profit >= 0 ? '+' : ''}{formatRM(profit)}
                     </p>

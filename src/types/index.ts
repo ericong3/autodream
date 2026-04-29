@@ -3,7 +3,7 @@ export interface User {
   name: string;
   username: string;
   password: string;
-  role: 'director' | 'salesperson' | 'mechanic' | 'admin' | 'investor';
+  role: 'director' | 'salesperson' | 'mechanic' | 'admin' | 'investor' | 'shareholder';
   phone: string;
   monthlyTarget: number;
   carsInMonth: number;

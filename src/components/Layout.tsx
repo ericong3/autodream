@@ -80,10 +80,11 @@ export default function Layout({ children }: LayoutProps) {
   const handleLogout = () => { logout(); navigate('/login'); };
 
   const isDirector = currentUser?.role === 'director';
+  const isShareHolder = currentUser?.role === 'shareholder';
   const isSalesperson = currentUser?.role === 'salesperson';
   const isInvestor = currentUser?.role === 'investor';
-  const primaryNav = isDirector ? DIRECTOR_PRIMARY : isSalesperson ? SALESPERSON_PRIMARY : isInvestor ? INVESTOR_PRIMARY : MECHANIC_PRIMARY;
-  const moreNav = isDirector ? DIRECTOR_MORE : isSalesperson ? SALESPERSON_MORE : [];
+  const primaryNav = (isDirector || isShareHolder) ? DIRECTOR_PRIMARY : isSalesperson ? SALESPERSON_PRIMARY : isInvestor ? INVESTOR_PRIMARY : MECHANIC_PRIMARY;
+  const moreNav = (isDirector || isShareHolder) ? DIRECTOR_MORE : isSalesperson ? SALESPERSON_MORE : [];
 
   return (
     <div className="flex min-h-screen bg-obsidian-950">

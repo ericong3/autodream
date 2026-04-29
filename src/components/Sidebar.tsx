@@ -126,6 +126,7 @@ export default function Sidebar() {
   const currentUser = useStore((s) => s.currentUser);
   const location = useLocation();
   const isDirector = currentUser?.role === 'director';
+  const isShareHolder = currentUser?.role === 'shareholder';
   const isAdmin = currentUser?.role === 'admin';
   const isSalesperson = currentUser?.role === 'salesperson';
   const isInvestor = currentUser?.role === 'investor';
@@ -172,7 +173,7 @@ export default function Sidebar() {
     );
   }
 
-  if (isDirector) {
+  if (isDirector || isShareHolder) {
     return (
       <aside className="hidden md:flex flex-col w-64 min-h-screen glass-sidebar border-r border-gold-500/[0.12]">
         <SidebarLogo />

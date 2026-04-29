@@ -122,6 +122,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
 
   const car = cars.find((c) => c.id === id);
   const isDirector = currentUser?.role === 'director';
+  const isShareHolder = currentUser?.role === 'shareholder';
+  const isDirectorView = isDirector || isShareHolder;
   const isAdmin = currentUser?.role === 'admin';
   const isMechanic = currentUser?.role === 'mechanic';
   const isSalesperson = currentUser?.role === 'salesperson';
@@ -632,7 +634,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               <InfoItem label="Transmission" value={car.transmission === 'auto' ? 'Automatic' : 'Manual'} />
               <InfoItem label="Date Added" value={car.dateAdded} />
               <InfoItem label="Selling Price" value={car.sellingPrice > 0 ? formatRM(car.sellingPrice) : 'TBD'} valueClass="text-gold-400 font-bold" />
-              {isDirector && (
+              {isDirectorView && (
                 <>
                   <InfoItem label="Purchase Price" value={formatRM(car.purchasePrice)} />
                   <InfoItem label="Repair Costs" value={formatRM(totalRepairCost)} valueClass="text-orange-400" />
@@ -714,7 +716,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             <Banknote size={14} /> Loan Log
             {(() => { const isSoldDelivered = car.status === 'delivered'; const n = isSoldDelivered ? 0 : customers.filter(c => c.interestedCarId === car.id && c.loanApplications?.length && !c.isTrashed).length; return n > 0 ? <span className="text-xs bg-obsidian-700/60 px-1.5 py-0.5 rounded-full">{n}</span> : null; })()}
           </button>
-          {(isAdmin || isDirector) && (
+          {(isAdmin || isDirectorView) && (
             <button
               onClick={() => setJobTab('misc')}
               className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors -mb-px ${
@@ -776,7 +778,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                           {r.parts.map((part, pi) => (
                             <div key={pi} className="flex justify-between text-xs">
                               <span className="text-gray-400">{part.name}</span>
-                              {isDirector && <span className="text-gray-400">{formatRM(part.cost)}</span>}
+                              {isDirectorView && <span className="text-gray-400">{formatRM(part.cost)}</span>}
                             </div>
                           ))}
                         </div>
@@ -800,7 +802,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                     </div>
 
                     <div className="flex flex-col items-end gap-2">
-                      {isDirector && (
+                      {isDirectorView && (
                         <div className="text-right">
                           <div className="text-xs text-gray-500">Parts: {formatRM(partsTotal)}</div>
                           <div className="text-xs text-gray-500">Labour: {formatRM(r.labourCost)}</div>
@@ -844,7 +846,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             })}
           </div>
         ))}
-        {jobTab === 'repairs' && isDirector && carRepairs.length > 0 && (
+        {jobTab === 'repairs' && isDirectorView && carRepairs.length > 0 && (
           <div className="px-5 py-3 border-t border-obsidian-400/60 text-right">
             <p className="text-sm text-gray-400">
               Total Repair Cost: <span className="text-orange-400 font-semibold">{formatRM(totalRepairCost)}</span>
@@ -1052,8 +1054,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 {deal.notes && <DRow label="Notes" value={deal.notes} border={false} />}
               </Section>
 
-              {/* View toggle (director only) */}
-              {isDirector && (
+              {/* View toggle (director/shareholder) */}
+              {isDirectorView && (
                 <div className="px-5 py-3 border-b border-obsidian-400/30 flex gap-2">
                   <button
                     onClick={() => setDealView('salesman')}
@@ -1071,7 +1073,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               )}
 
               {/* ── Salesman View: collection balance (loan only) ── */}
-              {(dealView === 'salesman' || !isDirector) && isLoan && wo && (
+              {(dealView === 'salesman' || !isDirectorView) && isLoan && wo && (
                 <Section title="Collection Balance">
                   <DRow label="Selling Price" value={formatRM(sellingPrice)} valueClass="text-gold-400 font-bold" />
                   {discount > 0 && <DRow label="− Discount" value={formatRM(discount)} valueClass="text-red-400" />}
@@ -1096,7 +1098,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               )}
 
               {/* ── Director View: profit breakdown ── */}
-              {(dealView === 'director' && isDirector) && (
+              {(dealView === 'director' && isDirectorView) && (
                 <Section title="Deal Financials">
                   {car.priceFloor != null && (
                     <div className="flex justify-between items-center px-5 py-1.5 mb-1 bg-blue-500/5 rounded-lg border border-blue-500/20 mx-5">
@@ -1128,7 +1130,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               {!isLoan && (
                 <Section title="Deal Financials">
                   <DRow label="Selling Price" value={formatRM(sellingPrice)} valueClass="text-gold-400 font-bold" />
-                  {isDirector && (
+                  {isDirectorView && (
                     <>
                       <DRow label="Purchase Price" value={`− ${formatRM(purchasePrice)}`} valueClass="text-red-400" />
                       {discount > 0 && <DRow label="Discount" value={`− ${formatRM(discount)}`} valueClass="text-red-400" />}
