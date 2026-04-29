@@ -353,7 +353,7 @@ export default function Customers() {
   // ── Dead Lead ─────────────────────────────────────────────
   const handleMarkDead = async (c: Customer) => {
     const now = new Date().toISOString();
-    updateCustomer(c.id, { isDead: true, deadAt: now });
+    updateCustomer(c.id, { isDead: true, deadAt: now, isTrashed: true, trashedAt: now });
     setDetailLead(null);
   };
 
@@ -1121,7 +1121,10 @@ export default function Customers() {
                       </div>
                       <div className="flex items-center gap-3 mt-1 flex-wrap">
                         {car && <span className="text-gray-500 text-xs">{car.year} {car.make} {car.model}</span>}
-                        {c.leadStatus && !c.loanApplications?.length && (
+                        {c.isDead && (
+                          <span className="text-xs text-red-400/70 bg-red-500/10 px-2 py-0.5 rounded-full flex items-center gap-1"><Skull size={10} />Dead Lead</span>
+                        )}
+                        {!c.isDead && c.leadStatus && !c.loanApplications?.length && (
                           <span className="text-xs text-gray-500 bg-obsidian-700/60 px-2 py-0.5 rounded-full">{LEAD_STATUS_LABELS[c.leadStatus] ?? c.leadStatus}</span>
                         )}
                         {rejectedBanks.length > 0 && (
