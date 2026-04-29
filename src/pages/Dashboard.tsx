@@ -34,16 +34,45 @@ export default function Dashboard() {
 
   const soldCars = cars.filter((c) => c.status === 'delivered');
   const availableCars = cars.filter((c) => c.status === 'available');
-  const totalRepairCosts = repairs.reduce((sum, r) => sum + r.totalCost, 0);
-  const commission = soldCars.length * 500;
 
-  const getRepairCostsForCar = (carId: string) =>
-    repairs.filter((r) => r.carId === carId).reduce((sum, r) => sum + r.totalCost, 0);
+  // Total repair spend across all jobs (for workshop card)
+  const totalRepairCosts = repairs
+    .filter((r) => r.status === 'done')
+    .reduce((sum, r) => sum + (r.actualCost ?? r.totalCost), 0);
 
-  const totalRevenue = soldCars.reduce((s, c) => s + c.sellingPrice, 0);
-  const totalCosts = soldCars.reduce((s, c) => s + c.purchasePrice, 0);
-  const soldRepairs = soldCars.reduce((s, c) => s + getRepairCostsForCar(c.id), 0);
-  const netProfit = totalRevenue - totalCosts - soldRepairs - commission;
+  // Per-car P&L using the same formula as Commission and InvestorPortal
+  const soldCarData = useMemo(() => soldCars.map((car) => {
+    const repairCost = repairs
+      .filter((r) => r.carId === car.id && r.status === 'done')
+      .reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
+    const miscCost = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
+
+    const customer = customers.find(
+      (c) => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder)
+    );
+    const wo = customer?.loanWorkOrder ?? customer?.cashWorkOrder;
+    const dealPrice = wo
+      ? wo.sellingPrice - (wo.discount ?? 0)
+      : car.finalDeal?.dealPrice ?? car.sellingPrice;
+    const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
+
+    const profitBeforeComm = dealPrice - car.purchasePrice - repairCost - miscCost - additionalTotal;
+    const commission = car.priceFloor != null
+      ? (dealPrice >= car.priceFloor
+          ? (profitBeforeComm >= 10000 ? 2000 : 1500)
+          : 1000)
+      : (profitBeforeComm >= 10000 ? 1500 : 1000);
+
+    const netCarProfit = profitBeforeComm - commission;
+    return { car, dealPrice, repairCost, miscCost, additionalTotal, commission, netCarProfit };
+  }), [soldCars, repairs, customers]);
+
+  const totalRevenue   = soldCarData.reduce((s, d) => s + d.dealPrice, 0);
+  const totalCosts     = soldCarData.reduce((s, d) => s + d.car.purchasePrice, 0);
+  const soldRepairs    = soldCarData.reduce((s, d) => s + d.repairCost, 0);
+  const soldMisc       = soldCarData.reduce((s, d) => s + d.miscCost + d.additionalTotal, 0);
+  const totalCommission = soldCarData.reduce((s, d) => s + d.commission, 0);
+  const netProfit      = soldCarData.reduce((s, d) => s + d.netCarProfit, 0);
 
   return (
     <div className="space-y-6">
@@ -123,7 +152,8 @@ export default function Dashboard() {
             <PLRow label="Total Revenue (Sales)" value={totalRevenue} positive />
             <PLRow label="Total Purchase Costs" value={-totalCosts} />
             <PLRow label="Repair & Refurbishment" value={-soldRepairs} />
-            <PLRow label="Commission Paid" value={-commission} subtitle={`${soldCars.length} × RM 500`} />
+            <PLRow label="Misc & Additional Items" value={-soldMisc} />
+            <PLRow label="Commission Paid" value={-totalCommission} subtitle={`${soldCars.length} car${soldCars.length !== 1 ? 's' : ''}`} />
             <div className="divider-gold my-3" />
             <div className="flex justify-between items-center pt-1">
               <span className="text-white font-bold text-sm">Net Profit</span>
