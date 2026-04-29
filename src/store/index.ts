@@ -380,6 +380,14 @@ function rowToUser(r: any): User {
     phone: r.phone,
     monthlyTarget: r.monthly_target,
     carsInMonth: r.cars_in_month,
+    avatar: r.avatar ?? undefined,
+    position: r.position ?? undefined,
+    bio: r.bio ?? undefined,
+    email: r.email ?? undefined,
+    whatsapp: r.whatsapp ?? undefined,
+    instagram: r.instagram ?? undefined,
+    facebook: r.facebook ?? undefined,
+    website: r.website ?? undefined,
   };
 }
 
@@ -393,6 +401,14 @@ function userToRow(u: Partial<User>) {
   if (u.phone !== undefined) row.phone = u.phone;
   if (u.monthlyTarget !== undefined) row.monthly_target = u.monthlyTarget;
   if (u.carsInMonth !== undefined) row.cars_in_month = u.carsInMonth;
+  if (u.avatar !== undefined) row.avatar = u.avatar;
+  if (u.position !== undefined) row.position = u.position;
+  if (u.bio !== undefined) row.bio = u.bio;
+  if (u.email !== undefined) row.email = u.email;
+  if (u.whatsapp !== undefined) row.whatsapp = u.whatsapp;
+  if (u.instagram !== undefined) row.instagram = u.instagram;
+  if (u.facebook !== undefined) row.facebook = u.facebook;
+  if (u.website !== undefined) row.website = u.website;
   return row;
 }
 
@@ -557,9 +573,13 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
               : [...s.users, rowToUser(payload.new)],
           }));
         } else if (payload.eventType === 'UPDATE') {
-          set((s) => ({
-            users: s.users.map((u) => u.id === (payload.new as any).id ? rowToUser(payload.new) : u),
-          }));
+          set((s) => {
+            const updated = rowToUser(payload.new);
+            return {
+              users: s.users.map((u) => u.id === updated.id ? updated : u),
+              currentUser: s.currentUser?.id === updated.id ? { ...s.currentUser, ...updated } : s.currentUser,
+            };
+          });
         } else if (payload.eventType === 'DELETE') {
           set((s) => ({ users: s.users.filter((u) => u.id !== (payload.old as any).id) }));
         }

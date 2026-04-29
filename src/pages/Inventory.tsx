@@ -516,10 +516,12 @@ export default function Inventory() {
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-1 mt-1">
-                  <MapPin size={11} className="text-gray-500 flex-shrink-0" />
-                  <span className="text-gray-400 text-xs truncate">{getLocation(car)}</span>
-                </div>
+                {car.status !== 'coming_soon' && (
+                  <div className="flex items-center gap-1 mt-1">
+                    <MapPin size={11} className="text-gray-500 flex-shrink-0" />
+                    <span className="text-gray-400 text-xs truncate">{getLocation(car)}</span>
+                  </div>
+                )}
 
                 <div className="flex items-center gap-2 mt-2">
                   <p className="text-gray-400 text-xs">{formatMileage(car.mileage)}</p>
@@ -646,9 +648,11 @@ export default function Inventory() {
                   </div>
                   <div className="flex items-center gap-3 mt-1 flex-wrap">
                     <span className="text-gray-500 text-xs">{car.colour} · {car.transmission} · {formatMileage(car.mileage)}</span>
-                    <span className="flex items-center gap-1 text-gray-500 text-xs">
-                      <MapPin size={10} />{getLocation(car)}
-                    </span>
+                    {car.status !== 'coming_soon' && (
+                      <span className="flex items-center gap-1 text-gray-500 text-xs">
+                        <MapPin size={10} />{getLocation(car)}
+                      </span>
+                    )}
                     {(() => {
                       if (car.status === 'delivered' || car.status === 'sold') return null;
                       const days = Math.floor((Date.now() - new Date(car.dateAdded).getTime()) / 86400000);

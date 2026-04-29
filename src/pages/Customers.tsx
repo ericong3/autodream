@@ -73,6 +73,7 @@ export default function Customers() {
   const addCustomer = useStore((s) => s.addCustomer);
   const updateCustomer = useStore((s) => s.updateCustomer);
   const deleteCustomer = useStore((s) => s.deleteCustomer);
+
   const addTestDrive = useStore((s) => s.addTestDrive);
   const testDrives = useStore((s) => s.testDrives);
   const addPersonalReminder = useStore((s) => s.addPersonalReminder);
@@ -108,8 +109,10 @@ export default function Customers() {
   const [form, setForm] = useState({ ...emptyForm, assignedSalesId: currentUser?.id ?? '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Delete confirmation
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
+
+
+  // Bin permanent delete confirmation
+  const [binDeleteTarget, setBinDeleteTarget] = useState<{ id: string; label: string } | null>(null);
 
   // Test drive scheduling modal
   const [showTdModal, setShowTdModal] = useState(false);
@@ -919,7 +922,7 @@ export default function Customers() {
                     <button onClick={() => openEdit(c)} className="p-1.5 text-gray-600 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors">
                       <Edit2 size={14} />
                     </button>
-                    <button onClick={() => setDeleteTarget({ id: c.id, label: c.name })} className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">
+                    <button onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })} className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors" title="Move to bin">
                       <Trash2 size={14} />
                     </button>
                   </div>
@@ -1054,15 +1057,13 @@ export default function Customers() {
                       <button onClick={() => handleWhatsApp(c.phone, c.name)} className="flex items-center gap-1 px-2 py-1.5 text-xs text-green-400 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 rounded-lg transition-colors">
                         <MessageCircle size={12} />WA
                       </button>
-                      {c.loanApplications?.length && c.loanApplications.every(a => a.status === 'rejected') && (
-                        <button
-                          onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })}
-                          className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                          title="Toss to bin"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      )}
+                      <button
+                        onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })}
+                        className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                        title="Move to bin"
+                      >
+                        <Trash2 size={14} />
+                      </button>
                       <button onClick={() => openEdit(c)} className="p-1.5 text-gray-600 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors">
                         <Edit2 size={14} />
                       </button>
@@ -1100,12 +1101,12 @@ export default function Customers() {
         {trashedFiltered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20">
             <Trash2 size={40} className="text-gray-600 mb-3" />
-            <p className="text-gray-400">No rejected cases in bin</p>
-            <p className="text-gray-600 text-xs mt-1">{binMonth ? 'Try changing the month filter' : 'Cases tossed from the Loan tab will appear here'}</p>
+            <p className="text-gray-400">No cases in bin</p>
+            <p className="text-gray-600 text-xs mt-1">{binMonth ? 'Try changing the month filter' : 'Cases moved to bin from Leads or Loan tabs appear here'}</p>
           </div>
         ) : (
           <div className="space-y-2">
-            <p className="text-gray-500 text-xs">{trashedFiltered.length} rejected case{trashedFiltered.length > 1 ? 's' : ''}{binMonth ? ` in ${new Date(binMonth + '-01').toLocaleDateString('en-MY', { month: 'long', year: 'numeric' })}` : ''}</p>
+            <p className="text-gray-500 text-xs">{trashedFiltered.length} case{trashedFiltered.length > 1 ? 's' : ''} in bin{binMonth ? ` — ${new Date(binMonth + '-01').toLocaleDateString('en-MY', { month: 'long', year: 'numeric' })}` : ''}</p>
             <div className="bg-card-gradient border border-red-500/20 rounded-xl shadow-card divide-y divide-obsidian-400/60">
               {trashedFiltered.map(c => {
                 const car = getCar(c.interestedCarId);
@@ -1120,6 +1121,9 @@ export default function Customers() {
                       </div>
                       <div className="flex items-center gap-3 mt-1 flex-wrap">
                         {car && <span className="text-gray-500 text-xs">{car.year} {car.make} {car.model}</span>}
+                        {c.leadStatus && !c.loanApplications?.length && (
+                          <span className="text-xs text-gray-500 bg-obsidian-700/60 px-2 py-0.5 rounded-full">{LEAD_STATUS_LABELS[c.leadStatus] ?? c.leadStatus}</span>
+                        )}
                         {rejectedBanks.length > 0 && (
                           <div className="flex gap-1 flex-wrap">
                             {rejectedBanks.map(a => (
@@ -1132,13 +1136,22 @@ export default function Customers() {
                         )}
                       </div>
                     </div>
-                    <button
-                      onClick={() => updateCustomer(c.id, { isTrashed: false, trashedAt: undefined })}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-400 hover:text-white bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/60 rounded-lg transition-colors"
-                      title="Restore to Loan tab"
-                    >
-                      <RotateCcw size={12} /> Restore
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => updateCustomer(c.id, { isTrashed: false, trashedAt: undefined })}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-400 hover:text-white bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/60 rounded-lg transition-colors"
+                        title="Restore case"
+                      >
+                        <RotateCcw size={12} /> Restore
+                      </button>
+                      <button
+                        onClick={() => setBinDeleteTarget({ id: c.id, label: c.name })}
+                        className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 rounded-lg transition-colors"
+                        title="Permanently delete"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -1184,7 +1197,7 @@ export default function Customers() {
                       {wo && <span className="text-gray-600 text-xs">{new Date(wo.createdAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</span>}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
                     <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${isLoan ? 'bg-blue-500/10 border-blue-500/30 text-blue-400' : 'bg-green-500/10 border-green-500/30 text-green-400'}`}>
                       {isLoan ? `Loan · ${c.loanWorkOrder?.bank}` : 'Cash'}
                     </span>
@@ -1192,6 +1205,13 @@ export default function Customers() {
                       ? <span className="text-xs font-medium px-2.5 py-1 rounded-full border bg-green-500/10 border-green-500/30 text-green-400 flex items-center gap-1"><Truck size={10} />Delivered</span>
                       : <span className="text-xs font-medium px-2.5 py-1 rounded-full border bg-violet-500/10 border-violet-500/30 text-violet-400">Confirmed</span>
                     }
+                    <button
+                      onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })}
+                      className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                      title="Move to bin"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
                 </div>
               );
@@ -1856,10 +1876,10 @@ export default function Customers() {
                     <Edit2 size={13} />Edit
                   </button>
                   <button
-                    onClick={() => setDeleteTarget({ id: detailLead.id, label: detailLead.name })}
+                    onClick={() => { updateCustomer(detailLead.id, { isTrashed: true, trashedAt: new Date().toISOString() }); setDetailLead(null); }}
                     className="flex items-center justify-center gap-1.5 border border-red-500/20 hover:bg-red-500/10 text-red-400 py-2.5 rounded-lg text-sm font-medium transition-colors"
                   >
-                    <Trash2 size={13} />Delete
+                    <Trash2 size={13} />Move to Bin
                   </button>
                 </div>
               </div>
@@ -2582,10 +2602,10 @@ export default function Customers() {
         );
       })()}
       <DeleteConfirmModal
-        isOpen={!!deleteTarget}
-        onClose={() => setDeleteTarget(null)}
-        onConfirm={async () => { if (deleteTarget) { deleteCustomer(deleteTarget.id); setDetailLead(null); } }}
-        itemName={deleteTarget?.label ?? ''}
+        isOpen={!!binDeleteTarget}
+        onClose={() => setBinDeleteTarget(null)}
+        onConfirm={async () => { if (binDeleteTarget) { await deleteCustomer(binDeleteTarget.id); setBinDeleteTarget(null); } }}
+        itemName={binDeleteTarget?.label ?? ''}
       />
     </div>
   );
