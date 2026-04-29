@@ -392,12 +392,13 @@ export default function TeamMembers() {
     setDeleteTarget({ id: member.id, label: member.name });
   };
 
+  const teamUsers = users.filter((u) => u.role !== 'investor');
   const filteredUsers =
-    filterRole === 'all' ? users : users.filter((u) => u.role === filterRole);
+    filterRole === 'all' ? teamUsers : teamUsers.filter((u) => u.role === filterRole);
 
-  const directorCount = users.filter((u) => u.role === 'director').length;
-  const salespersonCount = users.filter((u) => u.role === 'salesperson').length;
-  const mechanicCount = users.filter((u) => u.role === 'mechanic').length;
+  const directorCount = teamUsers.filter((u) => u.role === 'director').length;
+  const salespersonCount = teamUsers.filter((u) => u.role === 'salesperson').length;
+  const mechanicCount = teamUsers.filter((u) => u.role === 'mechanic').length;
 
   return (
     <div className="space-y-6">

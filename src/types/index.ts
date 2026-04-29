@@ -3,11 +3,12 @@ export interface User {
   name: string;
   username: string;
   password: string;
-  role: 'director' | 'salesperson' | 'mechanic' | 'admin';
+  role: 'director' | 'salesperson' | 'mechanic' | 'admin' | 'investor';
   phone: string;
   monthlyTarget: number;
   carsInMonth: number;
-  // Profile / name card fields (persisted locally via Zustand)
+  capitalAmount?: number; // investor total capital in RM
+  // Profile / name card fields
   avatar?: string;
   position?: string;
   bio?: string;
@@ -205,6 +206,8 @@ export interface Car {
   consignment?: Consignment;
   priceFloor?: number;
   miscCosts?: MiscCost[];
+  investorId?: string;   // investor user id who funded this car
+  investorSplit?: number; // investor's profit share % (default 50)
 }
 
 export interface MiscCost {

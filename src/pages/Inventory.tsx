@@ -73,6 +73,8 @@ const emptyForm: Omit<Car, 'id' | 'dateAdded'> = {
   notes: '',
   currentLocation: 'Showroom',
   consignment: undefined,
+  investorId: undefined,
+  investorSplit: 50,
 };
 
 export default function Inventory() {
@@ -563,6 +565,14 @@ export default function Inventory() {
                 </div>
 
                 <p className="text-gray-600 text-xs mt-1 truncate">{getSalesperson(getDealSalespersonId(car))}</p>
+                {isDirector && car.investorId && (() => {
+                  const inv = users.find(u => u.id === car.investorId);
+                  return inv ? (
+                    <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
+                      <Users size={9} /> {inv.name} · {car.investorSplit ?? 50}%
+                    </span>
+                  ) : null;
+                })()}
 
                 {/* Deal summary strip */}
                 {(() => {
@@ -645,6 +655,14 @@ export default function Inventory() {
                         <Building2 size={9} /> CONSIGN
                       </span>
                     )}
+                    {isDirector && car.investorId && (() => {
+                      const inv = users.find(u => u.id === car.investorId);
+                      return inv ? (
+                        <span className="flex items-center gap-1 bg-amber-500/10 text-amber-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-500/20">
+                          <Users size={9} /> {inv.name}
+                        </span>
+                      ) : null;
+                    })()}
                   </div>
                   <div className="flex items-center gap-3 mt-1 flex-wrap">
                     <span className="text-gray-500 text-xs">{car.colour} · {car.transmission} · {formatMileage(car.mileage)}</span>
@@ -916,6 +934,54 @@ export default function Inventory() {
               </div>
             )}
           </div>
+
+          {/* Investor funding — director only */}
+          {isDirector && (() => {
+            const investors = users.filter(u => u.role === 'investor');
+            if (investors.length === 0) return null;
+            return (
+              <div className="col-span-2">
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, investorId: form.investorId ? undefined : investors[0].id, investorSplit: 50 })}
+                  className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${form.investorId ? 'bg-amber-500/10 border-amber-500/40 text-amber-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
+                >
+                  <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${form.investorId ? 'bg-amber-500 border-amber-500' : 'border-gray-600'}`}>
+                    {form.investorId && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Investor-Funded</p>
+                    <p className="text-xs opacity-60 mt-0.5">Car capital comes from an investor account</p>
+                  </div>
+                </button>
+                {form.investorId && (
+                  <div className="mt-3 space-y-3 pl-2 border-l-2 border-amber-500/30">
+                    <FormField label="Investor">
+                      <select
+                        className={inputCls()}
+                        value={form.investorId}
+                        onChange={(e) => setForm({ ...form, investorId: e.target.value })}
+                      >
+                        {investors.map(inv => (
+                          <option key={inv.id} value={inv.id}>{inv.name}</option>
+                        ))}
+                      </select>
+                    </FormField>
+                    <FormField label="Investor Profit Share (%)">
+                      <input
+                        type="number"
+                        className={inputCls()}
+                        value={form.investorSplit ?? 50}
+                        min={1} max={99}
+                        onChange={(e) => setForm({ ...form, investorSplit: Number(e.target.value) })}
+                      />
+                      <p className="text-gray-600 text-xs mt-1">AutoDream takes the remaining {100 - (form.investorSplit ?? 50)}%</p>
+                    </FormField>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           <FormField label="Notes" className="col-span-2">
             <textarea

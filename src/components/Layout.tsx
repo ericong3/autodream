@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Car, Users, CalendarDays,
   FileText, Calculator, GitCompare,
   ClipboardList, Bot, TrendingUp, UsersRound,
-  History, Banknote,
+  History, Banknote, Briefcase,
 } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
@@ -38,11 +38,16 @@ const DIRECTOR_PRIMARY = [
 const DIRECTOR_MORE = [
   { to: '/finance',         icon: TrendingUp,    label: 'Accounting'   },
   { to: '/team',            icon: UsersRound,    label: 'Team Members' },
+  { to: '/investors',       icon: Briefcase,     label: 'Investors'    },
   { to: '/quotations',      icon: FileText,      label: 'Quotations'   },
   { to: '/commission',      icon: Banknote,      label: 'Commission'   },
   { to: '/reminders',       icon: ClipboardList, label: 'Instructions' },
   { to: '/history',         icon: History,       label: 'History'      },
   { to: '/ai-assistant',    icon: Bot,           label: 'AI Assistant' },
+];
+
+const INVESTOR_PRIMARY = [
+  { to: '/investor-portal', icon: Briefcase, label: 'Portfolio' },
 ];
 
 const MECHANIC_PRIMARY = [
@@ -76,7 +81,8 @@ export default function Layout({ children }: LayoutProps) {
 
   const isDirector = currentUser?.role === 'director';
   const isSalesperson = currentUser?.role === 'salesperson';
-  const primaryNav = isDirector ? DIRECTOR_PRIMARY : isSalesperson ? SALESPERSON_PRIMARY : MECHANIC_PRIMARY;
+  const isInvestor = currentUser?.role === 'investor';
+  const primaryNav = isDirector ? DIRECTOR_PRIMARY : isSalesperson ? SALESPERSON_PRIMARY : isInvestor ? INVESTOR_PRIMARY : MECHANIC_PRIMARY;
   const moreNav = isDirector ? DIRECTOR_MORE : isSalesperson ? SALESPERSON_MORE : [];
 
   return (

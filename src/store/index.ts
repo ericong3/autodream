@@ -123,6 +123,8 @@ function rowToCar(r: any): Car {
     consignment: r.consignment ?? undefined,
     priceFloor: r.price_floor ?? undefined,
     miscCosts: r.misc_costs ?? [],
+    investorId: r.investor_id ?? undefined,
+    investorSplit: r.investor_split ?? undefined,
   };
 }
 
@@ -157,6 +159,8 @@ function carToRow(c: Partial<Car>) {
   if (c.consignment !== undefined) row.consignment = c.consignment;
   if (c.priceFloor !== undefined) row.price_floor = c.priceFloor;
   if (c.miscCosts !== undefined) row.misc_costs = c.miscCosts;
+  if (c.investorId !== undefined) row.investor_id = c.investorId;
+  if (c.investorSplit !== undefined) row.investor_split = c.investorSplit;
   return row;
 }
 
@@ -380,6 +384,7 @@ function rowToUser(r: any): User {
     phone: r.phone,
     monthlyTarget: r.monthly_target,
     carsInMonth: r.cars_in_month,
+    capitalAmount: r.capital_amount ?? undefined,
     avatar: r.avatar ?? undefined,
     position: r.position ?? undefined,
     bio: r.bio ?? undefined,
@@ -401,6 +406,7 @@ function userToRow(u: Partial<User>) {
   if (u.phone !== undefined) row.phone = u.phone;
   if (u.monthlyTarget !== undefined) row.monthly_target = u.monthlyTarget;
   if (u.carsInMonth !== undefined) row.cars_in_month = u.carsInMonth;
+  if (u.capitalAmount !== undefined) row.capital_amount = u.capitalAmount;
   if (u.avatar !== undefined) row.avatar = u.avatar;
   if (u.position !== undefined) row.position = u.position;
   if (u.bio !== undefined) row.bio = u.bio;
