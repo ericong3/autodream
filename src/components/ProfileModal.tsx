@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { createPortal } from 'react-dom';
 import { X, Camera, User as UserIcon, QrCode, Phone, Mail, Globe, Instagram, Facebook, MessageCircle, Briefcase, FileText } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -12,6 +13,7 @@ interface ProfileModalProps {
 type Tab = 'profile' | 'namecard';
 
 export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
+  useBodyScrollLock(isOpen);
   const { currentUser, updateUser } = useStore((s) => ({
     currentUser: s.currentUser,
     updateUser: s.updateUser,
@@ -77,7 +79,7 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
   const modal = (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/85 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-md glass-panel shadow-card-lg rounded-xl overflow-hidden max-h-[90vh] overflow-y-auto">
+      <div className="relative w-full max-w-md glass-panel shadow-card-lg rounded-xl overflow-hidden max-h-[90vh] overflow-y-auto overscroll-contain">
 
           {/* Gold accent */}
           <div className="absolute top-0 left-0 right-0 h-[2px] rounded-t-xl bg-gold-gradient opacity-80" />

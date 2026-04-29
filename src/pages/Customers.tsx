@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList, Truck, Upload, Lock, Skull, Clock, RotateCcw } from 'lucide-react';
 import { useStore } from '../store';
 import { Customer, LoanApplication, LoanSubmission, CashWorkOrder, LoanWorkOrder, WorkOrderItem, BANKS, PostSaleChecklist } from '../types';
@@ -157,6 +158,8 @@ export default function Customers() {
   const deliveryPhotoRef = useRef<HTMLInputElement>(null);
   const [expandedBank, setExpandedBank] = useState<string | null>(null);
   const [addBankInput, setAddBankInput] = useState('');
+  useBodyScrollLock(!!detailLead || !!workOrderCustomer);
+
   useEffect(() => {
     if (!detailLead) { setExpandedBank(null); setAddBankInput(''); return; }
     const apps = detailLead.loanApplications?.length

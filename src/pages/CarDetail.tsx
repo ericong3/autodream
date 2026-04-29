@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -276,6 +277,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     } catch (e) { console.error(e); }
     finally { setPhotoUploading(false); }
   };
+
+  useBodyScrollLock(showGallery);
 
   useEffect(() => {
     if (!showGallery) return;
