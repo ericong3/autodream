@@ -19,6 +19,7 @@ import {
   ChevronRight,
   ShoppingBag,
   Database,
+  Briefcase,
 } from 'lucide-react';
 import { useStore } from '../store';
 
@@ -34,12 +35,17 @@ const directorItems: NavItem[] = [
 ];
 
 const directorBottomItems: NavItem[] = [
-  { to: '/finance', icon: TrendingUp, label: 'Accounting' },
-  { to: '/team', icon: UsersRound, label: 'Team Members' },
-  { to: '/data', icon: Database, label: 'Data' },
-  { to: '/reminders', icon: ClipboardList, label: 'Instructions' },
-  { to: '/history', icon: History, label: 'Delivered' },
-  { to: '/ai-assistant', icon: Bot, label: 'AI Assistant' },
+  { to: '/finance',    icon: TrendingUp,    label: 'Accounting'    },
+  { to: '/team',       icon: UsersRound,    label: 'Team Members'  },
+  { to: '/investors',  icon: Briefcase,     label: 'Investors'     },
+  { to: '/data',       icon: Database,      label: 'Data'          },
+  { to: '/reminders',  icon: ClipboardList, label: 'Instructions'  },
+  { to: '/history',    icon: History,       label: 'Delivered'     },
+  { to: '/ai-assistant', icon: Bot,         label: 'AI Assistant'  },
+];
+
+const investorItems: NavItem[] = [
+  { to: '/investor-portal', icon: Briefcase, label: 'My Portfolio' },
 ];
 
 const salesGroupItems: NavItem[] = [
@@ -122,6 +128,7 @@ export default function Sidebar() {
   const isDirector = currentUser?.role === 'director';
   const isAdmin = currentUser?.role === 'admin';
   const isSalesperson = currentUser?.role === 'salesperson';
+  const isInvestor = currentUser?.role === 'investor';
 
   const isSalesRouteActive = SALES_ROUTES.some(r => location.pathname === r);
   const [salesOpen, setSalesOpen] = useState(isSalesRouteActive);
@@ -209,6 +216,18 @@ export default function Sidebar() {
           <div className="divider-gold my-2 mx-1" />
 
           {directorBottomItems.map(item => <NavItemLink key={item.to} item={item} />)}
+        </nav>
+        <SidebarFooter />
+      </aside>
+    );
+  }
+
+  if (isInvestor) {
+    return (
+      <aside className="hidden md:flex flex-col w-64 min-h-screen glass-sidebar border-r border-gold-500/[0.12]">
+        <SidebarLogo />
+        <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
+          {investorItems.map(item => <NavItemLink key={item.to} item={item} />)}
         </nav>
         <SidebarFooter />
       </aside>
