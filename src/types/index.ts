@@ -204,6 +204,8 @@ export interface Car {
   deliveryPhoto?: string;
   deliveryCollected?: boolean;
   consignment?: Consignment;
+  outgoingConsignment?: Consignment;
+  moneyReceived?: boolean;
   priceFloor?: number;
   miscCosts?: MiscCost[];
   investorId?: string;   // investor user id who funded this car

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Search,
   LayoutGrid,
@@ -11,6 +12,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Banknote,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { formatRM, formatMileage, shortName } from '../utils/format';
@@ -44,8 +46,12 @@ export default function History() {
   const customers = useStore((s) => s.customers);
   const repairs = useStore((s) => s.repairs);
   const currentUser = useStore((s) => s.currentUser);
+  const updateCar = useStore((s) => s.updateCar);
   const viewPreference = useStore((s) => s.viewPreference);
   const setViewPreference = useStore((s) => s.setViewPreference);
+
+  const { id: selectedCarId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
 
   const isDirector = currentUser?.role === 'director';
   const viewKey = `${currentUser?.id}-history`;
@@ -60,7 +66,6 @@ export default function History() {
     setMonthFilter(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
   };
   const [filterMake, setFilterMake] = useState('All');
-  const [selectedCarId, setSelectedCarId] = useState<string | null>(null);
 
   const soldCars = useMemo(() => {
     let result = cars.filter((c) => c.status === 'delivered');
@@ -81,26 +86,26 @@ export default function History() {
   }, [cars, search, monthFilter, filterMake]);
 
   const carCalcMap = useMemo(() => {
-    const map: Record<string, { sellingPrice: number; profit: number }> = {};
+    const map: Record<string, { dealNetPrice: number; profit: number }> = {};
     for (const c of cars.filter(x => x.status === 'delivered')) {
       const wo = customers.find(cu => cu.interestedCarId === c.id && (cu.cashWorkOrder || cu.loanWorkOrder));
       const w = wo?.loanWorkOrder ?? wo?.cashWorkOrder;
-      const sellingPrice = (w?.sellingPrice && w.sellingPrice > 0) ? w.sellingPrice : c.sellingPrice;
+      const grossPrice = (w?.sellingPrice && w.sellingPrice > 0) ? w.sellingPrice : (c.finalDeal?.dealPrice ?? c.sellingPrice);
       const discount = w?.discount ?? 0;
       const additionalTotal = w?.additionalItems?.reduce((a, i) => a + i.amount, 0) ?? 0;
       const repairCosts = repairs.filter(r => r.carId === c.id && r.status === 'done').reduce((a, r) => a + (r.actualCost ?? r.totalCost), 0);
       const miscCosts = (c.miscCosts ?? []).reduce((a, m) => a + m.amount, 0);
-      const dealNetPrice = sellingPrice - discount;
+      const dealNetPrice = grossPrice - discount;
       const profitBeforeCommission = dealNetPrice - c.purchasePrice - repairCosts - miscCosts - additionalTotal;
-      const commission = c.priceFloor != null
+      const commission = c.outgoingConsignment ? 0 : c.priceFloor != null
         ? (dealNetPrice >= c.priceFloor ? (profitBeforeCommission >= 10000 ? 2000 : 1500) : 1000)
         : (profitBeforeCommission >= 10000 ? 1500 : 1000);
-      map[c.id] = { sellingPrice, profit: profitBeforeCommission - commission };
+      map[c.id] = { dealNetPrice, profit: profitBeforeCommission - commission };
     }
     return map;
   }, [cars, customers, repairs]);
 
-  const totalRevenue = soldCars.reduce((s, c) => s + (carCalcMap[c.id]?.sellingPrice ?? c.sellingPrice), 0);
+  const totalRevenue = soldCars.reduce((s, c) => s + (carCalcMap[c.id]?.dealNetPrice ?? c.sellingPrice), 0);
   const totalProfit = soldCars.reduce((s, c) => s + (carCalcMap[c.id]?.profit ?? 0), 0);
 
   const getDealSalespersonId = (car: typeof cars[0]): string | undefined => {
@@ -121,7 +126,7 @@ export default function History() {
     return (
       <CarDetailContent
         id={selectedCarId}
-        onBack={() => setSelectedCarId(null)}
+        onBack={() => navigate('/history')}
         backLabel="Back to Delivered"
         initialTab="final_deal"
       />
@@ -203,12 +208,12 @@ export default function History() {
       {view === 'grid' && soldCars.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {soldCars.map((car) => {
-            const dealPrice = carCalcMap[car.id]?.sellingPrice ?? car.sellingPrice;
+            const dealPrice = carCalcMap[car.id]?.dealNetPrice ?? car.sellingPrice;
             const profit = carCalcMap[car.id]?.profit;
             return (
               <div
                 key={car.id}
-                onClick={() => setSelectedCarId(car.id)}
+                onClick={() => navigate(`/history/${car.id}`)}
                 className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card overflow-hidden cursor-pointer hover:border-gold-500/40 hover:shadow-xl hover:shadow-gold-500/10 transition-all group"
               >
                 {/* Photo */}
@@ -270,10 +275,28 @@ export default function History() {
 
                   {/* Deal strip */}
                   {car.finalDeal && (
-                    <div className="mt-2 pt-2 border-t border-obsidian-400/30">
+                    <div className="mt-2 pt-2 border-t border-obsidian-400/30 space-y-2">
                       <p className="text-[10px] text-violet-400 font-medium truncate">
                         {car.finalDeal.bank} · {formatRM(car.finalDeal.dealPrice)}
                       </p>
+                      {car.outgoingConsignment && isDirector && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!car.moneyReceived) updateCar(car.id, { moneyReceived: true });
+                          }}
+                          className={`w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border text-[10px] font-bold transition-colors ${
+                            car.moneyReceived
+                              ? 'bg-green-500/15 border-green-500/40 text-green-400 cursor-default'
+                              : 'bg-obsidian-700/60 border-obsidian-400/40 text-gray-500 hover:border-green-500/40 hover:text-green-400'
+                          }`}
+                        >
+                          {car.moneyReceived
+                            ? <><CheckCircle size={9} /> Money Received</>
+                            : <><Banknote size={9} /> Confirm Money Received</>
+                          }
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -287,12 +310,12 @@ export default function History() {
       {view === 'list' && soldCars.length > 0 && (
         <div className="space-y-2">
           {soldCars.map((car) => {
-            const dealPrice = carCalcMap[car.id]?.sellingPrice ?? car.sellingPrice;
+            const dealPrice = carCalcMap[car.id]?.dealNetPrice ?? car.sellingPrice;
             const profit = carCalcMap[car.id]?.profit;
             return (
               <div
                 key={car.id}
-                onClick={() => setSelectedCarId(car.id)}
+                onClick={() => navigate(`/history/${car.id}`)}
                 className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card cursor-pointer hover:border-gold-500/40 hover:bg-obsidian-700/30 transition-all flex items-center gap-4 px-4 py-3"
               >
                 {/* Thumbnail */}
@@ -326,9 +349,27 @@ export default function History() {
                 </div>
 
                 {/* Deal info */}
-                <div className="hidden md:flex flex-col gap-0.5 min-w-[120px]">
+                <div className="hidden md:flex flex-col gap-1 min-w-[140px]">
                   <span className="text-xs text-gray-500">{getSalesperson(getDealSalespersonId(car))}</span>
                   {car.finalDeal?.bank && <p className="text-xs text-violet-400">{car.finalDeal.bank}</p>}
+                  {car.outgoingConsignment && isDirector && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!car.moneyReceived) updateCar(car.id, { moneyReceived: true });
+                      }}
+                      className={`flex items-center gap-1 text-[10px] font-bold transition-colors ${
+                        car.moneyReceived
+                          ? 'text-green-400 cursor-default'
+                          : 'text-gray-500 hover:text-green-400'
+                      }`}
+                    >
+                      {car.moneyReceived
+                        ? <><CheckCircle size={9} /> Money Received</>
+                        : <><Banknote size={9} /> Confirm Money Received</>
+                      }
+                    </button>
+                  )}
                 </div>
 
                 {/* Badge */}

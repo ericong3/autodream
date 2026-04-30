@@ -121,6 +121,8 @@ function rowToCar(r: any): Car {
     deliveryPhoto: r.delivery_photo,
     deliveryCollected: r.delivery_collected,
     consignment: r.consignment ?? undefined,
+    outgoingConsignment: r.outgoing_consignment ?? undefined,
+    moneyReceived: r.money_received ?? undefined,
     priceFloor: r.price_floor ?? undefined,
     miscCosts: r.misc_costs ?? [],
     investorId: r.investor_id ?? undefined,
@@ -157,6 +159,8 @@ function carToRow(c: Partial<Car>) {
   if (c.deliveryPhoto !== undefined) row.delivery_photo = c.deliveryPhoto;
   if (c.deliveryCollected !== undefined) row.delivery_collected = c.deliveryCollected;
   if (c.consignment !== undefined) row.consignment = c.consignment;
+  if ('outgoingConsignment' in c) row.outgoing_consignment = c.outgoingConsignment ?? null;
+  if ('moneyReceived' in c) row.money_received = c.moneyReceived ?? null;
   if (c.priceFloor !== undefined) row.price_floor = c.priceFloor;
   if (c.miscCosts !== undefined) row.misc_costs = c.miscCosts;
   if (c.investorId !== undefined) row.investor_id = c.investorId;
@@ -484,7 +488,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         .map(c => c.interestedCarId)
         .filter(Boolean)
     );
-    const orphanedCars = allCars.filter(c => c.finalDeal && !confirmedCarIds.has(c.id));
+    const orphanedCars = allCars.filter(c => c.finalDeal && !confirmedCarIds.has(c.id) && !c.outgoingConsignment);
     if (orphanedCars.length > 0) {
       await Promise.all(orphanedCars.map(c =>
         supabase.from('cars').update({ final_deal: null, status: 'available' }).eq('id', c.id)
@@ -525,9 +529,15 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
             cars: s.cars.map((c) => {
               if (c.id !== (payload.new as any).id) return c;
               const incoming = rowToCar(payload.new);
-              // Preserve locally-stored miscCosts if the real-time payload omits the column
+              // Preserve locally-stored fields if the real-time payload omits the column
               if (!('misc_costs' in (payload.new as any))) {
                 incoming.miscCosts = c.miscCosts;
+              }
+              if (!('outgoing_consignment' in (payload.new as any))) {
+                incoming.outgoingConsignment = c.outgoingConsignment;
+              }
+              if (!('money_received' in (payload.new as any))) {
+                incoming.moneyReceived = c.moneyReceived;
               }
               return incoming;
             }),
@@ -758,7 +768,10 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   updateCar: async (id, car) => {
     set((s) => ({ cars: s.cars.map((c) => (c.id === id ? { ...c, ...car } : c)) }));
     const { error } = await supabase.from('cars').update(carToRow(car)).eq('id', id);
-    if (error) console.error('updateCar failed:', error.message);
+    if (error) {
+      console.error('updateCar failed:', error.message);
+      throw new Error(error.message);
+    }
   },
   deleteCar: async (id) => {
     set((s) => ({ cars: s.cars.filter((c) => c.id !== id) }));

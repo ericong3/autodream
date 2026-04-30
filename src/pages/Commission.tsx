@@ -45,9 +45,10 @@ export default function Commission() {
   };
 
   const calcCommission = (car: typeof cars[0]): number => {
+    if (car.outgoingConsignment) return 0;
     const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
     const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
-    const dealPrice = (wo?.sellingPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
+    const dealPrice = (wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
     const repairCosts = getRepairCosts(car.id);
     const miscCosts = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
     const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;

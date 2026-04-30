@@ -112,6 +112,7 @@ export default function Inventory() {
   const [showModal, setShowModal] = useState(false);
   const [deleteCarId, setDeleteCarId] = useState<string | null>(null);
   const [consignmentPopover, setConsignmentPopover] = useState<string | null>(null); // carId
+  const [outgoingConsignmentPopover, setOutgoingConsignmentPopover] = useState<string | null>(null); // carId
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
@@ -226,7 +227,7 @@ export default function Inventory() {
       const repairCosts = repairs.filter(r => r.carId === car.id && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
       const miscCosts = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
       const profitBeforeComm = dealPrice - car.purchasePrice - repairCosts - miscCosts - additionalTotal;
-      const commission = car.priceFloor != null
+      const commission = car.outgoingConsignment ? 0 : car.priceFloor != null
         ? (dealPrice >= car.priceFloor ? (profitBeforeComm >= 10000 ? 2000 : 1500) : 1000)
         : (profitBeforeComm >= 10000 ? 1500 : 1000);
       map[car.id] = profitBeforeComm - commission;
@@ -603,23 +604,23 @@ export default function Inventory() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filtered.map((car) => (
             <div key={car.id} className="relative group/card">
-              {/* Consignment sticker */}
+              {/* Incoming consignment sticker */}
               {car.consignment && (
                 <div className="absolute -top-2.5 left-3 z-20">
                   <button
-                    onClick={(e) => { e.stopPropagation(); setConsignmentPopover(consignmentPopover === car.id ? null : car.id); }}
+                    onClick={(e) => { e.stopPropagation(); setConsignmentPopover(consignmentPopover === car.id ? null : car.id); setOutgoingConsignmentPopover(null); }}
                     className="flex items-center gap-1 bg-blue-500 hover:bg-blue-400 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg shadow-blue-500/30 transition-colors"
                     title="Consignment details"
                   >
-                    <Building2 size={9} /> CONSIGN
+                    <Building2 size={9} /> CONSIGN IN
                   </button>
-                  {/* Popover */}
                   {consignmentPopover === car.id && (
                     <div
                       onClick={(e) => e.stopPropagation()}
                       className="absolute top-6 left-0 z-30 w-52 bg-[#0F0E0C] border border-blue-500/40 rounded-xl shadow-xl p-3 space-y-2"
                     >
-                      <p className="text-blue-400 text-xs font-semibold uppercase tracking-wide">Consignment</p>
+                      <p className="text-blue-400 text-xs font-semibold uppercase tracking-wide">Consign In</p>
+                      <p className="text-gray-500 text-[10px]">Dealer's car, we're selling it</p>
                       <div className="flex justify-between text-xs">
                         <span className="text-gray-500">Dealer</span>
                         <span className="text-white font-medium">{car.consignment.dealer || '—'}</span>
@@ -630,7 +631,7 @@ export default function Inventory() {
                       </div>
                       {car.consignment.terms === 'fixed_amount' && (
                         <div className="flex justify-between text-xs">
-                          <span className="text-gray-500">Amount</span>
+                          <span className="text-gray-500">Dealer Takes Back</span>
                           <span className="text-blue-400 font-semibold">{formatRM(car.consignment.fixedAmount ?? 0)}</span>
                         </div>
                       )}
@@ -650,6 +651,53 @@ export default function Inventory() {
                   )}
                 </div>
               )}
+              {/* Outgoing consignment sticker */}
+              {car.outgoingConsignment && (
+                <div className={`absolute -top-2.5 z-20 ${car.consignment ? 'left-28' : 'left-3'}`}>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setOutgoingConsignmentPopover(outgoingConsignmentPopover === car.id ? null : car.id); setConsignmentPopover(null); }}
+                    className="flex items-center gap-1 bg-orange-500 hover:bg-orange-400 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg shadow-orange-500/30 transition-colors"
+                    title="Outgoing consignment details"
+                  >
+                    <Building2 size={9} /> CONSIGN OUT
+                  </button>
+                  {outgoingConsignmentPopover === car.id && (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="absolute top-6 left-0 z-30 w-52 bg-[#0F0E0C] border border-orange-500/40 rounded-xl shadow-xl p-3 space-y-2"
+                    >
+                      <p className="text-orange-400 text-xs font-semibold uppercase tracking-wide">Consign Out</p>
+                      <p className="text-gray-500 text-[10px]">Our car, dealer is selling it</p>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-gray-500">Dealer</span>
+                        <span className="text-white font-medium">{car.outgoingConsignment.dealer || '—'}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-gray-500">Terms</span>
+                        <span className="text-white">{car.outgoingConsignment.terms === 'fixed_amount' ? 'Fixed Amount' : 'Profit Split'}</span>
+                      </div>
+                      {car.outgoingConsignment.terms === 'fixed_amount' && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-500">We Take Back</span>
+                          <span className="text-orange-400 font-semibold">{formatRM(car.outgoingConsignment.fixedAmount ?? 0)}</span>
+                        </div>
+                      )}
+                      {car.outgoingConsignment.terms === 'profit_split' && (
+                        <>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-500">Our Split</span>
+                            <span className="text-green-400 font-semibold">{car.outgoingConsignment.splitPercent ?? 50}%</span>
+                          </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-500">Dealer's Split</span>
+                            <span className="text-white">{100 - (car.outgoingConsignment.splitPercent ?? 50)}%</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
               {isDirector && (
                 <button
                   onClick={(e) => { e.stopPropagation(); setDeleteCarId(car.id); }}
@@ -660,10 +708,12 @@ export default function Inventory() {
                 </button>
               )}
             <div
-              onClick={() => { setConsignmentPopover(null); navigate(`/inventory/${car.id}`); }}
+              onClick={() => { setConsignmentPopover(null); setOutgoingConsignmentPopover(null); navigate(`/inventory/${car.id}`); }}
               className={`bg-card-gradient border rounded-xl shadow-card overflow-hidden cursor-pointer hover:shadow-xl transition-all group ${
                 car.consignment
                   ? 'border-blue-500/50 hover:border-blue-400/70 hover:shadow-blue-500/10'
+                  : car.outgoingConsignment
+                  ? 'border-orange-500/50 hover:border-orange-400/70 hover:shadow-orange-500/10'
                   : 'border-obsidian-400/70 hover:border-gold-500/40 hover:shadow-gold-500/10'
               }`}
             >
@@ -844,7 +894,12 @@ export default function Inventory() {
                     )}
                     {car.consignment && (
                       <span className="flex items-center gap-1 bg-blue-500/20 text-blue-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-500/30">
-                        <Building2 size={9} /> CONSIGN
+                        <Building2 size={9} /> CONSIGN IN
+                      </span>
+                    )}
+                    {car.outgoingConsignment && (
+                      <span className="flex items-center gap-1 bg-orange-500/20 text-orange-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-orange-500/30">
+                        <Building2 size={9} /> CONSIGN OUT
                       </span>
                     )}
                     {isDirectorView && car.investorId && (() => {
@@ -921,6 +976,7 @@ export default function Inventory() {
       )}
 
       </>}
+
 
       <DeleteConfirmModal
         isOpen={!!deleteCarId}
@@ -1044,18 +1100,18 @@ export default function Inventory() {
               </div>
             </button>
           </div>
-          {/* Consignment */}
+          {/* Incoming Consignment */}
           <div className="col-span-2">
             <button
               type="button"
-              onClick={() => setForm({ ...form, consignment: form.consignment ? undefined : { dealer: '', terms: 'fixed_amount', fixedAmount: 0 } })}
+              onClick={() => setForm({ ...form, consignment: form.consignment ? undefined : { dealer: '', terms: 'fixed_amount', fixedAmount: 0 }, outgoingConsignment: undefined })}
               className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${form.consignment ? 'bg-blue-500/10 border-blue-500/40 text-blue-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
             >
               <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${form.consignment ? 'bg-blue-500 border-blue-500' : 'border-gray-600'}`}>
                 {form.consignment && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
               </div>
               <div>
-                <p className="text-sm font-medium">Consignment with Dealer</p>
+                <p className="text-sm font-medium">Consign In — Dealer's car, we sell it</p>
                 <p className="text-xs opacity-60 mt-0.5">Car belongs to another dealer, sold on their behalf</p>
               </div>
             </button>
@@ -1126,6 +1182,7 @@ export default function Inventory() {
               </div>
             )}
           </div>
+
 
           {/* Investor funding — director only */}
           {isDirector && (() => {

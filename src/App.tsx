@@ -66,12 +66,20 @@ export default function App() {
   const currentUser = useStore((s) => s.currentUser);
   const loadAll = useStore((s) => s.loadAll);
   const [loading, setLoading] = useState(true);
+  const [hydrated, setHydrated] = useState(() => useStore.persist.hasHydrated());
+
+  useEffect(() => {
+    if (!hydrated) {
+      const unsub = useStore.persist.onFinishHydration(() => setHydrated(true));
+      return unsub;
+    }
+  }, []);
 
   useEffect(() => {
     loadAll().finally(() => setLoading(false));
   }, []);
 
-  if (loading) {
+  if (loading || !hydrated) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#0a0a0a', color: '#c9a84c', fontFamily: 'sans-serif', fontSize: 18 }}>
         Loading...
@@ -172,6 +180,16 @@ export default function App() {
         />
         <Route
           path="/history"
+          element={
+            <RequireDirectorOrAdmin>
+              <Layout>
+                <History />
+              </Layout>
+            </RequireDirectorOrAdmin>
+          }
+        />
+        <Route
+          path="/history/:id"
           element={
             <RequireDirectorOrAdmin>
               <Layout>
