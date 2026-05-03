@@ -598,3 +598,80 @@ button:not(.btn-gold):not(.btn-ghost):active:not(:disabled) {
   to   { transform: rotate(360deg); }
 }
 .animate-spin { animation: spin 0.7s linear infinite; }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MOBILE PERFORMANCE — strip everything that causes GPU / paint jank on phones
+   ───────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+
+  /* 1. Kill ambient fixed-position gradient layers — they force a new
+        compositing layer and repaint on every scroll frame */
+  body::before,
+  #root::before,
+  #root::after { display: none; }
+
+  /* 2. Replace backdrop-filter with solid backgrounds.
+        Each blur(x) requires the browser to sample every pixel behind it —
+        stacking 10+ of them simultaneously is the #1 mobile lag culprit. */
+  .glass-panel {
+    background: rgba(18, 16, 12, 0.97);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .glass-sidebar {
+    background: rgba(8, 7, 5, 0.99);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .glass-header {
+    background: rgba(10, 9, 6, 0.98);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .glass-card {
+    background: rgba(22, 20, 15, 0.95);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .card-surface {
+    background: rgba(22, 20, 15, 0.95);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  /* 3. Disable stagger card entrance — animating 8+ cards simultaneously
+        with cubic-bezier transforms hammers the compositor thread */
+  .stagger-enter {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  /* 4. Remove will-change from cards — it creates a GPU layer per card,
+        consuming memory even when the card isn't moving */
+  .card-lift {
+    will-change: auto;
+    transition: none;
+  }
+
+  /* 5. Simplify box-shadows — complex multi-layer shadows repaint heavily */
+  .glass-card {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  }
+  .card-surface {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  }
+
+  /* 6. Disable card-streak hover animation */
+  .card-streak::after { display: none; }
+
+  /* 7. Shorten page transition — 0.25s translateY on every nav tap adds up */
+  .animate-page-in {
+    animation-duration: 0.12s;
+  }
+
+  /* 8. Cut skeleton shimmer to one direction — no 135deg diagonal calc */
+  .skeleton-shimmer {
+    animation-duration: 1.4s;
+  }
+}
