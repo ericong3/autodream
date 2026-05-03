@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   LogOut, Bell, MoreHorizontal, X,
   LayoutDashboard, Car, Users, CalendarDays,
   FileText, Calculator, GitCompare,
   ClipboardList, Bot, TrendingUp, UsersRound,
   History, Banknote, Briefcase, Search,
+  Loader2, RefreshCw,
 } from 'lucide-react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
@@ -12,6 +13,7 @@ import ProfileModal from './ProfileModal';
 import CommandPalette from './CommandPalette';
 import QuickActions from './QuickActions';
 import { useStore } from '../store';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -94,6 +96,11 @@ export default function Layout({ children }: LayoutProps) {
   }).length;
 
   const handleLogout = () => { logout(); navigate('/login'); };
+
+  const loadAll = useStore((s) => s.loadAll);
+  const mainRef = useRef<HTMLElement>(null);
+  const handleRefresh = useCallback(() => loadAll(), [loadAll]);
+  const { pullDistance, isRefreshing } = usePullToRefresh(mainRef, handleRefresh);
 
   const isDirector = currentUser?.role === 'director';
   const isShareHolder = currentUser?.role === 'shareholder';
@@ -189,11 +196,34 @@ export default function Layout({ children }: LayoutProps) {
           </div>
         </header>
 
+        {/* ── Pull-to-refresh indicator (mobile only) ─────────── */}
+        <div
+          className="md:hidden flex justify-center items-end overflow-hidden transition-all duration-200 ease-out"
+          style={{ height: isRefreshing ? 48 : pullDistance > 0 ? pullDistance : 0 }}
+        >
+          <div className="mb-2 w-8 h-8 rounded-full bg-obsidian-800 border border-gold-500/30
+            flex items-center justify-center shadow-gold-sm">
+            {isRefreshing ? (
+              <Loader2 size={15} className="text-gold-400 animate-spin" />
+            ) : (
+              <RefreshCw
+                size={15}
+                className="text-gold-400 transition-transform duration-100"
+                style={{ transform: `rotate(${Math.min((pullDistance / 75) * 180, 180)}deg)` }}
+              />
+            )}
+          </div>
+        </div>
+
         {/* ── Main content ────────────────────────────────────── */}
         <main
+          ref={mainRef}
           key={location.pathname}
           className="flex-1 p-4 md:p-6 overflow-auto md:pb-6 animate-page-in"
-          style={{ paddingBottom: 'calc(6rem + env(safe-area-inset-bottom))' }}
+          style={{
+            paddingBottom: 'calc(6rem + env(safe-area-inset-bottom))',
+            overscrollBehaviorY: 'contain',
+          }}
         >{children}</main>
       </div>
 

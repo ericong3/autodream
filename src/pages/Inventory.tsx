@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Search,
   LayoutGrid,
@@ -91,6 +91,7 @@ export default function Inventory() {
   const viewPreference = useStore((s) => s.viewPreference);
   const setViewPreference = useStore((s) => s.setViewPreference);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const getLocation = (car: Car): string => {
     if (car.status === 'delivered') return 'Delivered';
@@ -126,6 +127,18 @@ export default function Inventory() {
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+
+  // Auto-open add car modal when navigated here with ?add=1 (e.g. from QuickActions)
+  useEffect(() => {
+    if (searchParams.get('add') === '1' && canAddCar) {
+      setForm(emptyForm);
+      setErrors({});
+      setSubmitError('');
+      setShowModal(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams]);
+
   const photoInputRef = useRef<HTMLInputElement>(null);
   const greenCardInputRef = useRef<HTMLInputElement>(null);
   const dragIndexRef = useRef<number | null>(null);
