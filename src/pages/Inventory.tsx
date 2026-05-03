@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Search,
@@ -25,6 +25,7 @@ import { Car } from '../types';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, formatMileage, generateId, shortName } from '../utils/format';
+import { SkeletonCard, SkeletonRow } from '../components/Skeleton';
 
 
 // Loan/deal pipeline badge — based purely on case/loan progress, not car location
@@ -52,6 +53,7 @@ function getDealBadge(car: Car): DealBadge {
 }
 
 const CAR_MAKES = ['All', 'Perodua', 'Proton', 'Honda', 'Toyota', 'Nissan', 'Other'];
+
 
 const emptyForm: Omit<Car, 'id' | 'dateAdded'> = {
   make: '',
@@ -103,11 +105,17 @@ export default function Inventory() {
   const viewKey = `${currentUser?.id}-inventory`;
   const view = viewPreference[viewKey] ?? 'grid';
 
+  const [initialLoad, setInitialLoad] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setInitialLoad(false), 600);
+    return () => clearTimeout(t);
+  }, []);
+
   const [inventoryTab, setInventoryTab] = useState<'stock' | 'coming_soon'>('stock');
   const [search, setSearch] = useState('');
   const [filterMake, setFilterMake] = useState('All');
   const [filterTransmission, setFilterTransmission] = useState('All');
-  const [filterStatus, setFilterStatus] = useState('All');
+  const [filterStatus, setFilterStatus] = useState('');
   const [sortBy, setSortBy] = useState('dateAdded-desc');
   const [showModal, setShowModal] = useState(false);
   const [deleteCarId, setDeleteCarId] = useState<string | null>(null);
@@ -269,13 +277,8 @@ export default function Inventory() {
     if (filterMake !== 'All') result = result.filter((c) => c.make === filterMake);
     if (filterTransmission !== 'All')
       result = result.filter((c) => c.transmission === filterTransmission);
-    if (filterStatus !== 'All')
-      result = result.filter((c) => getDealBadge(c).label.startsWith(
-        filterStatus === 'available'         ? 'Available' :
-        filterStatus === 'loan_in_process'   ? 'Loan in Process' :
-        filterStatus === 'approval_received' ? 'Approval Received' :
-        'Sold'
-      ));
+    if (filterStatus !== '')
+      result = result.filter((c) => c.status === filterStatus);
 
     result.sort((a, b) => {
       switch (sortBy) {
@@ -370,74 +373,78 @@ export default function Inventory() {
         </button>
       </div>
 
-      {/* Top bar */}
-      <div className="flex flex-wrap gap-3">
-        {/* Search */}
-        <div className="relative flex-1 min-w-[200px]">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-          <input
-            type="text"
-            placeholder="Search cars..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="input pl-9 pr-4 py-2.5"
-          />
-        </div>
+      {/* Top bar — sticky */}
+      <div className="sticky top-0 z-10 bg-obsidian-950/95 backdrop-blur-sm -mx-4 px-4 md:-mx-6 md:px-6 py-3 border-b border-obsidian-400/20">
+        {/* Search + filters row */}
+        <div className="flex flex-wrap gap-3">
+          {/* Search */}
+          <div className="relative flex-1 min-w-[200px]">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+            <input
+              type="text"
+              placeholder="Search cars..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="input pl-9 pr-4 py-2.5"
+            />
+          </div>
 
-        {/* Filters */}
-        <Select value={filterMake} onChange={setFilterMake} options={CAR_MAKES} placeholder="Brand" />
-        {inventoryTab === 'stock' && (
-          <>
+          {/* Filters */}
+          <Select value={filterMake} onChange={setFilterMake} options={CAR_MAKES} placeholder="Brand" />
+          {inventoryTab === 'stock' && (
             <Select
               value={filterTransmission}
               onChange={setFilterTransmission}
               options={['All', 'auto', 'manual']}
               placeholder="Transmission"
             />
+          )}
+          {inventoryTab === 'stock' && (
             <Select
               value={filterStatus}
               onChange={setFilterStatus}
-              options={['All', 'available', 'loan_in_process', 'approval_received', 'sold_pending']}
-              labels={['All Status', 'Available', 'Loan in Process', 'Approval Received', 'Sold']}
+              options={['', 'available', 'coming_soon', 'in_workshop', 'ready', 'photo_complete', 'submitted', 'deal_pending', 'reserved', 'sold', 'delivered']}
+              labels={['All Status', 'Available', 'Coming Soon', 'In Workshop', 'Ready', 'Photo Done', 'Submitted', 'Deal Pending', 'Reserved', 'Sold', 'Delivered']}
               placeholder="Status"
             />
-          </>
-        )}
-        <Select
-          value={sortBy}
-          onChange={setSortBy}
-          options={['dateAdded-desc', 'dateAdded-asc', 'price-asc', 'price-desc', 'brand-asc']}
-          labels={['Newest First', 'Oldest First', 'Price: Low-High', 'Price: High-Low', 'Brand: A–Z']}
-          placeholder="Sort"
-        />
+          )}
+          <Select
+            value={sortBy}
+            onChange={setSortBy}
+            options={['dateAdded-desc', 'dateAdded-asc', 'price-asc', 'price-desc', 'brand-asc']}
+            labels={['Newest First', 'Oldest First', 'Price: Low-High', 'Price: High-Low', 'Brand: A–Z']}
+            placeholder="Sort"
+          />
 
-        {/* View toggle */}
-        <div className="flex border border-obsidian-400/60 rounded-lg p-1 gap-1" style={{background:'#0E0D0B'}}>
-          <button
-            onClick={() => setViewPreference(currentUser!.id, 'inventory', 'grid')}
-            className={`p-1.5 rounded-md transition-colors ${view === 'grid' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
-            title="Grid view"
-          >
-            <LayoutGrid size={16} />
-          </button>
-          <button
-            onClick={() => setViewPreference(currentUser!.id, 'inventory', 'list')}
-            className={`p-1.5 rounded-md transition-colors ${view === 'list' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
-            title="List view"
-          >
-            <List size={16} />
-          </button>
+          {/* View toggle */}
+          <div className="flex border border-obsidian-400/60 rounded-lg p-1 gap-1" style={{background:'#0E0D0B'}}>
+            <button
+              onClick={() => setViewPreference(currentUser!.id, 'inventory', 'grid')}
+              className={`p-1.5 rounded-md transition-colors ${view === 'grid' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
+              title="Grid view"
+            >
+              <LayoutGrid size={16} />
+            </button>
+            <button
+              onClick={() => setViewPreference(currentUser!.id, 'inventory', 'list')}
+              className={`p-1.5 rounded-md transition-colors ${view === 'list' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
+              title="List view"
+            >
+              <List size={16} />
+            </button>
+          </div>
+
+          {canAddCar && (
+            <button
+              onClick={() => { setForm(emptyForm); setErrors({}); setSubmitError(''); setShowModal(true); }}
+              className="flex items-center gap-2 btn-gold px-4 py-2.5 rounded-lg text-sm"
+            >
+              <Plus size={16} />
+              Add Car
+            </button>
+          )}
         </div>
 
-        {canAddCar && (
-          <button
-            onClick={() => { setForm(emptyForm); setErrors({}); setSubmitError(''); setShowModal(true); }}
-            className="flex items-center gap-2 btn-gold px-4 py-2.5 rounded-lg text-sm"
-          >
-            <Plus size={16} />
-            Add Car
-          </button>
-        )}
       </div>
 
       {/* Count */}
@@ -591,113 +598,39 @@ export default function Inventory() {
       {inventoryTab === 'stock' && <>
 
       {/* Empty state */}
-      {filtered.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <CarIcon size={40} className="text-gray-600 mb-3" />
-          <p className="text-gray-400 font-medium">No cars found</p>
-          <p className="text-gray-600 text-sm mt-1">Try adjusting your filters</p>
+      {!initialLoad && filtered.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-24 text-center">
+          <div className="w-20 h-20 rounded-2xl bg-obsidian-800/60 border border-obsidian-400/30 flex items-center justify-center mb-5">
+            <CarIcon size={36} className="text-gray-600" />
+          </div>
+          <p className="text-white font-semibold text-base">No cars found</p>
+          <p className="text-gray-500 text-sm mt-1.5 max-w-xs">Try adjusting your filters or search term</p>
+          <button
+            onClick={() => { setSearch(''); setFilterStatus(''); setFilterMake('All'); }}
+            className="mt-4 px-4 py-2 text-sm text-gold-400 border border-gold-500/30 rounded-lg hover:bg-gold-500/10 transition-colors"
+          >
+            Clear filters
+          </button>
+        </div>
+      )}
+
+      {/* Skeleton loaders on initial load */}
+      {initialLoad && view === 'grid' && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}
+        </div>
+      )}
+      {initialLoad && view === 'list' && (
+        <div className="space-y-2">
+          {Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)}
         </div>
       )}
 
       {/* Grid view */}
-      {view === 'grid' && filtered.length > 0 && (
+      {!initialLoad && view === 'grid' && filtered.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filtered.map((car) => (
-            <div key={car.id} className="relative group/card">
-              {/* Incoming consignment sticker */}
-              {car.consignment && (
-                <div className="absolute -top-2.5 left-3 z-20">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setConsignmentPopover(consignmentPopover === car.id ? null : car.id); setOutgoingConsignmentPopover(null); }}
-                    className="flex items-center gap-1 bg-blue-500 hover:bg-blue-400 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg shadow-blue-500/30 transition-colors"
-                    title="Consignment details"
-                  >
-                    <Building2 size={9} /> CONSIGN IN
-                  </button>
-                  {consignmentPopover === car.id && (
-                    <div
-                      onClick={(e) => e.stopPropagation()}
-                      className="absolute top-6 left-0 z-30 w-52 bg-[#0F0E0C] border border-blue-500/40 rounded-xl shadow-xl p-3 space-y-2"
-                    >
-                      <p className="text-blue-400 text-xs font-semibold uppercase tracking-wide">Consign In</p>
-                      <p className="text-gray-500 text-[10px]">Dealer's car, we're selling it</p>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-gray-500">Dealer</span>
-                        <span className="text-white font-medium">{car.consignment.dealer || '—'}</span>
-                      </div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-gray-500">Terms</span>
-                        <span className="text-white">{car.consignment.terms === 'fixed_amount' ? 'Fixed Amount' : 'Profit Split'}</span>
-                      </div>
-                      {car.consignment.terms === 'fixed_amount' && (
-                        <div className="flex justify-between text-xs">
-                          <span className="text-gray-500">Dealer Takes Back</span>
-                          <span className="text-blue-400 font-semibold">{formatRM(car.consignment.fixedAmount ?? 0)}</span>
-                        </div>
-                      )}
-                      {car.consignment.terms === 'profit_split' && (
-                        <>
-                          <div className="flex justify-between text-xs">
-                            <span className="text-gray-500">Dealer's Split</span>
-                            <span className="text-white">{car.consignment.splitPercent ?? 50}%</span>
-                          </div>
-                          <div className="flex justify-between text-xs">
-                            <span className="text-gray-500">Our Split</span>
-                            <span className="text-green-400 font-semibold">{100 - (car.consignment.splitPercent ?? 50)}%</span>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-              {/* Outgoing consignment sticker */}
-              {car.outgoingConsignment && (
-                <div className={`absolute -top-2.5 z-20 ${car.consignment ? 'left-28' : 'left-3'}`}>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setOutgoingConsignmentPopover(outgoingConsignmentPopover === car.id ? null : car.id); setConsignmentPopover(null); }}
-                    className="flex items-center gap-1 bg-orange-500 hover:bg-orange-400 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg shadow-orange-500/30 transition-colors"
-                    title="Outgoing consignment details"
-                  >
-                    <Building2 size={9} /> CONSIGN OUT
-                  </button>
-                  {outgoingConsignmentPopover === car.id && (
-                    <div
-                      onClick={(e) => e.stopPropagation()}
-                      className="absolute top-6 left-0 z-30 w-52 bg-[#0F0E0C] border border-orange-500/40 rounded-xl shadow-xl p-3 space-y-2"
-                    >
-                      <p className="text-orange-400 text-xs font-semibold uppercase tracking-wide">Consign Out</p>
-                      <p className="text-gray-500 text-[10px]">Our car, dealer is selling it</p>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-gray-500">Dealer</span>
-                        <span className="text-white font-medium">{car.outgoingConsignment.dealer || '—'}</span>
-                      </div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-gray-500">Terms</span>
-                        <span className="text-white">{car.outgoingConsignment.terms === 'fixed_amount' ? 'Fixed Amount' : 'Profit Split'}</span>
-                      </div>
-                      {car.outgoingConsignment.terms === 'fixed_amount' && (
-                        <div className="flex justify-between text-xs">
-                          <span className="text-gray-500">We Take Back</span>
-                          <span className="text-orange-400 font-semibold">{formatRM(car.outgoingConsignment.fixedAmount ?? 0)}</span>
-                        </div>
-                      )}
-                      {car.outgoingConsignment.terms === 'profit_split' && (
-                        <>
-                          <div className="flex justify-between text-xs">
-                            <span className="text-gray-500">Our Split</span>
-                            <span className="text-green-400 font-semibold">{car.outgoingConsignment.splitPercent ?? 50}%</span>
-                          </div>
-                          <div className="flex justify-between text-xs">
-                            <span className="text-gray-500">Dealer's Split</span>
-                            <span className="text-white">{100 - (car.outgoingConsignment.splitPercent ?? 50)}%</span>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
+          {filtered.map((car, idx) => (
+            <div key={car.id} className={`relative group/card stagger-enter stagger-${Math.min(idx + 1, 12)}`}>
               {isDirector && (
                 <button
                   onClick={(e) => { e.stopPropagation(); setDeleteCarId(car.id); }}
@@ -709,112 +642,103 @@ export default function Inventory() {
               )}
             <div
               onClick={() => { setConsignmentPopover(null); setOutgoingConsignmentPopover(null); navigate(`/inventory/${car.id}`); }}
-              className={`bg-card-gradient border rounded-xl shadow-card overflow-hidden cursor-pointer hover:shadow-xl transition-all group ${
-                car.consignment
-                  ? 'border-blue-500/50 hover:border-blue-400/70 hover:shadow-blue-500/10'
-                  : car.outgoingConsignment
-                  ? 'border-orange-500/50 hover:border-orange-400/70 hover:shadow-orange-500/10'
-                  : 'border-obsidian-400/70 hover:border-gold-500/40 hover:shadow-gold-500/10'
-              }`}
+              className="relative bg-obsidian-900 rounded-xl overflow-hidden cursor-pointer aspect-[4/3] shadow-card hover:shadow-xl hover:shadow-gold-500/10 border border-obsidian-400/50 hover:border-gold-500/30 transition-all duration-300 group card-lift card-streak"
             >
-              {/* Photo */}
-              <div className="h-36 bg-obsidian-700/60 flex items-center justify-center relative">
-                {car.photo ? (
-                  <img
-                    src={car.photo}
-                    alt={`${car.make} ${car.model}`}
-                    className="w-full h-full object-cover opacity-0 transition-opacity duration-300"
-                    loading="lazy"
-                    onLoad={(e) => e.currentTarget.classList.replace('opacity-0', 'opacity-100')}
-                  />
-                ) : (
-                  <CarIcon size={40} className="text-gray-700 group-hover:text-gray-600 transition-colors" />
-                )}
-                {(() => {
-                  const { cls, label } = getDealBadge(car);
-                  return (
-                    <span className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-xs font-semibold ${cls}`}>
-                      {label}
-                    </span>
-                  );
-                })()}
-                {!car.greenCard && car.status !== 'coming_soon' && (
-                  <span className="absolute top-2 left-2 flex items-center gap-1 bg-orange-500/80 border border-orange-400 text-white px-2 py-0.5 rounded-full text-[10px] font-medium">
-                    <AlertCircle size={10} /> No Green Card
-                  </span>
-                )}
+              {/* Full-bleed photo */}
+              <div className="absolute inset-0">
+                {car.photo
+                  ? <img src={car.photo} alt="" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+                  : <div className="w-full h-full flex items-center justify-center bg-obsidian-800">
+                      <CarIcon size={40} className="text-gray-700" />
+                    </div>
+                }
               </div>
 
-              {/* Info */}
-              <div className="p-4">
-                <div className="flex items-start justify-between">
-                  <div className="min-w-0">
-                    <h3 className="text-white font-semibold text-sm group-hover:text-gold-400 transition-colors">
-                      {car.year} {car.make} {car.model}
-                    </h3>
-                    <p className="text-gray-500 text-xs mt-0.5">{car.variant ? `${car.variant} · ` : ''}{car.colour} · {car.transmission}</p>
-                  </div>
-                  {car.carPlate && (
-                    <span className="ml-2 shrink-0 text-xs font-mono font-semibold px-2 py-0.5 rounded bg-[#2C2415] text-gold-300 border border-[#3C321E] tracking-wider">
-                      {car.carPlate}
-                    </span>
-                  )}
-                </div>
-                {car.status !== 'coming_soon' && (
-                  <div className="flex items-center gap-1 mt-1">
-                    <MapPin size={11} className="text-gray-500 flex-shrink-0" />
-                    <span className="text-gray-400 text-xs truncate">{getLocation(car)}</span>
-                  </div>
-                )}
+              {/* Gradient overlay — darkens bottom for text legibility */}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
 
-                <div className="flex items-center gap-2 mt-2">
-                  <p className="text-gray-400 text-xs">{formatMileage(car.mileage)}</p>
+              {/* SOLD watermark overlay — only for delivered cars */}
+              {car.status === 'delivered' && (
+                <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                  <div className="border-4 border-red-500/70 rounded-lg px-4 py-1 rotate-[-20deg]">
+                    <span className="text-red-500/90 font-display font-bold text-2xl tracking-widest">SOLD</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Top badges row */}
+              {(() => {
+                const statusBadge = getDealBadge(car);
+                return (
+                  <div className="absolute top-2 left-2 right-2 flex items-start justify-between gap-1">
+                    <div className="flex flex-col gap-1">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusBadge.cls}`}>
+                        {statusBadge.label}
+                      </span>
+                      {!car.greenCard && car.status !== 'coming_soon' && (
+                        <span className="flex items-center gap-1 bg-orange-500/80 border border-orange-400 text-white px-2 py-0.5 rounded-full text-[10px] font-medium w-fit">
+                          <AlertCircle size={10} /> No GC
+                        </span>
+                      )}
+                    </div>
+                    {car.carPlate && (
+                      <span className="text-[10px] font-mono text-gold-300 bg-black/60 backdrop-blur-sm px-1.5 py-0.5 rounded border border-gold-500/20">
+                        {car.carPlate}
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Bottom info overlay */}
+              <div className="absolute bottom-0 left-0 right-0 p-3">
+                <p className="text-white font-semibold text-sm leading-tight line-clamp-1">
+                  {car.year} {car.make} {car.model}
+                </p>
+                {car.variant && <p className="text-gray-400 text-[11px] mt-0.5 line-clamp-1">{car.variant}</p>}
+                <div className="flex items-center gap-2 mt-0.5">
+                  <p className="text-gray-500 text-[10px]">{car.colour} · {car.transmission} · {formatMileage(car.mileage)}</p>
                   {(() => {
                     if (car.status === 'delivered' || car.status === 'sold') return null;
                     const days = Math.floor((Date.now() - new Date(car.dateAdded).getTime()) / 86400000);
                     if (days < 30) return null;
-                    const cls = days >= 90
+                    const ageCls = days >= 90
                       ? 'bg-red-500/20 text-red-400 border-red-500/30'
                       : days >= 60
                       ? 'bg-orange-500/20 text-orange-400 border-orange-500/30'
                       : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
                     return (
-                      <span className={`flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded border font-medium ${cls}`}>
+                      <span className={`flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded border font-medium ${ageCls}`}>
                         <Clock size={9} />{days}d
                       </span>
                     );
                   })()}
                 </div>
-
-                <div className="mt-3 flex items-end justify-between">
+                <div className="flex items-center justify-between mt-1.5">
                   <div>
                     {confirmedDealPrice[car.id] != null ? (
                       <div>
                         {confirmedDealPrice[car.id] !== car.sellingPrice && (
-                          <p className="text-gray-600 text-xs line-through">{formatRM(car.sellingPrice)}</p>
+                          <p className="text-gray-500 text-[10px] line-through">{formatRM(car.sellingPrice)}</p>
                         )}
-                        <p className="text-gold-400 text-lg font-bold">{formatRM(confirmedDealPrice[car.id])}</p>
+                        <p className="text-gold-400 font-bold text-base"
+                           style={{animation: 'priceIn 0.5s ease forwards', animationDelay: `${filtered.indexOf(car) * 0.05}s`, opacity: 0}}>
+                          {formatRM(confirmedDealPrice[car.id])}
+                        </p>
                       </div>
                     ) : (
-                      <p className="text-gold-400 text-lg font-bold">{formatRM(car.sellingPrice)}</p>
-                    )}
-                    {isDirectorView && (
-                      <p className={`text-xs font-medium mt-0.5 ${(carProfitMap[car.id] ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        Profit: {formatRM(carProfitMap[car.id] ?? 0)}
+                      <p className="text-gold-400 font-bold text-base"
+                         style={{animation: 'priceIn 0.5s ease forwards', animationDelay: `${filtered.indexOf(car) * 0.05}s`, opacity: 0}}>
+                        {formatRM(car.sellingPrice)}
                       </p>
                     )}
                   </div>
+                  {isDirectorView && (
+                    <p className={`text-xs font-semibold ${(carProfitMap[car.id] ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {formatRM(carProfitMap[car.id] ?? 0)}
+                    </p>
+                  )}
                 </div>
-
-                <p className="text-gray-600 text-xs mt-1 truncate">{getSalesperson(getDealSalespersonId(car))}</p>
-                {isDirectorView && car.investorId && (() => {
-                  const inv = users.find(u => u.id === car.investorId);
-                  return inv ? (
-                    <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
-                      <Users size={9} /> {inv.name} · {car.investorSplit ?? 50}%
-                    </span>
-                  ) : null;
-                })()}
 
                 {/* Deal summary strip */}
                 {(() => {
@@ -827,31 +751,37 @@ export default function Inventory() {
                   if (leadCount === 0 && submissions.length === 0 && !deal) return null;
 
                   return (
-                    <div className="mt-2 pt-2 border-t border-obsidian-400/30 space-y-1">
+                    <div className="mt-1.5 pt-1.5 border-t border-white/10 flex flex-wrap gap-x-2 gap-y-0.5">
                       {leadCount > 0 && (
-                        <span className="flex items-center gap-1 text-[10px] text-gray-500">
+                        <span className="flex items-center gap-0.5 text-[10px] text-gray-400">
                           <Users size={9} /> {leadCount} lead{leadCount > 1 ? 's' : ''}
                         </span>
                       )}
                       {pendingBanks.length > 0 && (
-                        <p className="text-[10px] text-blue-400 truncate">
-                          {pendingBanks.length} bank{pendingBanks.length > 1 ? 's' : ''} pending · {pendingBanks.map((s) => s.bank).join(', ')}
+                        <p className="text-[10px] text-blue-400">
+                          {pendingBanks.length} pending
                         </p>
                       )}
                       {approvedBanks.length > 0 && (
-                        <p className="text-[10px] text-emerald-400 truncate">
-                          Approved · {approvedBanks.map((s) => s.bank).join(', ')}
-                        </p>
+                        <p className="text-[10px] text-emerald-400">Approved</p>
                       )}
                       {deal && (
                         <p className="text-[10px] text-violet-400 font-medium truncate">
-                          {deal.bank} · {formatRM(deal.dealPrice)}
+                          {deal.bank}
                         </p>
                       )}
                     </div>
                   );
                 })()}
               </div>
+
+              {/* Light streak on hover */}
+              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-300"
+                style={{background: 'linear-gradient(105deg, transparent 40%, rgba(234,184,32,0.06) 50%, transparent 60%)'}}>
+              </div>
+
+              {/* Bottom gold line on hover */}
+              <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-transparent via-gold-500/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
             </div>
             </div>
           ))}
@@ -859,9 +789,9 @@ export default function Inventory() {
       )}
 
       {/* List view */}
-      {view === 'list' && filtered.length > 0 && (
+      {!initialLoad && view === 'list' && filtered.length > 0 && (
         <div className="space-y-2">
-          {filtered.map((car) => {
+          {filtered.map((car, idx) => {
             const { cls, label } = getDealBadge(car);
             const leadCount = carStats[car.id]?.leadCount ?? 0;
             const submissions = car.loanSubmissions ?? [];
@@ -875,14 +805,19 @@ export default function Inventory() {
               <div
                 key={car.id}
                 onClick={() => navigate(`/inventory/${car.id}`)}
-                className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card cursor-pointer hover:border-gold-500/40 hover:bg-obsidian-700/30 transition-all flex items-center gap-4 px-4 py-3"
+                className={`row-item bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card cursor-pointer hover:border-gold-500/40 hover:bg-obsidian-700/30 transition-all flex items-center gap-4 px-4 py-3 relative stagger-enter stagger-${Math.min(idx + 1, 12)}${car.status === 'delivered' ? ' opacity-60' : ''}`}
               >
                 {/* Thumbnail */}
-                <div className="w-24 h-16 bg-obsidian-700/60 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center">
+                <div className="w-24 h-16 bg-obsidian-700/60 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center relative">
                   {car.photo
                     ? <img src={car.photo} alt={`${car.make} ${car.model}`} className="w-full h-full object-cover" loading="lazy" />
                     : <CarIcon size={20} className="text-gray-600" />
                   }
+                  {car.status === 'delivered' && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                      <span className="text-[9px] font-bold text-red-400 border border-red-500/60 rounded px-1 py-0.5 rotate-[-15deg] tracking-widest">SOLD</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Car name + details */}
@@ -892,24 +827,6 @@ export default function Inventory() {
                     {car.carPlate && (
                       <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-[#2C2415] text-gold-300 border border-[#3C321E] tracking-wider">{car.carPlate}</span>
                     )}
-                    {car.consignment && (
-                      <span className="flex items-center gap-1 bg-blue-500/20 text-blue-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-500/30">
-                        <Building2 size={9} /> CONSIGN IN
-                      </span>
-                    )}
-                    {car.outgoingConsignment && (
-                      <span className="flex items-center gap-1 bg-orange-500/20 text-orange-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-orange-500/30">
-                        <Building2 size={9} /> CONSIGN OUT
-                      </span>
-                    )}
-                    {isDirectorView && car.investorId && (() => {
-                      const inv = users.find(u => u.id === car.investorId);
-                      return inv ? (
-                        <span className="flex items-center gap-1 bg-amber-500/10 text-amber-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-500/20">
-                          <Users size={9} /> {inv.name}
-                        </span>
-                      ) : null;
-                    })()}
                   </div>
                   <div className="flex items-center gap-3 mt-1 flex-wrap">
                     <span className="text-gray-500 text-xs">{car.colour} · {car.transmission} · {formatMileage(car.mileage)}</span>

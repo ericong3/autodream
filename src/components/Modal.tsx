@@ -16,20 +16,20 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = 'ma
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain">
-      <div className="absolute inset-0 bg-black/85 backdrop-blur-sm" onClick={onClose} />
-      <div className="flex min-h-full items-center justify-center p-4">
-        <div className={`relative w-full ${maxWidth} flex flex-col
-          glass-panel
-          shadow-card-lg
-          rounded-xl overflow-hidden`}>
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/80 backdrop-blur-md modal-backdrop"
+        onClick={onClose}
+      />
 
-          {/* Gold top accent line */}
+      <div className="flex min-h-full items-center justify-center p-4">
+        <div className={`relative w-full ${maxWidth} flex flex-col glass-panel shadow-card-lg rounded-xl overflow-hidden modal-enter`}>
+
+          {/* Gold top accent */}
           <div className="absolute top-0 left-0 right-0 h-[2px] rounded-t-xl bg-gold-gradient opacity-80" />
 
           {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4
-            border-b border-gold-500/10 shrink-0
-            bg-gradient-to-r from-white/[0.03] to-transparent">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gold-500/10 shrink-0 bg-gradient-to-r from-white/[0.03] to-transparent">
             <h2 className="font-display text-white font-semibold text-sm tracking-wide">{title}</h2>
             <button
               onClick={onClose}

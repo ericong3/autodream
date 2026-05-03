@@ -9,12 +9,16 @@ import {
   AlertCircle,
   User,
   Users,
+  Building2,
+  Banknote,
+  HeartHandshake,
+  Car as CarIcon,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { Instruction } from '../types';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
-import { generateId } from '../utils/format';
+import { generateId, formatRM } from '../utils/format';
 
 function inputCls(error?: string) {
   return `w-full bg-obsidian-700/60 border ${error ? 'border-red-500/50' : 'border-obsidian-400/60'} text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500 transition-colors`;
@@ -74,13 +78,27 @@ const TARGET_LABEL: Record<string, string> = {
 export default function Instructions() {
   const instructions = useStore((s) => s.instructions);
   const users = useStore((s) => s.users);
+  const cars = useStore((s) => s.cars);
+  const customers = useStore((s) => s.customers);
+  const updateCar = useStore((s) => s.updateCar);
   const currentUser = useStore((s) => s.currentUser);
   const addInstruction = useStore((s) => s.addInstruction);
   const updateInstruction = useStore((s) => s.updateInstruction);
   const deleteInstruction = useStore((s) => s.deleteInstruction);
 
   const isDirector = currentUser?.role === 'director';
-  const [tab, setTab] = useState<'main' | 'secondary'>('main');
+  const [tab, setTab] = useState<'main' | 'secondary' | 'payments'>('main');
+
+  // All delivered cars pending money collection
+  const pendingPaymentCars = cars.filter(c => c.status === 'delivered' && !c.moneyReceived);
+
+  const getPaymentType = (car: typeof cars[0]): { type: 'loan' | 'cash' | 'consignment'; label: string } => {
+    if (car.outgoingConsignment) return { type: 'consignment', label: 'Dealer Payment' };
+    const customer = customers.find(c => c.interestedCarId === car.id);
+    if (customer?.loanWorkOrder) return { type: 'loan', label: `${customer.loanWorkOrder.bank} Disbursement` };
+    if (car.finalDeal?.bank && car.finalDeal.bank.toLowerCase() !== 'cash') return { type: 'loan', label: `${car.finalDeal.bank} Disbursement` };
+    return { type: 'cash', label: 'Cash Payment' };
+  };
   const [showModal, setShowModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
 
@@ -219,6 +237,17 @@ export default function Instructions() {
                 </span>
               )}
             </button>
+            <button
+              onClick={() => setTab('payments')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${tab === 'payments' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
+            >
+              Pending Payments
+              {pendingPaymentCars.length > 0 && (
+                <span className="bg-amber-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                  {pendingPaymentCars.length}
+                </span>
+              )}
+            </button>
           </div>
           {tab === 'main' && (
             <button
@@ -353,6 +382,86 @@ export default function Instructions() {
                   </div>
                 </div>
               ))
+            )}
+          </div>
+        )}
+
+        {/* Pending Payments */}
+        {tab === 'payments' && (
+          <div className="space-y-3">
+            {pendingPaymentCars.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <CheckCircle size={40} className="text-green-500 mb-3" />
+                <p className="text-white font-semibold">All payments received</p>
+                <p className="text-gray-500 text-sm mt-1">No outstanding collections</p>
+              </div>
+            ) : (
+              <>
+                <p className="text-gray-500 text-sm">
+                  <span className="text-amber-400 font-semibold">{pendingPaymentCars.length}</span> unit{pendingPaymentCars.length !== 1 ? 's' : ''} awaiting payment
+                </p>
+                {/* Group by type */}
+                {(['loan', 'consignment', 'cash'] as const).map((type) => {
+                  const group = pendingPaymentCars.filter(c => getPaymentType(c).type === type);
+                  if (group.length === 0) return null;
+                  const groupTitle = type === 'loan' ? 'Bank Disbursement Pending' : type === 'consignment' ? 'Dealer Payment Pending' : 'Cash Payment Pending';
+                  const GroupIcon = type === 'loan' ? Building2 : type === 'consignment' ? HeartHandshake : Banknote;
+                  const borderColor = type === 'loan' ? 'border-l-blue-500' : type === 'consignment' ? 'border-l-purple-500' : 'border-l-amber-500';
+                  const iconColor = type === 'loan' ? 'text-blue-400' : type === 'consignment' ? 'text-purple-400' : 'text-amber-400';
+                  return (
+                    <div key={type} className="space-y-2">
+                      <div className={`flex items-center gap-2 pt-2`}>
+                        <GroupIcon size={14} className={iconColor} />
+                        <p className={`text-xs font-semibold uppercase tracking-wider ${iconColor}`}>{groupTitle}</p>
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full bg-obsidian-700/60 text-gray-400`}>{group.length}</span>
+                      </div>
+                      {group.map((car) => {
+                        const { label } = getPaymentType(car);
+                        const dealPrice = (() => {
+                          const customer = customers.find(c => c.interestedCarId === car.id);
+                          const w = customer?.loanWorkOrder ?? customer?.cashWorkOrder;
+                          const gross = (w?.sellingPrice && w.sellingPrice > 0) ? w.sellingPrice : (car.finalDeal?.dealPrice ?? car.sellingPrice);
+                          return gross - (w?.discount ?? 0);
+                        })();
+                        return (
+                          <div
+                            key={car.id}
+                            className={`bg-[#0F0E0C] border border-obsidian-400/60 border-l-4 ${borderColor} rounded-xl p-4 flex items-center gap-4`}
+                          >
+                            {/* Photo */}
+                            <div className="w-16 h-12 rounded-lg overflow-hidden shrink-0 bg-obsidian-700/60 flex items-center justify-center">
+                              {car.photo
+                                ? <img src={car.photo} alt="" className="w-full h-full object-cover" />
+                                : <CarIcon size={18} className="text-gray-600" />
+                              }
+                            </div>
+                            {/* Info */}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-white font-semibold text-sm truncate">
+                                {car.year} {car.make} {car.model}{car.variant ? ` ${car.variant}` : ''}
+                              </p>
+                              <p className="text-gray-500 text-xs mt-0.5">{label}</p>
+                              {car.carPlate && (
+                                <span className="text-[10px] font-mono text-gold-300">{car.carPlate}</span>
+                              )}
+                            </div>
+                            {/* Amount */}
+                            <div className="text-right shrink-0">
+                              <p className="text-gold-400 font-bold text-sm">{formatRM(dealPrice)}</p>
+                              <button
+                                onClick={() => updateCar(car.id, { moneyReceived: true })}
+                                className="mt-1 flex items-center gap-1 px-2.5 py-1 bg-green-500/10 text-green-400 hover:bg-green-500/20 rounded-lg text-[10px] font-bold transition-colors"
+                              >
+                                <CheckCircle size={10} /> Mark Received
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </>
             )}
           </div>
         )}

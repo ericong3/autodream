@@ -488,7 +488,12 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         .map(c => c.interestedCarId)
         .filter(Boolean)
     );
-    const orphanedCars = allCars.filter(c => c.finalDeal && !confirmedCarIds.has(c.id) && !c.outgoingConsignment);
+    const orphanedCars = allCars.filter(c =>
+      c.finalDeal &&
+      c.status !== 'delivered' &&
+      !confirmedCarIds.has(c.id) &&
+      !c.outgoingConsignment
+    );
     if (orphanedCars.length > 0) {
       await Promise.all(orphanedCars.map(c =>
         supabase.from('cars').update({ final_deal: null, status: 'available' }).eq('id', c.id)
@@ -867,7 +872,10 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   addUser: async (user) => {
     set((s) => ({ users: [...s.users, user] }));
     const { error } = await supabase.from('users').insert(userToRow(user));
-    if (error) console.error('addUser failed:', error.message);
+    if (error) {
+      set((s) => ({ users: s.users.filter((u) => u.id !== user.id) }));
+      throw new Error(error.message);
+    }
   },
   updateUser: async (id, user) => {
     set((s) => ({

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft,
   Car as CarIcon,
@@ -29,6 +29,7 @@ import {
   XCircle,
   Pencil,
   Receipt,
+  TrendingUp,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
@@ -105,6 +106,9 @@ function SectionHeader({ icon: Icon, title, count, color = 'text-gold-400' }: { 
 }
 
 export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', initialTab }: { id: string; onBack: () => void; backLabel?: string; initialTab?: 'repairs' | 'loans' | 'final_deal' }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const fromHistory = (location.state as any)?.from === 'history';
   const cars = useStore((s) => s.cars);
   const users = useStore((s) => s.users);
   const customers = useStore((s) => s.customers);
@@ -168,7 +172,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const [outgoingConsignModal, setOutgoingConsignModal] = useState<{ dealer: string; terms: 'fixed_amount' | 'profit_split'; fixedAmount: number; splitPercent: number } | null>(null);
   const [outgoingConsignSaving, setOutgoingConsignSaving] = useState(false);
   const [outgoingConsignError, setOutgoingConsignError] = useState<string | null>(null);
-  const [consignSoldModal, setConsignSoldModal] = useState<{ salePrice: number; ourAmount: number } | null>(null);
+  const [consignSoldModal, setConsignSoldModal] = useState<{ salePrice: number; ourAmount: number; soldDate: string } | null>(null);
 
   // ── Final Deal — derived data (needed by edit handler) ──
   const dealCustomer = car ? customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder)) : undefined;
@@ -181,6 +185,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     bank: '', sellingPrice: 0, discount: 0, insurance: 0,
     bankProduct: 0, loanAmount: 0, downpayment: 0, bookingFee: 0,
     additionalItems: [] as WorkOrderItem[],
+    soldDate: '',
   });
   const [savingDeal, setSavingDeal] = useState(false);
 
@@ -197,6 +202,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       downpayment: (dealWo as any)?.downpayment ?? 0,
       bookingFee: dealWo?.bookingFee ?? 0,
       additionalItems: [...(dealWo?.additionalItems ?? [])],
+      soldDate: car.finalDeal?.submittedAt?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
     });
     setShowEditDeal(true);
   };
@@ -216,6 +222,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           ...car.finalDeal!,
           dealPrice: editDealForm.sellingPrice - editDealForm.discount,
           bank: editDealForm.bank,
+          submittedAt: editDealForm.soldDate
+            ? new Date(editDealForm.soldDate + 'T12:00:00').toISOString()
+            : car.finalDeal!.submittedAt,
         },
       });
       setShowEditDeal(false);
@@ -342,10 +351,12 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
 
   // Net profit matching director view formula
   const _wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
-  const _dealPrice = (_wo?.sellingPrice ?? car.sellingPrice) - (_wo?.discount ?? 0);
+  const _dealPrice = _wo
+    ? (_wo.sellingPrice - (_wo.discount ?? 0))
+    : (car.finalDeal?.dealPrice ?? car.sellingPrice);
   const _additionalTotal = _wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
   const _profitBeforeComm = _dealPrice - car.purchasePrice - totalRepairCost - totalMiscCost - _additionalTotal;
-  const _commission = car.priceFloor != null
+  const _commission = car.outgoingConsignment ? 0 : car.priceFloor != null
     ? (_dealPrice >= car.priceFloor ? (_profitBeforeComm >= 10000 ? 2000 : 1500) : 1000)
     : (_profitBeforeComm >= 10000 ? 1500 : 1000);
   const netProfit = _profitBeforeComm - _commission;
@@ -481,7 +492,25 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   };
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="max-w-6xl">
+      <div className="xl:grid xl:grid-cols-[1fr_380px] xl:gap-6 xl:items-start space-y-6 xl:space-y-0">
+        {/* ── Left Column ── */}
+        <div className="space-y-6 min-w-0">
+
+      {/* Breadcrumb */}
+      <nav className="flex items-center gap-1.5 text-xs text-gray-500 mb-4">
+        <span
+          className="hover:text-gold-400 cursor-pointer transition-colors"
+          onClick={() => navigate(fromHistory ? '/history' : '/inventory')}
+        >
+          {fromHistory ? 'Delivered' : 'Inventory'}
+        </span>
+        <ChevronRight size={12} className="text-gray-600" />
+        <span className="text-gray-300 truncate max-w-[200px]">
+          {car.year} {car.make} {car.model}
+        </span>
+      </nav>
+
       {/* Back + actions */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <button
@@ -598,6 +627,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                     setConsignSoldModal({
                       salePrice: 0,
                       ourAmount: oc.terms === 'fixed_amount' ? (oc.fixedAmount ?? 0) : 0,
+                      soldDate: new Date().toISOString().slice(0, 10),
                     });
                   }}
                   className="flex items-center gap-1.5 bg-green-500 hover:bg-green-400 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors"
@@ -1419,6 +1449,40 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
         </div>
       )}
 
+        </div>{/* end left column */}
+
+        {/* ── Right Column ── */}
+        <div className="space-y-4 xl:sticky xl:top-24">
+          {/* Financial Summary Card */}
+          {isDirectorView && (
+            <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl p-5 space-y-4">
+              <p className="text-white font-semibold text-sm flex items-center gap-2">
+                <TrendingUp size={15} className="text-gold-400" /> Financial Summary
+              </p>
+              <div className="space-y-3">
+                {[
+                  { label: 'Asking Price', value: formatRM(car.sellingPrice), cls: 'text-gold-400 font-bold' },
+                  { label: 'Purchase Price', value: formatRM(car.purchasePrice), cls: 'text-white' },
+                  { label: 'Repair Costs', value: formatRM(totalRepairCost), cls: 'text-orange-400' },
+                  { label: 'Misc Costs', value: formatRM(totalMiscCost), cls: 'text-purple-400' },
+                  { label: 'Commission', value: formatRM(_commission), cls: 'text-gray-300' },
+                ].map(({ label, value, cls }) => (
+                  <div key={label} className="flex justify-between items-center">
+                    <span className="text-gray-500 text-xs">{label}</span>
+                    <span className={`text-sm font-medium ${cls}`}>{value}</span>
+                  </div>
+                ))}
+                <div className="pt-2 border-t border-obsidian-400/30 flex justify-between items-center">
+                  <span className="text-gray-400 text-xs font-semibold">Net Profit</span>
+                  <span className={`text-base font-bold ${netProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatRM(netProfit)}</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>{/* end right column */}
+
+      </div>{/* end two-column grid */}
+
       {/* ── Edit Car Modal ── */}
       <Modal isOpen={showEditModal} onClose={() => setShowEditModal(false)} title="Edit Car" maxWidth="max-w-2xl">
         <div className="grid grid-cols-2 gap-4">
@@ -1835,6 +1899,17 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               })()}
             </div>
 
+            <div>
+              <label className="block text-gray-300 text-xs font-medium mb-1.5">Date Sold</label>
+              <input
+                type="date"
+                className="w-full bg-obsidian-700/60 border border-obsidian-400/60 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-green-500/60"
+                value={consignSoldModal.soldDate}
+                max={new Date().toISOString().slice(0, 10)}
+                onChange={(e) => setConsignSoldModal({ ...consignSoldModal, soldDate: e.target.value })}
+              />
+            </div>
+
             <div className="flex gap-3 pt-1">
               <button
                 onClick={() => setConsignSoldModal(null)}
@@ -1853,7 +1928,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                     deliveryCollected: true,
                     finalDeal: {
                       submittedBy: currentUser?.name ?? '',
-                      submittedAt: new Date().toISOString(),
+                      submittedAt: new Date(consignSoldModal.soldDate + 'T12:00:00').toISOString(),
                       dealPrice: finalAmount,
                       bank: `Consignment — ${oc.dealer}`,
                       approvalStatus: 'approved',
@@ -2175,6 +2250,18 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       {/* ── Edit Deal Modal ── */}
       <Modal isOpen={showEditDeal} onClose={() => setShowEditDeal(false)} title="Edit Deal Details" maxWidth="max-w-md">
         <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+
+          {/* Date sold */}
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Date Sold</label>
+            <input
+              type="date"
+              className="input w-full"
+              value={editDealForm.soldDate}
+              max={new Date().toISOString().slice(0, 10)}
+              onChange={e => setEditDealForm(f => ({ ...f, soldDate: e.target.value }))}
+            />
+          </div>
 
           {/* Bank (loan only) */}
           {dealIsLoan && (

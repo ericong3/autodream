@@ -12,7 +12,10 @@ import {
 } from 'lucide-react';
 import { useStore } from '../store';
 import StatCard from '../components/StatCard';
+import Sparkline from '../components/Sparkline';
 import { formatRM } from '../utils/format';
+import { useAnimatedCounter } from '../hooks/useAnimatedCounter';
+import { useAnimatedRM } from '../hooks/useAnimatedRM';
 
 export default function Dashboard() {
   const cars = useStore((s) => s.cars);
@@ -74,14 +77,49 @@ export default function Dashboard() {
   const totalCommission = soldCarData.reduce((s, d) => s + d.commission, 0);
   const netProfit      = soldCarData.reduce((s, d) => s + d.netCarProfit, 0);
 
+  // Animated stat card values
+  const animatedInventory  = useAnimatedCounter(cars.length, 800, 0);
+  const animatedSold       = useAnimatedCounter(soldCars.length, 800, 100);
+  const animatedRevenue    = useAnimatedRM(totalRevenue, 1400, 200);
+  const animatedNetProfit  = useAnimatedRM(netProfit, 1400, 300);
+
+  // Last-7-days sold count for sparkline
+  const last7DaysSales = useMemo(() => {
+    const days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      return d.toISOString().slice(0, 10);
+    });
+    return days.map(day =>
+      soldCars.filter(c => (c.finalDeal?.submittedAt ?? c.dateAdded).startsWith(day)).length
+    );
+  }, [soldCars]);
+
+  const now = new Date();
+  const hour = now.getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const dateStr = now.toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
   return (
     <div className="space-y-6">
+
+      {/* ── Page Header ─────────────────────────────────────── */}
+      <div className="flex items-end justify-between">
+        <div>
+          <p className="text-gray-500 text-xs uppercase tracking-widest font-medium">{dateStr}</p>
+          <h1 className="font-display text-white font-bold text-2xl mt-0.5">{greeting} 👋</h1>
+        </div>
+        <div className="hidden sm:flex items-center gap-2 text-xs text-gray-600">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]" />
+          Live
+        </div>
+      </div>
 
       {/* ── Stat Cards ───────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <StatCard
           title="Total Inventory"
-          value={cars.length}
+          value={animatedInventory}
           subtitle={`${availableCars.length} available`}
           icon={Car}
           borderColor="border-l-gold-400"
@@ -89,15 +127,15 @@ export default function Dashboard() {
         />
         <StatCard
           title="Total Revenue"
-          value={formatRM(totalRevenue)}
-          subtitle={`${soldCars.length} cars sold`}
+          value={animatedRevenue}
+          subtitle={`${animatedSold} cars sold`}
           icon={DollarSign}
           borderColor="border-l-emerald-400"
           iconColor="text-emerald-400"
         />
         <StatCard
           title="Net Profit"
-          value={formatRM(netProfit)}
+          value={animatedNetProfit}
           subtitle="After repairs & commission"
           icon={TrendingUp}
           borderColor="border-l-violet-400"
@@ -112,6 +150,19 @@ export default function Dashboard() {
           borderColor="border-l-orange-400"
           iconColor="text-orange-400"
         />
+      </div>
+
+      {/* ── 7-day Sales Trend ───────────────────────────────────── */}
+      <div className="glass-panel rounded-xl px-5 py-3 flex items-center gap-4 border border-gold-500/10">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-white/40">7-day sales trend</p>
+          <p className="text-white text-lg font-bold leading-tight mt-0.5">
+            {last7DaysSales.reduce((a, b) => a + b, 0)} sold
+          </p>
+        </div>
+        <div className="flex-1 flex justify-end">
+          <Sparkline data={last7DaysSales} width={120} height={36} />
+        </div>
       </div>
 
       {/* ── 15-day stock alert ─────────────────────────────────── */}
@@ -184,15 +235,15 @@ export default function Dashboard() {
               const count = cars.filter((c) => c.status === status).length;
               const pct = cars.length > 0 ? (count / cars.length) * 100 : 0;
               const bar = status === 'available'
-                ? 'from-emerald-500 to-emerald-400'
+                ? 'from-emerald-700 to-emerald-400'
                 : status === 'reserved'
-                  ? 'from-yellow-500 to-yellow-400'
-                  : 'from-obsidian-400 to-obsidian-300';
+                  ? 'from-purple-700 to-purple-400'
+                  : 'from-gold-600 to-gold-300';
               const text = status === 'available'
                 ? 'text-emerald-400'
                 : status === 'reserved'
-                  ? 'text-yellow-400'
-                  : 'text-white/40';
+                  ? 'text-purple-400'
+                  : 'text-gold-400';
               return (
                 <div key={status}>
                   <div className="flex justify-between items-center mb-1.5">
@@ -201,8 +252,8 @@ export default function Dashboard() {
                   </div>
                   <div className="h-2.5 rounded-full bg-obsidian-700 overflow-hidden">
                     <div
-                      className={`h-full rounded-full bg-gradient-to-r ${bar} transition-all duration-500`}
-                      style={{ width: `${pct}%` }}
+                      className={`h-full rounded-full bg-gradient-to-r ${bar} bar-animated`}
+                      style={{ '--bar-w': `${pct}%` } as React.CSSProperties}
                     />
                   </div>
                 </div>

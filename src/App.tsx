@@ -4,9 +4,11 @@ import {
   Routes,
   Route,
   Navigate,
+  useLocation,
 } from 'react-router-dom';
 import { useStore } from './store';
 import Layout from './components/Layout';
+import ToastContainer from './components/Toast';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Inventory from './pages/Inventory';
@@ -89,6 +91,7 @@ export default function App() {
 
   return (
     <HashRouter>
+      <ToastContainer />
       <Routes>
         <Route
           path="/login"
