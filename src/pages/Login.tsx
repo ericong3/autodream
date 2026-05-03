@@ -11,6 +11,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const login = useStore((s) => s.login);
   const navigate = useNavigate();
+  const isMobile = window.innerWidth < 768;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,16 +31,24 @@ export default function Login() {
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-obsidian-950">
 
-      {/* Background video */}
-      <video
-        className="absolute inset-0 w-full h-full object-cover"
-        src="/background.mp4"
-        poster="/background.jpg"
-        autoPlay
-        loop
-        muted
-        playsInline
-      />
+      {/* Background — static image on mobile (fast), video on desktop */}
+      {isMobile ? (
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+          style={{ backgroundImage: 'url(/background.jpg)' }}
+        />
+      ) : (
+        <video
+          className="absolute inset-0 w-full h-full object-cover"
+          src="/background.mp4"
+          poster="/background.jpg"
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="none"
+        />
+      )}
 
       {/* Dark overlay */}
       <div className="absolute inset-0 bg-black/60 pointer-events-none" />
