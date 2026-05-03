@@ -4,7 +4,6 @@ import {
   Routes,
   Route,
   Navigate,
-  useLocation,
 } from 'react-router-dom';
 import { useStore } from './store';
 import Layout from './components/Layout';

@@ -88,9 +88,8 @@ export default function ToastContainer() {
   const [items, setItems] = useState<ToastMessage[]>([]);
 
   useEffect(() => {
-    // Subscribe to the module-level toast event bus
     const unsubscribe = toast.subscribe(setItems);
-    return unsubscribe;
+    return () => { unsubscribe(); };
   }, []);
 
   // Allow early manual dismissal

@@ -1877,6 +1877,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                         className="w-full bg-obsidian-700/60 border border-obsidian-400/60 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-green-500/60"
                         value={consignSoldModal.salePrice}
                         onChange={(e) => setConsignSoldModal({
+                          ...consignSoldModal,
                           salePrice: Number(e.target.value),
                           ourAmount: Math.round(Number(e.target.value) * (splitPct / 100)),
                         })}

@@ -16,7 +16,6 @@ import {
   MapPin,
   Trash2,
   Users,
-  Building2,
   Clock,
 } from 'lucide-react';
 import { useStore } from '../store';
@@ -24,7 +23,7 @@ import { supabase } from '../lib/supabase';
 import { Car } from '../types';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
-import { formatRM, formatMileage, generateId, shortName } from '../utils/format';
+import { formatRM, formatMileage, generateId } from '../utils/format';
 import { SkeletonCard, SkeletonRow } from '../components/Skeleton';
 
 
@@ -120,8 +119,6 @@ export default function Inventory() {
   const [sortBy, setSortBy] = useState('dateAdded-desc');
   const [showModal, setShowModal] = useState(false);
   const [deleteCarId, setDeleteCarId] = useState<string | null>(null);
-  const [consignmentPopover, setConsignmentPopover] = useState<string | null>(null); // carId
-  const [outgoingConsignmentPopover, setOutgoingConsignmentPopover] = useState<string | null>(null); // carId
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
@@ -348,16 +345,6 @@ export default function Inventory() {
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const getSalesperson = (id?: string) => {
-    const name = id ? users.find((u) => u.id === id)?.name : undefined;
-    return name ? shortName(name) : 'Unassigned';
-  };
-
-  const getDealSalespersonId = (car: typeof cars[0]): string | undefined => {
-    const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
-    return car.assignedSalesperson || dealCustomer?.assignedSalesId;
   };
 
   return (
@@ -654,7 +641,7 @@ export default function Inventory() {
                 </button>
               )}
             <div
-              onClick={() => { setConsignmentPopover(null); setOutgoingConsignmentPopover(null); navigate(`/inventory/${car.id}`); }}
+              onClick={() => navigate(`/inventory/${car.id}`)}
               className="relative bg-obsidian-900 rounded-xl overflow-hidden cursor-pointer aspect-[4/3] shadow-card hover:shadow-xl hover:shadow-gold-500/10 border border-obsidian-400/50 hover:border-gold-500/30 transition-all duration-300 group card-lift card-streak"
             >
               {/* Full-bleed photo */}
