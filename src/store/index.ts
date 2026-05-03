@@ -19,9 +19,10 @@ interface StoreState {
   merchants: Merchant[];
   viewPreference: Record<string, 'grid' | 'list'>;
   loaded: boolean;
+  lastFetched: number | null;
 
   // Init
-  loadAll: () => Promise<void>;
+  loadAll: (force?: boolean) => Promise<void>;
 
   // Auth
   login: (username: string, password: string) => Promise<boolean>;
@@ -460,8 +461,13 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   merchants: [],
   viewPreference: {},
   loaded: false,
+  lastFetched: null,
 
-  loadAll: async () => {
+  loadAll: async (force = false) => {
+    const { lastFetched, loaded } = get();
+    const TTL = 5 * 60 * 1000; // 5 minutes
+    if (!force && loaded && lastFetched && (Date.now() - lastFetched) < TTL) return;
+
     const [users, cars, repairs, quotations, instructions, customers, testDrives, reminders, dealers, workshops, suppliers, merchants] =
       await Promise.all([
         supabase.from('users').select('*'),
@@ -518,6 +524,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       suppliers: (suppliers.data ?? []) as Supplier[],
       merchants: (merchants.data ?? []) as Merchant[],
       loaded: true,
+      lastFetched: Date.now(),
     });
 
     // Real-time subscriptions — keep all clients in sync

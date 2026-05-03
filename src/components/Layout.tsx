@@ -99,7 +99,7 @@ export default function Layout({ children }: LayoutProps) {
 
   const loadAll = useStore((s) => s.loadAll);
   const mainRef = useRef<HTMLElement>(null);
-  const handleRefresh = useCallback(() => loadAll(), [loadAll]);
+  const handleRefresh = useCallback(() => loadAll(true), [loadAll]);
   const { pullDistance, isRefreshing } = usePullToRefresh(mainRef, handleRefresh);
 
   const isDirector = currentUser?.role === 'director';
