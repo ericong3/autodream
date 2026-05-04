@@ -196,15 +196,15 @@ svg.lucide { stroke-width: 1.75; }
 }
 
 /* #7 Card hover lift ─────────────────────────────────────────────────────── */
-.card-lift {
-  will-change: transform;
-}
+/* NOTE: no transform here. transform + overflow:hidden on the same element
+   causes Chrome to reroute wheel events to the card, consuming them before
+   they reach the main scroll container. Shadow-only lift avoids this. */
 @media (hover: hover) {
   .card-lift {
-    transition: transform 0.25s cubic-bezier(0.34, 1.4, 0.64, 1), box-shadow 0.25s ease;
+    transition: box-shadow 0.25s ease;
   }
   .card-lift:hover {
-    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.55), 0 0 0 1px rgba(234,184,32,0.12);
   }
 }
 
