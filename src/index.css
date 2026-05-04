@@ -456,17 +456,30 @@ button:not(.btn-gold):not(.btn-ghost):active:not(:disabled) {
   animation: skeleton-shine 2s ease infinite;
 }
 
-/* ─── Modal spring entrance (#18) ────────────────────────────────────────── */
+/* ─── Modal entrance ──────────────────────────────────────────────────────── */
+/* Desktop: spring scale-in */
 @keyframes modal-spring {
   0%   { opacity: 0; transform: scale(0.92) translateY(12px); }
   60%  { transform: scale(1.015) translateY(-2px); }
   100% { opacity: 1; transform: scale(1) translateY(0); }
 }
+/* Mobile: slide up from bottom — no opacity:0 start so it's visible even if animation glitches */
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
 @keyframes modal-backdrop-in {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
-.modal-enter { animation: modal-spring 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+/* Desktop */
+@media (min-width: 640px) {
+  .modal-enter { animation: modal-spring 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+}
+/* Mobile — sheet slides up; visible at translateY(0) even with no animation */
+@media (max-width: 639px) {
+  .modal-enter { animation: sheet-up 0.32s cubic-bezier(0.32, 0.72, 0, 1) forwards; }
+}
 .modal-backdrop { animation: modal-backdrop-in 0.2s ease forwards; }
 
 /* ─── Toast arc from bottom-right (#19) ──────────────────────────────────── */
