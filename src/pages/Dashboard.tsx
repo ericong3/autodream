@@ -190,7 +190,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
 
         {/* P&L Summary */}
-        <div className="card-surface rounded-xl overflow-hidden">
+        <div className="card-surface rounded-xl">
           <div className="px-5 py-4 border-b border-obsidian-400/60
             bg-gradient-to-r from-obsidian-600/40 to-transparent">
             <div className="flex items-center gap-2.5">
@@ -216,7 +216,7 @@ export default function Dashboard() {
         </div>
 
         {/* Inventory Status */}
-        <div className="card-surface rounded-xl overflow-hidden">
+        <div className="card-surface rounded-xl">
           <div className="flex items-center justify-between px-5 py-4 border-b border-obsidian-400/60
             bg-gradient-to-r from-obsidian-600/40 to-transparent">
             <div className="flex items-center gap-2.5">
@@ -264,7 +264,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── Workshop Overview ─────────────────────────────────── */}
-      <div className="card-surface rounded-xl overflow-hidden">
+      <div className="card-surface rounded-xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-obsidian-400/60
           bg-gradient-to-r from-obsidian-600/40 to-transparent">
           <div className="flex items-center gap-2.5">

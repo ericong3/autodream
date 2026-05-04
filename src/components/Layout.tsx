@@ -112,7 +112,7 @@ export default function Layout({ children }: LayoutProps) {
   return (
     <div className="flex min-h-screen bg-obsidian-950">
       <Sidebar />
-      <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
+      <div className="flex-1 flex flex-col h-screen overflow-hidden">
 
         {/* ── Topbar ─────────────────────────────────────────── */}
         <header className="safe-area-top glass-header border-b border-gold-500/20
@@ -219,7 +219,7 @@ export default function Layout({ children }: LayoutProps) {
         <main
           ref={mainRef}
           key={location.pathname}
-          className="flex-1 p-4 md:p-6 overflow-auto md:pb-6 animate-page-in"
+          className="flex-1 min-h-0 p-4 md:p-6 overflow-auto md:pb-6 animate-page-in"
           style={{
             paddingBottom: 'calc(6rem + env(safe-area-inset-bottom))',
             overscrollBehaviorY: 'none',

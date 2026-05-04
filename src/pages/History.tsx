@@ -267,7 +267,7 @@ export default function History() {
               <div
                 key={car.id}
                 onClick={() => navigate(`/history/${car.id}`)}
-                className={`relative bg-obsidian-900 rounded-xl overflow-hidden cursor-pointer aspect-[4/3] shadow-card hover:shadow-xl hover:shadow-gold-500/10 border border-obsidian-400/50 hover:border-gold-500/30 transition-all duration-300 group card-lift card-streak ${staggerCls}`}
+                className={`relative bg-obsidian-900 rounded-xl overflow-hidden cursor-pointer aspect-[4/3] shadow-card border border-obsidian-400/50 hover:border-gold-500/30 transition-colors duration-300 group card-lift card-streak ${staggerCls}`}
               >
                 {/* Full-bleed photo */}
                 <div className="absolute inset-0">
@@ -275,7 +275,7 @@ export default function History() {
                     ? <img
                         src={car.photo}
                         alt=""
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                        className="w-full h-full object-cover"
                         loading="lazy"
                       />
                     : <div className="w-full h-full flex items-center justify-center bg-obsidian-800">

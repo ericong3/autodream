@@ -291,7 +291,7 @@ export default function SalesDashboard() {
       </div>
 
       {/* Commission toggle section */}
-      <div className="card-surface rounded-xl overflow-hidden">
+      <div className="card-surface rounded-xl">
         <button
           onClick={() => setShowCommission(v => !v)}
           className="w-full flex items-center justify-between px-5 py-4 hover:bg-obsidian-700/50 transition-colors"
