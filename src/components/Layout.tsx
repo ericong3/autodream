@@ -222,7 +222,7 @@ export default function Layout({ children }: LayoutProps) {
           className="flex-1 p-4 md:p-6 overflow-auto md:pb-6 animate-page-in"
           style={{
             paddingBottom: 'calc(6rem + env(safe-area-inset-bottom))',
-            overscrollBehaviorY: 'contain',
+            overscrollBehaviorY: 'none',
           }}
         >{children}</main>
       </div>

@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 
-const THRESHOLD = 75;   // px of pull required to trigger refresh
-const MAX_PULL  = 100;  // px cap on how far the indicator stretches
-const DAMPEN    = 0.45; // resistance factor so it feels heavy/natural
+const THRESHOLD = 75;
+const MAX_PULL  = 100;
+const DAMPEN    = 0.45;
 
 export function usePullToRefresh(
   containerRef: React.RefObject<HTMLElement>,
@@ -39,8 +39,9 @@ export function usePullToRefresh(
       const clamped = Math.min(delta * DAMPEN, MAX_PULL);
       distRef.current = clamped;
       setPullDistance(clamped);
-      // prevent the browser from scrolling upward while we're doing PTR
-      if (delta > 8) e.preventDefault();
+      // NOTE: no e.preventDefault() — passive listener so scroll is never blocked.
+      // overscroll-behavior-y:none on the container suppresses the browser's
+      // native pull-to-refresh without interfering with scroll events.
     };
 
     const onTouchEnd = () => {
@@ -51,7 +52,7 @@ export function usePullToRefresh(
       if (dist >= THRESHOLD) {
         refreshingRef.current = true;
         setIsRefreshing(true);
-        setPullDistance(THRESHOLD); // snap to a steady refresh height
+        setPullDistance(THRESHOLD);
         onRefresh().finally(() => {
           setTimeout(() => {
             refreshingRef.current = false;
@@ -66,8 +67,9 @@ export function usePullToRefresh(
       }
     };
 
+    // ALL passive — never blocks scroll events on this container
     el.addEventListener('touchstart', onTouchStart, { passive: true });
-    el.addEventListener('touchmove',  onTouchMove,  { passive: false });
+    el.addEventListener('touchmove',  onTouchMove,  { passive: true });
     el.addEventListener('touchend',   onTouchEnd,   { passive: true });
 
     return () => {
