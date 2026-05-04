@@ -496,17 +496,19 @@ button:not(.btn-gold):not(.btn-ghost):active:not(:disabled) {
 .toast-exit  { animation: toast-out 0.25s ease-in forwards; }
 
 /* ─── Page transitions (#20) ─────────────────────────────────────────────── */
+/* NOTE: opacity-only — never use transform here. A transform on the <main>
+   element breaks position:fixed for all modals/overlays inside it. */
 @keyframes page-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 @keyframes page-out {
-  from { opacity: 1; transform: translateY(0); }
-  to   { opacity: 0; transform: translateY(-5px); }
+  from { opacity: 1; }
+  to   { opacity: 0; }
 }
-.page-enter { animation: page-in 0.25s ease forwards; }
+.page-enter { animation: page-in 0.2s ease forwards; }
 .page-exit  { animation: page-out 0.15s ease forwards; }
-.animate-page-in { animation: page-in 0.25s ease forwards; }
+.animate-page-in { animation: page-in 0.2s ease forwards; }
 
 /* ─── Scroll reveal (#49) ────────────────────────────────────────────────── */
 .reveal {

@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 
@@ -14,12 +15,13 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = 'ma
   useBodyScrollLock(isOpen);
   if (!isOpen) return null;
 
-  return (
+  // Portal to document.body so no ancestor transform can break position:fixed
+  return createPortal(
     <div className="fixed inset-0 z-50 overscroll-contain">
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/80 modal-backdrop" onClick={onClose} />
 
-      {/* Mobile: sheet anchored to bottom — Desktop: centered */}
+      {/* Mobile: bottom sheet — Desktop: centered */}
       <div className="absolute inset-0 flex items-end sm:items-center justify-center sm:p-4 pointer-events-none">
         <div className={`relative w-full ${maxWidth} flex flex-col glass-panel shadow-card-lg
           rounded-t-2xl sm:rounded-xl overflow-hidden modal-enter pointer-events-auto`}>
@@ -52,6 +54,7 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = 'ma
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
