@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { thumbUrl } from '../utils/photoUrl';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Search,
@@ -273,7 +274,7 @@ export default function History() {
                 <div className="absolute inset-0">
                   {car.photo
                     ? <img
-                        src={car.photo}
+                        src={thumbUrl(car.photo, 640, 72)!}
                         alt=""
                         className="w-full h-full object-cover"
                         loading="lazy"
@@ -373,7 +374,7 @@ export default function History() {
                 {/* Thumbnail with SOLD badge */}
                 <div className="w-24 h-16 bg-obsidian-700/60 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center relative">
                   {car.photo
-                    ? <img src={car.photo} alt={`${car.make} ${car.model}`} className="w-full h-full object-cover" loading="lazy" />
+                    ? <img src={thumbUrl(car.photo, 300, 72)!} alt={`${car.make} ${car.model}`} className="w-full h-full object-cover" loading="lazy" />
                     : <CarIcon size={20} className="text-gray-600" />
                   }
                   <div className="absolute inset-0 flex items-center justify-center bg-black/40">

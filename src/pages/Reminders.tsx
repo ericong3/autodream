@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { thumbUrl } from '../utils/photoUrl';
 import {
   Plus,
   ClipboardList,
@@ -431,7 +432,7 @@ export default function Instructions() {
                             {/* Photo */}
                             <div className="w-16 h-12 rounded-lg overflow-hidden shrink-0 bg-obsidian-700/60 flex items-center justify-center">
                               {car.photo
-                                ? <img src={car.photo} alt="" className="w-full h-full object-cover" />
+                                ? <img src={thumbUrl(car.photo, 200, 70)!} alt="" className="w-full h-full object-cover" />
                                 : <CarIcon size={18} className="text-gray-600" />
                               }
                             </div>

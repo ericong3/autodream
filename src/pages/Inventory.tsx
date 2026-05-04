@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { thumbUrl } from '../utils/photoUrl';
 import {
   Search,
   LayoutGrid,
@@ -157,7 +158,7 @@ export default function Inventory() {
   };
 
 
-  const compressImage = (file: File, maxWidth = 1280, quality = 0.82): Promise<Blob> =>
+  const compressImage = (file: File, maxWidth = 900, quality = 0.78): Promise<Blob> =>
     new Promise((resolve) => {
       const img = new Image();
       const url = URL.createObjectURL(file);
@@ -541,7 +542,7 @@ export default function Inventory() {
                     {/* Thumbnail */}
                     <div className="w-16 h-11 bg-obsidian-700/60 rounded-lg flex-shrink-0 flex items-center justify-center">
                       {car.photo
-                        ? <img src={car.photo} alt="" className="w-full h-full object-cover rounded-lg" loading="lazy" />
+                        ? <img src={thumbUrl(car.photo, 200, 70)!} alt="" className="w-full h-full object-cover rounded-lg" loading="lazy" />
                         : <CarIcon size={18} className="text-gray-600" />
                       }
                     </div>
@@ -647,7 +648,7 @@ export default function Inventory() {
               {/* Full-bleed photo */}
               <div className="absolute inset-0">
                 {car.photo
-                  ? <img src={car.photo} alt="" className="w-full h-full object-cover" loading="lazy" />
+                  ? <img src={thumbUrl(car.photo, 640, 72)!} alt="" className="w-full h-full object-cover" loading="lazy" />
                   : <div className="w-full h-full flex items-center justify-center bg-obsidian-800">
                       <CarIcon size={40} className="text-gray-700" />
                     </div>
@@ -810,7 +811,7 @@ export default function Inventory() {
                 {/* Thumbnail */}
                 <div className="w-24 h-16 bg-obsidian-700/60 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center relative">
                   {car.photo
-                    ? <img src={car.photo} alt={`${car.make} ${car.model}`} className="w-full h-full object-cover" loading="lazy" />
+                    ? <img src={thumbUrl(car.photo, 300, 72)!} alt={`${car.make} ${car.model}`} className="w-full h-full object-cover" loading="lazy" />
                     : <CarIcon size={20} className="text-gray-600" />
                   }
                   {car.status === 'delivered' && (

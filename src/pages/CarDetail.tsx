@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
+import { thumbUrl } from '../utils/photoUrl';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -307,7 +308,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     return () => window.removeEventListener('keydown', handler);
   }, [showGallery, allPhotos.length]);
 
-  const compressImage = (file: File, maxWidth = 1280, quality = 0.82): Promise<Blob> =>
+  const compressImage = (file: File, maxWidth = 900, quality = 0.78): Promise<Blob> =>
     new Promise((resolve) => {
       const img = document.createElement('img');
       const url = URL.createObjectURL(file);
@@ -681,7 +682,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             />
             {car.photo ? (
               <img
-                src={car.photo}
+                src={thumbUrl(car.photo, 900, 80)!}
                 alt={`${car.make} ${car.model}`}
                 className="w-full h-full object-cover opacity-0 transition-opacity duration-300"
                 loading="lazy"
@@ -2158,7 +2159,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           {/* Main image */}
           <div className="flex-1 flex items-center justify-center relative px-14 min-h-0" onClick={(e) => e.stopPropagation()}>
             <img
-              src={allPhotos[galleryIndex]}
+              src={thumbUrl(allPhotos[galleryIndex], 1400, 85)!}
               alt={`Photo ${galleryIndex + 1}`}
               className="max-w-full max-h-full object-contain rounded-lg"
             />
@@ -2190,7 +2191,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   className={`flex-shrink-0 w-16 h-12 rounded-lg overflow-hidden border-2 transition-colors ${i === galleryIndex ? 'border-gold-400' : 'border-transparent opacity-50 hover:opacity-80'}`}
                 >
                   <img
-                    src={src}
+                    src={thumbUrl(src, 200, 70)!}
                     alt={`thumb-${i}`}
                     className="w-full h-full object-cover opacity-0 transition-opacity duration-200"
                     loading="lazy"

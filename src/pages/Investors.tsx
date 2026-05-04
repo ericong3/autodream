@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { thumbUrl } from '../utils/photoUrl';
 import {
   Users, Plus, ChevronDown, ChevronUp, Car as CarIcon,
   Package, CheckCircle2, Edit2, X, Eye, EyeOff,
@@ -297,7 +298,7 @@ export default function Investors() {
                 return (
                   <div key={car.id} className="flex items-center gap-3 px-4 py-3">
                     <div className="w-14 h-10 bg-obsidian-700/60 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center">
-                      {car.photo ? <img src={car.photo} alt="" className="w-full h-full object-cover" loading="lazy" /> : <CarIcon size={13} className="text-gray-600" />}
+                      {car.photo ? <img src={thumbUrl(car.photo, 300, 72)!} alt="" className="w-full h-full object-cover" loading="lazy" /> : <CarIcon size={13} className="text-gray-600" />}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -576,7 +577,7 @@ export default function Investors() {
                       return (
                         <div key={car.id} className="flex items-center gap-3 px-4 py-3">
                           <div className="w-14 h-10 bg-obsidian-700/60 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center">
-                            {car.photo ? <img src={car.photo} alt="" className="w-full h-full object-cover" loading="lazy" /> : <CarIcon size={13} className="text-gray-600" />}
+                            {car.photo ? <img src={thumbUrl(car.photo, 300, 72)!} alt="" className="w-full h-full object-cover" loading="lazy" /> : <CarIcon size={13} className="text-gray-600" />}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
@@ -616,7 +617,7 @@ export default function Investors() {
                       return (
                         <div key={car.id} className="flex items-center gap-3 px-4 py-3">
                           <div className="w-14 h-10 bg-obsidian-700/60 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center">
-                            {car.photo ? <img src={car.photo} alt="" className="w-full h-full object-cover" loading="lazy" /> : <CarIcon size={13} className="text-gray-600" />}
+                            {car.photo ? <img src={thumbUrl(car.photo, 300, 72)!} alt="" className="w-full h-full object-cover" loading="lazy" /> : <CarIcon size={13} className="text-gray-600" />}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
@@ -723,7 +724,7 @@ export default function Investors() {
                             return (
                               <div key={car.id} className="flex items-center gap-3 px-4 py-3">
                                 <div className="w-14 h-10 bg-obsidian-700/60 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center">
-                                  {car.photo ? <img src={car.photo} alt="" className="w-full h-full object-cover" loading="lazy" /> : <CarIcon size={13} className="text-gray-600" />}
+                                  {car.photo ? <img src={thumbUrl(car.photo, 300, 72)!} alt="" className="w-full h-full object-cover" loading="lazy" /> : <CarIcon size={13} className="text-gray-600" />}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 flex-wrap">
@@ -763,7 +764,7 @@ export default function Investors() {
                             return (
                               <div key={car.id} className="flex items-center gap-3 px-4 py-3">
                                 <div className="w-14 h-10 bg-obsidian-700/60 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center">
-                                  {car.photo ? <img src={car.photo} alt="" className="w-full h-full object-cover" loading="lazy" /> : <CarIcon size={13} className="text-gray-600" />}
+                                  {car.photo ? <img src={thumbUrl(car.photo, 300, 72)!} alt="" className="w-full h-full object-cover" loading="lazy" /> : <CarIcon size={13} className="text-gray-600" />}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 flex-wrap">

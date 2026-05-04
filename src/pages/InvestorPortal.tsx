@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Car as CarIcon, Package, CheckCircle2 } from 'lucide-react';
 import { useStore } from '../store';
 import { formatRM } from '../utils/format';
+import { thumbUrl } from '../utils/photoUrl';
 import { Car } from '../types';
 
 const STATUS_LABEL: Record<Car['status'], string> = {
@@ -136,7 +137,7 @@ export default function InvestorPortal() {
                     {/* Photo */}
                     <div className="w-20 h-14 bg-obsidian-700/60 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center">
                       {car.photo
-                        ? <img src={car.photo} alt="" className="w-full h-full object-cover" loading="lazy" />
+                        ? <img src={thumbUrl(car.photo, 300, 72)!} alt="" className="w-full h-full object-cover" loading="lazy" />
                         : <CarIcon size={20} className="text-gray-600" />}
                     </div>
                     {/* Info */}
