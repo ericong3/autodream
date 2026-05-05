@@ -168,6 +168,18 @@ export interface Merchant {
   category?: string;
 }
 
+export interface ExternalSalesman {
+  id: string;
+  name: string;
+  ic?: string;
+  phone?: string;
+  email?: string;
+  bank?: string;
+  bankAccount?: string;
+  notes?: string;
+  createdAt: string;
+}
+
 export interface Consignment {
   dealer: string;
   terms: 'fixed_amount' | 'profit_split';
@@ -210,6 +222,13 @@ export interface Car {
   miscCosts?: MiscCost[];
   investorId?: string;   // investor user id who funded this car
   investorSplit?: number; // investor's profit share % (default 50)
+  sourceSalesman?: string;       // display name (kept for backward compat)
+  sourceType?: 'external' | 'internal';
+  externalSalesmanId?: string;   // links to ExternalSalesman entity
+  sourceSalesmanId?: string;     // links to User.id for internal AutoDream salesperson
+  sourceCommission?: number;     // commission paid to source person (external fee or internal sourcing bonus)
+  intakeCommission?: number;     // in-house salesman bonus when external source: 0 | 500 | 1000
+  carInDate?: string;            // date director clicked "Car In" — commission counts from this date
 }
 
 export interface MiscCost {

@@ -1,21 +1,26 @@
 import React, { useState } from 'react';
-import { Plus, X, Building2, Wrench, Package, ShoppingBag } from 'lucide-react';
+import { Plus, X, Building2, Wrench, Package, ShoppingBag, UserCheck } from 'lucide-react';
 import { useStore } from '../store';
-import { generateId } from '../utils/format';
+import { formatRM, generateId } from '../utils/format';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
+import Modal from '../components/Modal';
+import { ExternalSalesman } from '../types';
 
-type Tab = 'dealers' | 'workshops' | 'suppliers' | 'misc';
+type Tab = 'dealers' | 'workshops' | 'suppliers' | 'misc' | 'ext_salesmen';
 
 const TABS: { key: Tab; label: string; icon: React.ElementType; color: string }[] = [
-  { key: 'dealers',   label: 'Car Dealers', icon: Building2,   color: 'text-blue-400'   },
-  { key: 'workshops', label: 'Workshops',   icon: Wrench,      color: 'text-orange-400' },
-  { key: 'suppliers', label: 'Suppliers',   icon: Package,     color: 'text-green-400'  },
-  { key: 'misc',      label: 'Misc',        icon: ShoppingBag, color: 'text-purple-400' },
+  { key: 'dealers',      label: 'Car Dealers',   icon: Building2,  color: 'text-blue-400'   },
+  { key: 'workshops',    label: 'Workshops',     icon: Wrench,     color: 'text-orange-400' },
+  { key: 'suppliers',    label: 'Suppliers',     icon: Package,    color: 'text-green-400'  },
+  { key: 'misc',         label: 'Misc',          icon: ShoppingBag,color: 'text-purple-400' },
+  { key: 'ext_salesmen', label: 'Ext. Salesmen', icon: UserCheck,  color: 'text-teal-400'   },
 ];
 
 function inputCls() {
   return 'w-full bg-obsidian-700/60 border border-obsidian-400/60 text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500 transition-colors';
 }
+
+const emptyExtSalesman = { name: '', ic: '', phone: '', email: '', bank: '', bankAccount: '', notes: '' };
 
 export default function Data() {
   const [activeTab, setActiveTab] = useState<Tab>('dealers');
@@ -33,11 +38,20 @@ export default function Data() {
   const merchants      = useStore((s) => s.merchants);
   const addMerchant    = useStore((s) => s.addMerchant);
   const deleteMerchant = useStore((s) => s.deleteMerchant);
+  const externalSalesmen     = useStore((s) => s.externalSalesmen);
+  const addExternalSalesman    = useStore((s) => s.addExternalSalesman);
+  const updateExternalSalesman = useStore((s) => s.updateExternalSalesman);
+  const deleteExternalSalesman = useStore((s) => s.deleteExternalSalesman);
+  const cars = useStore((s) => s.cars);
 
   const [dealerForm,   setDealerForm]   = useState({ name: '', phone: '' });
   const [workshopForm, setWorkshopForm] = useState({ name: '', phone: '', speciality: '' });
   const [supplierForm, setSupplierForm] = useState({ name: '', phone: '', category: '' });
   const [merchantForm, setMerchantForm] = useState({ name: '', phone: '', category: '' });
+  const [extForm, setExtForm] = useState(emptyExtSalesman);
+  const [extProfileTarget, setExtProfileTarget] = useState<ExternalSalesman | null>(null);
+  const [extEditMode, setExtEditMode] = useState(false);
+  const [extEditForm, setExtEditForm] = useState(emptyExtSalesman);
 
   const handleAdd = async (fn: () => Promise<void>) => {
     setError('');
@@ -165,6 +179,258 @@ export default function Data() {
           deleteMerchant={deleteMerchant}
         />
       )}
+
+      {/* External Salesmen */}
+      {activeTab === 'ext_salesmen' && (
+        <ExternalSalesmenTab
+          salesmen={externalSalesmen}
+          cars={cars}
+          form={extForm}
+          setForm={setExtForm}
+          onAdd={() => handleAdd(async () => {
+            if (!extForm.name.trim()) return;
+            await addExternalSalesman({
+              id: generateId(),
+              name: extForm.name.trim(),
+              ic: extForm.ic || undefined,
+              phone: extForm.phone || undefined,
+              email: extForm.email || undefined,
+              bank: extForm.bank || undefined,
+              bankAccount: extForm.bankAccount || undefined,
+              notes: extForm.notes || undefined,
+              createdAt: new Date().toISOString(),
+            });
+            setExtForm(emptyExtSalesman);
+          })}
+          onViewProfile={(s) => { setExtProfileTarget(s); setExtEditMode(false); setExtEditForm({ name: s.name, ic: s.ic ?? '', phone: s.phone ?? '', email: s.email ?? '', bank: s.bank ?? '', bankAccount: s.bankAccount ?? '', notes: s.notes ?? '' }); }}
+          onDelete={(id) => deleteExternalSalesman(id)}
+        />
+      )}
+
+      {/* External Salesman Profile Modal */}
+      <Modal
+        isOpen={!!extProfileTarget}
+        onClose={() => { setExtProfileTarget(null); setExtEditMode(false); }}
+        title={extProfileTarget?.name ?? 'Profile'}
+        maxWidth="max-w-2xl"
+      >
+        {extProfileTarget && (() => {
+          const sourcedCars = cars.filter(c => c.externalSalesmanId === extProfileTarget.id);
+          const totalComm = sourcedCars.reduce((s, c) => s + (c.sourceCommission ?? 0), 0);
+          return (
+            <div className="space-y-5">
+              {extEditMode ? (
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { label: 'Full Name *', key: 'name', type: 'text' },
+                    { label: 'IC Number', key: 'ic', type: 'text' },
+                    { label: 'Phone', key: 'phone', type: 'tel' },
+                    { label: 'Email', key: 'email', type: 'email' },
+                    { label: 'Bank', key: 'bank', type: 'text' },
+                    { label: 'Bank Account No.', key: 'bankAccount', type: 'text' },
+                  ].map(f => (
+                    <div key={f.key}>
+                      <label className="block text-gray-400 text-xs mb-1">{f.label}</label>
+                      <input
+                        type={f.type}
+                        className={inputCls()}
+                        value={(extEditForm as any)[f.key]}
+                        onChange={e => setExtEditForm({ ...extEditForm, [f.key]: e.target.value })}
+                      />
+                    </div>
+                  ))}
+                  <div className="col-span-2">
+                    <label className="block text-gray-400 text-xs mb-1">Notes</label>
+                    <textarea className={`${inputCls()} h-16 resize-none`} value={extEditForm.notes} onChange={e => setExtEditForm({ ...extEditForm, notes: e.target.value })} />
+                  </div>
+                  <div className="col-span-2 flex gap-3">
+                    <button onClick={() => setExtEditMode(false)} className="flex-1 px-4 py-2 btn-ghost rounded-lg text-sm">Cancel</button>
+                    <button
+                      onClick={async () => {
+                        if (!extEditForm.name.trim()) return;
+                        await updateExternalSalesman(extProfileTarget.id, { name: extEditForm.name.trim(), ic: extEditForm.ic || undefined, phone: extEditForm.phone || undefined, email: extEditForm.email || undefined, bank: extEditForm.bank || undefined, bankAccount: extEditForm.bankAccount || undefined, notes: extEditForm.notes || undefined });
+                        setExtProfileTarget({ ...extProfileTarget, ...extEditForm });
+                        setExtEditMode(false);
+                      }}
+                      className="flex-1 btn-gold px-4 py-2 rounded-lg text-sm"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Info cards */}
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { label: 'IC Number', value: extProfileTarget.ic },
+                      { label: 'Phone', value: extProfileTarget.phone },
+                      { label: 'Email', value: extProfileTarget.email },
+                      { label: 'Bank', value: extProfileTarget.bank },
+                      { label: 'Bank Account', value: extProfileTarget.bankAccount },
+                    ].filter(f => f.value).map(f => (
+                      <div key={f.label} className="bg-obsidian-700/40 border border-obsidian-400/40 rounded-lg px-3 py-2">
+                        <p className="text-gray-500 text-xs">{f.label}</p>
+                        <p className="text-white text-sm font-medium mt-0.5">{f.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {extProfileTarget.notes && (
+                    <div className="bg-obsidian-700/40 border border-obsidian-400/40 rounded-lg px-3 py-2">
+                      <p className="text-gray-500 text-xs">Notes</p>
+                      <p className="text-gray-300 text-sm mt-0.5">{extProfileTarget.notes}</p>
+                    </div>
+                  )}
+                  {/* Stats */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl p-4">
+                      <p className="text-2xl font-bold text-gold-400">{sourcedCars.length}</p>
+                      <p className="text-gray-400 text-xs mt-1">Cars Sourced</p>
+                    </div>
+                    <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl p-4">
+                      <p className="text-2xl font-bold text-teal-400">{formatRM(totalComm)}</p>
+                      <p className="text-gray-400 text-xs mt-1">Total Commission Earned</p>
+                    </div>
+                  </div>
+                  {/* Edit button */}
+                  <button
+                    onClick={() => setExtEditMode(true)}
+                    className="w-full px-4 py-2 text-sm btn-ghost rounded-lg border border-obsidian-400/60"
+                  >
+                    Edit Profile
+                  </button>
+                </>
+              )}
+
+              {/* Cars they sourced */}
+              {sourcedCars.length > 0 && !extEditMode && (
+                <div>
+                  <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-2">Cars Sourced</p>
+                  <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-gray-500 text-xs border-b border-obsidian-400/60 bg-[#161410]">
+                          <th className="text-left px-4 py-2.5 font-medium">Vehicle</th>
+                          <th className="text-left px-4 py-2.5 font-medium">Date</th>
+                          <th className="text-right px-4 py-2.5 font-medium">Commission</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sourcedCars.map((c, i) => (
+                          <tr key={c.id} className={`border-b border-obsidian-400/30 ${i % 2 !== 0 ? 'bg-obsidian-950/30' : ''}`}>
+                            <td className="px-4 py-2.5">
+                              <p className="text-white font-medium">{c.year} {c.make} {c.model}</p>
+                              <p className="text-gray-500 text-xs capitalize">{c.status}</p>
+                            </td>
+                            <td className="px-4 py-2.5 text-gray-400 text-xs">{new Date(c.dateAdded).toLocaleDateString('en-MY')}</td>
+                            <td className="px-4 py-2.5 text-right text-teal-400 font-semibold">{formatRM(c.sourceCommission ?? 0)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t border-obsidian-400/60 bg-[#161410]">
+                          <td colSpan={2} className="px-4 py-2.5 text-gray-400 text-xs">Total</td>
+                          <td className="px-4 py-2.5 text-right text-teal-400 font-bold">{formatRM(totalComm)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </Modal>
+    </div>
+  );
+}
+
+function ExternalSalesmenTab({
+  salesmen, cars, form, setForm, onAdd, onViewProfile, onDelete,
+}: {
+  salesmen: ExternalSalesman[];
+  cars: any[];
+  form: typeof emptyExtSalesman;
+  setForm: (f: typeof emptyExtSalesman) => void;
+  onAdd: () => void;
+  onViewProfile: (s: ExternalSalesman) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
+
+  return (
+    <div className="space-y-4">
+      {/* Add form */}
+      <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="w-1 h-4 rounded-full bg-gold-gradient" />
+          <UserCheck size={15} className="text-teal-400" />
+          <h3 className="text-white font-semibold text-sm">Register External Salesman</h3>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <input className={inputCls()} placeholder="Full Name *" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+          <input className={inputCls()} placeholder="IC Number" value={form.ic} onChange={e => setForm({ ...form, ic: e.target.value })} />
+          <input className={inputCls()} placeholder="Phone" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
+          <input className={inputCls()} placeholder="Email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+          <input className={inputCls()} placeholder="Bank" value={form.bank} onChange={e => setForm({ ...form, bank: e.target.value })} />
+          <div className="flex gap-2">
+            <input className={inputCls()} placeholder="Bank Account No." value={form.bankAccount} onChange={e => setForm({ ...form, bankAccount: e.target.value })} />
+            <button onClick={onAdd} className="btn-gold px-4 py-2 rounded-lg text-sm shrink-0"><Plus size={15} /></button>
+          </div>
+        </div>
+      </div>
+
+      {/* List */}
+      <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card">
+        <div className="flex items-center gap-2 px-5 py-4 border-b border-obsidian-400/60">
+          <UserCheck size={14} className="text-teal-400" />
+          <span className="text-white font-medium text-sm">External Salesmen</span>
+          <span className="ml-auto text-xs text-gray-500">{salesmen.length} registered</span>
+        </div>
+        {salesmen.length === 0 ? (
+          <div className="text-center py-10 text-gray-600 text-sm">No external salesmen registered yet</div>
+        ) : (
+          <div className="divide-y divide-obsidian-400/40">
+            {salesmen.map((s) => {
+              const carCount = cars.filter(c => c.externalSalesmanId === s.id).length;
+              const totalComm = cars.filter(c => c.externalSalesmanId === s.id).reduce((sum, c) => sum + (c.sourceCommission ?? 0), 0);
+              return (
+                <div key={s.id} className="flex items-center justify-between px-5 py-3 hover:bg-obsidian-700/30 transition-colors">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-medium">{s.name}</p>
+                    <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                      {s.ic && <p className="text-gray-500 text-xs">IC: {s.ic}</p>}
+                      {s.phone && <p className="text-gray-500 text-xs">{s.phone}</p>}
+                      <p className="text-teal-400 text-xs">{carCount} car{carCount !== 1 ? 's' : ''} · {formatRM(totalComm)}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => onViewProfile(s)}
+                      className="px-3 py-1.5 text-xs text-teal-400 border border-teal-500/30 rounded-lg hover:bg-teal-500/10 transition-colors"
+                    >
+                      Profile
+                    </button>
+                    <button
+                      onClick={() => setDeleteTarget({ id: s.id, label: s.name })}
+                      className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <DeleteConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={async () => { if (deleteTarget) onDelete(deleteTarget.id); }}
+        itemName={deleteTarget?.label ?? ''}
+      />
     </div>
   );
 }

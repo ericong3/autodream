@@ -71,6 +71,29 @@ export default function Commission() {
   const monthSold = filteredSoldCars.length;
   const monthCommission = filteredSoldCars.reduce((s, c) => s + calcCommission(c), 0);
 
+  const allIntakeCars = cars.filter(c =>
+    (c.intakeCommission ?? 0) > 0 && c.assignedSalesperson &&
+    c.status !== 'coming_soon' && c.carInDate &&
+    (!salesFilter || c.assignedSalesperson === salesFilter)
+  );
+  const filteredIntakeCars = allIntakeCars.filter(c =>
+    !monthFilter || c.carInDate!.startsWith(monthFilter)
+  );
+  const totalIntakeAll = allIntakeCars.reduce((s, c) => s + (c.intakeCommission ?? 0), 0);
+  const monthIntake = filteredIntakeCars.reduce((s, c) => s + (c.intakeCommission ?? 0), 0);
+
+  // Sourcing commission — cars where this salesperson is the internal source
+  const allSourcingCars = cars.filter(c =>
+    c.sourceType === 'internal' &&
+    c.status !== 'coming_soon' && c.carInDate &&
+    (!salesFilter || c.sourceSalesmanId === salesFilter)
+  );
+  const filteredSourcingCars = allSourcingCars.filter(c =>
+    !monthFilter || c.carInDate!.startsWith(monthFilter)
+  );
+  const totalSourcingAll = allSourcingCars.reduce((s, c) => s + (c.sourceCommission ?? 0), 0);
+  const monthSourcing = filteredSourcingCars.reduce((s, c) => s + (c.sourceCommission ?? 0), 0);
+
   const getSalesName = (id?: string) => {
     if (!id) return 'Unassigned';
     return users.find(u => u.id === id)?.name ?? id;
@@ -134,11 +157,15 @@ export default function Commission() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
               { label: 'Total Cars Sold', value: totalSoldAll, sub: 'all time', color: 'text-gold-400' },
-              { label: 'Total Earned', value: formatRM(totalCommissionAll), sub: 'all time', color: 'text-green-400' },
-              { label: 'This Month Sold', value: monthSold, sub: monthFilter, color: 'text-yellow-400' },
-              { label: 'This Month Earned', value: formatRM(monthCommission), sub: monthFilter, color: 'text-purple-400' },
+              { label: 'Deal Commission', value: formatRM(totalCommissionAll), sub: 'all time', color: 'text-green-400' },
+              { label: 'Intake Bonus', value: formatRM(totalIntakeAll), sub: 'all time', color: 'text-teal-400' },
+              { label: 'Sourcing Commission', value: formatRM(totalSourcingAll), sub: 'all time', color: 'text-blue-400' },
+              { label: 'Month Cars Sold', value: monthSold, sub: monthFilter || 'all months', color: 'text-yellow-400' },
+              { label: 'Deal Commission', value: formatRM(monthCommission), sub: monthFilter || 'all months', color: 'text-purple-400' },
+              { label: 'Intake Bonus', value: formatRM(monthIntake), sub: monthFilter || 'all months', color: 'text-cyan-400' },
+              { label: 'Sourcing Commission', value: formatRM(monthSourcing), sub: monthFilter || 'all months', color: 'text-indigo-400' },
             ].map(s => (
-              <div key={s.label} className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-4">
+              <div key={s.label + s.sub} className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-4">
                 <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
                 <p className="text-gray-400 text-xs mt-1">{s.label}</p>
                 <p className="text-gray-600 text-xs">{s.sub}</p>
@@ -174,7 +201,7 @@ export default function Commission() {
             )}
           </div>
 
-          {/* Table */}
+          {/* Deal Commission Table */}
           {filteredSoldCars.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card">
               <Car size={36} className="text-gray-600 mb-3" />
@@ -182,6 +209,9 @@ export default function Commission() {
             </div>
           ) : (
             <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card overflow-hidden">
+              <div className="px-5 py-3 border-b border-obsidian-400/40 bg-[#161410]">
+                <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Deal Commission — Sold Cars</p>
+              </div>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-gray-500 text-xs border-b border-obsidian-400/60 bg-[#161410]">
@@ -218,6 +248,90 @@ export default function Commission() {
                     </td>
                     <td className="px-5 py-3 text-right text-green-400 font-bold">
                       {formatRM(filteredSoldCars.reduce((s, c) => s + calcCommission(c), 0))}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+
+          {/* Sourcing Commission Table */}
+          {filteredSourcingCars.length > 0 && (
+            <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card overflow-hidden">
+              <div className="px-5 py-3 border-b border-obsidian-400/40 bg-[#161410]">
+                <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Sourcing Commission — Cars You Brought In</p>
+              </div>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-gray-500 text-xs border-b border-obsidian-400/60 bg-[#161410]">
+                    <th className="text-left px-5 py-3 font-medium">Vehicle</th>
+                    <th className="text-left px-5 py-3 font-medium">Date Added</th>
+                    <th className="text-left px-5 py-3 font-medium">Status</th>
+                    <th className="text-right px-5 py-3 font-medium">Commission</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredSourcingCars.map((c, i) => (
+                    <tr key={c.id} className={`border-b border-obsidian-400/30 ${i % 2 !== 0 ? 'bg-obsidian-950/30' : ''} hover:bg-obsidian-700/50 transition-colors`}>
+                      <td className="px-5 py-3">
+                        <p className="text-white font-medium">{c.year} {c.make} {c.model}</p>
+                        <p className="text-gray-500 text-xs capitalize">{c.colour} · {c.carPlate ?? '—'}</p>
+                      </td>
+                      <td className="px-5 py-3 text-gray-400">{new Date(c.dateAdded).toLocaleDateString('en-MY')}</td>
+                      <td className="px-5 py-3">
+                        <span className="text-xs capitalize px-2 py-0.5 rounded-full bg-obsidian-700/60 text-gray-400">{c.status.replace('_', ' ')}</span>
+                      </td>
+                      <td className="px-5 py-3 text-right text-blue-400 font-semibold">{formatRM(c.sourceCommission ?? 0)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-obsidian-400/60 bg-[#161410]">
+                    <td colSpan={3} className="px-5 py-3 text-gray-400 text-xs font-medium">Total ({filteredSourcingCars.length} car{filteredSourcingCars.length !== 1 ? 's' : ''})</td>
+                    <td className="px-5 py-3 text-right text-blue-400 font-bold">{formatRM(monthSourcing)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+
+          {/* Intake Commission Table */}
+          {filteredIntakeCars.length > 0 && (
+            <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card overflow-hidden">
+              <div className="px-5 py-3 border-b border-obsidian-400/40 bg-[#161410]">
+                <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Intake Commission — Sourced Cars</p>
+              </div>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-gray-500 text-xs border-b border-obsidian-400/60 bg-[#161410]">
+                    <th className="text-left px-5 py-3 font-medium">Vehicle</th>
+                    <th className="text-left px-5 py-3 font-medium">Date Added</th>
+                    {isDirector && <th className="text-left px-5 py-3 font-medium">In-house Salesman</th>}
+                    <th className="text-left px-5 py-3 font-medium">Source</th>
+                    <th className="text-right px-5 py-3 font-medium">Commission</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredIntakeCars.map((c, i) => (
+                    <tr key={c.id} className={`border-b border-obsidian-400/60/50 ${i % 2 !== 0 ? 'bg-obsidian-950/30' : ''} hover:bg-obsidian-700/50 transition-colors`}>
+                      <td className="px-5 py-3">
+                        <p className="text-white font-medium">{c.year} {c.make} {c.model}</p>
+                        <p className="text-gray-500 text-xs capitalize">{c.colour} · {c.carPlate ?? '—'}</p>
+                      </td>
+                      <td className="px-5 py-3 text-gray-400">{new Date(c.dateAdded).toLocaleDateString('en-MY')}</td>
+                      {isDirector && <td className="px-5 py-3 text-gray-400">{getSalesName(c.assignedSalesperson)}</td>}
+                      <td className="px-5 py-3 text-gray-400">{c.sourceSalesman || '—'}</td>
+                      <td className="px-5 py-3 text-right text-teal-400 font-semibold">{formatRM(c.intakeCommission ?? 0)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-obsidian-400/60 bg-[#161410]">
+                    <td colSpan={isDirector ? 4 : 3} className="px-5 py-3 text-gray-400 text-xs font-medium">
+                      Total ({filteredIntakeCars.length} car{filteredIntakeCars.length !== 1 ? 's' : ''})
+                    </td>
+                    <td className="px-5 py-3 text-right text-teal-400 font-bold">
+                      {formatRM(monthIntake)}
                     </td>
                   </tr>
                 </tfoot>

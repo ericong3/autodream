@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
-import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, MiscCost } from '../types';
+import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, MiscCost, ExternalSalesman } from '../types';
 
 interface StoreState {
   currentUser: User | null;
@@ -17,6 +17,7 @@ interface StoreState {
   workshops: Workshop[];
   suppliers: Supplier[];
   merchants: Merchant[];
+  externalSalesmen: ExternalSalesman[];
   viewPreference: Record<string, 'grid' | 'list'>;
   loaded: boolean;
   lastFetched: number | null;
@@ -84,6 +85,11 @@ interface StoreState {
   addMerchant: (merchant: Merchant) => Promise<void>;
   deleteMerchant: (id: string) => Promise<void>;
 
+  // External Salesmen
+  addExternalSalesman: (s: ExternalSalesman) => Promise<void>;
+  updateExternalSalesman: (id: string, s: Partial<ExternalSalesman>) => Promise<void>;
+  deleteExternalSalesman: (id: string) => Promise<void>;
+
   // Misc Costs
   addMiscCost: (carId: string, misc: MiscCost) => Promise<void>;
   deleteMiscCost: (carId: string, miscId: string) => Promise<void>;
@@ -128,7 +134,42 @@ function rowToCar(r: any): Car {
     miscCosts: r.misc_costs ?? [],
     investorId: r.investor_id ?? undefined,
     investorSplit: r.investor_split ?? undefined,
+    sourceSalesman: r.source_salesman ?? undefined,
+    sourceType: r.source_type ?? undefined,
+    externalSalesmanId: r.external_salesman_id ?? undefined,
+    sourceSalesmanId: r.source_salesman_id ?? undefined,
+    sourceCommission: r.source_commission ?? undefined,
+    intakeCommission: r.intake_commission ?? undefined,
+    carInDate: r.car_in_date ?? undefined,
   };
+}
+
+function rowToExternalSalesman(r: any): ExternalSalesman {
+  return {
+    id: r.id,
+    name: r.name,
+    ic: r.ic ?? undefined,
+    phone: r.phone ?? undefined,
+    email: r.email ?? undefined,
+    bank: r.bank ?? undefined,
+    bankAccount: r.bank_account ?? undefined,
+    notes: r.notes ?? undefined,
+    createdAt: r.created_at,
+  };
+}
+
+function externalSalesmanToRow(s: Partial<ExternalSalesman>) {
+  const row: any = {};
+  if (s.id !== undefined) row.id = s.id;
+  if (s.name !== undefined) row.name = s.name;
+  if (s.ic !== undefined) row.ic = s.ic;
+  if (s.phone !== undefined) row.phone = s.phone;
+  if (s.email !== undefined) row.email = s.email;
+  if (s.bank !== undefined) row.bank = s.bank;
+  if (s.bankAccount !== undefined) row.bank_account = s.bankAccount;
+  if (s.notes !== undefined) row.notes = s.notes;
+  if (s.createdAt !== undefined) row.created_at = s.createdAt;
+  return row;
 }
 
 function carToRow(c: Partial<Car>) {
@@ -166,6 +207,13 @@ function carToRow(c: Partial<Car>) {
   if (c.miscCosts !== undefined) row.misc_costs = c.miscCosts;
   if (c.investorId !== undefined) row.investor_id = c.investorId;
   if (c.investorSplit !== undefined) row.investor_split = c.investorSplit;
+  if (c.sourceSalesman !== undefined) row.source_salesman = c.sourceSalesman;
+  if (c.sourceType !== undefined) row.source_type = c.sourceType;
+  if (c.externalSalesmanId !== undefined) row.external_salesman_id = c.externalSalesmanId;
+  if (c.sourceSalesmanId !== undefined) row.source_salesman_id = c.sourceSalesmanId;
+  if (c.sourceCommission !== undefined) row.source_commission = c.sourceCommission;
+  if (c.intakeCommission !== undefined) row.intake_commission = c.intakeCommission;
+  if (c.carInDate !== undefined) row.car_in_date = c.carInDate;
   return row;
 }
 
@@ -459,6 +507,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   workshops: [],
   suppliers: [],
   merchants: [],
+  externalSalesmen: [],
   viewPreference: {},
   loaded: false,
   lastFetched: null,
@@ -483,6 +532,10 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         supabase.from('suppliers').select('*'),
         supabase.from('merchants').select('*'),
       ]);
+
+    // Load external salesmen separately so a missing table doesn't block the main load
+    const externalSalesmenResult = await supabase.from('external_salesmen').select('*');
+    const externalSalesmenRows = externalSalesmenResult.data ?? [];
 
     const allCars = (cars.data ?? []).map(rowToCar);
     const allCustomers = (customers.data ?? []).map(rowToCustomer);
@@ -523,6 +576,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       workshops: (workshops.data ?? []) as Workshop[],
       suppliers: (suppliers.data ?? []) as Supplier[],
       merchants: (merchants.data ?? []) as Merchant[],
+      externalSalesmen: externalSalesmenRows.map(rowToExternalSalesman),
       loaded: true,
       lastFetched: Date.now(),
     });
@@ -750,6 +804,22 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         }
       })
       .subscribe();
+
+    supabase.channel('realtime-external-salesmen')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'external_salesmen' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          set((s) => ({
+            externalSalesmen: s.externalSalesmen.some((x) => x.id === (payload.new as any).id)
+              ? s.externalSalesmen
+              : [...s.externalSalesmen, rowToExternalSalesman(payload.new)],
+          }));
+        } else if (payload.eventType === 'UPDATE') {
+          set((s) => ({ externalSalesmen: s.externalSalesmen.map((x) => x.id === (payload.new as any).id ? rowToExternalSalesman(payload.new) : x) }));
+        } else if (payload.eventType === 'DELETE') {
+          set((s) => ({ externalSalesmen: s.externalSalesmen.filter((x) => x.id !== (payload.old as any).id) }));
+        }
+      })
+      .subscribe();
   },
 
   login: async (username, password) => {
@@ -778,9 +848,11 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     }
   },
   updateCar: async (id, car) => {
+    const prev = get().cars.find(c => c.id === id);
     set((s) => ({ cars: s.cars.map((c) => (c.id === id ? { ...c, ...car } : c)) }));
     const { error } = await supabase.from('cars').update(carToRow(car)).eq('id', id);
     if (error) {
+      if (prev) set((s) => ({ cars: s.cars.map((c) => (c.id === id ? prev : c)) }));
       console.error('updateCar failed:', error.message);
       throw new Error(error.message);
     }
@@ -997,6 +1069,31 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   deleteMerchant: async (id) => {
     set((s) => ({ merchants: s.merchants.filter((m) => m.id !== id) }));
     await supabase.from('merchants').delete().eq('id', id);
+  },
+
+  addExternalSalesman: async (s) => {
+    set((st) => ({ externalSalesmen: [...st.externalSalesmen, s] }));
+    const row = externalSalesmanToRow(s);
+    delete row.id; // let Supabase generate the UUID
+    const { data, error } = await supabase.from('external_salesmen').insert(row).select().single();
+    if (error) {
+      set((st) => ({ externalSalesmen: st.externalSalesmen.filter((x) => x.id !== s.id) }));
+      throw new Error(error.message);
+    }
+    // Replace temp optimistic entry with real DB record (gets the proper UUID)
+    if (data) {
+      set((st) => ({
+        externalSalesmen: st.externalSalesmen.map((x) => x.id === s.id ? rowToExternalSalesman(data) : x),
+      }));
+    }
+  },
+  updateExternalSalesman: async (id, s) => {
+    set((st) => ({ externalSalesmen: st.externalSalesmen.map((x) => x.id === id ? { ...x, ...s } : x) }));
+    await supabase.from('external_salesmen').update(externalSalesmanToRow(s)).eq('id', id);
+  },
+  deleteExternalSalesman: async (id) => {
+    set((st) => ({ externalSalesmen: st.externalSalesmen.filter((x) => x.id !== id) }));
+    await supabase.from('external_salesmen').delete().eq('id', id);
   },
 
   addMiscCost: async (carId, misc) => {

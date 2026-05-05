@@ -77,6 +77,12 @@ const emptyForm: Omit<Car, 'id' | 'dateAdded'> = {
   consignment: undefined,
   investorId: undefined,
   investorSplit: 50,
+  sourceType: undefined,
+  externalSalesmanId: undefined,
+  sourceSalesmanId: undefined,
+  sourceCommission: undefined,
+  sourceSalesman: undefined,
+  intakeCommission: undefined,
 };
 
 export default function Inventory() {
@@ -86,8 +92,10 @@ export default function Inventory() {
   const repairs = useStore((s) => s.repairs);
   const currentUser = useStore((s) => s.currentUser);
   const addCar = useStore((s) => s.addCar);
+  const updateCar = useStore((s) => s.updateCar);
   const deleteCar = useStore((s) => s.deleteCar);
   const dealers = useStore((s) => s.dealers);
+  const externalSalesmen = useStore((s) => s.externalSalesmen);
   const viewPreference = useStore((s) => s.viewPreference);
   const setViewPreference = useStore((s) => s.setViewPreference);
   const navigate = useNavigate();
@@ -112,7 +120,8 @@ export default function Inventory() {
     return () => clearTimeout(t);
   }, []);
 
-  const [inventoryTab, setInventoryTab] = useState<'stock' | 'coming_soon'>('stock');
+  const tabParam = searchParams.get('tab');
+  const [inventoryTab, setInventoryTab] = useState<'stock' | 'coming_soon'>(tabParam === 'coming_soon' ? 'coming_soon' : 'stock');
   const [search, setSearch] = useState('');
   const [filterMake, setFilterMake] = useState('All');
   const [filterTransmission, setFilterTransmission] = useState('All');
@@ -341,6 +350,7 @@ export default function Inventory() {
       setShowModal(false);
       setForm(emptyForm);
       setErrors({});
+      if (newCar.status === 'coming_soon') { setInventoryTab('coming_soon'); setSearchParams({ tab: 'coming_soon' }); }
     } catch (e: any) {
       setSubmitError(e.message || 'Failed to save car. Please try again.');
     } finally {
@@ -353,7 +363,7 @@ export default function Inventory() {
       {/* Tabs */}
       <div className="flex gap-1 bg-[#0F0E0C] border border-obsidian-400/60 rounded-lg p-1 w-fit">
         <button
-          onClick={() => setInventoryTab('stock')}
+          onClick={() => { setInventoryTab('stock'); setSearchParams({}); }}
           className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${inventoryTab === 'stock' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
         >
           Stock
@@ -362,7 +372,7 @@ export default function Inventory() {
           </span>
         </button>
         <button
-          onClick={() => setInventoryTab('coming_soon')}
+          onClick={() => { setInventoryTab('coming_soon'); setSearchParams({ tab: 'coming_soon' }); }}
           className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${inventoryTab === 'coming_soon' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
         >
           Coming Soon
@@ -517,10 +527,23 @@ export default function Inventory() {
                         {isDirectorView && inv && (
                           <p className="text-amber-400/80 text-xs mt-1">{inv.name} · {car.investorSplit ?? 50}%</p>
                         )}
-                        <div className="mt-3 pt-3 border-t border-obsidian-400/40">
+                        <div className="mt-3 pt-3 border-t border-obsidian-400/40 space-y-2">
                           <p className="text-gold-400 font-bold">{formatRM(car.sellingPrice)}</p>
                           {isDirectorView && (
-                            <p className="text-gray-600 text-xs mt-0.5">Cost: {formatRM(car.purchasePrice)}</p>
+                            <p className="text-gray-600 text-xs">Cost: {formatRM(car.purchasePrice)}</p>
+                          )}
+                          {isDirector && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                updateCar(car.id, { status: 'available', carInDate: new Date().toISOString().split('T')[0] });
+                                setInventoryTab('stock');
+                                setSearchParams({});
+                              }}
+                              className="w-full mt-1 px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-400 text-xs font-semibold rounded-lg transition-colors"
+                            >
+                              Car In ✓
+                            </button>
                           )}
                         </div>
                       </div>
@@ -578,6 +601,19 @@ export default function Inventory() {
                       <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 whitespace-nowrap">
                         Coming Soon
                       </span>
+                      {isDirector && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            updateCar(car.id, { status: 'available', carInDate: new Date().toISOString().split('T')[0] });
+                            setInventoryTab('stock');
+                            setSearchParams({});
+                          }}
+                          className="px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-400 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap"
+                        >
+                          Car In ✓
+                        </button>
+                      )}
                       {isDirector && (
                         <button
                           onClick={() => setDeleteCarId(car.id)}
@@ -1149,6 +1185,97 @@ export default function Inventory() {
               </div>
             );
           })()}
+
+          {/* Source Salesman */}
+          <div className="col-span-2">
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, sourceType: form.sourceType ? undefined : 'external', externalSalesmanId: undefined, sourceSalesmanId: undefined, sourceCommission: undefined, sourceSalesman: undefined, intakeCommission: undefined })}
+              className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${form.sourceType ? 'bg-green-500/10 border-green-500/40 text-green-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
+            >
+              <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${form.sourceType ? 'bg-green-500 border-green-500' : 'border-gray-600'}`}>
+                {form.sourceType && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+              </div>
+              <div>
+                <p className="text-sm font-medium">Has Source Salesman</p>
+                <p className="text-xs opacity-60 mt-0.5">Car was brought in by an external or internal salesperson</p>
+              </div>
+            </button>
+            {form.sourceType && (
+              <div className="mt-3 space-y-3 pl-2 border-l-2 border-green-500/30">
+                {/* External / Internal toggle */}
+                <div className="grid grid-cols-2 gap-2">
+                  {(['external', 'internal'] as const).map(t => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setForm({ ...form, sourceType: t, externalSalesmanId: undefined, sourceSalesmanId: undefined, sourceSalesman: undefined })}
+                      className={`px-3 py-2.5 rounded-lg border text-sm transition-colors ${form.sourceType === t ? 'bg-green-500/15 border-green-500/50 text-green-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
+                    >
+                      <p className="font-medium capitalize">{t}</p>
+                      <p className="text-xs opacity-60 mt-0.5">{t === 'external' ? 'Not an AutoDream staff' : 'AutoDream salesperson'}</p>
+                    </button>
+                  ))}
+                </div>
+
+                {form.sourceType === 'external' && (
+                  <>
+                    <FormField label="External Salesman">
+                      <select
+                        className={inputCls()}
+                        value={form.externalSalesmanId ?? ''}
+                        onChange={(e) => {
+                          const s = externalSalesmen.find(x => x.id === e.target.value);
+                          setForm({ ...form, externalSalesmanId: e.target.value || undefined, sourceSalesman: s?.name });
+                        }}
+                      >
+                        <option value="">— Select salesman —</option>
+                        {externalSalesmen.map(s => <option key={s.id} value={s.id}>{s.name}{s.ic ? ` (${s.ic})` : ''}</option>)}
+                      </select>
+                      {externalSalesmen.length === 0 && (
+                        <p className="text-xs text-gray-500 mt-1">No external salesmen registered — add them in Data → Ext. Salesmen</p>
+                      )}
+                    </FormField>
+                    <FormField label="Commission to External Salesman (RM)">
+                      <input type="number" className={inputCls()} value={form.sourceCommission ?? ''} placeholder="e.g. 500" onChange={e => setForm({ ...form, sourceCommission: e.target.value ? Number(e.target.value) : undefined })} />
+                    </FormField>
+                    <div>
+                      <label className="block text-gray-300 text-xs font-medium mb-2">In-house Salesman Intake Bonus (RM)</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {([0, 500, 1000] as const).map((v) => (
+                          <button key={v} type="button" onClick={() => setForm({ ...form, intakeCommission: v })}
+                            className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${form.intakeCommission === v ? 'bg-teal-500/15 border-teal-500/50 text-teal-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}>
+                            {v === 0 ? 'None' : `RM ${v.toLocaleString()}`}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {form.sourceType === 'internal' && (
+                  <>
+                    <FormField label="AutoDream Salesperson">
+                      <select
+                        className={inputCls()}
+                        value={form.sourceSalesmanId ?? ''}
+                        onChange={(e) => {
+                          const u = users.find(x => x.id === e.target.value);
+                          setForm({ ...form, sourceSalesmanId: e.target.value || undefined, sourceSalesman: u?.name });
+                        }}
+                      >
+                        <option value="">— Select salesperson —</option>
+                        {users.filter(u => u.role === 'salesperson').map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      </select>
+                    </FormField>
+                    <FormField label="Sourcing Commission (RM)">
+                      <input type="number" className={inputCls()} value={form.sourceCommission ?? ''} placeholder="e.g. 500" onChange={e => setForm({ ...form, sourceCommission: e.target.value ? Number(e.target.value) : undefined })} />
+                    </FormField>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
 
           <FormField label="Notes" className="col-span-2">
             <textarea

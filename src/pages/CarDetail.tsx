@@ -117,6 +117,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const workshops = useStore((s) => s.workshops);
   const merchants = useStore((s) => s.merchants);
   const dealers = useStore((s) => s.dealers);
+  const externalSalesmen = useStore((s) => s.externalSalesmen);
   const currentUser = useStore((s) => s.currentUser);
   const updateCar = useStore((s) => s.updateCar);
   const updateCustomer = useStore((s) => s.updateCustomer);
@@ -761,6 +762,15 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 </>
               )}
               <InfoItem label="Assigned Salesperson" value={assignedSalesperson ? shortName(assignedSalesperson.name) : 'Unassigned'} />
+              {car.sourceSalesman && (
+                <InfoItem label={car.sourceType === 'external' ? 'Ext. Salesman' : 'Source Salesman'} value={car.sourceSalesman} valueClass="text-teal-400" />
+              )}
+              {(car.sourceCommission ?? 0) > 0 && (
+                <InfoItem label={car.sourceType === 'internal' ? 'Sourcing Commission' : 'Ext. Commission'} value={`RM ${(car.sourceCommission ?? 0).toLocaleString()}`} valueClass="text-teal-400 font-semibold" />
+              )}
+              {car.sourceType === 'external' && (car.intakeCommission ?? 0) > 0 && (
+                <InfoItem label="Intake Bonus" value={`RM ${(car.intakeCommission ?? 0).toLocaleString()}`} valueClass="text-green-400 font-semibold" />
+              )}
             </div>
 
             {car.notes && (
@@ -1584,6 +1594,74 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               </div>
             );
           })()}
+          {/* Source Salesman */}
+          <div className="col-span-2 space-y-3">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setEditForm({ ...editForm, sourceType: editForm.sourceType ? undefined : 'external', externalSalesmanId: undefined, sourceSalesmanId: undefined, sourceSalesman: undefined, sourceCommission: undefined, intakeCommission: undefined })}
+                className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${editForm.sourceType ? 'bg-green-500/10 border-green-500/40 text-green-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
+              >
+                <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${editForm.sourceType ? 'bg-green-500 border-green-500' : 'border-gray-600'}`}>
+                  {editForm.sourceType && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                </div>
+                <p className="text-sm font-medium">Has Source Salesman</p>
+              </button>
+            </div>
+            {editForm.sourceType && (
+              <div className="space-y-3 pl-2 border-l-2 border-green-500/30">
+                <div className="grid grid-cols-2 gap-2">
+                  {(['external', 'internal'] as const).map(t => (
+                    <button key={t} type="button"
+                      onClick={() => setEditForm({ ...editForm, sourceType: t, externalSalesmanId: undefined, sourceSalesmanId: undefined, sourceSalesman: undefined })}
+                      className={`px-3 py-2 rounded-lg border text-sm transition-colors ${editForm.sourceType === t ? 'bg-green-500/15 border-green-500/50 text-green-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400'}`}>
+                      <p className="font-medium capitalize">{t}</p>
+                    </button>
+                  ))}
+                </div>
+                {editForm.sourceType === 'external' && (
+                  <>
+                    <FormField label="External Salesman">
+                      <select className={inputCls()} value={editForm.externalSalesmanId ?? ''}
+                        onChange={(e) => { const s = externalSalesmen.find(x => x.id === e.target.value); setEditForm({ ...editForm, externalSalesmanId: e.target.value || undefined, sourceSalesman: s?.name }); }}>
+                        <option value="">— Select salesman —</option>
+                        {externalSalesmen.map(s => <option key={s.id} value={s.id}>{s.name}{s.ic ? ` (${s.ic})` : ''}</option>)}
+                      </select>
+                    </FormField>
+                    <FormField label="Commission to External (RM)">
+                      <input type="number" className={inputCls()} value={editForm.sourceCommission ?? ''} placeholder="e.g. 500" onChange={e => setEditForm({ ...editForm, sourceCommission: e.target.value ? Number(e.target.value) : undefined })} />
+                    </FormField>
+                    <div>
+                      <label className="block text-gray-300 text-xs font-medium mb-2">In-house Intake Bonus (RM)</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {([0, 500, 1000] as const).map(v => (
+                          <button key={v} type="button" onClick={() => setEditForm({ ...editForm, intakeCommission: v })}
+                            className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${(editForm.intakeCommission ?? 0) === v ? 'bg-teal-500/15 border-teal-500/50 text-teal-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400'}`}>
+                            {v === 0 ? 'None' : `RM ${v.toLocaleString()}`}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+                {editForm.sourceType === 'internal' && (
+                  <>
+                    <FormField label="AutoDream Salesperson">
+                      <select className={inputCls()} value={editForm.sourceSalesmanId ?? ''}
+                        onChange={(e) => { const u = users.find(x => x.id === e.target.value); setEditForm({ ...editForm, sourceSalesmanId: e.target.value || undefined, sourceSalesman: u?.name }); }}>
+                        <option value="">— Select salesperson —</option>
+                        {salespeople.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      </select>
+                    </FormField>
+                    <FormField label="Sourcing Commission (RM)">
+                      <input type="number" className={inputCls()} value={editForm.sourceCommission ?? ''} placeholder="e.g. 500" onChange={e => setEditForm({ ...editForm, sourceCommission: e.target.value ? Number(e.target.value) : undefined })} />
+                    </FormField>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
           <FormField label="Notes" className="col-span-2">
             <textarea className={`${inputCls()} h-20 resize-none`} value={editForm.notes ?? ''} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
           </FormField>

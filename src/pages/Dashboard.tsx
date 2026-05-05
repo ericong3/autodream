@@ -65,9 +65,11 @@ export default function Dashboard() {
           ? (profitBeforeComm >= 10000 ? 2000 : 1500)
           : 1000)
       : (profitBeforeComm >= 10000 ? 1500 : 1000);
+    const intakeComm = car.intakeCommission ?? 0;
+    const sourceComm = car.sourceCommission ?? 0;
 
-    const netCarProfit = profitBeforeComm - commission;
-    return { car, dealPrice, repairCost, miscCost, additionalTotal, commission, netCarProfit };
+    const netCarProfit = profitBeforeComm - commission - intakeComm - sourceComm;
+    return { car, dealPrice, repairCost, miscCost, additionalTotal, commission, intakeComm, sourceComm, netCarProfit };
   }), [soldCars, repairs, customers]);
 
   const totalRevenue   = soldCarData.reduce((s, d) => s + d.dealPrice, 0);
@@ -75,6 +77,8 @@ export default function Dashboard() {
   const soldRepairs    = soldCarData.reduce((s, d) => s + d.repairCost, 0);
   const soldMisc       = soldCarData.reduce((s, d) => s + d.miscCost + d.additionalTotal, 0);
   const totalCommission = soldCarData.reduce((s, d) => s + d.commission, 0);
+  const totalIntakeComm = soldCarData.reduce((s, d) => s + d.intakeComm, 0);
+  const totalSourceComm = soldCarData.reduce((s, d) => s + d.sourceComm, 0);
   const netProfit      = soldCarData.reduce((s, d) => s + d.netCarProfit, 0);
 
   // Animated stat card values
@@ -205,6 +209,8 @@ export default function Dashboard() {
             <PLRow label="Repair & Refurbishment" value={-soldRepairs} />
             <PLRow label="Misc & Additional Items" value={-soldMisc} />
             <PLRow label="Commission Paid" value={-totalCommission} subtitle={`${soldCars.length} car${soldCars.length !== 1 ? 's' : ''}`} />
+            {totalIntakeComm > 0 && <PLRow label="Intake Bonus" value={-totalIntakeComm} />}
+            {totalSourceComm > 0 && <PLRow label="Source Commission" value={-totalSourceComm} />}
             <div className="divider-gold my-3" />
             <div className="flex justify-between items-center pt-1">
               <span className="text-white font-bold text-sm">Net Profit</span>

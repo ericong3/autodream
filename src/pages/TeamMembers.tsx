@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Edit, Trash2, Users, AlertCircle, Shield, UserCheck, Wrench, Phone, Mail, AtSign, Car, TrendingUp, Target, Award, X } from 'lucide-react';
+import { Plus, Edit, Trash2, Users, AlertCircle, Shield, UserCheck, Wrench, Phone, Mail, AtSign, Car, TrendingUp, Target, Award, X, KeyRound } from 'lucide-react';
 import { useStore } from '../store';
 import { User } from '../types';
 import Modal from '../components/Modal';
@@ -330,6 +330,10 @@ export default function TeamMembers() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [filterRole, setFilterRole] = useState<'all' | 'director' | 'salesperson' | 'mechanic'>('all');
   const [selectedEmployee, setSelectedEmployee] = useState<User | null>(null);
+  const [pwTarget, setPwTarget] = useState<User | null>(null);
+  const [pwForm, setPwForm] = useState({ password: '', confirm: '' });
+  const [pwErrors, setPwErrors] = useState<Record<string, string>>({});
+  const [pwSaving, setPwSaving] = useState(false);
 
   const getCarsSoldByPerson = (userId: string) =>
     soldCars.filter((c) => getDealSalespersonId(c) === userId).length;
@@ -400,6 +404,25 @@ export default function TeamMembers() {
       return;
     }
     setDeleteTarget({ id: member.id, label: member.name });
+  };
+
+  const openChangePassword = (member: User) => {
+    setPwTarget(member);
+    setPwForm({ password: '', confirm: '' });
+    setPwErrors({});
+  };
+
+  const handleChangePassword = async () => {
+    const e: Record<string, string> = {};
+    if (!pwForm.password.trim()) e.password = 'Required';
+    else if (pwForm.password.length < 6) e.password = 'Minimum 6 characters';
+    if (pwForm.password !== pwForm.confirm) e.confirm = 'Passwords do not match';
+    setPwErrors(e);
+    if (Object.keys(e).length > 0) return;
+    setPwSaving(true);
+    await updateUser(pwTarget!.id, { password: pwForm.password });
+    setPwSaving(false);
+    setPwTarget(null);
   };
 
   const teamUsers = users.filter((u) => u.role !== 'investor');
@@ -514,13 +537,22 @@ export default function TeamMembers() {
                       <button
                         onClick={() => openEdit(member)}
                         className="p-1.5 text-gray-400 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors"
+                        title="Edit member"
                       >
                         <Edit size={14} />
+                      </button>
+                      <button
+                        onClick={() => openChangePassword(member)}
+                        className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
+                        title="Change password"
+                      >
+                        <KeyRound size={14} />
                       </button>
                       <button
                         onClick={() => handleDelete(member)}
                         disabled={isSelf}
                         className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Delete member"
                       >
                         <Trash2 size={14} />
                       </button>
@@ -724,6 +756,52 @@ export default function TeamMembers() {
         onConfirm={async () => { if (deleteTarget) deleteUser(deleteTarget.id); }}
         itemName={deleteTarget?.label ?? ''}
       />
+
+      {/* Change Password Modal */}
+      <Modal
+        isOpen={!!pwTarget}
+        onClose={() => setPwTarget(null)}
+        title={`Change Password — ${pwTarget?.name ?? ''}`}
+        maxWidth="max-w-sm"
+      >
+        <div className="space-y-4">
+          <FormField label="New Password" error={pwErrors.password}>
+            <input
+              type="password"
+              className={inputCls(pwErrors.password)}
+              value={pwForm.password}
+              onChange={(e) => setPwForm({ ...pwForm, password: e.target.value })}
+              placeholder="Min. 6 characters"
+              autoComplete="new-password"
+            />
+          </FormField>
+          <FormField label="Confirm Password" error={pwErrors.confirm}>
+            <input
+              type="password"
+              className={inputCls(pwErrors.confirm)}
+              value={pwForm.confirm}
+              onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })}
+              placeholder="Re-enter new password"
+              autoComplete="new-password"
+            />
+          </FormField>
+        </div>
+        <div className="flex gap-3 mt-5">
+          <button
+            onClick={() => setPwTarget(null)}
+            className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleChangePassword}
+            disabled={pwSaving}
+            className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm disabled:opacity-60"
+          >
+            {pwSaving ? 'Saving…' : 'Change Password'}
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }
