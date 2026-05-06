@@ -307,7 +307,9 @@ export type CarCondition = Car['condition'];
 export type QuotationStatus = Quotation['status'];
 export type RepairStatus = RepairJob['status'];
 
-export const BANKS = ['Aeon', 'Chailease', 'CIMB', 'HLB', 'Maybank', 'Public', 'Toyota Capital'] as const;
+export const BANKS = ['Aeon', 'Affin', 'Chailease', 'CIMB', 'HLB', 'Maybank', 'Public', 'RHB', 'Toyota Capital'] as const;
+// Banks that are finance companies — no individual banker assigned
+export const NO_BANKER_BANKS = ['Aeon', 'Chailease', 'Toyota Capital'] as const;
 export type Bank = typeof BANKS[number];
 
 export const REPAIR_TYPES = [
