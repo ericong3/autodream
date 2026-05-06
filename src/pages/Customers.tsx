@@ -162,6 +162,7 @@ export default function Customers() {
   const [expandedBank, setExpandedBank] = useState<string | null>(null);
   // Bank submission modal
   const [bankModalLeadId, setBankModalLeadId] = useState<string | null>(null);
+  const [bankModalStep, setBankModalStep] = useState<'banks' | 'bankers'>('banks');
   // bankModalPicks: { [bankName]: bankerId | '' }
   const [bankModalPicks, setBankModalPicks] = useState<Record<string, string>>({});
   useBodyScrollLock(!!detailLead || !!workOrderCustomer);
@@ -440,6 +441,7 @@ export default function Customers() {
     });
     closeSidebar();
     setBankModalPicks({});
+    setBankModalStep('banks');
     setBankModalLeadId(leadId);
   };
 
@@ -1731,7 +1733,7 @@ export default function Customers() {
                       {BANKS.some(b => !bankStatuses.some(a => a.bank === b)) && (
                         <div className="border-t border-obsidian-400/30 px-3 py-2">
                           <button
-                            onClick={() => { setBankModalPicks({}); setBankModalLeadId(detailLead.id); }}
+                            onClick={() => { setBankModalPicks({}); setBankModalStep('banks'); setBankModalLeadId(detailLead.id); }}
                             className="w-full text-xs text-gold-400 hover:text-gold-300 font-medium transition-colors py-1.5 flex items-center justify-center gap-1.5"
                           >
                             <Plus size={12} /> Add bank
@@ -2625,19 +2627,21 @@ export default function Customers() {
         const alreadySubmitted = (lead.loanApplications ?? []).map(a => a.bank);
         const available = BANKS.filter(b => !alreadySubmitted.includes(b));
         const selectedBanks = Object.keys(bankModalPicks);
+        const banksNeedingBanker = selectedBanks.filter(b => !(NO_BANKER_BANKS as readonly string[]).includes(b));
+        const carName = (() => { const c = cars.find(x => x.id === lead.interestedCarId); return c ? `${c.year} ${c.make} ${c.model}` : null; })();
 
         const toggle = (bank: string) => {
-          if (bank in bankModalPicks) {
-            const next = { ...bankModalPicks };
-            delete next[bank];
-            setBankModalPicks(next);
-          } else {
-            setBankModalPicks({ ...bankModalPicks, [bank]: '' });
-          }
+          const next = { ...bankModalPicks };
+          if (bank in next) { delete next[bank]; } else { next[bank] = ''; }
+          setBankModalPicks(next);
         };
 
-        const handleConfirm = () => {
-          if (selectedBanks.length === 0) { setBankModalLeadId(null); return; }
+        const handleNext = () => {
+          if (banksNeedingBanker.length > 0) { setBankModalStep('bankers'); }
+          else { doSubmit(); }
+        };
+
+        const doSubmit = () => {
           const newApps: LoanApplication[] = selectedBanks.map(bank => {
             const banker = bankers.find(b => b.id === bankModalPicks[bank]);
             return { bank, status: 'submitted' as const, ...(banker ? { bankerId: banker.id, bankerName: banker.name } : {}) };
@@ -2646,118 +2650,138 @@ export default function Customers() {
           setBankModalLeadId(null);
         };
 
-        const carName = (() => { const c = cars.find(x => x.id === lead.interestedCarId); return c ? `${c.year} ${c.make} ${c.model}` : null; })();
+        const close = () => setBankModalLeadId(null);
 
         return (
-          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm" onClick={() => setBankModalLeadId(null)}>
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm" onClick={close}>
             <div className="w-full sm:max-w-sm bg-obsidian-800 sm:rounded-2xl rounded-t-2xl shadow-2xl" onClick={e => e.stopPropagation()}>
 
-              {/* Handle bar (mobile) */}
+              {/* Handle bar */}
               <div className="flex justify-center pt-3 pb-1 sm:hidden">
                 <div className="w-10 h-1 bg-obsidian-500/60 rounded-full" />
               </div>
 
               {/* Header */}
-              <div className="px-6 pt-4 pb-2 flex items-start justify-between">
+              <div className="px-6 pt-5 pb-1 flex items-start justify-between">
                 <div>
-                  <p className="text-white font-bold text-lg">Submit Loan</p>
+                  {bankModalStep === 'bankers' && (
+                    <button onClick={() => setBankModalStep('banks')} className="text-gray-500 hover:text-white text-xs flex items-center gap-1 mb-2 transition-colors">
+                      ← Back
+                    </button>
+                  )}
+                  <p className="text-white font-bold text-lg">
+                    {bankModalStep === 'banks' ? 'Which banks?' : 'Who to submit to?'}
+                  </p>
                   <p className="text-gray-500 text-sm mt-0.5">{lead.name}{carName ? ` · ${carName}` : ''}</p>
                 </div>
-                <button onClick={() => setBankModalLeadId(null)} className="mt-1 text-gray-500 hover:text-white transition-colors">
-                  <X size={18} />
-                </button>
+                <button onClick={close} className="mt-1 text-gray-500 hover:text-white transition-colors"><X size={18} /></button>
               </div>
 
-              {/* Bank list */}
-              <div className="px-4 py-4 space-y-2 max-h-[60vh] overflow-y-auto">
-                {available.length === 0 ? (
-                  <p className="text-gray-600 text-sm text-center py-8">All banks already submitted</p>
-                ) : available.map(bank => {
-                  const selected = bank in bankModalPicks;
-                  const needsBanker = !(NO_BANKER_BANKS as readonly string[]).includes(bank);
-                  const bankBankers = bankers.filter(b => b.bank === bank);
-                  const selectedBankerId = bankModalPicks[bank] ?? '';
-                  const selectedBanker = bankers.find(b => b.id === selectedBankerId);
-
-                  return (
-                    <div key={bank} className={`rounded-2xl border transition-all overflow-hidden ${
-                      selected ? 'border-gold-500/50 bg-gold-500/5' : 'border-obsidian-500/30 bg-obsidian-700/30'
-                    }`}>
-                      {/* Bank row */}
-                      <button
-                        onClick={() => toggle(bank)}
-                        className="w-full flex items-center justify-between px-5 py-4"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 transition-all ${
-                            selected ? 'bg-gold-500 text-obsidian-900' : 'bg-obsidian-600/60 text-gray-400'
+              {/* ── STEP 1: Bank selection ── */}
+              {bankModalStep === 'banks' && (
+                <>
+                  <div className="px-4 pt-4 pb-2 space-y-2 max-h-[55vh] overflow-y-auto">
+                    {available.length === 0 ? (
+                      <p className="text-gray-600 text-sm text-center py-8">All banks already submitted</p>
+                    ) : available.map(bank => {
+                      const selected = bank in bankModalPicks;
+                      return (
+                        <button
+                          key={bank}
+                          onClick={() => toggle(bank)}
+                          className={`w-full flex items-center justify-between px-5 py-4 rounded-2xl border transition-all ${
+                            selected
+                              ? 'border-gold-500/50 bg-gold-500/5'
+                              : 'border-obsidian-500/30 bg-obsidian-700/30 hover:border-obsidian-400/50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 transition-all ${
+                              selected ? 'bg-gold-500 text-obsidian-900' : 'bg-obsidian-600/60 text-gray-400'
+                            }`}>
+                              {bank[0]}
+                            </div>
+                            <p className={`font-semibold text-sm transition-colors ${selected ? 'text-white' : 'text-gray-400'}`}>{bank}</p>
+                          </div>
+                          <div className={`w-5 h-5 rounded-full border-2 transition-all flex items-center justify-center ${
+                            selected ? 'border-gold-400 bg-gold-400' : 'border-obsidian-500/60'
                           }`}>
-                            {bank[0]}
+                            {selected && <div className="w-2 h-2 rounded-full bg-obsidian-900" />}
                           </div>
-                          <div className="text-left">
-                            <p className={`font-semibold text-sm transition-colors ${selected ? 'text-white' : 'text-gray-300'}`}>{bank}</p>
-                            {selected && selectedBanker && (
-                              <p className="text-gold-400/80 text-xs mt-0.5">{selectedBanker.name}</p>
-                            )}
-                          </div>
-                        </div>
-                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
-                          selected ? 'border-gold-400 bg-gold-400' : 'border-obsidian-400/60'
-                        }`}>
-                          {selected && <CheckCircle size={12} className="text-obsidian-900" />}
-                        </div>
-                      </button>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="px-4 pb-6 pt-3">
+                    <button
+                      onClick={handleNext}
+                      disabled={selectedBanks.length === 0}
+                      className="w-full btn-gold py-4 rounded-2xl text-sm font-bold disabled:opacity-30"
+                    >
+                      {selectedBanks.length === 0
+                        ? 'Select at least one bank'
+                        : banksNeedingBanker.length > 0
+                          ? `Next — assign bankers`
+                          : `Submit to ${selectedBanks.length} bank${selectedBanks.length > 1 ? 's' : ''}`}
+                    </button>
+                  </div>
+                </>
+              )}
 
-                      {/* Banker picker — only for banks that need one, only when selected */}
-                      {selected && needsBanker && (
-                        <div className="px-5 pb-4">
-                          <div className="border-t border-obsidian-500/20 pt-3">
-                            {bankBankers.length === 0 ? (
-                              <p className="text-gray-600 text-xs italic">No bankers set up for {bank} — go to Data → Bankers</p>
-                            ) : (
-                              <div className="space-y-1">
-                                <p className="text-gray-500 text-[10px] uppercase tracking-widest font-semibold mb-2">Who to submit to?</p>
-                                {bankBankers.map(b => (
-                                  <button
-                                    key={b.id}
-                                    onClick={() => setBankModalPicks({ ...bankModalPicks, [bank]: selectedBankerId === b.id ? '' : b.id })}
-                                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all ${
-                                      selectedBankerId === b.id
-                                        ? 'border-gold-500/40 bg-gold-500/10'
-                                        : 'border-obsidian-500/20 hover:border-obsidian-400/40'
-                                    }`}
-                                  >
-                                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${
-                                      selectedBankerId === b.id ? 'bg-gold-500 text-obsidian-900' : 'bg-obsidian-600/60 text-gray-500'
-                                    }`}>
-                                      {b.name[0]}
-                                    </div>
-                                    <div className="min-w-0">
-                                      <p className={`text-xs font-semibold ${selectedBankerId === b.id ? 'text-white' : 'text-gray-300'}`}>{b.name}</p>
-                                      {b.phone && <p className="text-gray-600 text-[10px]">{b.phone}</p>}
-                                    </div>
-                                  </button>
-                                ))}
+              {/* ── STEP 2: Banker assignment ── */}
+              {bankModalStep === 'bankers' && (
+                <>
+                  <div className="px-4 pt-4 pb-2 space-y-3 max-h-[55vh] overflow-y-auto">
+                    {banksNeedingBanker.map(bank => {
+                      const bankBankers = bankers.filter(b => b.bank === bank);
+                      const selectedBankerId = bankModalPicks[bank] ?? '';
+                      return (
+                        <div key={bank} className="space-y-2">
+                          <p className="text-gray-400 text-xs font-bold uppercase tracking-widest px-1">{bank}</p>
+                          {bankBankers.length === 0 ? (
+                            <div className="px-4 py-3 rounded-xl border border-obsidian-500/30 bg-obsidian-700/30">
+                              <p className="text-gray-600 text-xs">No bankers added — go to Data → Bankers</p>
+                            </div>
+                          ) : bankBankers.map(b => (
+                            <button
+                              key={b.id}
+                              onClick={() => setBankModalPicks({ ...bankModalPicks, [bank]: selectedBankerId === b.id ? '' : b.id })}
+                              className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all ${
+                                selectedBankerId === b.id
+                                  ? 'border-gold-500/50 bg-gold-500/5'
+                                  : 'border-obsidian-500/30 bg-obsidian-700/30 hover:border-obsidian-400/50'
+                              }`}
+                            >
+                              <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 transition-all ${
+                                selectedBankerId === b.id ? 'bg-gold-500 text-obsidian-900' : 'bg-obsidian-600/60 text-gray-400'
+                              }`}>
+                                {b.name[0]}
                               </div>
-                            )}
-                          </div>
+                              <div className="text-left min-w-0">
+                                <p className={`font-semibold text-sm ${selectedBankerId === b.id ? 'text-white' : 'text-gray-400'}`}>{b.name}</p>
+                                {b.phone && <p className="text-gray-600 text-xs mt-0.5">{b.phone}</p>}
+                              </div>
+                              <div className={`ml-auto w-5 h-5 rounded-full border-2 shrink-0 flex items-center justify-center transition-all ${
+                                selectedBankerId === b.id ? 'border-gold-400 bg-gold-400' : 'border-obsidian-500/60'
+                              }`}>
+                                {selectedBankerId === b.id && <div className="w-2 h-2 rounded-full bg-obsidian-900" />}
+                              </div>
+                            </button>
+                          ))}
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Footer */}
-              <div className="px-4 pb-6 pt-2">
-                <button
-                  onClick={handleConfirm}
-                  disabled={selectedBanks.length === 0}
-                  className="w-full btn-gold py-4 rounded-2xl text-sm font-bold disabled:opacity-30 transition-all"
-                >
-                  {selectedBanks.length === 0 ? 'Select a bank to continue' : `Submit to ${selectedBanks.length} bank${selectedBanks.length > 1 ? 's' : ''}`}
-                </button>
-              </div>
+                      );
+                    })}
+                  </div>
+                  <div className="px-4 pb-6 pt-3">
+                    <button
+                      onClick={doSubmit}
+                      className="w-full btn-gold py-4 rounded-2xl text-sm font-bold"
+                    >
+                      Submit to {selectedBanks.length} bank{selectedBanks.length > 1 ? 's' : ''}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         );
