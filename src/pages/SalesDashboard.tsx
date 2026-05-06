@@ -442,7 +442,7 @@ export default function SalesDashboard() {
                     {(tdStatus === 'overdue' || tdStatus === 'today' || tdStatus === 'tomorrow') && (
                       <div className="flex gap-2 pt-1">
                         <button
-                          onClick={() => { setRescheduleTarget({ tdId: td.id, customerName: customer?.name ?? '—' }); setRescheduleDay(''); setRescheduleTime(''); }}
+                          onClick={() => setRescheduleTarget({ tdId: td.id, customerName: customer?.name ?? '—' })}
                           className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] font-semibold bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 transition-colors"
                         >
                           <RefreshCw size={10} />Reschedule

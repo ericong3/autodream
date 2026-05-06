@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { Plus, X, Building2, Wrench, Package, ShoppingBag, UserCheck } from 'lucide-react';
+import { Plus, X, Building2, Wrench, Package, ShoppingBag, UserCheck, Landmark, Phone, Mail, Pencil, Trash2 } from 'lucide-react';
 import { useStore } from '../store';
 import { formatRM, generateId } from '../utils/format';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import Modal from '../components/Modal';
-import { ExternalSalesman } from '../types';
+import { ExternalSalesman, BANKS } from '../types';
 
-type Tab = 'dealers' | 'workshops' | 'suppliers' | 'misc' | 'ext_salesmen';
+type Tab = 'dealers' | 'workshops' | 'suppliers' | 'misc' | 'ext_salesmen' | 'bankers';
 
 const TABS: { key: Tab; label: string; icon: React.ElementType; color: string }[] = [
   { key: 'dealers',      label: 'Car Dealers',   icon: Building2,  color: 'text-blue-400'   },
@@ -14,6 +14,7 @@ const TABS: { key: Tab; label: string; icon: React.ElementType; color: string }[
   { key: 'suppliers',    label: 'Suppliers',     icon: Package,    color: 'text-green-400'  },
   { key: 'misc',         label: 'Misc',          icon: ShoppingBag,color: 'text-purple-400' },
   { key: 'ext_salesmen', label: 'Ext. Salesmen', icon: UserCheck,  color: 'text-teal-400'   },
+  { key: 'bankers',      label: 'Bankers',        icon: Landmark,   color: 'text-sky-400'    },
 ];
 
 function inputCls() {
@@ -42,6 +43,10 @@ export default function Data() {
   const addExternalSalesman    = useStore((s) => s.addExternalSalesman);
   const updateExternalSalesman = useStore((s) => s.updateExternalSalesman);
   const deleteExternalSalesman = useStore((s) => s.deleteExternalSalesman);
+  const bankers       = useStore((s) => s.bankers);
+  const addBanker     = useStore((s) => s.addBanker);
+  const updateBanker  = useStore((s) => s.updateBanker);
+  const deleteBanker  = useStore((s) => s.deleteBanker);
   const cars = useStore((s) => s.cars);
 
   const [dealerForm,   setDealerForm]   = useState({ name: '', phone: '' });
@@ -50,6 +55,11 @@ export default function Data() {
   const [merchantForm, setMerchantForm] = useState({ name: '', phone: '', category: '' });
   const [extForm, setExtForm] = useState(emptyExtSalesman);
   const [extProfileTarget, setExtProfileTarget] = useState<ExternalSalesman | null>(null);
+  const emptyBankerForm = { name: '', bank: '', phone: '', email: '', notes: '' };
+  const [bankerForm, setBankerForm] = useState(emptyBankerForm);
+  const [bankerEditTarget, setBankerEditTarget] = useState<string | null>(null);
+  const [bankerEditForm, setBankerEditForm] = useState(emptyBankerForm);
+  const [bankerDeleteTarget, setBankerDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [extEditMode, setExtEditMode] = useState(false);
   const [extEditForm, setExtEditForm] = useState(emptyExtSalesman);
 
@@ -206,6 +216,137 @@ export default function Data() {
           onDelete={(id) => deleteExternalSalesman(id)}
         />
       )}
+
+      {/* Bankers */}
+      {activeTab === 'bankers' && (
+        <div className="space-y-4">
+          {/* Add form */}
+          <div className="card-surface rounded-xl p-4 space-y-3">
+            <p className="text-white font-semibold text-sm flex items-center gap-2">
+              <Landmark size={15} className="text-sky-400" />
+              Add Banker
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-gray-400 text-xs mb-1">Full Name *</label>
+                <input className={inputCls()} placeholder="e.g. Ahmad bin Ali" value={bankerForm.name} onChange={e => setBankerForm({ ...bankerForm, name: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-gray-400 text-xs mb-1">Bank *</label>
+                <select className={inputCls()} value={bankerForm.bank} onChange={e => setBankerForm({ ...bankerForm, bank: e.target.value })}>
+                  <option value="">Select bank...</option>
+                  {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-gray-400 text-xs mb-1">Phone</label>
+                <input className={inputCls()} placeholder="e.g. 012-3456789" value={bankerForm.phone} onChange={e => setBankerForm({ ...bankerForm, phone: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-gray-400 text-xs mb-1">Email</label>
+                <input className={inputCls()} type="email" placeholder="e.g. ahmad@bank.com" value={bankerForm.email} onChange={e => setBankerForm({ ...bankerForm, email: e.target.value })} />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-gray-400 text-xs mb-1">Notes</label>
+                <input className={inputCls()} placeholder="e.g. Specialises in MyHome, fast approval" value={bankerForm.notes} onChange={e => setBankerForm({ ...bankerForm, notes: e.target.value })} />
+              </div>
+            </div>
+            <button
+              disabled={!bankerForm.name.trim() || !bankerForm.bank}
+              onClick={() => handleAdd(async () => {
+                await addBanker({
+                  id: generateId(),
+                  name: bankerForm.name.trim(),
+                  bank: bankerForm.bank,
+                  phone: bankerForm.phone || undefined,
+                  email: bankerForm.email || undefined,
+                  notes: bankerForm.notes || undefined,
+                  createdAt: new Date().toISOString(),
+                });
+                setBankerForm(emptyBankerForm);
+              })}
+              className="btn-gold px-4 py-2 rounded-lg text-sm disabled:opacity-40"
+            >
+              Add Banker
+            </button>
+          </div>
+
+          {/* Banker list grouped by bank */}
+          {BANKS.filter(bank => bankers.some(b => b.bank === bank)).map(bank => (
+            <div key={bank} className="card-surface rounded-xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-obsidian-400/40 flex items-center gap-2">
+                <Landmark size={13} className="text-sky-400" />
+                <span className="text-white font-semibold text-sm">{bank}</span>
+                <span className="text-gray-600 text-xs ml-1">{bankers.filter(b => b.bank === bank).length} banker{bankers.filter(b => b.bank === bank).length !== 1 ? 's' : ''}</span>
+              </div>
+              <div className="divide-y divide-obsidian-400/30">
+                {bankers.filter(b => b.bank === bank).map(banker => (
+                  <div key={banker.id} className="px-4 py-3">
+                    {bankerEditTarget === banker.id ? (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-2">
+                          <input className={inputCls()} placeholder="Name *" value={bankerEditForm.name} onChange={e => setBankerEditForm({ ...bankerEditForm, name: e.target.value })} />
+                          <select className={inputCls()} value={bankerEditForm.bank} onChange={e => setBankerEditForm({ ...bankerEditForm, bank: e.target.value })}>
+                            {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+                          </select>
+                          <input className={inputCls()} placeholder="Phone" value={bankerEditForm.phone} onChange={e => setBankerEditForm({ ...bankerEditForm, phone: e.target.value })} />
+                          <input className={inputCls()} placeholder="Email" value={bankerEditForm.email} onChange={e => setBankerEditForm({ ...bankerEditForm, email: e.target.value })} />
+                          <input className={`${inputCls()} col-span-2`} placeholder="Notes" value={bankerEditForm.notes} onChange={e => setBankerEditForm({ ...bankerEditForm, notes: e.target.value })} />
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => setBankerEditTarget(null)} className="flex-1 btn-ghost py-1.5 rounded-lg text-xs">Cancel</button>
+                          <button
+                            onClick={async () => {
+                              await updateBanker(banker.id, { name: bankerEditForm.name.trim(), bank: bankerEditForm.bank, phone: bankerEditForm.phone || undefined, email: bankerEditForm.email || undefined, notes: bankerEditForm.notes || undefined });
+                              setBankerEditTarget(null);
+                            }}
+                            className="flex-1 btn-gold py-1.5 rounded-lg text-xs"
+                          >Save</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-white font-medium text-sm">{banker.name}</p>
+                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                            {banker.phone && <span className="text-gray-500 text-xs flex items-center gap-1"><Phone size={10} />{banker.phone}</span>}
+                            {banker.email && <span className="text-gray-500 text-xs flex items-center gap-1"><Mail size={10} />{banker.email}</span>}
+                            {banker.notes && <span className="text-gray-600 text-xs italic">{banker.notes}</span>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={() => { setBankerEditTarget(banker.id); setBankerEditForm({ name: banker.name, bank: banker.bank, phone: banker.phone ?? '', email: banker.email ?? '', notes: banker.notes ?? '' }); }}
+                            className="p-1.5 text-gray-600 hover:text-sky-400 hover:bg-sky-500/10 rounded-lg transition-colors"
+                          ><Pencil size={13} /></button>
+                          <button
+                            onClick={() => setBankerDeleteTarget({ id: banker.id, name: banker.name })}
+                            className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                          ><Trash2 size={13} /></button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {bankers.length === 0 && (
+            <div className="text-center py-16 text-gray-600">
+              <Landmark size={36} className="mx-auto mb-3 opacity-30" />
+              <p className="text-sm">No bankers added yet</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      <DeleteConfirmModal
+        isOpen={!!bankerDeleteTarget}
+        onClose={() => setBankerDeleteTarget(null)}
+        onConfirm={async () => { if (bankerDeleteTarget) await deleteBanker(bankerDeleteTarget.id); }}
+        itemName={bankerDeleteTarget?.name ?? ''}
+      />
 
       {/* External Salesman Profile Modal */}
       <Modal

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
-import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, MiscCost, ExternalSalesman } from '../types';
+import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, MiscCost, ExternalSalesman, Banker } from '../types';
 
 interface StoreState {
   currentUser: User | null;
@@ -18,6 +18,7 @@ interface StoreState {
   suppliers: Supplier[];
   merchants: Merchant[];
   externalSalesmen: ExternalSalesman[];
+  bankers: Banker[];
   viewPreference: Record<string, 'grid' | 'list'>;
   loaded: boolean;
   lastFetched: number | null;
@@ -89,6 +90,11 @@ interface StoreState {
   addExternalSalesman: (s: ExternalSalesman) => Promise<void>;
   updateExternalSalesman: (id: string, s: Partial<ExternalSalesman>) => Promise<void>;
   deleteExternalSalesman: (id: string) => Promise<void>;
+
+  // Bankers
+  addBanker: (b: Banker) => Promise<void>;
+  updateBanker: (id: string, b: Partial<Banker>) => Promise<void>;
+  deleteBanker: (id: string) => Promise<void>;
 
   // Misc Costs
   addMiscCost: (carId: string, misc: MiscCost) => Promise<void>;
@@ -169,6 +175,30 @@ function externalSalesmanToRow(s: Partial<ExternalSalesman>) {
   if (s.bankAccount !== undefined) row.bank_account = s.bankAccount;
   if (s.notes !== undefined) row.notes = s.notes;
   if (s.createdAt !== undefined) row.created_at = s.createdAt;
+  return row;
+}
+
+function rowToBanker(r: any): Banker {
+  return {
+    id: r.id,
+    name: r.name,
+    bank: r.bank,
+    phone: r.phone ?? undefined,
+    email: r.email ?? undefined,
+    notes: r.notes ?? undefined,
+    createdAt: r.created_at,
+  };
+}
+
+function bankerToRow(b: Partial<Banker>) {
+  const row: any = {};
+  if (b.id !== undefined) row.id = b.id;
+  if (b.name !== undefined) row.name = b.name;
+  if (b.bank !== undefined) row.bank = b.bank;
+  if (b.phone !== undefined) row.phone = b.phone;
+  if (b.email !== undefined) row.email = b.email;
+  if (b.notes !== undefined) row.notes = b.notes;
+  if (b.createdAt !== undefined) row.created_at = b.createdAt;
   return row;
 }
 
@@ -508,6 +538,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   suppliers: [],
   merchants: [],
   externalSalesmen: [],
+  bankers: [],
   viewPreference: {},
   loaded: false,
   lastFetched: null,
@@ -533,9 +564,11 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         supabase.from('merchants').select('*'),
       ]);
 
-    // Load external salesmen separately so a missing table doesn't block the main load
+    // Load external salesmen and bankers separately so a missing table doesn't block the main load
     const externalSalesmenResult = await supabase.from('external_salesmen').select('*');
     const externalSalesmenRows = externalSalesmenResult.data ?? [];
+    const bankersResult = await supabase.from('bankers').select('*');
+    const bankersRows = bankersResult.data ?? [];
 
     const allCars = (cars.data ?? []).map(rowToCar);
     const allCustomers = (customers.data ?? []).map(rowToCustomer);
@@ -577,6 +610,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       suppliers: (suppliers.data ?? []) as Supplier[],
       merchants: (merchants.data ?? []) as Merchant[],
       externalSalesmen: externalSalesmenRows.map(rowToExternalSalesman),
+      bankers: bankersRows.map(rowToBanker),
       loaded: true,
       lastFetched: Date.now(),
     });
@@ -975,8 +1009,14 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     if (error) console.error('addCustomer failed:', error.message);
   },
   updateCustomer: async (id, customer) => {
+    const prev = get().customers.find(c => c.id === id);
     set((s) => ({ customers: s.customers.map((c) => (c.id === id ? { ...c, ...customer } : c)) }));
-    await supabase.from('customers').update(customerToRow(customer)).eq('id', id);
+    const { error } = await supabase.from('customers').update(customerToRow(customer)).eq('id', id);
+    if (error) {
+      if (prev) set((s) => ({ customers: s.customers.map((c) => (c.id === id ? prev : c)) }));
+      console.error('updateCustomer failed:', error.message);
+      throw new Error(error.message);
+    }
   },
   deleteCustomer: async (id) => {
     set((s) => ({ customers: s.customers.filter((c) => c.id !== id) }));
@@ -1094,6 +1134,27 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   deleteExternalSalesman: async (id) => {
     set((st) => ({ externalSalesmen: st.externalSalesmen.filter((x) => x.id !== id) }));
     await supabase.from('external_salesmen').delete().eq('id', id);
+  },
+
+  addBanker: async (b) => {
+    set((st) => ({ bankers: [...st.bankers, b] }));
+    const row = bankerToRow(b);
+    delete row.id;
+    const { data, error } = await supabase.from('bankers').insert(row).select().single();
+    if (error) {
+      set((st) => ({ bankers: st.bankers.filter((x) => x.id !== b.id) }));
+      throw new Error(error.message);
+    }
+    if (data) set((st) => ({ bankers: st.bankers.map((x) => x.id === b.id ? rowToBanker(data) : x) }));
+  },
+  updateBanker: async (id, b) => {
+    set((st) => ({ bankers: st.bankers.map((x) => x.id === id ? { ...x, ...b } : x) }));
+    const { error } = await supabase.from('bankers').update(bankerToRow(b)).eq('id', id);
+    if (error) console.error('updateBanker failed:', error.message);
+  },
+  deleteBanker: async (id) => {
+    set((st) => ({ bankers: st.bankers.filter((x) => x.id !== id) }));
+    await supabase.from('bankers').delete().eq('id', id);
   },
 
   addMiscCost: async (carId, misc) => {

@@ -78,6 +78,7 @@ export default function Customers() {
   const addTestDrive = useStore((s) => s.addTestDrive);
   const testDrives = useStore((s) => s.testDrives);
   const addPersonalReminder = useStore((s) => s.addPersonalReminder);
+  const bankers = useStore((s) => s.bankers);
 
   const isDirector = currentUser?.role === 'director';
   const isAdmin = currentUser?.role === 'admin';
@@ -160,10 +161,11 @@ export default function Customers() {
   const deliveryPhotoRef = useRef<HTMLInputElement>(null);
   const [expandedBank, setExpandedBank] = useState<string | null>(null);
   const [addBankInput, setAddBankInput] = useState('');
+  const [addBankerInput, setAddBankerInput] = useState('');
   useBodyScrollLock(!!detailLead || !!workOrderCustomer);
 
   useEffect(() => {
-    if (!detailLead) { setExpandedBank(null); setAddBankInput(''); return; }
+    if (!detailLead) { setExpandedBank(null); setAddBankInput(''); setAddBankerInput(''); return; }
     const apps = detailLead.loanApplications?.length
       ? detailLead.loanApplications
       : (detailLead.loanBankSubmitted ?? '').split(',').filter(Boolean).map(b => ({ bank: b.trim(), status: 'submitted' as const }));
@@ -705,9 +707,6 @@ export default function Customers() {
             title="Rejected / Trashed Cases"
           >
             <Trash2 size={14} />
-            {myCustomers.filter(c => c.isTrashed).length > 0 && (
-              <span className={`text-xs px-1.5 py-0.5 rounded-full ${tab === 'bin' ? 'bg-white/20' : 'bg-red-500/20 text-red-400'}`}>{myCustomers.filter(c => c.isTrashed).length}</span>
-            )}
           </button>
         </div>
         {tab === 'leads' && !isShareHolder && (
@@ -1590,6 +1589,9 @@ export default function Customers() {
                           >
                             <div className="min-w-0">
                               <span className="text-white text-sm">{app.bank}</span>
+                              {app.bankerName && (
+                                <p className="text-sky-400 text-xs mt-0.5">via {app.bankerName}</p>
+                              )}
                               {app.status === 'approved' && app.approvedAt && (() => {
                                 const daysLeft = 90 - Math.floor((Date.now() - new Date(app.approvedAt).getTime()) / 86400000);
                                 if (daysLeft <= 20) return (
@@ -1721,30 +1723,55 @@ export default function Customers() {
                         </div>
                       ))}
                       {/* Add Bank row */}
-                      <div className="flex items-center gap-2 px-3 py-2 border-t border-obsidian-400/30">
-                        <select
-                          className="flex-1 bg-transparent text-gray-400 text-xs outline-none"
-                          value={addBankInput}
-                          onChange={e => setAddBankInput(e.target.value)}
-                        >
-                          <option value="">+ Add bank...</option>
-                          {BANKS.filter(b => !bankStatuses.some(a => a.bank === b)).map(b => (
-                            <option key={b} value={b}>{b}</option>
-                          ))}
-                        </select>
-                        {addBankInput && (
-                          <button
-                            onClick={() => {
-                              const updated = [...bankStatuses, { bank: addBankInput, status: 'submitted' as const }];
-                              setBankStatuses(updated);
-                              handleSaveBankStatuses(detailLead.id, updated);
-                              setAddBankInput('');
-                            }}
-                            className="text-xs text-gold-400 hover:text-gold-300 font-medium transition-colors shrink-0"
+                      <div className="border-t border-obsidian-400/30">
+                        <div className="flex items-center gap-2 px-3 py-2">
+                          <select
+                            className="flex-1 bg-transparent text-gray-400 text-xs outline-none"
+                            value={addBankInput}
+                            onChange={e => { setAddBankInput(e.target.value); setAddBankerInput(''); }}
                           >
-                            Add
-                          </button>
-                        )}
+                            <option value="">+ Add bank...</option>
+                            {BANKS.filter(b => !bankStatuses.some(a => a.bank === b)).map(b => (
+                              <option key={b} value={b}>{b}</option>
+                            ))}
+                          </select>
+                        </div>
+                        {addBankInput && (() => {
+                          const bankBankers = bankers.filter(b => b.bank === addBankInput);
+                          return (
+                            <div className="px-3 pb-2 space-y-2">
+                              {bankBankers.length > 0 && (
+                                <select
+                                  className="w-full bg-obsidian-700/60 border border-obsidian-400/40 text-gray-300 text-xs rounded-lg px-2 py-1.5 outline-none"
+                                  value={addBankerInput}
+                                  onChange={e => setAddBankerInput(e.target.value)}
+                                >
+                                  <option value="">Select banker (optional)...</option>
+                                  {bankBankers.map(b => (
+                                    <option key={b.id} value={b.id}>{b.name}{b.phone ? ` · ${b.phone}` : ''}</option>
+                                  ))}
+                                </select>
+                              )}
+                              <button
+                                onClick={() => {
+                                  const selectedBanker = bankers.find(b => b.id === addBankerInput);
+                                  const updated = [...bankStatuses, {
+                                    bank: addBankInput,
+                                    status: 'submitted' as const,
+                                    ...(selectedBanker ? { bankerId: selectedBanker.id, bankerName: selectedBanker.name } : {}),
+                                  }];
+                                  setBankStatuses(updated);
+                                  handleSaveBankStatuses(detailLead.id, updated);
+                                  setAddBankInput('');
+                                  setAddBankerInput('');
+                                }}
+                                className="w-full text-xs text-gold-400 hover:text-gold-300 font-medium transition-colors bg-gold-500/10 hover:bg-gold-500/15 py-1.5 rounded-lg"
+                              >
+                                Submit to {addBankInput}{addBankerInput ? ` · ${bankers.find(b => b.id === addBankerInput)?.name}` : ''}
+                              </button>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>

@@ -27,8 +27,20 @@ export interface ChecklistItem {
   checkedAt?: string;
 }
 
+export interface Banker {
+  id: string;
+  name: string;
+  bank: string;       // which bank they work at (must match BANKS)
+  phone?: string;
+  email?: string;
+  notes?: string;
+  createdAt: string;
+}
+
 export interface LoanApplication {
   bank: string;
+  bankerId?: string;   // links to Banker.id
+  bankerName?: string; // denormalised for display
   status: 'submitted' | 'approved' | 'rejected';
   approvalReason?: string;
   approvedAt?: string;
