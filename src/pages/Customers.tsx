@@ -162,7 +162,6 @@ export default function Customers() {
   const [expandedBank, setExpandedBank] = useState<string | null>(null);
   // Bank submission modal
   const [bankModalLeadId, setBankModalLeadId] = useState<string | null>(null);
-  const [bankModalStep, setBankModalStep] = useState<'banks' | 'bankers'>('banks');
   // bankModalPicks: { [bankName]: bankerId | '' }
   const [bankModalPicks, setBankModalPicks] = useState<Record<string, string>>({});
   // pending form data captured from sidebar before it closes — only set for first-time loan submission
@@ -440,7 +439,6 @@ export default function Customers() {
     });
     closeSidebar();
     setBankModalPicks({});
-    setBankModalStep('banks');
     setBankModalLeadId(leadId);
   };
 
@@ -1732,7 +1730,7 @@ export default function Customers() {
                       {BANKS.some(b => !bankStatuses.some(a => a.bank === b)) && (
                         <div className="border-t border-obsidian-400/30 px-3 py-2">
                           <button
-                            onClick={() => { setBankModalPicks({}); setBankModalStep('banks'); setBankModalLeadId(detailLead.id); }}
+                            onClick={() => { setBankModalPicks({}); setBankModalLeadId(detailLead.id); }}
                             className="w-full text-xs text-gold-400 hover:text-gold-300 font-medium transition-colors py-1.5 flex items-center justify-center gap-1.5"
                           >
                             <Plus size={12} /> Add bank
@@ -2635,17 +2633,11 @@ export default function Customers() {
           setBankModalPicks(next);
         };
 
-        const handleNext = () => {
-          if (banksNeedingBanker.length > 0) { setBankModalStep('bankers'); }
-          else { doSubmit(); }
-        };
-
         const doSubmit = () => {
           const newApps: LoanApplication[] = selectedBanks.map(bank => {
             const banker = bankers.find(b => b.id === bankModalPicks[bank]);
             return { bank, status: 'submitted' as const, ...(banker ? { bankerId: banker.id, bankerName: banker.name } : {}) };
           });
-          // First-time submission: promote lead to loan_submitted with captured form data
           if (bankModalPendingData) {
             updateCustomer(bankModalLeadId, {
               leadStatus: 'loan_submitted',
@@ -2672,28 +2664,23 @@ export default function Customers() {
               </div>
 
               {/* Header */}
-              <div className="px-6 pt-5 pb-1 flex items-start justify-between">
+              <div className="px-6 pt-5 pb-4 flex items-start justify-between">
                 <div>
-                  {bankModalStep === 'bankers' && (
-                    <button onClick={() => setBankModalStep('banks')} className="text-gray-500 hover:text-white text-xs flex items-center gap-1 mb-2 transition-colors">
-                      ← Back
-                    </button>
-                  )}
-                  <p className="text-white font-bold text-lg">
-                    {bankModalStep === 'banks' ? 'Which banks?' : 'Who to submit to?'}
-                  </p>
+                  <p className="text-white font-bold text-lg">Submit Loan</p>
                   <p className="text-gray-500 text-sm mt-0.5">{lead.name}{carName ? ` · ${carName}` : ''}</p>
                 </div>
                 <button onClick={close} className="mt-1 text-gray-500 hover:text-white transition-colors"><X size={18} /></button>
               </div>
 
-              {/* ── STEP 1: Bank selection ── */}
-              {bankModalStep === 'banks' && (
-                <>
-                  <div className="px-4 pt-4 pb-2 space-y-2 max-h-[55vh] overflow-y-auto">
-                    {available.length === 0 ? (
-                      <p className="text-gray-600 text-sm text-center py-8">All banks already submitted</p>
-                    ) : available.map(bank => {
+              {/* Scrollable body */}
+              <div className="px-4 pb-2 space-y-4 max-h-[65vh] overflow-y-auto">
+
+                {/* Bank selection */}
+                {available.length === 0 ? (
+                  <p className="text-gray-600 text-sm text-center py-8">All banks already submitted</p>
+                ) : (
+                  <div className="space-y-2">
+                    {available.map(bank => {
                       const selected = bank in bankModalPicks;
                       return (
                         <button
@@ -2722,31 +2709,17 @@ export default function Customers() {
                       );
                     })}
                   </div>
-                  <div className="px-4 pb-6 pt-3">
-                    <button
-                      onClick={handleNext}
-                      disabled={selectedBanks.length === 0}
-                      className="w-full btn-gold py-4 rounded-2xl text-sm font-bold disabled:opacity-30"
-                    >
-                      {selectedBanks.length === 0
-                        ? 'Select at least one bank'
-                        : banksNeedingBanker.length > 0
-                          ? `Next — assign bankers`
-                          : `Submit to ${selectedBanks.length} bank${selectedBanks.length > 1 ? 's' : ''}`}
-                    </button>
-                  </div>
-                </>
-              )}
+                )}
 
-              {/* ── STEP 2: Banker assignment ── */}
-              {bankModalStep === 'bankers' && (
-                <>
-                  <div className="px-4 pt-4 pb-2 space-y-3 max-h-[55vh] overflow-y-auto">
+                {/* Banker assignment — appears inline when banks needing a banker are selected */}
+                {banksNeedingBanker.length > 0 && (
+                  <div className="space-y-3 pt-1 border-t border-obsidian-500/30">
+                    <p className="text-gray-500 text-xs font-semibold uppercase tracking-widest pt-2">Who to submit to?</p>
                     {banksNeedingBanker.map(bank => {
                       const bankBankers = bankers.filter(b => b.bank === bank);
                       const selectedBankerId = bankModalPicks[bank] ?? '';
                       return (
-                        <div key={bank} className="space-y-2">
+                        <div key={bank} className="space-y-1.5">
                           <p className="text-gray-400 text-xs font-bold uppercase tracking-widest px-1">{bank}</p>
                           {bankBankers.length === 0 ? (
                             <div className="px-4 py-3 rounded-xl border border-obsidian-500/30 bg-obsidian-700/30">
@@ -2782,16 +2755,22 @@ export default function Customers() {
                       );
                     })}
                   </div>
-                  <div className="px-4 pb-6 pt-3">
-                    <button
-                      onClick={doSubmit}
-                      className="w-full btn-gold py-4 rounded-2xl text-sm font-bold"
-                    >
-                      Submit to {selectedBanks.length} bank{selectedBanks.length > 1 ? 's' : ''}
-                    </button>
-                  </div>
-                </>
-              )}
+                )}
+
+              </div>
+
+              {/* Submit */}
+              <div className="px-4 pb-6 pt-3">
+                <button
+                  onClick={doSubmit}
+                  disabled={selectedBanks.length === 0}
+                  className="w-full btn-gold py-4 rounded-2xl text-sm font-bold disabled:opacity-30"
+                >
+                  {selectedBanks.length === 0
+                    ? 'Select at least one bank'
+                    : `Submit to ${selectedBanks.length} bank${selectedBanks.length > 1 ? 's' : ''}`}
+                </button>
+              </div>
             </div>
           </div>
         );
