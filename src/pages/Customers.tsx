@@ -165,6 +165,8 @@ export default function Customers() {
   const [bankModalStep, setBankModalStep] = useState<'banks' | 'bankers'>('banks');
   // bankModalPicks: { [bankName]: bankerId | '' }
   const [bankModalPicks, setBankModalPicks] = useState<Record<string, string>>({});
+  // pending form data captured from sidebar before it closes — only set for first-time loan submission
+  const [bankModalPendingData, setBankModalPendingData] = useState<{ carId: string; dealPrice: number } | null>(null);
   useBodyScrollLock(!!detailLead || !!workOrderCustomer);
 
   useEffect(() => {
@@ -432,12 +434,9 @@ export default function Customers() {
   const handleProceedLoan = () => {
     if (!sidebarLead) return;
     const leadId = sidebarLead.id;
-    updateCustomer(leadId, {
-      leadStatus: 'loan_submitted',
-      loanStatus: 'submitted',
-      interestedCarId: loanForm.carId || sidebarLead.interestedCarId,
-      dealPrice: loanForm.dealPrice ? Number(loanForm.dealPrice) : sidebarLead.dealPrice,
-      lastActionAt: new Date().toISOString(),
+    setBankModalPendingData({
+      carId: loanForm.carId || sidebarLead.interestedCarId || '',
+      dealPrice: loanForm.dealPrice ? Number(loanForm.dealPrice) : (sidebarLead.dealPrice ?? 0),
     });
     closeSidebar();
     setBankModalPicks({});
@@ -2646,11 +2645,22 @@ export default function Customers() {
             const banker = bankers.find(b => b.id === bankModalPicks[bank]);
             return { bank, status: 'submitted' as const, ...(banker ? { bankerId: banker.id, bankerName: banker.name } : {}) };
           });
+          // First-time submission: promote lead to loan_submitted with captured form data
+          if (bankModalPendingData) {
+            updateCustomer(bankModalLeadId, {
+              leadStatus: 'loan_submitted',
+              loanStatus: 'submitted',
+              ...(bankModalPendingData.carId ? { interestedCarId: bankModalPendingData.carId } : {}),
+              ...(bankModalPendingData.dealPrice ? { dealPrice: bankModalPendingData.dealPrice } : {}),
+              lastActionAt: new Date().toISOString(),
+            });
+          }
           handleSaveBankStatuses(bankModalLeadId, [...(lead.loanApplications ?? []), ...newApps]);
           setBankModalLeadId(null);
+          setBankModalPendingData(null);
         };
 
-        const close = () => setBankModalLeadId(null);
+        const close = () => { setBankModalLeadId(null); setBankModalPendingData(null); };
 
         return (
           <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm" onClick={close}>
