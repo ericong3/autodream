@@ -18,6 +18,7 @@ import {
   Building2,
   HeartHandshake,
 } from 'lucide-react';
+import Modal from '../components/Modal';
 import { useStore } from '../store';
 import { formatRM, formatMileage, shortName } from '../utils/format';
 import StatCard from '../components/StatCard';
@@ -77,6 +78,8 @@ export default function History() {
     setMonthFilter(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
   };
   const [filterMake, setFilterMake] = useState('All');
+  const [disbursalCarId, setDisbursalCarId] = useState<string | null>(null);
+  const [disbursalForm, setDisbursalForm] = useState({ amount: '', date: '' });
 
   const soldCars = useMemo(() => {
     let result = cars.filter((c) => c.status === 'delivered');
@@ -333,11 +336,18 @@ export default function History() {
                   {isDirector && (() => {
                     const { type, label } = getPaymentType(car);
                     const Icon = type === 'loan' ? Building2 : type === 'consignment' ? HeartHandshake : Banknote;
+                    const isLoanType = type === 'loan';
                     return (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (!car.moneyReceived) updateCar(car.id, { moneyReceived: true });
+                          if (car.moneyReceived) return;
+                          if (isLoanType) {
+                            setDisbursalForm({ amount: String(car.disbursementAmount ?? ''), date: car.disbursementDate ?? '' });
+                            setDisbursalCarId(car.id);
+                          } else {
+                            updateCar(car.id, { moneyReceived: true });
+                          }
                         }}
                         className={`mt-1.5 w-full flex items-center justify-center gap-1.5 py-1 rounded-lg border text-[10px] font-bold transition-colors ${
                           car.moneyReceived
@@ -346,7 +356,7 @@ export default function History() {
                         }`}
                       >
                         {car.moneyReceived
-                          ? <><CheckCircle size={9} /> Received</>
+                          ? <><CheckCircle size={9} /> {car.disbursementAmount ? `RM ${car.disbursementAmount.toLocaleString()}` : 'Received'}</>
                           : <><Icon size={9} /> {label}</>
                         }
                       </button>
@@ -411,11 +421,18 @@ export default function History() {
                   {isDirector && (() => {
                     const { type, label } = getPaymentType(car);
                     const Icon = type === 'loan' ? Building2 : type === 'consignment' ? HeartHandshake : Banknote;
+                    const isLoanType = type === 'loan';
                     return (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (!car.moneyReceived) updateCar(car.id, { moneyReceived: true });
+                          if (car.moneyReceived) return;
+                          if (isLoanType) {
+                            setDisbursalForm({ amount: String(car.disbursementAmount ?? ''), date: car.disbursementDate ?? '' });
+                            setDisbursalCarId(car.id);
+                          } else {
+                            updateCar(car.id, { moneyReceived: true });
+                          }
                         }}
                         className={`flex items-center gap-1 text-[10px] font-bold transition-colors ${
                           car.moneyReceived
@@ -424,7 +441,7 @@ export default function History() {
                         }`}
                       >
                         {car.moneyReceived
-                          ? <><CheckCircle size={9} /> Received</>
+                          ? <><CheckCircle size={9} /> {car.disbursementAmount ? `RM ${car.disbursementAmount.toLocaleString()}` : 'Received'}</>
                           : <><Icon size={9} /> {label}</>
                         }
                       </button>
@@ -453,6 +470,56 @@ export default function History() {
           })}
         </div>
       )}
+
+      {/* ── Disbursement Modal ── */}
+      <Modal
+        isOpen={!!disbursalCarId}
+        onClose={() => setDisbursalCarId(null)}
+        title="Record Bank Disbursement"
+        maxWidth="max-w-sm"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-400 text-sm">Enter the amount and date the bank sent the loan money.</p>
+          <div>
+            <label className="block text-gray-300 text-xs font-medium mb-1.5">Amount Disbursed (RM)</label>
+            <input
+              type="number"
+              className="input w-full"
+              placeholder="e.g. 45000"
+              value={disbursalForm.amount}
+              onChange={e => setDisbursalForm(f => ({ ...f, amount: e.target.value }))}
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="block text-gray-300 text-xs font-medium mb-1.5">Disbursement Date</label>
+            <input
+              type="date"
+              className="input w-full"
+              value={disbursalForm.date}
+              onChange={e => setDisbursalForm(f => ({ ...f, date: e.target.value }))}
+            />
+          </div>
+          <div className="flex gap-3 pt-1">
+            <button onClick={() => setDisbursalCarId(null)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
+            <button
+              disabled={!disbursalForm.amount}
+              onClick={() => {
+                if (!disbursalCarId) return;
+                updateCar(disbursalCarId, {
+                  moneyReceived: true,
+                  disbursementAmount: Number(disbursalForm.amount),
+                  disbursementDate: disbursalForm.date || undefined,
+                });
+                setDisbursalCarId(null);
+              }}
+              className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Confirm
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

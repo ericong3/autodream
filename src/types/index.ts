@@ -41,7 +41,7 @@ export interface LoanApplication {
   bank: string;
   bankerId?: string;   // links to Banker.id
   bankerName?: string; // denormalised for display
-  status: 'submitted' | 'approved' | 'rejected';
+  status: 'submitted' | 'approved' | 'rejected' | 'cancelled';
   approvalReason?: string;
   approvedAt?: string;
   approvedAmount?: number;
@@ -138,7 +138,7 @@ export interface LoanSubmission {
   customerPhone: string;
   submittedBy: string;
   submittedAt: string;
-  status: 'submitted' | 'approved' | 'rejected';
+  status: 'submitted' | 'approved' | 'rejected' | 'cancelled';
   notes?: string;
 }
 
@@ -241,6 +241,8 @@ export interface Car {
   sourceCommission?: number;     // commission paid to source person (external fee or internal sourcing bonus)
   intakeCommission?: number;     // in-house salesman bonus when external source: 0 | 500 | 1000
   carInDate?: string;            // date director clicked "Car In" — commission counts from this date
+  disbursementAmount?: number;   // loan disbursement from bank (RM)
+  disbursementDate?: string;     // date bank sent the money
 }
 
 export interface MiscCost {
@@ -352,6 +354,8 @@ export const DEFAULT_CHECKLIST_LABELS = [
 ];
 
 export interface PostSaleChecklist {
+  agreementSigned?: boolean;
+  thumbprintDone?: boolean;
   wantsCustomPlate?: boolean;
   puspakomBooked?: boolean;
   puspakomDate?: string;
@@ -395,6 +399,8 @@ export interface Customer {
   isTrashed?: boolean;
   trashedAt?: string;
   commission?: number;
+  dealType?: 'cash' | 'loan';
+  bookingFee?: number;
   createdAt: string;
 }
 

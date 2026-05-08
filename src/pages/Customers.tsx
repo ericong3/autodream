@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
-import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList, Truck, Upload, Lock, Skull, Clock, RotateCcw } from 'lucide-react';
+import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList, Truck, Upload, Lock, Skull, Clock, RotateCcw, MoreVertical } from 'lucide-react';
 import { useStore } from '../store';
 import { Customer, LoanApplication, LoanSubmission, CashWorkOrder, LoanWorkOrder, WorkOrderItem, BANKS, NO_BANKER_BANKS, PostSaleChecklist } from '../types';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
+import MiniCalendar from '../components/MiniCalendar';
 import { generateId, formatRM } from '../utils/format';
 import { supabase } from '../lib/supabase';
 
@@ -121,7 +122,6 @@ export default function Customers() {
   // Test drive scheduling modal
   const [showTdModal, setShowTdModal] = useState(false);
   const [tdCustomer, setTdCustomer] = useState<Customer | null>(null);
-  const [tdForm, setTdForm] = useState({ carId: '', date: '', time: '', notes: '' });
 
   // Next-step modal (for test_drive leads)
   const [sidebarLead, setSidebarLead] = useState<Customer | null>(null);
@@ -133,6 +133,7 @@ export default function Customers() {
   // Work order overlay
   const [workOrderCustomer, setWorkOrderCustomer] = useState<Customer | null>(null);
   const [workOrderCarId, setWorkOrderCarId] = useState('');
+  const [workOrderIsEdit, setWorkOrderIsEdit] = useState(false);
   const emptyWorkOrder = {
     sellingPrice: 0, insurance: 0, bankProduct: 0,
     additionalItems: [] as WorkOrderItem[],
@@ -155,6 +156,7 @@ export default function Customers() {
   // Detail drawer
   const [detailLead, setDetailLead] = useState<Customer | null>(null);
   const [detailTab, setDetailTab] = useState<'details' | 'calculation' | 'postsale' | 'timeline'>('details');
+  const [showDetailMenu, setShowDetailMenu] = useState(false);
   const [showDeliveryModal, setShowDeliveryModal] = useState(false);
   const [deliveryPhotoUrl, setDeliveryPhotoUrl] = useState('');
   const [deliveryUploading, setDeliveryUploading] = useState(false);
@@ -384,29 +386,14 @@ export default function Customers() {
   };
 
   // ── Test Drive scheduling ─────────────────────────────────
+  const [tdForm, setTdForm] = useState({ carId: '', date: '', time: '', notes: '' });
+
   const openTdSchedule = (c: Customer) => {
     setTdCustomer(c);
     setTdForm({ carId: c.interestedCarId ?? '', date: '', time: '', notes: '' });
     setShowTdModal(true);
   };
 
-  const handleSaveTd = () => {
-    if (!tdCustomer || !tdForm.date || !tdForm.time) return;
-    const scheduledAt = `${tdForm.date}T${tdForm.time}`;
-    addTestDrive({
-      id: generateId(),
-      customerId: tdCustomer.id,
-      carId: tdForm.carId,
-      scheduledAt,
-      status: 'scheduled',
-      notes: tdForm.notes || undefined,
-      salesId: tdCustomer.assignedSalesId || (currentUser?.id ?? ''),
-      createdAt: new Date().toISOString(),
-    });
-    updateCustomer(tdCustomer.id, { leadStatus: 'test_drive' });
-    setShowTdModal(false);
-    setTdCustomer(null);
-  };
 
   // ── Next-step sidebar ─────────────────────────────────────
   const openSidebar = (c: Customer) => {
@@ -527,28 +514,50 @@ export default function Customers() {
       createdAt: new Date().toISOString(),
     };
 
+    const needsApproval = hasDiscount || woForm.discount > 0;
+    const storeUpdateCar = useStore.getState().updateCar;
+
+    if (workOrderIsEdit) {
+      updateCustomer(workOrderCustomer.id, {
+        dealPrice: totalFinalDeal,
+        cashWorkOrder: workOrder,
+        lastActionAt: new Date().toISOString(),
+      });
+      if (car?.finalDeal) {
+        storeUpdateCar(car.id, {
+          finalDeal: {
+            ...car.finalDeal,
+            dealPrice: totalFinalDeal,
+            approvalStatus: needsApproval ? 'pending' : 'approved',
+            approvedBy: needsApproval ? undefined : currentUser?.name,
+            approvedAt: needsApproval ? undefined : new Date().toISOString(),
+          },
+        });
+      }
+      setWorkOrderIsEdit(false);
+      setWorkOrderCustomer(null);
+      return;
+    }
+
     updateCustomer(workOrderCustomer.id, {
-      leadStatus: 'loan_submitted',
-      loanStatus: 'approved',
-      loanBankSubmitted: 'Cash',
-      loanApplications: [{ bank: 'Cash', status: 'approved' }],
+      dealType: 'cash',
       interestedCarId: workOrderCarId,
       dealPrice: totalFinalDeal,
       cashWorkOrder: workOrder,
+      lastActionAt: new Date().toISOString(),
     });
 
     if (car) {
-      const updateCar = useStore.getState().updateCar;
-      updateCar(car.id, {
+      storeUpdateCar(car.id, {
         status: 'deal_pending',
         finalDeal: {
           submittedBy: currentUser?.name ?? '',
           submittedAt: new Date().toISOString(),
           dealPrice: totalFinalDeal,
           bank: 'Cash',
-          approvalStatus: (hasDiscount || woForm.discount > 0) ? 'pending' : 'approved',
-          approvedBy: (hasDiscount || woForm.discount > 0) ? undefined : currentUser?.name,
-          approvedAt: (hasDiscount || woForm.discount > 0) ? undefined : new Date().toISOString(),
+          approvalStatus: needsApproval ? 'pending' : 'approved',
+          approvedBy: needsApproval ? undefined : currentUser?.name,
+          approvedAt: needsApproval ? undefined : new Date().toISOString(),
         },
       });
     }
@@ -602,6 +611,43 @@ export default function Customers() {
   };
 
   // ── Loan Work Order ───────────────────────────────────────
+  const openEditWorkOrder = (c: Customer) => {
+    const wo = c.loanWorkOrder ?? c.cashWorkOrder;
+    if (!wo) return;
+    const type = c.loanWorkOrder ? 'loan' : 'cash';
+    setWoForm({
+      ...emptyWorkOrder,
+      sellingPrice: wo.sellingPrice,
+      insurance: wo.insurance,
+      bankProduct: wo.bankProduct,
+      additionalItems: wo.additionalItems ?? [],
+      bookingFee: wo.bookingFee,
+      downpayment: (wo as CashWorkOrder).downpayment ?? 0,
+      discount: wo.discount,
+      loanAmount: c.loanWorkOrder?.loanAmount ?? 0,
+      approvedBank: c.loanWorkOrder?.bank ?? '',
+      customerName: wo.customerName,
+      customerIc: wo.customerIc,
+      customerPhone: wo.customerPhone,
+      customerEmail: wo.customerEmail,
+      customerAddress: wo.customerAddress,
+      hasTradeIn: wo.hasTradeIn,
+      tradeInPhotos: wo.tradeInPhotos ?? [],
+      greenCardPhoto: wo.greenCardPhoto ?? '',
+      tradeInPlate: wo.tradeInPlate ?? '',
+      tradeInMake: wo.tradeInMake ?? '',
+      tradeInModel: wo.tradeInModel ?? '',
+      tradeInVariant: wo.tradeInVariant ?? '',
+      tradeInPrice: wo.tradeInPrice ?? 0,
+      settlementFigure: wo.settlementFigure ?? 0,
+    });
+    setWorkOrderCarId(wo.carId);
+    setWorkOrderCustomer(c);
+    setWorkOrderType(type);
+    setWorkOrderIsEdit(true);
+    setDetailLead(null);
+  };
+
   const openFinalDeal = (c: Customer) => {
     const approvedApp = c.loanApplications?.find(a => a.status === 'approved');
     const car = getCar(c.interestedCarId);
@@ -654,15 +700,50 @@ export default function Customers() {
       createdAt: new Date().toISOString(),
     };
 
+    const storeUpdateCar2 = useStore.getState().updateCar;
+
+    if (workOrderIsEdit) {
+      updateCustomer(workOrderCustomer.id, {
+        dealPrice: totalFinalDeal,
+        loanWorkOrder,
+        lastActionAt: new Date().toISOString(),
+      });
+      if (car?.finalDeal) {
+        storeUpdateCar2(car.id, {
+          finalDeal: {
+            ...car.finalDeal,
+            dealPrice: totalFinalDeal,
+            approvalStatus: hasDiscount ? 'pending' : 'approved',
+            approvedBy: hasDiscount ? undefined : currentUser?.name,
+            approvedAt: hasDiscount ? undefined : new Date().toISOString(),
+          },
+        });
+      }
+      setWorkOrderIsEdit(false);
+      setWorkOrderCustomer(null);
+      return;
+    }
+
+    // Auto-cancel remaining submitted banks (not the winning one)
+    const cancelledApps = (workOrderCustomer.loanApplications ?? []).map(app =>
+      app.bank === woForm.approvedBank
+        ? app
+        : app.status === 'submitted'
+          ? { ...app, status: 'cancelled' as const, rejectionReason: 'Deal confirmed with another bank' }
+          : app
+    );
+
     updateCustomer(workOrderCustomer.id, {
+      dealType: 'loan',
       dealPrice: totalFinalDeal,
       loanStatus: 'approved',
       loanWorkOrder,
+      loanApplications: cancelledApps,
+      lastActionAt: new Date().toISOString(),
     });
 
     if (car) {
-      const storeUpdateCar = useStore.getState().updateCar;
-      storeUpdateCar(car.id, {
+      storeUpdateCar2(car.id, {
         status: 'deal_pending',
         finalDeal: {
           submittedBy: currentUser?.name ?? '',
@@ -847,96 +928,117 @@ export default function Customers() {
             <p className="text-gray-400">No leads found</p>
           </div>
         ) : (
-          <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card divide-y divide-obsidian-400/60">
+          <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card divide-y divide-obsidian-400/60 overflow-hidden">
             {leadsFiltered.map(c => {
               const currentIdx = STAGE_ORDER.indexOf(c.leadStatus);
               const canAdvance = currentIdx < STAGE_ORDER.length - 1;
               const nextStage = canAdvance ? STAGE_ORDER[currentIdx + 1] : null;
-              const col = STAGE_COLORS[c.leadStatus];
               const isTestDrive = c.leadStatus === 'test_drive';
+              const stale = isStale(c);
+              const car = getCar(c.interestedCarId);
+
+              const followUpInfo = (() => {
+                if (!c.followUpDate) return null;
+                const today = new Date(); today.setHours(0, 0, 0, 0);
+                const target = new Date(c.followUpDate + 'T00:00:00');
+                const diff = Math.round((target.getTime() - today.getTime()) / 86400000);
+                if (diff < 0) return { label: `Overdue ${Math.abs(diff)}d`, urgent: true };
+                if (diff === 0) return { label: 'Follow up today', urgent: true };
+                if (diff === 1) return { label: 'Follow up tomorrow', urgent: false };
+                return { label: `Follow up in ${diff}d`, urgent: false };
+              })();
 
               return (
-                <div key={c.id} className="flex items-center gap-3 px-4 py-3 hover:bg-obsidian-700/50 transition-colors cursor-pointer" onClick={() => setDetailLead(c)}>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-white text-sm font-medium">{c.name}</span>
-                      <span className="text-gray-600 text-xs hidden sm:inline">{c.phone}</span>
-                      <span className="text-gray-700 text-xs px-1.5 py-0.5 bg-[#2C2415] rounded hidden md:inline">{SOURCE_LABELS[c.source]}</span>
-                      {isDirectorLevel && <span className="text-gray-600 text-xs hidden lg:inline">{getSalesName(c.assignedSalesId)}</span>}
-                      {isStale(c) && (
-                        <span className="flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/25">
+                <div
+                  key={c.id}
+                  className={`px-4 py-4 hover:bg-obsidian-700/30 transition-colors cursor-pointer relative ${stale ? 'border-l-[3px] border-l-red-500/60 bg-red-500/[0.03]' : ''}`}
+                  onClick={() => setDetailLead(c)}
+                >
+                  {/* Row 1: Name + status pill */}
+                  <div className="flex items-start justify-between gap-2 mb-1.5">
+                    <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                      <span className="text-white text-sm font-semibold">{c.name}</span>
+                      {stale && (
+                        <span className="flex items-center gap-0.5 text-[10px] text-red-400">
                           <Clock size={9} />{getDaysSinceAction(c)}d stale
                         </span>
                       )}
                     </div>
-                    {(() => { const car = getCar(c.interestedCarId); return car ? (
-                      <div className="flex items-center gap-1 mt-0.5">
-                        <Car size={10} className="text-gray-600 flex-shrink-0" />
-                        <span className="text-gray-500 text-xs">{car.year} {car.make} {car.model}{car.variant ? ` ${car.variant}` : ''}</span>
-                        {car.carPlate && <span className="text-xs font-mono text-gold-500/70">{car.carPlate}</span>}
-                      </div>
-                    ) : null; })()}
-                    <div className="flex items-center gap-1 mt-1.5 flex-wrap">
-                      {STAGE_ORDER.filter(s => s !== 'loan_submitted').map((stage, idx) => (
-                        <React.Fragment key={stage}>
-                          <button
-                            onClick={e => {
-                              e.stopPropagation();
-                              if (stage === 'test_drive' && c.leadStatus !== 'test_drive') openTdSchedule(c);
-                              else if (stage === 'follow_up' && c.leadStatus === 'test_drive') openSidebar(c);
-                              else updateCustomer(c.id, { leadStatus: stage });
-                            }}
-                            title={LEAD_STATUS_LABELS[stage]}
-                            className={`w-2 h-2 rounded-full transition-all hover:scale-125 ${
-                              idx < currentIdx ? `${STAGE_COLORS[stage].dot} opacity-50` :
-                              idx === currentIdx ? `${STAGE_COLORS[stage].dot}` :
-                              'bg-[#3C321E]'
-                            }`}
-                          />
-                          {idx < 2 && <div className={`h-px w-4 ${idx < currentIdx ? 'bg-gray-600' : 'bg-[#2C2415]'}`} />}
-                        </React.Fragment>
-                      ))}
-                      <span className={`text-xs font-medium ml-2 ${col.text}`}>{LEAD_STATUS_LABELS[c.leadStatus]}</span>
-                    </div>
-                    <input
-                      type="text"
-                      defaultValue={c.followUpRemark ?? ''}
-                      onBlur={e => {
-                        const val = e.target.value.trim();
-                        if (val !== (c.followUpRemark ?? '')) {
-                          updateCustomer(c.id, { followUpRemark: val || undefined });
-                        }
-                      }}
-                      onClick={e => e.stopPropagation()}
-                      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                      placeholder="Remark... (what to follow up?)"
-                      className="mt-2 w-full text-xs bg-transparent border-b border-obsidian-400/40 hover:border-obsidian-400/70 focus:border-gold-500/60 text-gray-400 placeholder-gray-700 focus:text-gray-200 outline-none py-1 transition-colors"
-                    />
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border shrink-0 ${
+                      c.leadStatus === 'contacted'      ? 'bg-blue-500/15 border-blue-500/30 text-blue-400' :
+                      c.leadStatus === 'test_drive'     ? 'bg-yellow-500/15 border-yellow-500/30 text-yellow-400' :
+                      c.leadStatus === 'follow_up'      ? 'bg-gold-500/15 border-gold-500/30 text-gold-400' :
+                                                          'bg-green-500/15 border-green-500/30 text-green-400'
+                    }`}>{LEAD_STATUS_LABELS[c.leadStatus]}</span>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+
+                  {/* Row 2: Phone + source */}
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-gray-500 text-xs">{c.phone}</span>
+                    <span className="text-gray-600 text-[10px] px-1.5 py-0.5 bg-obsidian-700/50 rounded border border-obsidian-500/30">{SOURCE_LABELS[c.source]}</span>
+                    {isDirectorLevel && <span className="text-gray-600 text-xs hidden lg:inline">{getSalesName(c.assignedSalesId)}</span>}
+                  </div>
+
+                  {/* Row 3: Car badge */}
+                  {car && (
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <Car size={10} className="text-gold-500/50 shrink-0" />
+                      <span className="text-gold-400/80 text-xs font-medium">{car.year} {car.make} {car.model}{car.variant ? ` ${car.variant}` : ''}</span>
+                      {car.carPlate && <span className="text-[10px] font-mono text-gold-500/60 bg-obsidian-700/50 px-1.5 py-0.5 rounded border border-obsidian-500/30">{car.carPlate}</span>}
+                    </div>
+                  )}
+
+                  {/* Row 4: Follow-up countdown */}
+                  {followUpInfo && (
+                    <div className={`flex items-center gap-1 text-[11px] mb-2 font-medium ${followUpInfo.urgent ? 'text-orange-400' : 'text-gray-500'}`}>
+                      <CalendarCheck size={10} />
+                      {followUpInfo.label}
+                    </div>
+                  )}
+
+                  {/* Row 5: Remark input */}
+                  <input
+                    type="text"
+                    defaultValue={c.followUpRemark ?? ''}
+                    onBlur={e => {
+                      const val = e.target.value.trim();
+                      if (val !== (c.followUpRemark ?? '')) {
+                        updateCustomer(c.id, { followUpRemark: val || undefined });
+                      }
+                    }}
+                    onClick={e => e.stopPropagation()}
+                    onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                    placeholder="Remark... (what to follow up?)"
+                    className="w-full text-xs bg-transparent border-b border-obsidian-400/40 hover:border-obsidian-400/70 focus:border-gold-500/60 text-gray-400 placeholder-gray-700 focus:text-gray-200 outline-none py-1 transition-colors"
+                  />
+
+                  {/* Row 6: Action zone */}
+                  <div className="flex items-center gap-2 mt-3" onClick={e => e.stopPropagation()}>
                     {isTestDrive ? (
-                      <button onClick={() => openSidebar(c)} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-yellow-500/30 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 transition-colors">
-                        Next Step <ArrowRight size={11} />
+                      <button onClick={() => openSidebar(c)} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border border-yellow-500/40 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 transition-colors font-medium touch-manipulation">
+                        Next Step <ArrowRight size={12} />
                       </button>
                     ) : canAdvance && nextStage && nextStage !== 'loan_submitted' ? (
                       <button
                         onClick={() => nextStage === 'test_drive' ? openTdSchedule(c) : updateCustomer(c.id, { leadStatus: nextStage })}
-                        className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-obsidian-400/60 hover:bg-obsidian-600/60 transition-colors ${STAGE_COLORS[nextStage].text}`}
+                        className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border border-obsidian-400/60 bg-obsidian-700/40 hover:bg-obsidian-600/60 transition-colors font-medium touch-manipulation ${STAGE_COLORS[nextStage].text}`}
                       >
-                        {LEAD_STATUS_LABELS[nextStage]} <ChevronRight size={11} />
+                        {LEAD_STATUS_LABELS[nextStage]} <ChevronRight size={12} />
                       </button>
                     ) : null}
-                    <button onClick={() => handleWhatsApp(c.phone, c.name)} className="flex items-center gap-1 px-2 py-1.5 text-xs text-green-400 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 hover:border-green-500/40 rounded-lg transition-colors">
-                      <MessageCircle size={12} />WA
+                    <button onClick={() => handleWhatsApp(c.phone, c.name)} className="flex items-center gap-1.5 px-3 py-2 text-xs text-green-400 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 hover:border-green-500/40 rounded-lg transition-colors font-medium touch-manipulation">
+                      <MessageCircle size={13} />WA
                     </button>
-                    {!isShareHolder && (<>
-                    <button onClick={() => openEdit(c)} className="p-1.5 text-gray-600 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors">
-                      <Edit2 size={14} />
-                    </button>
-                    <button onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })} className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors" title="Move to bin">
-                      <Trash2 size={14} />
-                    </button>
-                    </>)}
+                    {!isShareHolder && (
+                      <div className="ml-auto flex items-center gap-1">
+                        <button onClick={() => openEdit(c)} className="p-2 text-gray-600 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors touch-manipulation">
+                          <Edit2 size={14} />
+                        </button>
+                        <button onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })} className="p-2 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors touch-manipulation" title="Move to bin">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -1011,79 +1113,114 @@ export default function Customers() {
             <p className="text-gray-600 text-xs mt-1">Leads move here automatically when marked as Loan Submitted</p>
           </div>
         ) : (
-          <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card divide-y divide-obsidian-400/60">
+          <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card divide-y divide-obsidian-400/60 overflow-hidden">
             {loanFiltered.map(c => {
               const car = getCar(c.interestedCarId);
               const loanInfo = LOAN_STATUS_LABELS[c.loanStatus ?? 'not_started'];
+              const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
+
+              const expiringApp = c.loanApplications?.find(a => {
+                if (!a.approvedAt) return false;
+                const daysLeft = 90 - Math.floor((Date.now() - new Date(a.approvedAt).getTime()) / 86400000);
+                return daysLeft <= 20;
+              });
+              const expiringDays = expiringApp?.approvedAt
+                ? 90 - Math.floor((Date.now() - new Date(expiringApp.approvedAt).getTime()) / 86400000)
+                : null;
+
               return (
-                <div key={c.id} className="divide-y divide-obsidian-400/40">
-                  {/* Row */}
-                  <div className="flex items-center gap-3 px-4 py-3 hover:bg-obsidian-700/50 transition-colors cursor-pointer" onClick={() => setDetailLead(c)}>
+                <div key={c.id}>
+                  {/* Expiry warning banner */}
+                  {expiringApp && expiringDays !== null && (
+                    <div className="flex items-center gap-2 px-4 py-2.5 bg-orange-500/10 border-b border-orange-500/20">
+                      <AlertCircle size={13} className="text-orange-400 shrink-0" />
+                      <span className="text-orange-400 text-xs font-medium">
+                        {expiringApp.bank} approval expires in {expiringDays} day{expiringDays !== 1 ? 's' : ''} — complete Final Deal now
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Main row */}
+                  <div className="flex items-start gap-3 px-4 py-4 hover:bg-obsidian-700/30 transition-colors cursor-pointer" onClick={() => setDetailLead(c)}>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-white text-sm font-medium">{c.name}</span>
-                        <span className="text-gray-600 text-xs hidden sm:inline">{c.phone}</span>
+                      {/* Name + phone */}
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="text-white text-sm font-semibold">{c.name}</span>
+                        <span className="text-gray-500 text-xs hidden sm:inline">{c.phone}</span>
                         {isDirectorLevel && <span className="text-gray-600 text-xs hidden lg:inline">{getSalesName(c.assignedSalesId)}</span>}
                       </div>
-                      <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-                        {car && <span className="text-gray-400 text-xs">{car.year} {car.make} {car.model}</span>}
-                        {c.loanApplications?.length ? (
-                          <div className="flex flex-wrap gap-1">
-                            {c.loanApplications.map(a => {
-                              const daysLeft = a.approvedAt ? 90 - Math.floor((Date.now() - new Date(a.approvedAt).getTime()) / 86400000) : null;
-                              const expiring = daysLeft !== null && daysLeft <= 20;
-                              return (
-                                <span key={a.bank} className={`text-xs ${
-                                  a.status === 'approved' ? 'text-green-400' :
-                                  a.status === 'rejected' ? 'text-red-400' :
-                                  'text-yellow-400'
-                                }`}>
-                                  {a.bank}
-                                  {expiring && (
-                                    <span className="ml-1 text-orange-400">⚠ {daysLeft}d</span>
-                                  )}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        ) : c.loanBankSubmitted ? (
-                          <span className="text-gray-500 text-xs">{c.loanBankSubmitted}</span>
-                        ) : null}
-                        {c.dealPrice ? <span className="text-gray-400 text-xs font-medium">{formatRM(c.dealPrice)}</span> : null}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
-                      {c.loanApplications?.some(a => a.status === 'approved') && (
-                        <button
-                          onClick={() => openFinalDeal(c)}
-                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-gold-500/10 border border-gold-500/40 text-gold-400 hover:bg-gold-500/20 rounded-lg font-medium transition-colors"
-                        >
-                          <ClipboardList size={12} />Final Deal
-                        </button>
+
+                      {/* Car badge */}
+                      {car && (
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <Car size={10} className="text-gold-500/50 shrink-0" />
+                          <span className="text-gold-400/80 text-xs font-medium">{car.year} {car.make} {car.model}{car.variant ? ` ${car.variant}` : ''}</span>
+                          {car.carPlate && <span className="text-[10px] font-mono text-gold-500/60 bg-obsidian-700/50 px-1.5 py-0.5 rounded border border-obsidian-500/30">{car.carPlate}</span>}
+                        </div>
                       )}
-                      <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${
+
+                      {/* Bank status chips */}
+                      {c.loanApplications?.length ? (
+                        <div className="flex flex-wrap gap-1.5 mb-1.5">
+                          {c.loanApplications.map(a => {
+                            const daysLeft = a.approvedAt ? 90 - Math.floor((Date.now() - new Date(a.approvedAt).getTime()) / 86400000) : null;
+                            const expiring = daysLeft !== null && daysLeft <= 20;
+                            return (
+                              <span key={a.bank} className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                                a.status === 'approved'   ? 'bg-green-500/15 border-green-500/30 text-green-400' :
+                                a.status === 'rejected'   ? 'bg-red-500/15 border-red-500/30 text-red-400' :
+                                a.status === 'cancelled'  ? 'bg-obsidian-700/40 border-obsidian-500/30 text-gray-600 line-through' :
+                                                            'bg-yellow-500/15 border-yellow-500/30 text-yellow-400'
+                              }`}>
+                                {a.bank}
+                                {expiring && <span className="text-orange-400 not-italic">⚠{daysLeft}d</span>}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      ) : c.loanBankSubmitted ? (
+                        <span className="text-gray-500 text-xs">{c.loanBankSubmitted}</span>
+                      ) : null}
+
+                      {c.dealPrice ? <span className="text-gold-400 text-xs font-semibold">{formatRM(c.dealPrice)}</span> : null}
+                    </div>
+
+                    {/* Right: status pill + quick actions */}
+                    <div className="flex flex-col items-end gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+                      <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full border ${
                         loanInfo.label === 'Approved' ? 'bg-green-500/10 border-green-500/30 text-green-400' :
                         loanInfo.label === 'Rejected' ? 'bg-red-500/10 border-red-500/30 text-red-400' :
                         'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
                       }`}>{loanInfo.label}</span>
-                      <button onClick={() => handleWhatsApp(c.phone, c.name)} className="flex items-center gap-1 px-2 py-1.5 text-xs text-green-400 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 rounded-lg transition-colors">
-                        <MessageCircle size={12} />WA
-                      </button>
-                      {!isShareHolder && (<>
-                      <button
-                        onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })}
-                        className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                        title="Move to bin"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                      <button onClick={() => openEdit(c)} className="p-1.5 text-gray-600 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors">
-                        <Edit2 size={14} />
-                      </button>
-                      </>)}
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => handleWhatsApp(c.phone, c.name)} className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-green-400 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 rounded-lg transition-colors touch-manipulation">
+                          <MessageCircle size={12} />WA
+                        </button>
+                        {!isShareHolder && (<>
+                          <button onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })} className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors touch-manipulation" title="Move to bin">
+                            <Trash2 size={13} />
+                          </button>
+                          <button onClick={() => openEdit(c)} className="p-1.5 text-gray-600 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors touch-manipulation">
+                            <Edit2 size={13} />
+                          </button>
+                        </>)}
+                      </div>
                     </div>
                   </div>
 
+                  {/* Final Deal CTA — full width, only when approved */}
+                  {hasApproved && (
+                    <div className="px-4 pb-4" onClick={e => e.stopPropagation()}>
+                      <button
+                        onClick={() => openFinalDeal(c)}
+                        className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold bg-gold-500 text-obsidian-900 hover:bg-gold-400 transition-colors touch-manipulation"
+                      >
+                        <ClipboardList size={15} />
+                        Complete Final Deal
+                        <ArrowRight size={15} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -1249,58 +1386,98 @@ export default function Customers() {
         const hasWorkOrder = !!wo;
         return (
           <>
-            <div className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm" onClick={() => setDetailLead(null)} />
-            <div className="fixed inset-0 z-50 overflow-y-auto pointer-events-none">
-              <div className="flex min-h-full items-center justify-center p-4">
-                <div key={detailLead.id} className="pointer-events-auto relative w-full max-w-sm bg-gradient-to-b from-obsidian-700 to-obsidian-800 border border-obsidian-400/80 rounded-xl shadow-[0_20px_80px_rgba(0,0,0,0.8)] flex flex-col max-h-[90vh]">
-                  <div className="absolute top-0 left-0 right-0 h-[2px] rounded-t-xl bg-gold-gradient opacity-80" />
+            <div className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm" onClick={() => { setDetailLead(null); }} />
+            <div className="fixed inset-0 z-50 flex items-end sm:items-center pointer-events-none">
+              <div className="w-full sm:p-4 flex sm:justify-center">
+                <div key={detailLead.id} className="pointer-events-auto relative w-full sm:max-w-lg bg-gradient-to-b from-obsidian-700 to-obsidian-800 border-t border-x sm:border border-obsidian-400/80 rounded-t-2xl sm:rounded-2xl shadow-[0_-20px_80px_rgba(0,0,0,0.8)] sm:shadow-[0_20px_80px_rgba(0,0,0,0.8)] flex flex-col" style={{ maxHeight: '92vh' }}>
+                  {/* Handle bar — mobile only */}
+                  <div className="flex justify-center pt-3 pb-1 sm:hidden shrink-0">
+                    <div className="w-10 h-1 bg-obsidian-500/60 rounded-full" />
+                  </div>
+                  <div className="absolute top-0 left-0 right-0 h-[2px] rounded-t-2xl bg-gold-gradient opacity-80" />
 
                   {/* Header */}
-                  <div className="flex items-center justify-between px-5 py-4 border-b border-obsidian-400/60 shrink-0">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm uppercase ${STAGE_COLORS[detailLead.leadStatus].dot} bg-opacity-20 border border-opacity-30 text-white`} style={{ background: 'rgba(6,182,212,0.15)', borderColor: 'rgba(6,182,212,0.3)' }}>
-                        {detailLead.name.charAt(0)}
+                  <div className="px-5 pt-4 pb-4 border-b border-obsidian-400/60 shrink-0">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-11 h-11 rounded-full flex items-center justify-center font-bold text-base uppercase shrink-0 ${
+                          detailLead.leadStatus === 'contacted'  ? 'bg-blue-500/20 border border-blue-500/40 text-blue-300' :
+                          detailLead.leadStatus === 'test_drive' ? 'bg-yellow-500/20 border border-yellow-500/40 text-yellow-300' :
+                          detailLead.leadStatus === 'follow_up'  ? 'bg-gold-500/20 border border-gold-500/40 text-gold-300' :
+                                                                   'bg-green-500/20 border border-green-500/40 text-green-300'
+                        }`}>
+                          {detailLead.name.charAt(0)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-white font-semibold text-base leading-snug">{detailLead.name}</p>
+                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                            <span className={`text-xs font-medium ${STAGE_COLORS[detailLead.leadStatus].text}`}>{LEAD_STATUS_LABELS[detailLead.leadStatus]}</span>
+                            <span className="text-gray-600">·</span>
+                            <span className="text-gray-400 text-xs">{detailLead.phone}</span>
+                            <button
+                              onClick={() => handleWhatsApp(detailLead.phone, detailLead.name)}
+                              className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 text-[10px] font-semibold touch-manipulation"
+                            >
+                              <MessageCircle size={10} />WA
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-white font-semibold text-sm">{detailLead.name}</p>
-                        <span className={`text-xs ${STAGE_COLORS[detailLead.leadStatus].text}`}>{LEAD_STATUS_LABELS[detailLead.leadStatus]}</span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {!isShareHolder && (
+                          <div className="relative">
+                            <button onClick={() => setShowDetailMenu(v => !v)} className="p-2 text-gray-500 hover:text-white hover:bg-obsidian-600/60 rounded-xl transition-colors touch-manipulation">
+                              <MoreVertical size={16} />
+                            </button>
+                            {showDetailMenu && (
+                              <>
+                                <div className="fixed inset-0 z-[299]" onClick={() => setShowDetailMenu(false)} />
+                                <div className="absolute right-0 top-full mt-1 z-[300] w-52 bg-obsidian-800 border border-obsidian-400/60 rounded-2xl shadow-2xl overflow-hidden py-1">
+                                  {(detailLead.cashWorkOrder || detailLead.loanWorkOrder) && (!detailLead.delivered || isDirectorOrAdmin) && (
+                                    <button onClick={() => { openEditWorkOrder(detailLead); setShowDetailMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gold-400 hover:bg-obsidian-700/60 transition-colors touch-manipulation text-left">
+                                      <Edit2 size={14} />Edit Work Order
+                                    </button>
+                                  )}
+                                  <button onClick={() => { openEdit(detailLead); setDetailLead(null); setShowDetailMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-300 hover:bg-obsidian-700/60 transition-colors touch-manipulation text-left">
+                                    <Edit2 size={14} />Edit Lead Info
+                                  </button>
+                                  {getRevertLabel(detailLead) && (
+                                    <button onClick={() => { handleRevert(detailLead); setShowDetailMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-orange-400 hover:bg-obsidian-700/60 transition-colors touch-manipulation text-left">
+                                      <RotateCcw size={14} />{getRevertLabel(detailLead)}
+                                    </button>
+                                  )}
+                                  {detailLead.isDead && (
+                                    <button onClick={() => { handleReviveLead(detailLead); setShowDetailMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-blue-400 hover:bg-obsidian-700/60 transition-colors touch-manipulation text-left">
+                                      Revive Lead
+                                    </button>
+                                  )}
+                                  <div className="border-t border-obsidian-400/30 my-1" />
+                                  {!detailLead.isDead && !detailLead.cashWorkOrder && !detailLead.loanWorkOrder && isStale(detailLead) && (
+                                    <button onClick={() => { handleMarkDead(detailLead); setShowDetailMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-400/70 hover:bg-red-500/10 hover:text-red-400 transition-colors touch-manipulation text-left">
+                                      <Skull size={14} />Mark as Dead Lead
+                                    </button>
+                                  )}
+                                  <button onClick={() => { updateCustomer(detailLead.id, { isTrashed: true, trashedAt: new Date().toISOString() }); setDetailLead(null); setShowDetailMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-400/60 hover:bg-red-500/10 hover:text-red-400 transition-colors touch-manipulation text-left">
+                                    <Trash2 size={14} />Move to Bin
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
+                        <button onClick={() => { setDetailLead(null); setShowDetailMenu(false); }} className="p-2 text-gray-500 hover:text-white hover:bg-obsidian-600/60 rounded-xl transition-colors shrink-0 touch-manipulation">
+                          <X size={16} />
+                        </button>
                       </div>
                     </div>
-                    <button onClick={() => setDetailLead(null)} className="p-1.5 text-gray-500 hover:text-white hover:bg-obsidian-600/60 rounded-lg transition-colors">
-                      <X size={16} />
-                    </button>
                   </div>
 
                   {/* Tabs */}
                   <div className="flex border-b border-obsidian-400/60 shrink-0">
-                    <button
-                      onClick={() => setDetailTab('details')}
-                      className={`flex-1 py-2.5 text-xs font-medium transition-colors ${detailTab === 'details' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}
-                    >
-                      Details
-                    </button>
-                    {hasWorkOrder && (
-                      <button
-                        onClick={() => setDetailTab('calculation')}
-                        className={`flex-1 py-2.5 text-xs font-medium transition-colors ${detailTab === 'calculation' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}
-                      >
-                        Calc
-                      </button>
-                    )}
-                    {hasWorkOrder && (
-                      <button
-                        onClick={() => setDetailTab('postsale')}
-                        className={`flex-1 py-2.5 text-xs font-medium transition-colors ${detailTab === 'postsale' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}
-                      >
-                        Post-Sale
-                      </button>
-                    )}
-                    <button
-                      onClick={() => setDetailTab('timeline')}
-                      className={`flex-1 py-2.5 text-xs font-medium transition-colors ${detailTab === 'timeline' ? 'text-white border-b-2 border-blue-500' : 'text-gray-500 hover:text-gray-300'}`}
-                    >
-                      Timeline
-                    </button>
+                    <button onClick={() => setDetailTab('details')} className={`flex-1 py-3.5 text-xs font-semibold transition-colors touch-manipulation ${detailTab === 'details' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}>Details</button>
+                    {hasWorkOrder && <button onClick={() => setDetailTab('calculation')} className={`flex-1 py-3.5 text-xs font-semibold transition-colors touch-manipulation ${detailTab === 'calculation' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}>Deal</button>}
+                    {hasWorkOrder && <button onClick={() => setDetailTab('postsale')} className={`flex-1 py-3.5 text-xs font-semibold transition-colors touch-manipulation ${detailTab === 'postsale' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}>Post-Sale</button>}
+                    <button onClick={() => setDetailTab('timeline')} className={`flex-1 py-3.5 text-xs font-semibold transition-colors touch-manipulation ${detailTab === 'timeline' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}>Timeline</button>
                   </div>
 
                   {/* Calculation Tab */}
@@ -1327,22 +1504,25 @@ export default function Customers() {
                     );
 
                     return (
-                      <div className="flex-1 overflow-y-auto min-h-0">
+                      <div className="flex-1 overflow-y-auto min-h-0 pb-20">
+                        {/* Total Final Deal — most important number, shown prominently at top */}
+                        <div className="mx-4 mt-4 mb-2 bg-gold-500/10 border border-gold-500/30 rounded-2xl p-4 text-center">
+                          <p className="text-gold-400/70 text-xs font-semibold uppercase tracking-wide mb-1">Total Final Deal</p>
+                          <p className="text-gold-400 text-3xl font-bold">{formatRM(finalDeal)}</p>
+                          {discount > 0 && <p className="text-gray-500 text-xs mt-1">{formatRM(sellingPrice)} − {formatRM(discount)} discount</p>}
+                        </div>
+
                         {/* Car Deal */}
-                        <div className="px-4 py-2 bg-obsidian-700/30">
-                          <p className="text-gray-500 text-xs uppercase tracking-wide font-semibold">Car Deal</p>
+                        <div className="px-4 py-2.5 bg-obsidian-700/40 border-t border-b border-obsidian-400/30 mt-4">
+                          <p className="text-white text-xs font-bold uppercase tracking-wide">Car Deal</p>
                         </div>
                         <Row label="Selling Price" value={formatRM(sellingPrice)} color="text-white" />
                         {discount > 0 && <Row label="Discount" value={`− ${formatRM(discount)}`} color="text-red-400" sub />}
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-obsidian-400/20 bg-gold-500/5">
-                          <span className="text-xs text-gold-400 font-semibold">Total Final Deal</span>
-                          <span className="text-gold-400 text-sm font-bold">{formatRM(finalDeal)}</span>
-                        </div>
 
                         {/* Others */}
                         {(insurance > 0 || bankProduct > 0 || additionalItems.length > 0) && (<>
-                          <div className="px-4 py-2 bg-obsidian-700/30">
-                            <p className="text-gray-500 text-xs uppercase tracking-wide font-semibold">Others</p>
+                          <div className="px-4 py-2.5 bg-obsidian-700/40 border-t border-b border-obsidian-400/30 mt-2">
+                            <p className="text-white text-xs font-bold uppercase tracking-wide">Others</p>
                           </div>
                           {insurance > 0 && <Row label="Insurance" value={formatRM(insurance)} />}
                           {bankProduct > 0 && <Row label="Bank Product" value={formatRM(bankProduct)} />}
@@ -1350,8 +1530,8 @@ export default function Customers() {
                         </>)}
 
                         {/* Payment */}
-                        <div className="px-4 py-2 bg-obsidian-700/30">
-                          <p className="text-gray-500 text-xs uppercase tracking-wide font-semibold">Payment</p>
+                        <div className="px-4 py-2.5 bg-obsidian-700/40 border-t border-b border-obsidian-400/30 mt-2">
+                          <p className="text-white text-xs font-bold uppercase tracking-wide">Payment</p>
                         </div>
                         {isLoanWo && lwo && (<>
                           <Row label="Bank" value={lwo.bank} color="text-blue-300" />
@@ -1365,8 +1545,8 @@ export default function Customers() {
 
                         {/* Trade-in */}
                         {wo!.hasTradeIn && (<>
-                          <div className="px-4 py-2 bg-obsidian-700/30">
-                            <p className="text-gray-500 text-xs uppercase tracking-wide font-semibold">Trade-In</p>
+                          <div className="px-4 py-2.5 bg-obsidian-700/40 border-t border-b border-obsidian-400/30 mt-2">
+                            <p className="text-white text-xs font-bold uppercase tracking-wide">Trade-In</p>
                           </div>
                           <Row label={`${wo!.tradeInMake} ${wo!.tradeInModel} ${wo!.tradeInPlate}`} value="" color="text-gray-300" />
                           <Row label="Trade-In Value" value={formatRM(wo!.tradeInPrice)} color="text-green-400" />
@@ -1410,7 +1590,33 @@ export default function Customers() {
                     );
 
                     return (
-                      <div className="flex-1 overflow-y-auto min-h-0">
+                      <div className="flex-1 overflow-y-auto min-h-0 pb-20">
+                        {/* Progress bar — at the top */}
+                        {(() => {
+                          const steps = [cl.agreementSigned, cl.thumbprintDone, cl.puspakomBooked, cl.b5Obtained, isLoanCase && cl.b7Obtained, b2Required && cl.b2Booked, b2Required && cl.b2Obtained, cl.insuranceCoverNote, cl.nameTransferDone].filter(s => s !== false);
+                          const done = steps.filter(Boolean).length;
+                          const total = steps.length;
+                          const pct = Math.round((done / total) * 100);
+                          return (
+                            <div className="px-5 pt-4 pb-3 border-b border-obsidian-400/20">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-white text-sm font-semibold">{done}/{total} steps done</span>
+                                <span className={`text-sm font-bold ${pct === 100 ? 'text-green-400' : pct >= 60 ? 'text-gold-400' : 'text-gray-400'}`}>{pct}%</span>
+                              </div>
+                              <div className="h-2 bg-obsidian-600 rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-green-500' : 'bg-gold-500'}`} style={{ width: `${pct}%` }} />
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Agreement & Thumbprint */}
+                        <div className="px-4 py-2.5 bg-obsidian-700/40 border-b border-obsidian-400/30">
+                          <p className="text-white text-xs font-bold uppercase tracking-wide">Sale Agreement</p>
+                        </div>
+                        <Step done={!!cl.agreementSigned} label="S&P Agreement Signed" sub="Customer signs the sale & purchase agreement" onToggle={() => update({ agreementSigned: !cl.agreementSigned })} />
+                        <Step done={!!cl.thumbprintDone} label="Thumbprint Done" sub="Customer thumbprint on agreement" onToggle={() => update({ thumbprintDone: !cl.thumbprintDone })} />
+
                         {/* Custom plate toggle */}
                         <div className="px-4 py-3 border-b border-obsidian-400/30 flex items-center justify-between">
                           <div>
@@ -1426,8 +1632,8 @@ export default function Customers() {
                         </div>
 
                         {/* Puspakom */}
-                        <div className="px-4 py-2 bg-obsidian-700/30">
-                          <p className="text-gray-500 text-xs uppercase tracking-wide font-semibold">Puspakom</p>
+                        <div className="px-4 py-2.5 bg-obsidian-700/40 border-t border-b border-obsidian-400/30 mt-2">
+                          <p className="text-white text-xs font-bold uppercase tracking-wide">Puspakom</p>
                         </div>
                         <Step done={!!cl.puspakomBooked} label="Book Puspakom" sub={isLoanCase ? 'B5 + B7 required' : 'B5 required'} onToggle={() => update({ puspakomBooked: !cl.puspakomBooked })} />
                         {/* Puspakom date input */}
@@ -1462,8 +1668,8 @@ export default function Customers() {
                         </>}
 
                         {/* Insurance & Transfer */}
-                        <div className="px-4 py-2 bg-obsidian-700/30">
-                          <p className="text-gray-500 text-xs uppercase tracking-wide font-semibold">Insurance & Transfer</p>
+                        <div className="px-4 py-2.5 bg-obsidian-700/40 border-t border-b border-obsidian-400/30 mt-2">
+                          <p className="text-white text-xs font-bold uppercase tracking-wide">Insurance & Transfer</p>
                         </div>
                         <Step done={!!cl.insuranceCoverNote} label="Insurance Cover Note" sub="Get cover note before name transfer" onToggle={() => update({ insuranceCoverNote: !cl.insuranceCoverNote })} />
                         <Step
@@ -1474,105 +1680,15 @@ export default function Customers() {
                           onToggle={() => update({ nameTransferDone: !cl.nameTransferDone })}
                         />
 
-                        {/* Progress summary */}
-                        {(() => {
-                          const steps = [cl.puspakomBooked, cl.b5Obtained, isLoanCase && cl.b7Obtained, b2Required && cl.b2Booked, b2Required && cl.b2Obtained, cl.insuranceCoverNote, cl.nameTransferDone].filter(s => s !== false);
-                          const done = steps.filter(Boolean).length;
-                          const total = steps.length;
-                          const pct = Math.round((done / total) * 100);
-                          return (
-                            <div className="px-4 py-4">
-                              <div className="flex items-center justify-between mb-2">
-                                <span className="text-gray-500 text-xs">{done}/{total} steps done</span>
-                                <span className="text-gray-500 text-xs">{pct}%</span>
-                              </div>
-                              <div className="h-1.5 bg-obsidian-600 rounded-full overflow-hidden">
-                                <div className="h-full bg-gold-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
-                              </div>
-                            </div>
-                          );
-                        })()}
                         <div className="h-4" />
                       </div>
                     );
                   })()}
 
                   {/* Scrollable content — Details tab */}
-                  {(!hasWorkOrder || detailTab === 'details') && <div className="flex-1 overflow-y-auto p-5 space-y-5 min-h-0">
-                {/* Contact */}
-                <div className="space-y-2">
-                  <p className="text-gray-500 text-xs font-medium uppercase tracking-wide">Contact</p>
-                  <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl p-4 space-y-3">
-                    <div className="flex items-center gap-2.5">
-                      <Phone size={13} className="text-gray-500 shrink-0" />
-                      <span className="text-white text-sm">{detailLead.phone}</span>
-                    </div>
-                    {detailLead.email && (
-                      <div className="flex items-center gap-2.5">
-                        <Mail size={13} className="text-gray-500 shrink-0" />
-                        <span className="text-white text-sm">{detailLead.email}</span>
-                      </div>
-                    )}
-                    {detailLead.employer && (
-                      <div className="flex items-center gap-2.5">
-                        <Briefcase size={13} className="text-gray-500 shrink-0" />
-                        <span className="text-white text-sm">{detailLead.employer}</span>
-                        {!!detailLead.monthlySalary && <span className="text-gray-500 text-xs ml-1">· {formatRM(detailLead.monthlySalary)}/mo</span>}
-                      </div>
-                    )}
-                  </div>
-                </div>
+                  {(!hasWorkOrder || detailTab === 'details') && <div className="flex-1 overflow-y-auto p-5 space-y-5 min-h-0 pb-20">
 
-                {/* Lead Info */}
-                <div className="space-y-2">
-                  <p className="text-gray-500 text-xs font-medium uppercase tracking-wide">Lead Info</p>
-                  <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-500 text-xs">Source</span>
-                      <span className="text-white text-sm">{SOURCE_LABELS[detailLead.source]}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-500 text-xs">Stage</span>
-                      <span className={`text-sm font-medium ${STAGE_COLORS[detailLead.leadStatus].text}`}>{LEAD_STATUS_LABELS[detailLead.leadStatus]}</span>
-                    </div>
-                    {isDirectorLevel && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-500 text-xs">Assigned To</span>
-                        <span className="text-white text-sm">{getSalesName(detailLead.assignedSalesId)}</span>
-                      </div>
-                    )}
-                    {detailLead.followUpDate && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-500 text-xs">Follow-up Date</span>
-                        <span className="text-white text-sm">{detailLead.followUpDate}</span>
-                      </div>
-                    )}
-                    {detailLead.followUpRemark && (
-                      <div>
-                        <span className="text-gray-500 text-xs">Follow-up About</span>
-                        <p className="text-white text-sm mt-1">{detailLead.followUpRemark}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Interested Car */}
-                {car && (
-                  <div className="space-y-2">
-                    <p className="text-gray-500 text-xs font-medium uppercase tracking-wide">Interested Car</p>
-                    <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl p-4 flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-gold-500/10 border border-gold-500/20 flex items-center justify-center shrink-0">
-                        <Car size={16} className="text-gold-400" />
-                      </div>
-                      <div>
-                        <p className="text-white text-sm font-medium">{car.year} {car.make} {car.model}</p>
-                        <p className="text-gray-500 text-xs">{car.colour} · {car.sellingPrice > 0 ? formatRM(car.sellingPrice) : 'TBD'}</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Loan / Bank Status */}
+                {/* Banks — shown first when loan is submitted */}
                 {detailLead.loanStatus && detailLead.loanStatus !== 'not_started' && (
                   <div className="space-y-2">
                     <p className="text-gray-500 text-xs font-medium uppercase tracking-wide">Banks</p>
@@ -1613,14 +1729,15 @@ export default function Customers() {
                                 </p>
                               )}
                               {app.approvalReason && <p className="text-green-400/70 text-xs mt-0.5 truncate">{app.approvalReason}</p>}
-                              {app.rejectionReason && <p className="text-red-400 text-xs mt-0.5 truncate">{app.rejectionReason}</p>}
+                              {app.rejectionReason && <p className={`text-xs mt-0.5 truncate ${app.status === 'cancelled' ? 'text-gray-500' : 'text-red-400'}`}>{app.rejectionReason}</p>}
                             </div>
                             <span className={`text-xs px-2 py-0.5 rounded-full border font-medium shrink-0 ml-3 ${
                               app.status === 'approved' ? 'bg-green-500/10 border-green-500/30 text-green-400' :
                               app.status === 'rejected' ? 'bg-red-500/10 border-red-500/30 text-red-400' :
+                              app.status === 'cancelled' ? 'bg-gray-500/10 border-gray-500/30 text-gray-500' :
                               'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
                             }`}>
-                              {app.status === 'approved' ? 'Approved' : app.status === 'rejected' ? 'Rejected' : 'Submitted'}
+                              {app.status === 'approved' ? 'Approved' : app.status === 'rejected' ? 'Rejected' : app.status === 'cancelled' ? 'Cancelled' : 'Submitted'}
                             </span>
                           </button>
                           <button
@@ -1642,17 +1759,17 @@ export default function Customers() {
                               <div className="flex gap-2">
                                 <button
                                   onClick={() => toggleBankStatus(app.bank, 'approved')}
-                                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                                  className={`flex-1 flex items-center justify-center gap-1.5 py-3 rounded-xl text-xs font-semibold border transition-colors touch-manipulation ${
                                     app.status === 'approved'
                                       ? 'bg-green-500/20 border-green-500/50 text-green-300'
                                       : 'border-obsidian-400/60 text-gray-500 hover:border-green-500/40 hover:text-green-400'
                                   }`}
                                 >
-                                  <CheckCircle size={12} />Approve
+                                  <CheckCircle size={13} />Approve
                                 </button>
                                 <button
                                   onClick={() => toggleBankStatus(app.bank, 'submitted')}
-                                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                                  className={`flex-1 flex items-center justify-center gap-1.5 py-3 rounded-xl text-xs font-semibold border transition-colors touch-manipulation ${
                                     app.status === 'submitted'
                                       ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-300'
                                       : 'border-obsidian-400/60 text-gray-500 hover:border-yellow-500/40 hover:text-yellow-400'
@@ -1662,13 +1779,13 @@ export default function Customers() {
                                 </button>
                                 <button
                                   onClick={() => toggleBankStatus(app.bank, 'rejected')}
-                                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                                  className={`flex-1 flex items-center justify-center gap-1.5 py-3 rounded-xl text-xs font-semibold border transition-colors touch-manipulation ${
                                     app.status === 'rejected'
                                       ? 'bg-red-500/20 border-red-500/50 text-red-300'
                                       : 'border-obsidian-400/60 text-gray-500 hover:border-red-500/40 hover:text-red-400'
                                   }`}
                                 >
-                                  <XCircle size={12} />Reject
+                                  <XCircle size={13} />Reject
                                 </button>
                               </div>
                               {app.status === 'approved' && (
@@ -1742,7 +1859,122 @@ export default function Customers() {
                 )}
 
 
-                {/* Proceed to Loan — follow_up only */}
+                {/* Contact */}
+                <div className="space-y-2">
+                  <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Contact</p>
+                  <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Phone size={13} className="text-gray-500 shrink-0" />
+                        <span className="text-white text-sm">{detailLead.phone}</span>
+                      </div>
+                      <button
+                        onClick={() => handleWhatsApp(detailLead.phone, detailLead.name)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 text-xs font-semibold shrink-0 touch-manipulation"
+                      >
+                        <MessageCircle size={12} />WhatsApp
+                      </button>
+                    </div>
+                    {detailLead.email && (
+                      <div className="flex items-center gap-2.5">
+                        <Mail size={13} className="text-gray-500 shrink-0" />
+                        <span className="text-white text-sm">{detailLead.email}</span>
+                      </div>
+                    )}
+                    {detailLead.employer && (
+                      <div className="flex items-center gap-2.5">
+                        <Briefcase size={13} className="text-gray-500 shrink-0" />
+                        <span className="text-white text-sm">{detailLead.employer}</span>
+                        {!!detailLead.monthlySalary && <span className="text-gray-500 text-xs ml-1">· {formatRM(detailLead.monthlySalary)}/mo</span>}
+                      </div>
+                    )}
+                    {isDirectorLevel && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-500 text-xs">Salesperson</span>
+                        <span className="text-white text-sm">{getSalesName(detailLead.assignedSalesId)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Interested Car */}
+                {car && (
+                  <div className="space-y-2">
+                    <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Interested Car</p>
+                    <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl p-4 flex items-center gap-3">
+                      {car.photo ? (
+                        <img src={car.photo} alt="" className="w-16 h-16 rounded-xl object-cover shrink-0 border border-obsidian-400/40" />
+                      ) : (
+                        <div className="w-16 h-16 rounded-xl bg-gold-500/10 border border-gold-500/20 flex items-center justify-center shrink-0">
+                          <Car size={22} className="text-gold-400" />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-white text-sm font-semibold">{car.year} {car.make} {car.model}</p>
+                        {car.variant && <p className="text-gray-400 text-xs mt-0.5">{car.variant}</p>}
+                        <p className="text-gray-500 text-xs mt-0.5">{car.colour} · {car.sellingPrice > 0 ? formatRM(car.sellingPrice) : 'TBD'}</p>
+                        {car.carPlate && <p className="text-gold-500/70 text-xs font-mono mt-0.5">{car.carPlate}</p>}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Follow-up */}
+                {(detailLead.followUpDate || detailLead.followUpRemark) && (
+                  <div className="space-y-2">
+                    <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Follow-up</p>
+                    <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl p-4 space-y-2">
+                      {detailLead.followUpDate && (() => {
+                        const today = new Date(); today.setHours(0, 0, 0, 0);
+                        const target = new Date(detailLead.followUpDate + 'T00:00:00');
+                        const diff = Math.round((target.getTime() - today.getTime()) / 86400000);
+                        const countdown = diff < 0 ? `Overdue ${Math.abs(diff)} day${Math.abs(diff) !== 1 ? 's' : ''}` :
+                                          diff === 0 ? 'Today' : diff === 1 ? 'Tomorrow' : `In ${diff} days`;
+                        const urgent = diff <= 0;
+                        return (
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <CalendarCheck size={13} className="text-gray-500 shrink-0" />
+                              <span className="text-white text-sm">{target.toLocaleDateString('en-MY', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                            </div>
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${urgent ? 'bg-red-500/15 text-red-400 border border-red-500/25' : 'bg-obsidian-600/60 text-gray-400 border border-obsidian-500/30'}`}>{countdown}</span>
+                          </div>
+                        );
+                      })()}
+                      {detailLead.followUpRemark && (
+                        <p className="text-gray-300 text-sm pl-5">{detailLead.followUpRemark}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Booking Fee */}
+                <div className="space-y-2">
+                  <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Booking Fee</p>
+                  <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl px-4 py-3 flex items-center gap-3">
+                    <span className="text-gray-500 text-xs">RM</span>
+                    <input
+                      type="number"
+                      className="flex-1 bg-transparent text-white text-sm outline-none border-b border-transparent focus:border-gold-500/60 transition-colors"
+                      placeholder="0"
+                      defaultValue={detailLead.bookingFee ?? ''}
+                      onBlur={e => {
+                        const val = e.target.value ? Number(e.target.value) : undefined;
+                        if (val !== detailLead.bookingFee) {
+                          updateCustomer(detailLead.id, { bookingFee: val, lastActionAt: new Date().toISOString() });
+                        }
+                      }}
+                      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                    />
+                    {detailLead.bookingFee ? (
+                      <span className="text-gold-400 text-xs font-semibold">{formatRM(detailLead.bookingFee)}</span>
+                    ) : (
+                      <span className="text-gray-600 text-xs">Not recorded</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Proceed to Loan */}
                 {detailLead.leadStatus === 'follow_up' && (
                   <button
                     onClick={() => {
@@ -1752,9 +1984,9 @@ export default function Customers() {
                       setSidebarView('car_select');
                       setDetailLead(null);
                     }}
-                    className="w-full flex items-center justify-center gap-2 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-400 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                    className="w-full flex items-center justify-center gap-2 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-400 py-3 rounded-xl text-sm font-semibold transition-colors touch-manipulation"
                   >
-                    <Banknote size={15} />Loan
+                    <Banknote size={15} />Proceed with Loan
                   </button>
                 )}
               </div>}
@@ -1772,9 +2004,9 @@ export default function Customers() {
                   events.push({ date: tlWo.createdAt, label: detailLead.loanWorkOrder ? `Loan Work Order · ${detailLead.loanWorkOrder.bank ?? ''}` : 'Cash Work Order', sub: formatRM(tlWo.sellingPrice), color: 'text-violet-400', dot: 'bg-violet-400' });
                 }
                 (detailLead.loanApplications ?? []).forEach(app => {
-                  const statusLabel = app.status === 'approved' ? 'Loan Approved' : app.status === 'rejected' ? 'Loan Rejected' : 'Loan Submitted';
-                  const dotColor = app.status === 'approved' ? 'bg-green-400' : app.status === 'rejected' ? 'bg-red-400' : 'bg-blue-400';
-                  const textColor = app.status === 'approved' ? 'text-green-400' : app.status === 'rejected' ? 'text-red-400' : 'text-blue-400';
+                  const statusLabel = app.status === 'approved' ? 'Loan Approved' : app.status === 'rejected' ? 'Loan Rejected' : app.status === 'cancelled' ? 'Loan Cancelled' : 'Loan Submitted';
+                  const dotColor = app.status === 'approved' ? 'bg-green-400' : app.status === 'rejected' ? 'bg-red-400' : app.status === 'cancelled' ? 'bg-gray-500' : 'bg-blue-400';
+                  const textColor = app.status === 'approved' ? 'text-green-400' : app.status === 'rejected' ? 'text-red-400' : app.status === 'cancelled' ? 'text-gray-500' : 'text-blue-400';
                   events.push({ date: detailLead.createdAt, label: `${statusLabel} · ${app.bank}`, color: textColor, dot: dotColor });
                 });
                 tlTd.forEach(td => {
@@ -1794,7 +2026,7 @@ export default function Customers() {
                 events.sort((a, b) => b.date.localeCompare(a.date));
 
                 return (
-                  <div className="flex-1 overflow-y-auto min-h-0 p-5">
+                  <div className="flex-1 overflow-y-auto min-h-0 p-5 pb-24">
                     <div className="relative">
                       <div className="absolute left-3 top-2 bottom-2 w-px bg-obsidian-400/40" />
                       <div className="space-y-5">
@@ -1804,9 +2036,9 @@ export default function Customers() {
                               <span className="w-2 h-2 rounded-full bg-white/30" />
                             </span>
                             <div className="min-w-0">
-                              <p className={`text-xs font-semibold ${ev.color}`}>{ev.label}</p>
-                              {ev.sub && <p className="text-gray-500 text-xs mt-0.5">{ev.sub}</p>}
-                              <p className="text-gray-700 text-[10px] mt-0.5">{new Date(ev.date).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                              <p className={`text-sm font-semibold ${ev.color}`}>{ev.label}</p>
+                              {ev.sub && <p className="text-gray-400 text-xs mt-0.5">{ev.sub}</p>}
+                              <p className="text-gray-600 text-xs mt-0.5">{new Date(ev.date).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
                             </div>
                           </div>
                         ))}
@@ -1816,82 +2048,47 @@ export default function Customers() {
                 );
               })()}
 
-              {/* Action Footer */}
-              <div className="p-4 border-t border-obsidian-400/60 space-y-2">
-                <button
-                  onClick={() => handleWhatsApp(detailLead.phone, detailLead.name)}
-                  className="w-full flex items-center justify-center gap-2 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 py-2.5 rounded-lg text-sm font-medium transition-colors"
-                >
-                  <MessageCircle size={15} />WhatsApp
-                </button>
-                {(detailLead.cashWorkOrder || detailLead.loanWorkOrder) && !detailLead.delivered && (
-                  <button
-                    onClick={() => { setDeliveryPhotoUrl(''); setShowDeliveryModal(true); }}
-                    className="w-full flex items-center justify-center gap-2 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 py-2.5 rounded-lg text-sm font-medium transition-colors"
-                  >
-                    <Truck size={15} />Mark as Delivered
-                  </button>
-                )}
-                {detailLead.delivered && (
-                  <div className="w-full flex items-center justify-center gap-2 bg-green-500/5 border border-green-500/20 text-green-500 py-2.5 rounded-lg text-sm font-medium">
-                    <CheckCircle size={15} />Delivered · {detailLead.deliveredAt ? new Date(detailLead.deliveredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
-                  </div>
-                )}
-                {!isShareHolder && getRevertLabel(detailLead) && (
-                  <button
-                    onClick={() => handleRevert(detailLead)}
-                    className="w-full flex items-center justify-center gap-2 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 text-orange-400 py-2.5 rounded-lg text-sm font-medium transition-colors"
-                  >
-                    ← {getRevertLabel(detailLead)}
-                  </button>
-                )}
-                {!isShareHolder && !detailLead.isDead && !detailLead.cashWorkOrder && !detailLead.loanWorkOrder && isStale(detailLead) && (
-                  <button
-                    onClick={() => handleMarkDead(detailLead)}
-                    className="w-full flex items-center justify-center gap-2 bg-gray-700/40 hover:bg-gray-700/60 border border-gray-600/40 text-gray-500 hover:text-gray-300 py-2.5 rounded-lg text-sm font-medium transition-colors"
-                  >
-                    <Skull size={14} />Mark as Dead Lead
-                  </button>
-                )}
-                {!isShareHolder && detailLead.isDead && (
-                  <button
-                    onClick={() => handleReviveLead(detailLead)}
-                    className="w-full flex items-center justify-center gap-2 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-400 py-2.5 rounded-lg text-sm font-medium transition-colors"
-                  >
-                    ↑ Revive Lead
-                  </button>
-                )}
-                {!isShareHolder && <div className="grid grid-cols-2 gap-2">
-                  {detailLead.leadStatus === 'contacted' && (
-                    <button
-                      onClick={() => { openTdSchedule(detailLead); setDetailLead(null); }}
-                      className="flex items-center justify-center gap-1.5 border border-yellow-500/20 hover:bg-yellow-500/10 text-yellow-400 py-2.5 rounded-lg text-sm font-medium transition-colors"
-                    >
-                      <Car size={13} />Test Drive
+              {/* Floating corner FABs */}
+              {/* Bottom-left: WhatsApp */}
+              <button
+                onClick={() => handleWhatsApp(detailLead.phone, detailLead.name)}
+                className="absolute left-4 bottom-4 w-12 h-12 rounded-full bg-green-500 hover:bg-green-400 shadow-[0_4px_20px_rgba(34,197,94,0.5)] flex items-center justify-center transition-all touch-manipulation active:scale-95"
+                style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}
+              >
+                <MessageCircle size={20} className="text-white" />
+              </button>
+              {/* Bottom-right: Primary action pill */}
+              {(() => {
+                if (detailLead.delivered) {
+                  return (
+                    <div className="absolute right-4 bottom-4 flex items-center gap-2 bg-green-500/10 border border-green-500/30 text-green-400 px-4 h-12 rounded-full text-sm font-semibold shadow-lg" style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}>
+                      <CheckCircle size={15} />Delivered
+                    </div>
+                  );
+                }
+                if ((detailLead.cashWorkOrder || detailLead.loanWorkOrder) && !isShareHolder) {
+                  return (
+                    <button onClick={() => { setDeliveryPhotoUrl(''); setShowDeliveryModal(true); }} className="absolute right-4 bottom-4 flex items-center gap-2 bg-violet-500 hover:bg-violet-400 text-white px-4 h-12 rounded-full text-sm font-semibold shadow-[0_4px_20px_rgba(139,92,246,0.4)] transition-all touch-manipulation active:scale-95" style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}>
+                      <Truck size={15} />Deliver
                     </button>
-                  )}
-                  {detailLead.leadStatus === 'test_drive' && (
-                    <button
-                      onClick={() => { openSidebar(detailLead); setDetailLead(null); }}
-                      className="flex items-center justify-center gap-1.5 border border-yellow-500/20 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 py-2.5 rounded-lg text-sm font-medium transition-colors"
-                    >
-                      Next Step <ArrowRight size={13} />
+                  );
+                }
+                if (detailLead.leadStatus === 'test_drive' && !isShareHolder) {
+                  return (
+                    <button onClick={() => { openSidebar(detailLead); setDetailLead(null); }} className="absolute right-4 bottom-4 flex items-center gap-2 bg-yellow-400 hover:bg-yellow-300 text-obsidian-900 px-4 h-12 rounded-full text-sm font-bold shadow-[0_4px_20px_rgba(234,179,8,0.4)] transition-all touch-manipulation active:scale-95" style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}>
+                      Next Step <ArrowRight size={15} />
                     </button>
-                  )}
-                  <button
-                    onClick={() => { openEdit(detailLead); setDetailLead(null); }}
-                    className="flex items-center justify-center gap-1.5 border border-obsidian-400/60 hover:bg-obsidian-600/60 text-gold-400 py-2.5 rounded-lg text-sm font-medium transition-colors"
-                  >
-                    <Edit2 size={13} />Edit
-                  </button>
-                  <button
-                    onClick={() => { updateCustomer(detailLead.id, { isTrashed: true, trashedAt: new Date().toISOString() }); setDetailLead(null); }}
-                    className="flex items-center justify-center gap-1.5 border border-red-500/20 hover:bg-red-500/10 text-red-400 py-2.5 rounded-lg text-sm font-medium transition-colors"
-                  >
-                    <Trash2 size={13} />Move to Bin
-                  </button>
-                </div>}
-              </div>
+                  );
+                }
+                if (detailLead.leadStatus === 'contacted' && !isShareHolder) {
+                  return (
+                    <button onClick={() => { openTdSchedule(detailLead); setDetailLead(null); }} className="absolute right-4 bottom-4 flex items-center gap-2 bg-yellow-400 hover:bg-yellow-300 text-obsidian-900 px-4 h-12 rounded-full text-sm font-bold shadow-[0_4px_20px_rgba(234,179,8,0.4)] transition-all touch-manipulation active:scale-95" style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}>
+                      <Car size={15} />Test Drive
+                    </button>
+                  );
+                }
+                return null;
+              })()}
                 </div>
               </div>
             </div>
@@ -2274,44 +2471,47 @@ export default function Customers() {
               <p className="text-xs text-gray-500 mb-0.5">Customer</p>
               <p className="text-white text-sm font-medium">{tdCustomer.name}</p>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <FormField label="Date *">
-                <input type="date" className={inputCls()} value={tdForm.date} onChange={e => setTdForm({ ...tdForm, date: e.target.value })} autoFocus />
-              </FormField>
-              <FormField label="Time *">
-                <input type="time" className={inputCls()} value={tdForm.time} onChange={e => setTdForm({ ...tdForm, time: e.target.value })} />
-              </FormField>
-            </div>
-            <FormField label="Car">
-              <select className={inputCls()} value={tdForm.carId} onChange={e => setTdForm({ ...tdForm, carId: e.target.value })}>
-                <option value="">— Select car —</option>
-                {cars.filter(car => car.status !== 'sold').map(car => (
-                  <option key={car.id} value={car.id}>{car.year} {car.make} {car.model}</option>
-                ))}
-              </select>
-            </FormField>
-            <FormField label="Notes">
-              <textarea className={`${inputCls()} h-16 resize-none`} value={tdForm.notes} onChange={e => setTdForm({ ...tdForm, notes: e.target.value })} placeholder="Any notes..." />
-            </FormField>
+            <MiniCalendar
+              date={tdForm.date}
+              time={tdForm.time}
+              onDate={d => setTdForm(f => ({ ...f, date: d, time: '' }))}
+              onTime={t => setTdForm(f => ({ ...f, time: t }))}
+            />
+            <button
+              onClick={() => {
+                if (!tdForm.date || !tdForm.time) return;
+                addTestDrive({
+                  id: generateId(),
+                  customerId: tdCustomer.id,
+                  carId: tdForm.carId,
+                  scheduledAt: `${tdForm.date}T${tdForm.time}`,
+                  status: 'scheduled',
+                  notes: tdForm.notes || undefined,
+                  salesId: tdCustomer.assignedSalesId || (currentUser?.id ?? ''),
+                  createdAt: new Date().toISOString(),
+                });
+                updateCustomer(tdCustomer.id, { leadStatus: 'test_drive', lastActionAt: new Date().toISOString() });
+                setShowTdModal(false);
+                setTdCustomer(null);
+              }}
+              disabled={!tdForm.date || !tdForm.time}
+              className="w-full btn-gold disabled:opacity-40 disabled:cursor-not-allowed py-2.5 rounded-lg text-sm font-medium"
+            >
+              Save to Calendar
+            </button>
+            <button
+              onClick={() => {
+                updateCustomer(tdCustomer.id, { leadStatus: 'test_drive', lastActionAt: new Date().toISOString() });
+                setShowTdModal(false);
+                openSidebar({ ...tdCustomer, leadStatus: 'test_drive' });
+                setTdCustomer(null);
+              }}
+              className="w-full border border-obsidian-400/50 text-gray-400 hover:text-white py-2.5 rounded-lg text-sm transition-colors"
+            >
+              Skip Test Drive
+            </button>
           </div>
         )}
-        <div className="space-y-2 mt-5">
-          <button
-            onClick={() => {
-              if (!tdCustomer) return;
-              setShowTdModal(false);
-              openSidebar(tdCustomer);
-              setTdCustomer(null);
-            }}
-            className="w-full flex items-center justify-center gap-2 bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/60 hover:border-blue-500/40 text-blue-400 py-2.5 rounded-lg text-sm transition-colors"
-          >
-            Skip Test Drive — Proceed Now
-          </button>
-          <div className="flex justify-center gap-3">
-            <button onClick={() => { setShowTdModal(false); setTdCustomer(null); }} className="px-6 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
-            <button onClick={handleSaveTd} disabled={!tdForm.date || !tdForm.time} className="btn-gold disabled:opacity-50 px-6 py-2.5 rounded-lg text-sm">Save to Calendar</button>
-          </div>
-        </div>
       </Modal>
 
       {/* ── Work Order Overlay (Cash & Loan) ─────────── */}
@@ -2326,10 +2526,10 @@ export default function Customers() {
             {/* Header */}
             <div className="sticky top-0 z-10 bg-[#0F0E0C] border-b border-obsidian-400/60 px-4 py-3 flex items-center justify-between">
               <div>
-                <p className="text-white font-semibold text-sm">{workOrderType === 'loan' ? 'Loan Work Order' : 'Cash Work Order'}</p>
+                <p className="text-white font-semibold text-sm">{workOrderIsEdit ? 'Edit Work Order' : workOrderType === 'loan' ? 'Loan Work Order' : 'Cash Work Order'}</p>
                 <p className="text-gray-500 text-xs">{workOrderCustomer.name} · {car ? `${car.year} ${car.make} ${car.model}` : ''}</p>
               </div>
-              <button onClick={() => setWorkOrderCustomer(null)} className="p-1.5 text-gray-500 hover:text-white hover:bg-obsidian-600/60 rounded-lg transition-colors">
+              <button onClick={() => { setWorkOrderCustomer(null); setWorkOrderIsEdit(false); }} className="p-1.5 text-gray-500 hover:text-white hover:bg-obsidian-600/60 rounded-lg transition-colors">
                 <X size={18} />
               </button>
             </div>
@@ -2340,9 +2540,30 @@ export default function Customers() {
               <div>
                 <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest mb-3">Deal of the Car</p>
                 <div className="bg-[#0F0E0C] border border-obsidian-400/60 rounded-xl overflow-hidden">
-                  {/* Additions */}
+                  {/* Selling Price — locked for non-directors */}
+                  <div className="flex items-center gap-3 px-4 py-3 border-b border-obsidian-400/30">
+                    <span className="text-gray-400 text-sm flex-1">Selling Price</span>
+                    {isDirectorOrAdmin ? (
+                      <div className="flex items-center gap-1">
+                        <span className="text-gray-600 text-xs">RM</span>
+                        <input
+                          type="number"
+                          value={woForm.sellingPrice || ''}
+                          onChange={e => setWoForm(f => ({ ...f, sellingPrice: Number(e.target.value) }))}
+                          className="w-28 bg-transparent text-white text-sm text-right outline-none border-b border-transparent focus:border-gold-500/60 transition-colors"
+                          placeholder="0"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="text-white text-sm font-medium">{formatRM(woForm.sellingPrice)}</span>
+                        <Lock size={12} className="text-gray-600" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Insurance & Bank Product */}
                   {[
-                    { label: 'Selling Price', key: 'sellingPrice' as const },
                     { label: 'Insurance', key: 'insurance' as const },
                     { label: 'Bank Product', key: 'bankProduct' as const },
                   ].map(row => (
@@ -2440,6 +2661,12 @@ export default function Customers() {
                       </div>
                     </div>
                   ))}
+                  {woForm.discount > 0 && !isDirectorOrAdmin && (
+                    <div className="px-4 py-2 flex items-center gap-2 bg-amber-500/5 border-b border-obsidian-400/30">
+                      <AlertCircle size={12} className="text-amber-400 shrink-0" />
+                      <p className="text-amber-400/80 text-xs">Discount requires director approval</p>
+                    </div>
+                  )}
 
                   {/* Loan: show calculated downpayment */}
                   {workOrderType === 'loan' && (
@@ -2603,7 +2830,7 @@ export default function Customers() {
                 >
                   {woForm.hasTradeIn && woForm.tradeInPhotos.length < 4
                     ? `Need ${4 - woForm.tradeInPhotos.length} more photo(s)`
-                    : 'Submit Work Order'}
+                    : workOrderIsEdit ? 'Save Changes' : 'Submit Work Order'}
                 </button>
               </div>
             </div>
@@ -2624,7 +2851,6 @@ export default function Customers() {
         const alreadySubmitted = (lead.loanApplications ?? []).map(a => a.bank);
         const available = BANKS.filter(b => !alreadySubmitted.includes(b));
         const selectedBanks = Object.keys(bankModalPicks);
-        const banksNeedingBanker = selectedBanks.filter(b => !(NO_BANKER_BANKS as readonly string[]).includes(b));
         const carName = (() => { const c = cars.find(x => x.id === lead.interestedCarId); return c ? `${c.year} ${c.make} ${c.model}` : null; })();
 
         const toggle = (bank: string) => {
@@ -2655,8 +2881,8 @@ export default function Customers() {
         const close = () => { setBankModalLeadId(null); setBankModalPendingData(null); };
 
         return (
-          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm" onClick={close}>
-            <div className="w-full sm:max-w-sm bg-obsidian-800 sm:rounded-2xl rounded-t-2xl shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm" onClick={close}>
+            <div className="w-full sm:max-w-sm bg-obsidian-800 sm:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
 
               {/* Handle bar */}
               <div className="flex justify-center pt-3 pb-1 sm:hidden">
@@ -2673,85 +2899,77 @@ export default function Customers() {
               </div>
 
               {/* Scrollable body */}
-              <div className="px-4 pb-2 space-y-4 max-h-[65vh] overflow-y-auto">
+              <div className="px-4 pb-2 space-y-4 flex-1 min-h-0 overflow-y-auto">
 
-                {/* Bank selection */}
+                {/* Bank selection + inline banker picker */}
                 {available.length === 0 ? (
                   <p className="text-gray-600 text-sm text-center py-8">All banks already submitted</p>
                 ) : (
                   <div className="space-y-2">
                     {available.map(bank => {
                       const selected = bank in bankModalPicks;
-                      return (
-                        <button
-                          key={bank}
-                          onClick={() => toggle(bank)}
-                          className={`w-full flex items-center justify-between px-5 py-4 rounded-2xl border transition-all ${
-                            selected
-                              ? 'border-gold-500/50 bg-gold-500/5'
-                              : 'border-obsidian-500/30 bg-obsidian-700/30 hover:border-obsidian-400/50'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 transition-all ${
-                              selected ? 'bg-gold-500 text-obsidian-900' : 'bg-obsidian-600/60 text-gray-400'
-                            }`}>
-                              {bank[0]}
-                            </div>
-                            <p className={`font-semibold text-sm transition-colors ${selected ? 'text-white' : 'text-gray-400'}`}>{bank}</p>
-                          </div>
-                          <div className={`w-5 h-5 rounded-full border-2 transition-all flex items-center justify-center ${
-                            selected ? 'border-gold-400 bg-gold-400' : 'border-obsidian-500/60'
-                          }`}>
-                            {selected && <div className="w-2 h-2 rounded-full bg-obsidian-900" />}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Banker assignment — appears inline when banks needing a banker are selected */}
-                {banksNeedingBanker.length > 0 && (
-                  <div className="space-y-3 pt-1 border-t border-obsidian-500/30">
-                    <p className="text-gray-500 text-xs font-semibold uppercase tracking-widest pt-2">Who to submit to?</p>
-                    {banksNeedingBanker.map(bank => {
-                      const bankBankers = bankers.filter(b => b.bank === bank);
+                      const needsBanker = selected && !(NO_BANKER_BANKS as readonly string[]).includes(bank);
+                      const bankBankers = needsBanker ? bankers.filter(b => b.bank === bank) : [];
                       const selectedBankerId = bankModalPicks[bank] ?? '';
                       return (
-                        <div key={bank} className="space-y-1.5">
-                          <p className="text-gray-400 text-xs font-bold uppercase tracking-widest px-1">{bank}</p>
-                          {bankBankers.length === 0 ? (
-                            <div className="px-4 py-3 rounded-xl border border-obsidian-500/30 bg-obsidian-700/30">
-                              <p className="text-gray-600 text-xs">No bankers added — go to Data → Bankers</p>
-                            </div>
-                          ) : bankBankers.map(b => (
-                            <button
-                              key={b.id}
-                              onClick={() => setBankModalPicks({ ...bankModalPicks, [bank]: selectedBankerId === b.id ? '' : b.id })}
-                              className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all ${
-                                selectedBankerId === b.id
-                                  ? 'border-gold-500/50 bg-gold-500/5'
-                                  : 'border-obsidian-500/30 bg-obsidian-700/30 hover:border-obsidian-400/50'
-                              }`}
-                            >
+                        <React.Fragment key={bank}>
+                          {/* Bank card — uniform height */}
+                          <button
+                            onClick={() => toggle(bank)}
+                            className={`w-full flex items-center justify-between px-5 py-4 rounded-2xl border transition-all ${
+                              selected
+                                ? 'border-gold-500/50 bg-gold-500/5'
+                                : 'border-obsidian-500/30 bg-obsidian-700/30 hover:border-obsidian-400/50'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
                               <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 transition-all ${
-                                selectedBankerId === b.id ? 'bg-gold-500 text-obsidian-900' : 'bg-obsidian-600/60 text-gray-400'
+                                selected ? 'bg-gold-500 text-obsidian-900' : 'bg-obsidian-600/60 text-gray-400'
                               }`}>
-                                {b.name[0]}
+                                {bank[0]}
                               </div>
-                              <div className="text-left min-w-0">
-                                <p className={`font-semibold text-sm ${selectedBankerId === b.id ? 'text-white' : 'text-gray-400'}`}>{b.name}</p>
-                                {b.phone && <p className="text-gray-600 text-xs mt-0.5">{b.phone}</p>}
-                              </div>
-                              <div className={`ml-auto w-5 h-5 rounded-full border-2 shrink-0 flex items-center justify-center transition-all ${
-                                selectedBankerId === b.id ? 'border-gold-400 bg-gold-400' : 'border-obsidian-500/60'
-                              }`}>
-                                {selectedBankerId === b.id && <div className="w-2 h-2 rounded-full bg-obsidian-900" />}
-                              </div>
-                            </button>
-                          ))}
-                        </div>
+                              <p className={`font-semibold text-sm transition-colors ${selected ? 'text-white' : 'text-gray-400'}`}>{bank}</p>
+                            </div>
+                            <div className={`w-5 h-5 rounded-full border-2 transition-all flex items-center justify-center ${
+                              selected ? 'border-gold-400 bg-gold-400' : 'border-obsidian-500/60'
+                            }`}>
+                              {selected && <div className="w-2 h-2 rounded-full bg-obsidian-900" />}
+                            </div>
+                          </button>
+
+                          {/* Banker picker — appears directly below this bank when selected */}
+                          {needsBanker && (
+                            <div className="ml-3 pl-3 border-l-2 border-gold-500/30 -mt-1 pb-1">
+                              {bankBankers.length === 0 ? (
+                                <p className="text-gray-600 text-xs py-2 px-1">No bankers added — go to Data → Bankers</p>
+                              ) : (
+                                <div className="flex flex-wrap gap-2 py-2">
+                                  {bankBankers.map(b => {
+                                    const isChosen = selectedBankerId === b.id;
+                                    return (
+                                      <button
+                                        key={b.id}
+                                        onClick={() => setBankModalPicks({ ...bankModalPicks, [bank]: isChosen ? '' : b.id })}
+                                        className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
+                                          isChosen
+                                            ? 'border-gold-500/60 bg-gold-500/10 text-gold-300'
+                                            : 'border-obsidian-500/30 bg-obsidian-700/40 text-gray-400 hover:border-obsidian-400/60'
+                                        }`}
+                                      >
+                                        <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${
+                                          isChosen ? 'bg-gold-500 text-obsidian-900' : 'bg-obsidian-600/60'
+                                        }`}>
+                                          {b.name[0]}
+                                        </div>
+                                        {b.name}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </React.Fragment>
                       );
                     })}
                   </div>
@@ -2760,7 +2978,7 @@ export default function Customers() {
               </div>
 
               {/* Submit */}
-              <div className="px-4 pb-6 pt-3">
+              <div className="px-4 pt-3 pb-20 sm:pb-6 shrink-0">
                 <button
                   onClick={doSubmit}
                   disabled={selectedBanks.length === 0}

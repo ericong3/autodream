@@ -104,6 +104,14 @@ interface StoreState {
   setViewPreference: (userId: string, page: string, view: 'grid' | 'list') => void;
 }
 
+// Supabase realtime can send JSONB columns as serialized strings instead of parsed objects.
+// This helper handles both so REST and realtime payloads work the same way.
+function parseJsonField<T>(v: any): T | undefined {
+  if (v == null) return undefined;
+  if (typeof v === 'string') { try { return JSON.parse(v) as T; } catch { return undefined; } }
+  return v as T;
+}
+
 // Map snake_case DB row to camelCase Car
 function rowToCar(r: any): Car {
   return {
@@ -121,23 +129,23 @@ function rowToCar(r: any): Car {
     transmission: r.transmission,
     status: r.status,
     photo: r.photo,
-    photos: r.photos ?? [],
+    photos: parseJsonField<string[]>(r.photos) ?? [],
     greenCard: r.green_card,
     assignedSalesperson: r.assigned_salesperson,
     dateAdded: r.date_added,
     notes: r.notes,
     currentLocation: r.current_location,
-    checklistItems: r.checklist_items ?? [],
-    photoTakenBy: r.photo_taken_by ?? [],
-    loanSubmissions: r.loan_submissions ?? [],
-    finalDeal: r.final_deal,
+    checklistItems: parseJsonField<any[]>(r.checklist_items) ?? [],
+    photoTakenBy: parseJsonField<string[]>(r.photo_taken_by) ?? [],
+    loanSubmissions: parseJsonField<any[]>(r.loan_submissions) ?? [],
+    finalDeal: parseJsonField(r.final_deal),
     deliveryPhoto: r.delivery_photo,
     deliveryCollected: r.delivery_collected,
-    consignment: r.consignment ?? undefined,
-    outgoingConsignment: r.outgoing_consignment ?? undefined,
+    consignment: parseJsonField(r.consignment),
+    outgoingConsignment: parseJsonField(r.outgoing_consignment),
     moneyReceived: r.money_received ?? undefined,
     priceFloor: r.price_floor ?? undefined,
-    miscCosts: r.misc_costs ?? [],
+    miscCosts: parseJsonField<any[]>(r.misc_costs) ?? [],
     investorId: r.investor_id ?? undefined,
     investorSplit: r.investor_split ?? undefined,
     sourceSalesman: r.source_salesman ?? undefined,
@@ -147,6 +155,8 @@ function rowToCar(r: any): Car {
     sourceCommission: r.source_commission ?? undefined,
     intakeCommission: r.intake_commission ?? undefined,
     carInDate: r.car_in_date ?? undefined,
+    disbursementAmount: r.disbursement_amount ?? undefined,
+    disbursementDate: r.disbursement_date ?? undefined,
   };
 }
 
@@ -244,6 +254,8 @@ function carToRow(c: Partial<Car>) {
   if (c.sourceCommission !== undefined) row.source_commission = c.sourceCommission;
   if (c.intakeCommission !== undefined) row.intake_commission = c.intakeCommission;
   if (c.carInDate !== undefined) row.car_in_date = c.carInDate;
+  if (c.disbursementAmount !== undefined) row.disbursement_amount = c.disbursementAmount;
+  if (c.disbursementDate !== undefined) row.disbursement_date = c.disbursementDate;
   return row;
 }
 
@@ -390,6 +402,8 @@ function rowToCustomer(r: any): Customer {
     isTrashed: r.is_trashed ?? false,
     trashedAt: r.trashed_at ?? undefined,
     commission: r.commission ?? undefined,
+    dealType: r.deal_type ?? undefined,
+    bookingFee: r.booking_fee ?? undefined,
     createdAt: r.created_at,
   };
 }
@@ -427,6 +441,8 @@ function customerToRow(c: Partial<Customer>) {
   if (c.isTrashed !== undefined) row.is_trashed = c.isTrashed;
   if (c.trashedAt !== undefined) row.trashed_at = c.trashedAt;
   if (c.commission !== undefined) row.commission = c.commission;
+  if (c.dealType !== undefined) row.deal_type = c.dealType;
+  if (c.bookingFee !== undefined) row.booking_fee = c.bookingFee;
   if (c.createdAt !== undefined) row.created_at = c.createdAt;
   return row;
 }
