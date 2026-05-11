@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Car, Users, Calendar, Bell, ChevronDown, ChevronUp, AlertCircle, Plus, CheckCircle, Circle, Trash2, ChevronLeft, ChevronRight, Eye, EyeOff, Lock, RefreshCw, Skull, X } from 'lucide-react';
+import { Car, Users, Calendar, Bell, ChevronDown, ChevronUp, AlertCircle, Plus, CheckCircle, Circle, Trash2, ChevronLeft, ChevronRight, Eye, EyeOff, Lock, RefreshCw, Skull, X, CalendarCheck } from 'lucide-react';
 import { useStore } from '../store';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
@@ -447,6 +447,17 @@ export default function SalesDashboard() {
                         >
                           <RefreshCw size={10} />Reschedule
                         </button>
+                        {customer && (
+                          <button
+                            onClick={() => {
+                              updateCustomer(customer.id, { leadStatus: 'follow_up' });
+                              updateTestDrive(td.id, { status: 'cancelled' });
+                            }}
+                            className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] font-semibold bg-gold-500/10 hover:bg-gold-500/20 border border-gold-500/20 text-gold-400 transition-colors"
+                          >
+                            <CalendarCheck size={10} />Follow Up
+                          </button>
+                        )}
                         {customer && (
                           <button
                             onClick={() => setDeadLeadTarget({ tdId: td.id, customerId: customer.id, customerName: customer.name })}

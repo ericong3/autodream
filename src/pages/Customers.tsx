@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList, Truck, Upload, Lock, Skull, Clock, RotateCcw, MoreVertical } from 'lucide-react';
 import { useStore } from '../store';
@@ -50,13 +51,6 @@ const LOAN_STATUS_LABELS: Record<string, { label: string; color: string }> = {
 };
 const STAGE_ORDER: Customer['leadStatus'][] = ['contacted', 'test_drive', 'follow_up', 'loan_submitted'];
 
-const STAGE_COLORS: Record<Customer['leadStatus'], { dot: string; text: string; line: string }> = {
-  contacted:     { dot: 'bg-blue-400',   text: 'text-blue-400',   line: 'bg-blue-400' },
-  test_drive:    { dot: 'bg-yellow-400', text: 'text-yellow-400', line: 'bg-yellow-400' },
-  follow_up:     { dot: 'bg-gold-400',   text: 'text-gold-400',   line: 'bg-gold-400' },
-  loan_submitted:{ dot: 'bg-green-400',  text: 'text-green-400',  line: 'bg-green-400' },
-};
-
 
 const emptyForm = {
   name: '', ic: '', phone: '', email: '', employer: '', monthlySalary: 0,
@@ -97,7 +91,7 @@ export default function Customers() {
   const todayStr = new Date().toISOString().slice(0, 10);
 
   // Tab
-  const [tab, setTab] = useState<'leads' | 'loan' | 'confirmed' | 'bin'>('leads');
+  const [tab, setTab] = useState<'leads' | 'cash' | 'loan' | 'confirmed' | 'bin'>('leads');
   const [binMonth, setBinMonth] = useState(() => new Date().toISOString().slice(0, 7));
 
   // Director view toggle: 'all' | 'own' | salesperson userId
@@ -157,11 +151,14 @@ export default function Customers() {
   const [detailLead, setDetailLead] = useState<Customer | null>(null);
   const [detailTab, setDetailTab] = useState<'details' | 'calculation' | 'postsale' | 'timeline'>('details');
   const [showDetailMenu, setShowDetailMenu] = useState(false);
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartY = useRef(0);
+  const [showInlineFollowup, setShowInlineFollowup] = useState(false);
   const [showDeliveryModal, setShowDeliveryModal] = useState(false);
   const [deliveryPhotoUrl, setDeliveryPhotoUrl] = useState('');
   const [deliveryUploading, setDeliveryUploading] = useState(false);
   const deliveryPhotoRef = useRef<HTMLInputElement>(null);
-  const [expandedBank, setExpandedBank] = useState<string | null>(null);
   // Bank submission modal
   const [bankModalLeadId, setBankModalLeadId] = useState<string | null>(null);
   // bankModalPicks: { [bankName]: bankerId | '' }
@@ -171,12 +168,12 @@ export default function Customers() {
   useBodyScrollLock(!!detailLead || !!workOrderCustomer);
 
   useEffect(() => {
-    if (!detailLead) { setExpandedBank(null); return; }
+    if (!detailLead) return;
     const apps = detailLead.loanApplications?.length
       ? detailLead.loanApplications
       : (detailLead.loanBankSubmitted ?? '').split(',').filter(Boolean).map(b => ({ bank: b.trim(), status: 'submitted' as const }));
     setBankStatuses(apps);
-    setExpandedBank(null);
+    setShowInlineFollowup(false);
   }, [detailLead?.id]);
 
   const myCustomers = useMemo(() =>
@@ -320,6 +317,8 @@ export default function Customers() {
     } else if (c.leadStatus === 'loan_submitted') {
       // Loan tab → Leads: reset status and loan data
       updateCustomer(c.id, { leadStatus: 'follow_up', loanStatus: 'not_started', loanBankSubmitted: '', loanApplications: [], dealPrice: 0 });
+    } else if (c.dealType === 'cash' && !c.cashWorkOrder) {
+      updateCustomer(c.id, { dealType: undefined });
     } else if (c.leadStatus === 'follow_up') {
       updateCustomer(c.id, { leadStatus: 'test_drive' });
     } else if (c.leadStatus === 'test_drive') {
@@ -331,6 +330,7 @@ export default function Customers() {
   const getRevertLabel = (c: Customer): string | null => {
     if (c.loanWorkOrder) return 'Revert to Loan';
     if (c.cashWorkOrder) return 'Revert to Leads';
+    if (c.dealType === 'cash' && !c.cashWorkOrder) return 'Remove Cash Tag';
     if (c.leadStatus === 'loan_submitted') return 'Revert to Follow Up';
     if (c.leadStatus === 'follow_up') return 'Revert to Test Drive';
     if (c.leadStatus === 'test_drive') return 'Revert to Contacted';
@@ -648,14 +648,16 @@ export default function Customers() {
     setDetailLead(null);
   };
 
-  const openFinalDeal = (c: Customer) => {
-    const approvedApp = c.loanApplications?.find(a => a.status === 'approved');
+  const openFinalDeal = (c: Customer, bankName?: string, bankAmount?: number) => {
+    const approvedApp = bankName
+      ? c.loanApplications?.find(a => a.bank === bankName && a.status === 'approved')
+      : c.loanApplications?.find(a => a.status === 'approved');
     const car = getCar(c.interestedCarId);
     setWoForm({
       ...emptyWorkOrder,
       sellingPrice: car?.sellingPrice ?? 0,
-      approvedBank: approvedApp?.bank ?? '',
-      loanAmount: approvedApp?.approvedAmount ?? 0,
+      approvedBank: approvedApp?.bank ?? bankName ?? '',
+      loanAmount: bankAmount ?? approvedApp?.approvedAmount ?? 0,
       customerName: c.name,
       customerIc: c.ic ?? '',
       customerPhone: c.phone,
@@ -664,6 +666,7 @@ export default function Customers() {
     setWorkOrderCarId(c.interestedCarId ?? '');
     setWorkOrderCustomer(c);
     setWorkOrderType('loan');
+    setDetailLead(null);
   };
 
   const handleLoanWoSubmit = () => {
@@ -766,17 +769,23 @@ export default function Customers() {
         <div className="flex items-center gap-1 bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-1">
           <button
             onClick={() => { setTab('leads'); setStatusFilter('all'); }}
-            className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'leads' ? 'bg-gold-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'leads' ? 'bg-gold-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
             Leads
-            <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'leads' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus !== 'loan_submitted' && !c.isDead).length}</span>
-            {myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus !== 'loan_submitted' && isStale(c)).length > 0 && (
-              <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-400">{myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus !== 'loan_submitted' && isStale(c)).length} stale</span>
+            <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'leads' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus !== 'loan_submitted' && !c.isDead && c.dealType !== 'cash').length}</span>
+            {myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus !== 'loan_submitted' && isStale(c) && c.dealType !== 'cash').length > 0 && (
+              <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-400">{myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus !== 'loan_submitted' && isStale(c) && c.dealType !== 'cash').length} stale</span>
             )}
           </button>
           <button
+            onClick={() => { setTab('cash'); setStatusFilter('all'); }}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'cash' ? 'bg-green-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+          >
+            Cash <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'cash' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => c.dealType === 'cash' && !c.cashWorkOrder && !c.isDead).length}</span>
+          </button>
+          <button
             onClick={() => { setTab('loan'); setStatusFilter('all'); }}
-            className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'loan' ? 'bg-green-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'loan' ? 'bg-purple-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
             Loan <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'loan' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus === 'loan_submitted').length}</span>
           </button>
@@ -930,10 +939,6 @@ export default function Customers() {
         ) : (
           <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card divide-y divide-obsidian-400/60 overflow-hidden">
             {leadsFiltered.map(c => {
-              const currentIdx = STAGE_ORDER.indexOf(c.leadStatus);
-              const canAdvance = currentIdx < STAGE_ORDER.length - 1;
-              const nextStage = canAdvance ? STAGE_ORDER[currentIdx + 1] : null;
-              const isTestDrive = c.leadStatus === 'test_drive';
               const stale = isStale(c);
               const car = getCar(c.interestedCarId);
 
@@ -1012,20 +1017,8 @@ export default function Customers() {
                     className="w-full text-xs bg-transparent border-b border-obsidian-400/40 hover:border-obsidian-400/70 focus:border-gold-500/60 text-gray-400 placeholder-gray-700 focus:text-gray-200 outline-none py-1 transition-colors"
                   />
 
-                  {/* Row 6: Action zone */}
+                  {/* Row 6: Quick actions */}
                   <div className="flex items-center gap-2 mt-3" onClick={e => e.stopPropagation()}>
-                    {isTestDrive ? (
-                      <button onClick={() => openSidebar(c)} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border border-yellow-500/40 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 transition-colors font-medium touch-manipulation">
-                        Next Step <ArrowRight size={12} />
-                      </button>
-                    ) : canAdvance && nextStage && nextStage !== 'loan_submitted' ? (
-                      <button
-                        onClick={() => nextStage === 'test_drive' ? openTdSchedule(c) : updateCustomer(c.id, { leadStatus: nextStage })}
-                        className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border border-obsidian-400/60 bg-obsidian-700/40 hover:bg-obsidian-600/60 transition-colors font-medium touch-manipulation ${STAGE_COLORS[nextStage].text}`}
-                      >
-                        {LEAD_STATUS_LABELS[nextStage]} <ChevronRight size={12} />
-                      </button>
-                    ) : null}
                     <button onClick={() => handleWhatsApp(c.phone, c.name)} className="flex items-center gap-1.5 px-3 py-2 text-xs text-green-400 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 hover:border-green-500/40 rounded-lg transition-colors font-medium touch-manipulation">
                       <MessageCircle size={13} />WA
                     </button>
@@ -1075,6 +1068,72 @@ export default function Customers() {
           </details>
         )}
       </>)}
+
+      {tab === 'cash' && (() => {
+        const cashLeads = myCustomers.filter(c => c.dealType === 'cash' && !c.cashWorkOrder && !c.isDead)
+          .filter(c => !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search))
+          .sort((a, b) => (b.lastActionAt ?? b.createdAt).localeCompare(a.lastActionAt ?? a.createdAt));
+        return (
+          <>
+            <div className="flex gap-2">
+              <input type="text" placeholder="Search cash leads..." value={search} onChange={e => setSearch(e.target.value)} className="flex-1 input rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors" />
+            </div>
+            {cashLeads.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <Banknote size={40} className="text-gray-600 mb-3" />
+                <p className="text-gray-400">No cash leads yet</p>
+                <p className="text-gray-600 text-xs mt-1">Tag a follow-up lead as "Cash" to add them here</p>
+              </div>
+            ) : (
+              <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card divide-y divide-obsidian-400/60 overflow-hidden">
+                {cashLeads.map(c => {
+                  const car = getCar(c.interestedCarId);
+                  const stale = isStale(c);
+                  return (
+                    <div key={c.id} className={`px-4 py-4 hover:bg-obsidian-700/30 transition-colors cursor-pointer relative ${stale ? 'border-l-[3px] border-l-red-500/60 bg-red-500/[0.03]' : ''}`}
+                      onClick={() => { setDetailLead(c); setDetailTab('details'); }}>
+                      <div className="flex items-start justify-between gap-2 mb-1.5">
+                        <span className="text-white text-sm font-semibold">{c.name}</span>
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full border shrink-0 bg-green-500/10 border-green-500/30 text-green-400">Cash Buyer</span>
+                      </div>
+                      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                        <span className="text-gray-500 text-xs">{c.phone}</span>
+                        {car && <span className="text-xs px-2 py-0.5 rounded-full bg-gold-500/10 border border-gold-500/20 text-gold-400">{car.year} {car.make} {car.model}</span>}
+                      </div>
+                      {c.followUpDate && (() => {
+                        const today = new Date(); today.setHours(0,0,0,0);
+                        const diff = Math.round((new Date(c.followUpDate + 'T00:00:00').getTime() - today.getTime()) / 86400000);
+                        const label = diff < 0 ? `Overdue ${Math.abs(diff)}d` : diff === 0 ? 'Today' : diff === 1 ? 'Tomorrow' : `In ${diff}d`;
+                        return <p className={`text-xs mb-2 ${diff <= 0 ? 'text-red-400' : 'text-gray-500'}`}><CalendarCheck size={10} className="inline mr-1" />{label}</p>;
+                      })()}
+                      <div className="flex items-center gap-2 mt-2" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => handleWhatsApp(c.phone, c.name)} className="flex items-center gap-1.5 px-3 py-2 text-xs text-green-400 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 rounded-lg transition-colors font-medium touch-manipulation">
+                          <MessageCircle size={13} />WA
+                        </button>
+                        {!isShareHolder && (
+                          <button onClick={() => {
+                            const interestedCar = cars.find(car => car.id === c.interestedCarId);
+                            setLoanForm({ dealPrice: String(interestedCar?.sellingPrice ?? ''), carId: c.interestedCarId ?? '' });
+                            setSidebarLead(c); setSidebarCashFlow(true); setSidebarView('car_select');
+                          }} className="flex items-center gap-1.5 px-3 py-2 text-xs text-white bg-green-500 hover:bg-green-400 rounded-lg transition-colors font-semibold touch-manipulation">
+                            <ClipboardList size={13} />Close Deal
+                          </button>
+                        )}
+                        {!isShareHolder && (
+                          <div className="ml-auto flex items-center gap-1">
+                            <button onClick={() => openEdit(c)} className="p-2 text-gray-600 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors touch-manipulation"><Edit2 size={14} /></button>
+                            <button onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })} className="p-2 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors touch-manipulation"><Trash2 size={14} /></button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {tab === 'loan' && (<>
         {/* Loan search */}
@@ -1384,14 +1443,29 @@ export default function Customers() {
         const wo = detailLead.loanWorkOrder ?? detailLead.cashWorkOrder;
         const isLoanWo = !!detailLead.loanWorkOrder;
         const hasWorkOrder = !!wo;
-        return (
+        return createPortal(
           <>
-            <div className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm" onClick={() => { setDetailLead(null); }} />
-            <div className="fixed inset-0 z-50 flex items-end sm:items-center pointer-events-none">
+            <style>{`@keyframes drawerSpring{from{transform:translateY(100%)}80%{transform:translateY(-6px)}100%{transform:translateY(0)}} @media (max-width:639px){.cust-drawer-wrap{padding-bottom:calc(4rem + env(safe-area-inset-bottom,0px))}} @media (min-width:640px){.cust-drawer-wrap{padding-bottom:0}}`}</style>
+            <div className="fixed inset-0 z-[400] bg-black/70 backdrop-blur-sm" onClick={() => { setDetailLead(null); }} />
+            <div className="fixed inset-0 z-[400] flex items-end sm:items-center pointer-events-none cust-drawer-wrap">
               <div className="w-full sm:p-4 flex sm:justify-center">
-                <div key={detailLead.id} className="pointer-events-auto relative w-full sm:max-w-lg bg-gradient-to-b from-obsidian-700 to-obsidian-800 border-t border-x sm:border border-obsidian-400/80 rounded-t-2xl sm:rounded-2xl shadow-[0_-20px_80px_rgba(0,0,0,0.8)] sm:shadow-[0_20px_80px_rgba(0,0,0,0.8)] flex flex-col" style={{ maxHeight: '92vh' }}>
-                  {/* Handle bar — mobile only */}
-                  <div className="flex justify-center pt-3 pb-1 sm:hidden shrink-0">
+                <div
+                  key={detailLead.id}
+                  className="pointer-events-auto relative w-full sm:max-w-lg bg-gradient-to-b from-obsidian-700 to-obsidian-800 border-t border-x sm:border border-obsidian-400/80 rounded-t-2xl sm:rounded-2xl shadow-[0_-20px_80px_rgba(0,0,0,0.8)] sm:shadow-[0_20px_80px_rgba(0,0,0,0.8)] flex flex-col"
+                  style={{
+                    maxHeight: '92vh',
+                    transform: dragOffset > 0 ? `translateY(${dragOffset}px)` : undefined,
+                    transition: isDragging ? 'none' : 'transform 0.35s cubic-bezier(0.34,1.56,0.64,1)',
+                    animation: isDragging ? 'none' : 'drawerSpring 0.4s cubic-bezier(0.34,1.56,0.64,1) forwards',
+                  }}
+                >
+                  {/* Handle bar — mobile only, drag to close */}
+                  <div
+                    className="flex justify-center pt-3 pb-1 sm:hidden shrink-0 cursor-grab active:cursor-grabbing"
+                    onTouchStart={e => { dragStartY.current = e.touches[0].clientY; setIsDragging(true); }}
+                    onTouchMove={e => { const d = Math.max(0, e.touches[0].clientY - dragStartY.current); setDragOffset(d); }}
+                    onTouchEnd={() => { setIsDragging(false); if (dragOffset > 90) { setDetailLead(null); } setDragOffset(0); }}
+                  >
                     <div className="w-10 h-1 bg-obsidian-500/60 rounded-full" />
                   </div>
                   <div className="absolute top-0 left-0 right-0 h-[2px] rounded-t-2xl bg-gold-gradient opacity-80" />
@@ -1410,17 +1484,42 @@ export default function Customers() {
                         </div>
                         <div className="min-w-0">
                           <p className="text-white font-semibold text-base leading-snug">{detailLead.name}</p>
-                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                            <span className={`text-xs font-medium ${STAGE_COLORS[detailLead.leadStatus].text}`}>{LEAD_STATUS_LABELS[detailLead.leadStatus]}</span>
-                            <span className="text-gray-600">·</span>
-                            <span className="text-gray-400 text-xs">{detailLead.phone}</span>
-                            <button
-                              onClick={() => handleWhatsApp(detailLead.phone, detailLead.name)}
-                              className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 text-[10px] font-semibold touch-manipulation"
-                            >
-                              <MessageCircle size={10} />WA
-                            </button>
-                          </div>
+                          {/* Smart context line */}
+                          {(() => {
+                            if (detailLead.delivered) {
+                              const d = detailLead.deliveredAt ? new Date(detailLead.deliveredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' }) : '';
+                              return <p className="text-green-400 text-xs mt-0.5 font-medium">✓ Delivered{d ? ` · ${d}` : ''}</p>;
+                            }
+                            const approvedApp = detailLead.loanApplications?.find(a => a.status === 'approved');
+                            if (approvedApp) {
+                              const amt = approvedApp.approvedAmount ? ` · RM ${approvedApp.approvedAmount.toLocaleString()}` : '';
+                              return <p className="text-green-400 text-xs mt-0.5 font-medium">✓ {approvedApp.bank} approved{amt}</p>;
+                            }
+                            if (detailLead.dealType === 'cash' && !detailLead.cashWorkOrder) {
+                              return <p className="text-green-400 text-xs mt-0.5 font-medium">💵 Cash buyer · follow up to close</p>;
+                            }
+                            if (detailLead.dealType === 'loan' && !detailLead.loanWorkOrder) {
+                              return <p className="text-purple-400 text-xs mt-0.5 font-medium">🏦 Loan · follow up with banker</p>;
+                            }
+                            const upcomingTd = testDrives.filter(t => t.customerId === detailLead.id && t.status === 'scheduled').sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt))[0];
+                            if (upcomingTd) {
+                              const tdDate = new Date(upcomingTd.scheduledAt);
+                              const today = new Date(); today.setHours(0,0,0,0);
+                              const diff = Math.round((tdDate.getTime() - today.getTime()) / 86400000);
+                              const label = diff === 0 ? 'today' : diff === 1 ? 'tomorrow' : tdDate.toLocaleDateString('en-MY', { day: 'numeric', month: 'short' });
+                              return <p className="text-yellow-400 text-xs mt-0.5 font-medium">📅 Test drive · {label}</p>;
+                            }
+                            if (detailLead.followUpDate) {
+                              const today = new Date(); today.setHours(0,0,0,0);
+                              const target = new Date(detailLead.followUpDate + 'T00:00:00');
+                              const diff = Math.round((target.getTime() - today.getTime()) / 86400000);
+                              if (diff < 0) return <p className="text-red-400 text-xs mt-0.5 font-medium">⚠ Follow-up overdue {Math.abs(diff)} day{Math.abs(diff) !== 1 ? 's' : ''}</p>;
+                              if (diff === 0) return <p className="text-orange-400 text-xs mt-0.5 font-medium">📅 Follow-up today</p>;
+                              if (diff === 1) return <p className="text-gold-400 text-xs mt-0.5 font-medium">📅 Follow-up tomorrow</p>;
+                              return <p className="text-gray-400 text-xs mt-0.5">📅 Follow-up in {diff} days</p>;
+                            }
+                            return <p className="text-gray-500 text-xs mt-0.5">{detailLead.phone}</p>;
+                          })()}
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
@@ -1471,6 +1570,38 @@ export default function Customers() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Stage progress strip */}
+                  {(() => {
+                    const dealLabel = detailLead.cashWorkOrder || detailLead.dealType === 'cash' ? 'Cash' : detailLead.loanWorkOrder || detailLead.dealType === 'loan' || (detailLead.loanStatus && detailLead.loanStatus !== 'not_started') ? 'Loan' : 'Deal';
+                    const JOURNEY = ['Lead', 'Test Drive', 'Follow Up', dealLabel, 'Delivered'];
+                    const currentIdx = detailLead.delivered ? 4 :
+                      (detailLead.cashWorkOrder || detailLead.loanWorkOrder || detailLead.dealType || (detailLead.loanStatus && detailLead.loanStatus !== 'not_started')) ? 3 :
+                      detailLead.leadStatus === 'follow_up' ? 2 :
+                      detailLead.leadStatus === 'test_drive' ? 1 : 0;
+                    return (
+                      <div className="px-5 py-3 border-b border-obsidian-400/20 shrink-0">
+                        <div className="flex items-center">
+                          {JOURNEY.map((stage, i) => (
+                            <React.Fragment key={i}>
+                              <div className="flex flex-col items-center gap-1 shrink-0">
+                                <div className={`rounded-full transition-all ${
+                                  i === currentIdx ? 'w-3 h-3 bg-gold-400 shadow-[0_0_8px_rgba(234,184,32,0.8)]' :
+                                  i < currentIdx ? 'w-2 h-2 bg-gold-400/50' : 'w-2 h-2 bg-obsidian-500'
+                                }`} />
+                                <span className={`text-[9px] font-medium leading-none whitespace-nowrap ${
+                                  i === currentIdx ? 'text-gold-400' : i < currentIdx ? 'text-gray-600' : 'text-gray-700'
+                                }`}>{stage}</span>
+                              </div>
+                              {i < JOURNEY.length - 1 && (
+                                <div className={`flex-1 h-px mx-1.5 ${i < currentIdx ? 'bg-gold-400/40' : 'bg-obsidian-600'}`} />
+                              )}
+                            </React.Fragment>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Tabs */}
                   <div className="flex border-b border-obsidian-400/60 shrink-0">
@@ -1688,171 +1819,107 @@ export default function Customers() {
                   {/* Scrollable content — Details tab */}
                   {(!hasWorkOrder || detailTab === 'details') && <div className="flex-1 overflow-y-auto p-5 space-y-5 min-h-0 pb-20">
 
-                {/* Banks — shown first when loan is submitted */}
+                {/* Banks — at a glance, no expand/collapse, sorted approved first */}
                 {detailLead.loanStatus && detailLead.loanStatus !== 'not_started' && (
                   <div className="space-y-2">
-                    <p className="text-gray-500 text-xs font-medium uppercase tracking-wide">Banks</p>
-                    {!!detailLead.dealPrice && (
-                      <div className="flex items-center justify-between px-1">
-                        <span className="text-gray-500 text-xs">Deal Price</span>
-                        <span className="text-white text-sm">{formatRM(detailLead.dealPrice)}</span>
-                      </div>
-                    )}
-                    <div className="bg-obsidian-700/60 border border-obsidian-400/60 rounded-xl divide-y divide-obsidian-400/30 overflow-hidden">
-                      {bankStatuses.map(app => (
-                        <div key={app.bank}>
-                          {/* Summary row — click to expand */}
-                          <div className="flex items-center">
-                          <button
-                            className="flex-1 flex items-center justify-between px-4 py-2.5 hover:bg-obsidian-600/40 transition-colors text-left"
-                            onClick={() => setExpandedBank(expandedBank === app.bank ? null : app.bank)}
-                          >
-                            <div className="min-w-0">
-                              <span className="text-white text-sm">{app.bank}</span>
-                              {app.bankerName && (
-                                <p className="text-sky-400 text-xs mt-0.5">via {app.bankerName}</p>
-                              )}
-                              {app.status === 'approved' && app.approvedAt && (() => {
-                                const daysLeft = 90 - Math.floor((Date.now() - new Date(app.approvedAt).getTime()) / 86400000);
-                                if (daysLeft <= 20) return (
-                                  <p className="text-orange-400 text-xs mt-0.5 flex items-center gap-1">
-                                    <AlertCircle size={10} />Approval expires in {daysLeft} day{daysLeft !== 1 ? 's' : ''}
-                                  </p>
-                                );
-                                return <p className="text-green-400/60 text-xs mt-0.5">{daysLeft} days remaining</p>;
-                              })()}
-                              {(app.approvedAmount || app.interestRate) && (
-                                <p className="text-green-400 text-xs mt-0.5 truncate">
-                                  {app.approvedAmount ? `RM ${app.approvedAmount.toLocaleString()}` : ''}
-                                  {app.approvedAmount && app.interestRate ? ' · ' : ''}
-                                  {app.interestRate ? `${app.interestRate}%` : ''}
-                                </p>
-                              )}
-                              {app.approvalReason && <p className="text-green-400/70 text-xs mt-0.5 truncate">{app.approvalReason}</p>}
-                              {app.rejectionReason && <p className={`text-xs mt-0.5 truncate ${app.status === 'cancelled' ? 'text-gray-500' : 'text-red-400'}`}>{app.rejectionReason}</p>}
+                    <div className="flex items-center justify-between">
+                      <p className="text-gray-500 text-xs font-medium uppercase tracking-wide">Banks</p>
+                      {!!detailLead.dealPrice && <span className="text-white text-xs font-semibold">{formatRM(detailLead.dealPrice)}</span>}
+                    </div>
+                    <div className="space-y-2">
+                      {[...bankStatuses]
+                        .sort((a, b) => {
+                          const order: Record<string, number> = { approved: 0, submitted: 1, rejected: 2, cancelled: 3 };
+                          return (order[a.status] ?? 4) - (order[b.status] ?? 4);
+                        })
+                        .map(app => (
+                        <div key={app.bank} className={`rounded-xl border overflow-hidden ${
+                          app.status === 'approved' ? 'border-green-500/40 bg-green-500/5' :
+                          app.status === 'rejected' ? 'border-red-500/20 bg-obsidian-700/40' :
+                          app.status === 'cancelled' ? 'border-obsidian-500/30 bg-obsidian-800/40' :
+                          'border-obsidian-400/50 bg-obsidian-700/50'
+                        }`}>
+                          {/* Top row: name + status pill + remove */}
+                          <div className="flex items-center gap-2 px-3 pt-3 pb-2">
+                            <div className="flex-1 min-w-0">
+                              <span className="text-white text-sm font-medium">{app.bank}</span>
+                              {app.bankerName && <span className="text-sky-400 text-xs ml-1.5">via {app.bankerName}</span>}
                             </div>
-                            <span className={`text-xs px-2 py-0.5 rounded-full border font-medium shrink-0 ml-3 ${
-                              app.status === 'approved' ? 'bg-green-500/10 border-green-500/30 text-green-400' :
-                              app.status === 'rejected' ? 'bg-red-500/10 border-red-500/30 text-red-400' :
-                              app.status === 'cancelled' ? 'bg-gray-500/10 border-gray-500/30 text-gray-500' :
-                              'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                              app.status === 'approved' ? 'bg-green-500/20 text-green-300' :
+                              app.status === 'rejected' ? 'bg-red-500/10 text-red-400' :
+                              app.status === 'cancelled' ? 'bg-gray-500/10 text-gray-500' :
+                              'bg-yellow-500/10 text-yellow-400'
                             }`}>
                               {app.status === 'approved' ? 'Approved' : app.status === 'rejected' ? 'Rejected' : app.status === 'cancelled' ? 'Cancelled' : 'Submitted'}
                             </span>
-                          </button>
-                          <button
-                            onClick={() => {
-                              const updated = bankStatuses.filter(a => a.bank !== app.bank);
-                              setBankStatuses(updated);
-                              handleSaveBankStatuses(detailLead.id, updated);
-                              if (expandedBank === app.bank) setExpandedBank(null);
-                            }}
-                            className="px-3 py-2.5 text-gray-600 hover:text-red-400 transition-colors shrink-0"
-                          >
-                            <X size={13} />
-                          </button>
-                          </div>
-
-                          {/* Expanded edit section */}
-                          {expandedBank === app.bank && (
-                            <div className="px-4 pb-3 pt-1 space-y-2 bg-obsidian-800/60 border-t border-obsidian-400/30">
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => toggleBankStatus(app.bank, 'approved')}
-                                  className={`flex-1 flex items-center justify-center gap-1.5 py-3 rounded-xl text-xs font-semibold border transition-colors touch-manipulation ${
-                                    app.status === 'approved'
-                                      ? 'bg-green-500/20 border-green-500/50 text-green-300'
-                                      : 'border-obsidian-400/60 text-gray-500 hover:border-green-500/40 hover:text-green-400'
-                                  }`}
-                                >
-                                  <CheckCircle size={13} />Approve
-                                </button>
-                                <button
-                                  onClick={() => toggleBankStatus(app.bank, 'submitted')}
-                                  className={`flex-1 flex items-center justify-center gap-1.5 py-3 rounded-xl text-xs font-semibold border transition-colors touch-manipulation ${
-                                    app.status === 'submitted'
-                                      ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-300'
-                                      : 'border-obsidian-400/60 text-gray-500 hover:border-yellow-500/40 hover:text-yellow-400'
-                                  }`}
-                                >
-                                  Submitted
-                                </button>
-                                <button
-                                  onClick={() => toggleBankStatus(app.bank, 'rejected')}
-                                  className={`flex-1 flex items-center justify-center gap-1.5 py-3 rounded-xl text-xs font-semibold border transition-colors touch-manipulation ${
-                                    app.status === 'rejected'
-                                      ? 'bg-red-500/20 border-red-500/50 text-red-300'
-                                      : 'border-obsidian-400/60 text-gray-500 hover:border-red-500/40 hover:text-red-400'
-                                  }`}
-                                >
-                                  <XCircle size={13} />Reject
-                                </button>
-                              </div>
-                              {app.status === 'approved' && (
-                                <div className="space-y-2">
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <div>
-                                      <p className="text-gray-500 text-xs mb-1">Approved Amount (RM)</p>
-                                      <input
-                                        type="number"
-                                        className="input text-xs w-full"
-                                        placeholder="e.g. 45000"
-                                        value={app.approvedAmount ?? ''}
-                                        onChange={e => setBankStatuses(prev => prev.map(a => a.bank === app.bank ? { ...a, approvedAmount: e.target.value ? Number(e.target.value) : undefined } : a))}
-                                        onKeyDown={e => { if (e.key === 'Enter') { handleSaveBankStatuses(detailLead.id); setExpandedBank(null); } }}
-                                      />
-                                    </div>
-                                    <div>
-                                      <p className="text-gray-500 text-xs mb-1">Interest Rate (%)</p>
-                                      <input
-                                        type="number"
-                                        step="0.01"
-                                        className="input text-xs w-full"
-                                        placeholder="e.g. 3.5"
-                                        value={app.interestRate ?? ''}
-                                        onChange={e => setBankStatuses(prev => prev.map(a => a.bank === app.bank ? { ...a, interestRate: e.target.value ? Number(e.target.value) : undefined } : a))}
-                                        onKeyDown={e => { if (e.key === 'Enter') { handleSaveBankStatuses(detailLead.id); setExpandedBank(null); } }}
-                                      />
-                                    </div>
-                                  </div>
-                                  <input
-                                    className="input text-xs w-full"
-                                    placeholder="Approval notes..."
-                                    value={app.approvalReason ?? ''}
-                                    onChange={e => setBankStatuses(prev => prev.map(a => a.bank === app.bank ? { ...a, approvalReason: e.target.value } : a))}
-                                    onKeyDown={e => { if (e.key === 'Enter') { handleSaveBankStatuses(detailLead.id); setExpandedBank(null); } }}
-                                  />
-                                </div>
-                              )}
-                              {app.status === 'rejected' && (
-                                <input
-                                  className="input text-xs w-full"
-                                  placeholder="Rejection reason..."
-                                  value={app.rejectionReason ?? ''}
-                                  onChange={e => setBankStatuses(prev => prev.map(a => a.bank === app.bank ? { ...a, rejectionReason: e.target.value } : a))}
-                                  onKeyDown={e => { if (e.key === 'Enter') { handleSaveBankStatuses(detailLead.id); setExpandedBank(null); } }}
-                                />
-                              )}
-                              <button
-                                onClick={() => { handleSaveBankStatuses(detailLead.id); setExpandedBank(null); }}
-                                className="w-full btn-gold py-1.5 rounded-lg text-xs font-medium"
-                              >
-                                Save
+                            {!isShareHolder && (
+                              <button onClick={() => { const u = bankStatuses.filter(a => a.bank !== app.bank); setBankStatuses(u); handleSaveBankStatuses(detailLead.id, u); }} className="text-gray-600 hover:text-red-400 transition-colors touch-manipulation p-0.5">
+                                <X size={12} />
                               </button>
+                            )}
+                          </div>
+                          {/* Approval details */}
+                          {app.status === 'approved' && (app.approvedAmount || app.interestRate || app.approvedAt) && (
+                            <div className="px-3 pb-2 flex items-center gap-3 flex-wrap">
+                              {app.approvedAmount && <span className="text-green-400 text-sm font-bold">RM {app.approvedAmount.toLocaleString()}</span>}
+                              {app.interestRate && <span className="text-green-400/70 text-xs">{app.interestRate}% p.a.</span>}
+                              {app.approvedAt && (() => {
+                                const daysLeft = 90 - Math.floor((Date.now() - new Date(app.approvedAt).getTime()) / 86400000);
+                                return daysLeft <= 20
+                                  ? <span className="text-orange-400 text-xs flex items-center gap-1"><AlertCircle size={10} />{daysLeft}d left</span>
+                                  : <span className="text-gray-500 text-xs">{daysLeft}d remaining</span>;
+                              })()}
+                            </div>
+                          )}
+                          {app.rejectionReason && <p className="px-3 pb-2 text-red-400/70 text-xs">{app.rejectionReason}</p>}
+                          {app.approvalReason && <p className="px-3 pb-2 text-green-400/60 text-xs">{app.approvalReason}</p>}
+                          {/* Status buttons — always visible */}
+                          {!isShareHolder && (
+                            <div className="flex gap-1.5 px-3 pb-3">
+                              <button onClick={() => toggleBankStatus(app.bank, 'approved')} className={`flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-xs font-semibold border transition-colors touch-manipulation ${app.status === 'approved' ? 'bg-green-500/20 border-green-500/40 text-green-300' : 'border-obsidian-400/50 text-gray-600 hover:text-green-400 hover:border-green-500/30'}`}>
+                                <CheckCircle size={11} />Approve
+                              </button>
+                              <button onClick={() => toggleBankStatus(app.bank, 'submitted')} className={`flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-xs font-semibold border transition-colors touch-manipulation ${app.status === 'submitted' ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300' : 'border-obsidian-400/50 text-gray-600 hover:text-yellow-400 hover:border-yellow-500/30'}`}>
+                                Pending
+                              </button>
+                              <button onClick={() => toggleBankStatus(app.bank, 'rejected')} className={`flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-xs font-semibold border transition-colors touch-manipulation ${app.status === 'rejected' ? 'bg-red-500/20 border-red-500/40 text-red-300' : 'border-obsidian-400/50 text-gray-600 hover:text-red-400 hover:border-red-500/30'}`}>
+                                <XCircle size={11} />Reject
+                              </button>
+                            </div>
+                          )}
+                          {/* Inline amount/rate fields when approved */}
+                          {!isShareHolder && app.status === 'approved' && (
+                            <div className="px-3 pb-3 space-y-2 border-t border-green-500/20 pt-2">
+                              <div className="grid grid-cols-2 gap-2">
+                                <input type="number" className="input text-xs w-full" placeholder="Amount (RM)" value={app.approvedAmount ?? ''} onChange={e => setBankStatuses(prev => prev.map(a => a.bank === app.bank ? { ...a, approvedAmount: e.target.value ? Number(e.target.value) : undefined } : a))} onBlur={() => handleSaveBankStatuses(detailLead.id)} />
+                                <input type="number" step="0.01" className="input text-xs w-full" placeholder="Rate (%)" value={app.interestRate ?? ''} onChange={e => setBankStatuses(prev => prev.map(a => a.bank === app.bank ? { ...a, interestRate: e.target.value ? Number(e.target.value) : undefined } : a))} onBlur={() => handleSaveBankStatuses(detailLead.id)} />
+                              </div>
+                              <input className="input text-xs w-full" placeholder="Approval notes..." value={app.approvalReason ?? ''} onChange={e => setBankStatuses(prev => prev.map(a => a.bank === app.bank ? { ...a, approvalReason: e.target.value } : a))} onBlur={() => handleSaveBankStatuses(detailLead.id)} />
+                              {!detailLead.loanWorkOrder && (
+                                <button
+                                  onClick={() => openFinalDeal(detailLead, app.bank, app.approvedAmount)}
+                                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-500 hover:bg-green-400 text-obsidian-900 text-xs font-bold transition-colors touch-manipulation active:scale-95"
+                                >
+                                  <ClipboardList size={13} />
+                                  Proceed with {app.bank} — Final Deal
+                                  <ArrowRight size={13} />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                          {!isShareHolder && app.status === 'rejected' && (
+                            <div className="px-3 pb-3 border-t border-red-500/10 pt-2">
+                              <input className="input text-xs w-full" placeholder="Rejection reason..." value={app.rejectionReason ?? ''} onChange={e => setBankStatuses(prev => prev.map(a => a.bank === app.bank ? { ...a, rejectionReason: e.target.value } : a))} onBlur={() => handleSaveBankStatuses(detailLead.id)} />
                             </div>
                           )}
                         </div>
                       ))}
                       {/* Add more banks */}
-                      {BANKS.some(b => !bankStatuses.some(a => a.bank === b)) && (
-                        <div className="border-t border-obsidian-400/30 px-3 py-2">
-                          <button
-                            onClick={() => { setBankModalPicks({}); setBankModalLeadId(detailLead.id); }}
-                            className="w-full text-xs text-gold-400 hover:text-gold-300 font-medium transition-colors py-1.5 flex items-center justify-center gap-1.5"
-                          >
-                            <Plus size={12} /> Add bank
-                          </button>
-                        </div>
+                      {!isShareHolder && BANKS.some(b => !bankStatuses.some(a => a.bank === b)) && (
+                        <button onClick={() => { setBankModalPicks({}); setBankModalLeadId(detailLead.id); }} className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-dashed border-obsidian-400/50 text-xs text-gold-400 hover:text-gold-300 hover:border-gold-500/30 transition-colors touch-manipulation">
+                          <Plus size={12} />Add bank
+                        </button>
                       )}
                     </div>
                   </div>
@@ -1919,12 +1986,32 @@ export default function Customers() {
                   </div>
                 )}
 
-                {/* Follow-up */}
-                {(detailLead.followUpDate || detailLead.followUpRemark) && (
-                  <div className="space-y-2">
+                {/* Follow-up — always shown, inline date picker */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
                     <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Follow-up</p>
+                    {!isShareHolder && (
+                      <button onClick={() => setShowInlineFollowup(v => !v)} className="text-xs text-gold-400 hover:text-gold-300 font-medium touch-manipulation">
+                        {detailLead.followUpDate ? 'Change date' : '+ Set date'}
+                      </button>
+                    )}
+                  </div>
+                  {showInlineFollowup && (
+                    <div className="bg-obsidian-800/80 border border-obsidian-400/50 rounded-2xl p-4">
+                      <MiniCalendar
+                        date={detailLead.followUpDate ?? ''}
+                        time=""
+                        onDate={d => {
+                          updateCustomer(detailLead.id, { followUpDate: d || undefined });
+                          setShowInlineFollowup(false);
+                        }}
+                        onTime={() => {}}
+                      />
+                    </div>
+                  )}
+                  {!showInlineFollowup && (
                     <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl p-4 space-y-2">
-                      {detailLead.followUpDate && (() => {
+                      {detailLead.followUpDate ? (() => {
                         const today = new Date(); today.setHours(0, 0, 0, 0);
                         const target = new Date(detailLead.followUpDate + 'T00:00:00');
                         const diff = Math.round((target.getTime() - today.getTime()) / 86400000);
@@ -1940,13 +2027,15 @@ export default function Customers() {
                             <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${urgent ? 'bg-red-500/15 text-red-400 border border-red-500/25' : 'bg-obsidian-600/60 text-gray-400 border border-obsidian-500/30'}`}>{countdown}</span>
                           </div>
                         );
-                      })()}
+                      })() : (
+                        <p className="text-gray-600 text-sm">No follow-up date set</p>
+                      )}
                       {detailLead.followUpRemark && (
                         <p className="text-gray-300 text-sm pl-5">{detailLead.followUpRemark}</p>
                       )}
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
 
                 {/* Booking Fee */}
                 <div className="space-y-2">
@@ -1974,20 +2063,60 @@ export default function Customers() {
                   </div>
                 </div>
 
-                {/* Proceed to Loan */}
-                {detailLead.leadStatus === 'follow_up' && (
-                  <button
-                    onClick={() => {
-                      const interestedCar = cars.find(car => car.id === detailLead.interestedCarId);
-                      setLoanForm({ dealPrice: String(interestedCar?.sellingPrice ?? ''), carId: detailLead.interestedCarId ?? '' });
-                      setSidebarLead(detailLead);
-                      setSidebarView('car_select');
-                      setDetailLead(null);
-                    }}
-                    className="w-full flex items-center justify-center gap-2 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-400 py-3 rounded-xl text-sm font-semibold transition-colors touch-manipulation"
-                  >
-                    <Banknote size={15} />Proceed with Loan
-                  </button>
+                {/* Payment method — only show when not yet tagged */}
+                {detailLead.leadStatus === 'follow_up' && !detailLead.dealType && !detailLead.cashWorkOrder && !detailLead.loanWorkOrder && !isShareHolder && (
+                  <div className="space-y-2">
+                    <p className="text-gray-600 text-xs font-semibold uppercase tracking-wide text-center">How is customer paying?</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => {
+                          updateCustomer(detailLead.id, { dealType: 'loan' });
+                          setBankModalPicks({});
+                          setBankModalLeadId(detailLead.id);
+                          setDetailLead(null);
+                        }}
+                        className="flex items-center justify-center gap-2 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-400 py-3 rounded-xl text-sm font-semibold transition-colors touch-manipulation"
+                      >
+                        <Banknote size={14} />Loan
+                      </button>
+                      <button
+                        onClick={() => {
+                          updateCustomer(detailLead.id, { dealType: 'cash' });
+                        }}
+                        className="flex items-center justify-center gap-2 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 py-3 rounded-xl text-sm font-semibold transition-colors touch-manipulation"
+                      >
+                        <Banknote size={14} />Cash
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Cash lead — tagged, not yet work order */}
+                {detailLead.dealType === 'cash' && !detailLead.cashWorkOrder && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between px-3 py-2.5 bg-green-500/5 border border-green-500/20 rounded-xl">
+                      <div className="flex items-center gap-2">
+                        <Banknote size={13} className="text-green-400" />
+                        <span className="text-green-400 text-sm font-semibold">Cash Buyer</span>
+                      </div>
+                      <span className="text-gray-500 text-xs">Follow up to close</span>
+                    </div>
+                    {!isShareHolder && (
+                      <button
+                        onClick={() => {
+                          const interestedCar = cars.find(car => car.id === detailLead.interestedCarId);
+                          setLoanForm({ dealPrice: String(interestedCar?.sellingPrice ?? ''), carId: detailLead.interestedCarId ?? '' });
+                          setSidebarLead(detailLead);
+                          setSidebarCashFlow(true);
+                          setSidebarView('car_select');
+                          setDetailLead(null);
+                        }}
+                        className="w-full flex items-center justify-center gap-2 bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/50 text-gray-300 py-2.5 rounded-xl text-sm font-medium transition-colors touch-manipulation"
+                      >
+                        <ClipboardList size={14} />Create Cash Work Order
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>}
 
@@ -2026,7 +2155,7 @@ export default function Customers() {
                 events.sort((a, b) => b.date.localeCompare(a.date));
 
                 return (
-                  <div className="flex-1 overflow-y-auto min-h-0 p-5 pb-24">
+                  <div className="flex-1 overflow-y-auto min-h-0 p-5 pb-20">
                     <div className="relative">
                       <div className="absolute left-3 top-2 bottom-2 w-px bg-obsidian-400/40" />
                       <div className="space-y-5">
@@ -2048,16 +2177,7 @@ export default function Customers() {
                 );
               })()}
 
-              {/* Floating corner FABs */}
-              {/* Bottom-left: WhatsApp */}
-              <button
-                onClick={() => handleWhatsApp(detailLead.phone, detailLead.name)}
-                className="absolute left-4 bottom-4 w-12 h-12 rounded-full bg-green-500 hover:bg-green-400 shadow-[0_4px_20px_rgba(34,197,94,0.5)] flex items-center justify-center transition-all touch-manipulation active:scale-95"
-                style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}
-              >
-                <MessageCircle size={20} className="text-white" />
-              </button>
-              {/* Bottom-right: Primary action pill */}
+              {/* Floating corner FAB — primary action only */}
               {(() => {
                 if (detailLead.delivered) {
                   return (
@@ -2092,7 +2212,8 @@ export default function Customers() {
                 </div>
               </div>
             </div>
-          </>
+          </>,
+          document.body,
         );
       })()}
 
@@ -2521,10 +2642,11 @@ export default function Customers() {
         const downpayment = workOrderType === 'loan' ? woForm.sellingPrice - woForm.loanAmount : 0;
         const netTradeIn = woForm.tradeInPrice - woForm.settlementFigure;
 
-        return (
-          <div className="fixed inset-0 z-50 bg-[#080808] overflow-y-auto">
+        return createPortal(
+          <div className="fixed inset-0 z-[400] bg-[#080808] overflow-y-auto">
             {/* Header */}
-            <div className="sticky top-0 z-10 bg-[#0F0E0C] border-b border-obsidian-400/60 px-4 py-3 flex items-center justify-between">
+            <div className="sticky top-0 z-10 bg-[#0F0E0C] border-b border-obsidian-400/60 px-4 flex items-center justify-between"
+              style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top, 0px))', paddingBottom: '0.75rem' }}>
               <div>
                 <p className="text-white font-semibold text-sm">{workOrderIsEdit ? 'Edit Work Order' : workOrderType === 'loan' ? 'Loan Work Order' : 'Cash Work Order'}</p>
                 <p className="text-gray-500 text-xs">{workOrderCustomer.name} · {car ? `${car.year} ${car.make} ${car.model}` : ''}</p>
@@ -2817,7 +2939,8 @@ export default function Customers() {
             </div>
 
             {/* Sticky Submit Footer */}
-            <div className="fixed bottom-0 left-0 right-0 bg-[#0F0E0C] border-t border-obsidian-400/60 px-4 py-4">
+            <div className="fixed bottom-0 left-0 right-0 bg-[#0F0E0C] border-t border-obsidian-400/60 px-4 pt-4"
+              style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}>
               <div className="max-w-lg mx-auto flex items-center justify-between gap-4">
                 <div>
                   <p className="text-gray-500 text-xs">Total Final Deal</p>
@@ -2834,7 +2957,8 @@ export default function Customers() {
                 </button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body,
         );
       })()}
       <DeleteConfirmModal
@@ -2880,8 +3004,8 @@ export default function Customers() {
 
         const close = () => { setBankModalLeadId(null); setBankModalPendingData(null); };
 
-        return (
-          <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm" onClick={close}>
+        return createPortal(
+          <div className="fixed inset-0 z-[400] flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm" onClick={close}>
             <div className="w-full sm:max-w-sm bg-obsidian-800 sm:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
 
               {/* Handle bar */}
@@ -2978,7 +3102,8 @@ export default function Customers() {
               </div>
 
               {/* Submit */}
-              <div className="px-4 pt-3 pb-20 sm:pb-6 shrink-0">
+              <div className="px-4 pt-3 shrink-0"
+                style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))' }}>
                 <button
                   onClick={doSubmit}
                   disabled={selectedBanks.length === 0}
@@ -2990,7 +3115,8 @@ export default function Customers() {
                 </button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body,
         );
       })()}
     </div>

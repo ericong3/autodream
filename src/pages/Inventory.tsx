@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { thumbUrl } from '../utils/photoUrl';
 import {
@@ -18,10 +19,13 @@ import {
   Trash2,
   Users,
   Clock,
+  ClipboardList,
+  Edit2,
+  Check,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
-import { Car } from '../types';
+import { Car, Customer, LoanWorkOrder, CashWorkOrder } from '../types';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, formatMileage, generateId } from '../utils/format';
@@ -98,6 +102,7 @@ export default function Inventory() {
   const externalSalesmen = useStore((s) => s.externalSalesmen);
   const viewPreference = useStore((s) => s.viewPreference);
   const setViewPreference = useStore((s) => s.setViewPreference);
+  const updateCustomer = useStore((s) => s.updateCustomer);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -121,7 +126,9 @@ export default function Inventory() {
   }, []);
 
   const tabParam = searchParams.get('tab');
-  const [inventoryTab, setInventoryTab] = useState<'stock' | 'coming_soon'>(tabParam === 'coming_soon' ? 'coming_soon' : 'stock');
+  const [inventoryTab, setInventoryTab] = useState<'stock' | 'coming_soon' | 'pending_delivery'>(
+    tabParam === 'coming_soon' ? 'coming_soon' : tabParam === 'pending_delivery' ? 'pending_delivery' : 'stock'
+  );
   const [search, setSearch] = useState('');
   const [filterMake, setFilterMake] = useState('All');
   const [filterTransmission, setFilterTransmission] = useState('All');
@@ -129,6 +136,10 @@ export default function Inventory() {
   const [sortBy, setSortBy] = useState('dateAdded-desc');
   const [showModal, setShowModal] = useState(false);
   const [deleteCarId, setDeleteCarId] = useState<string | null>(null);
+  const [woViewCar, setWoViewCar] = useState<{ car: Car; buyer: Customer } | null>(null);
+  const [woEditMode, setWoEditMode] = useState(false);
+  const [woEditData, setWoEditData] = useState<Record<string, any>>({});
+  const [woSaving, setWoSaving] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
@@ -279,9 +290,17 @@ export default function Inventory() {
     return result.sort((a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime());
   }, [cars, search, filterMake]);
 
+  const consignedOut = useMemo(() =>
+    cars.filter((c) => !!c.outgoingConsignment && c.status !== 'delivered'),
+  [cars]);
+
+  const pendingDelivery = useMemo(() =>
+    cars.filter((c) => c.status === 'deal_pending'),
+  [cars]);
+
   const filtered = useMemo(() => {
-    // Stock tab: exclude delivered and coming_soon
-    let result = cars.filter((c) => c.status !== 'delivered' && c.status !== 'coming_soon');
+    // Stock tab: exclude delivered, coming_soon, deal_pending, and consigned-out cars
+    let result = cars.filter((c) => c.status !== 'delivered' && c.status !== 'coming_soon' && c.status !== 'deal_pending' && !c.outgoingConsignment);
 
     if (search) {
       const q = search.toLowerCase();
@@ -361,14 +380,14 @@ export default function Inventory() {
   return (
     <div className="space-y-5">
       {/* Tabs */}
-      <div className="flex gap-1 bg-[#0F0E0C] border border-obsidian-400/60 rounded-lg p-1 w-fit">
+      <div className="flex gap-1 bg-[#0F0E0C] border border-obsidian-400/60 rounded-lg p-1 w-fit flex-wrap">
         <button
           onClick={() => { setInventoryTab('stock'); setSearchParams({}); }}
           className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${inventoryTab === 'stock' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
         >
           Stock
           <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${inventoryTab === 'stock' ? 'bg-white/20' : 'bg-obsidian-600/60'}`}>
-            {cars.filter(c => c.status !== 'delivered' && c.status !== 'coming_soon').length}
+            {cars.filter(c => c.status !== 'delivered' && c.status !== 'coming_soon' && c.status !== 'deal_pending' && !c.outgoingConsignment).length}
           </span>
         </button>
         <button
@@ -379,6 +398,17 @@ export default function Inventory() {
           {cars.filter(c => c.status === 'coming_soon').length > 0 && (
             <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${inventoryTab === 'coming_soon' ? 'bg-white/20' : 'bg-purple-500/20 text-purple-400'}`}>
               {cars.filter(c => c.status === 'coming_soon').length}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => { setInventoryTab('pending_delivery'); setSearchParams({ tab: 'pending_delivery' }); }}
+          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${inventoryTab === 'pending_delivery' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'}`}
+        >
+          Pending Delivery
+          {pendingDelivery.length > 0 && (
+            <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${inventoryTab === 'pending_delivery' ? 'bg-white/20' : 'bg-green-500/20 text-green-400'}`}>
+              {pendingDelivery.length}
             </span>
           )}
         </button>
@@ -462,9 +492,177 @@ export default function Inventory() {
       <p className="text-gray-500 text-sm">
         {inventoryTab === 'coming_soon'
           ? <>Showing <span className="text-white font-medium">{comingSoonFiltered.length}</span> coming soon</>
-          : <>Showing <span className="text-white font-medium">{filtered.length}</span> of {cars.filter(c => c.status !== 'delivered' && c.status !== 'coming_soon').length} active stock</>
+          : inventoryTab === 'pending_delivery'
+          ? <><span className="text-green-400 font-medium">{pendingDelivery.length}</span> car{pendingDelivery.length !== 1 ? 's' : ''} sold, awaiting delivery</>
+          : <>Showing <span className="text-white font-medium">{filtered.length}</span> of {cars.filter(c => c.status !== 'delivered' && c.status !== 'coming_soon' && c.status !== 'deal_pending' && !c.outgoingConsignment).length} active stock{consignedOut.length > 0 && <> · <span className="text-orange-400 font-medium">{consignedOut.length} consigned out</span></>}</>
         }
       </p>
+
+      {/* ── Pending Delivery tab ── */}
+      {inventoryTab === 'pending_delivery' && (
+        <>
+          {pendingDelivery.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-24 text-center">
+              <div className="w-20 h-20 rounded-2xl bg-obsidian-800/60 border border-obsidian-400/30 flex items-center justify-center mb-5">
+                <Clock size={36} className="text-gray-600" />
+              </div>
+              <p className="text-white font-semibold text-base">No pending deliveries</p>
+              <p className="text-gray-500 text-sm mt-1.5">Cars with a submitted work order will appear here</p>
+            </div>
+          ) : view === 'grid' ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {pendingDelivery.map((car) => {
+                  const buyer = customers.find(c => c.interestedCarId === car.id && (c.loanWorkOrder || c.cashWorkOrder));
+                  const isLoan = !!buyer?.loanWorkOrder;
+                  const wo = buyer?.loanWorkOrder ?? buyer?.cashWorkOrder;
+                  const daysPending = car.finalDeal?.submittedAt
+                    ? Math.floor((Date.now() - new Date(car.finalDeal.submittedAt).getTime()) / 86400000)
+                    : null;
+                  const needsApproval = car.finalDeal?.approvalStatus === 'pending';
+                  return (
+                    <div
+                      key={car.id}
+                      onClick={() => navigate(`/inventory/${car.id}`)}
+                      className="bg-card-gradient border border-green-500/30 hover:border-green-400/60 rounded-xl shadow-card overflow-hidden cursor-pointer hover:shadow-xl transition-all group"
+                    >
+                      {/* Photo */}
+                      <div className="h-36 bg-obsidian-700/60 flex items-center justify-center relative">
+                        {car.photo ? (
+                          <img
+                            src={car.photo}
+                            alt={`${car.make} ${car.model}`}
+                            className="w-full h-full object-cover opacity-0 transition-opacity duration-300"
+                            loading="lazy"
+                            onLoad={(e) => e.currentTarget.classList.replace('opacity-0', 'opacity-100')}
+                          />
+                        ) : (
+                          <CarIcon size={40} className="text-gray-700 group-hover:text-gray-600 transition-colors" />
+                        )}
+                        <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-500/20 text-green-300 border border-green-500/30">
+                          Pending
+                        </span>
+                        {needsApproval && (
+                          <span className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                            <AlertCircle size={10} />Approval
+                          </span>
+                        )}
+                      </div>
+                      {/* Info */}
+                      <div className="p-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-white font-semibold text-sm truncate">{car.year} {car.make} {car.model}</p>
+                            {car.carPlate && <p className="text-gray-500 text-xs truncate">{car.carPlate}</p>}
+                          </div>
+                          <span className={`shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full ${isLoan ? 'bg-blue-500/15 text-blue-400' : 'bg-green-500/15 text-green-400'}`}>
+                            {isLoan ? (wo as any)?.bank ?? 'Loan' : 'Cash'}
+                          </span>
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-obsidian-400/40 space-y-1.5">
+                          <p className="text-white font-bold">{car.finalDeal ? formatRM(car.finalDeal.dealPrice) : '—'}</p>
+                          {buyer && (
+                            <div className="flex items-center gap-1.5">
+                              <Users size={11} className="text-gray-500" />
+                              <span className="text-gray-300 text-xs truncate">{buyer.name}</span>
+                            </div>
+                          )}
+                          {daysPending !== null && (
+                            <div className="flex items-center gap-1.5 text-gray-500 text-xs">
+                              <Clock size={11} />
+                              {daysPending === 0 ? 'Today' : `${daysPending}d ago`}
+                            </div>
+                          )}
+                          {buyer && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setWoViewCar({ car, buyer }); }}
+                              className="w-full mt-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-green-500/15 hover:bg-green-500/25 border border-green-500/30 text-green-400 text-xs font-semibold transition-colors touch-manipulation"
+                            >
+                              <ClipboardList size={12} />
+                              Final Deal
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {pendingDelivery.map((car) => {
+                  const buyer = customers.find(c => c.interestedCarId === car.id && (c.loanWorkOrder || c.cashWorkOrder));
+                  const isLoan = !!buyer?.loanWorkOrder;
+                  const wo = buyer?.loanWorkOrder ?? buyer?.cashWorkOrder;
+                  const daysPending = car.finalDeal?.submittedAt
+                    ? Math.floor((Date.now() - new Date(car.finalDeal.submittedAt).getTime()) / 86400000)
+                    : null;
+                  const needsApproval = car.finalDeal?.approvalStatus === 'pending';
+                  return (
+                    <div
+                      key={car.id}
+                      onClick={() => navigate(`/inventory/${car.id}`)}
+                      className="flex gap-4 p-4 rounded-2xl bg-obsidian-800/60 border border-obsidian-400/40 cursor-pointer hover:border-green-500/40 transition-colors group"
+                    >
+                      {/* Car photo */}
+                      {car.photo ? (
+                        <img src={car.photo} alt="" className="w-20 h-14 rounded-xl object-cover shrink-0" />
+                      ) : (
+                        <div className="w-20 h-14 rounded-xl bg-obsidian-700/60 flex items-center justify-center shrink-0">
+                          <CarIcon size={20} className="text-gray-600" />
+                        </div>
+                      )}
+
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-white font-semibold text-sm leading-snug">{car.year} {car.make} {car.model}</p>
+                            <p className="text-gray-500 text-xs mt-0.5">{car.carPlate ?? '—'} · {car.colour}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-white font-bold text-sm">{car.finalDeal ? formatRM(car.finalDeal.dealPrice) : '—'}</p>
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isLoan ? 'bg-blue-500/15 text-blue-400' : 'bg-green-500/15 text-green-400'}`}>
+                              {isLoan ? (wo as any)?.bank ?? 'Loan' : 'Cash'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 mt-2 flex-wrap">
+                          {buyer && (
+                            <div className="flex items-center gap-1.5">
+                              <Users size={11} className="text-gray-500" />
+                              <span className="text-gray-300 text-xs font-medium">{buyer.name}</span>
+                            </div>
+                          )}
+                          {needsApproval && (
+                            <span className="flex items-center gap-1 text-amber-400 text-xs font-semibold">
+                              <AlertCircle size={11} />Awaiting director approval
+                            </span>
+                          )}
+                          {!needsApproval && daysPending !== null && (
+                            <span className="flex items-center gap-1 text-gray-500 text-xs">
+                              <Clock size={11} />
+                              {daysPending === 0 ? 'Today' : `${daysPending}d ago`}
+                            </span>
+                          )}
+                        </div>
+                        {buyer && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setWoViewCar({ car, buyer }); }}
+                            className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-green-500/15 hover:bg-green-500/25 border border-green-500/30 text-green-400 text-xs font-semibold transition-colors touch-manipulation"
+                          >
+                            <ClipboardList size={12} />
+                            Final Deal
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+        </>
+      )}
 
       {/* ── Coming Soon tab ── */}
       {inventoryTab === 'coming_soon' && (
@@ -926,6 +1124,42 @@ export default function Inventory() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* ── Consigned Out section ── */}
+      {consignedOut.length > 0 && (
+        <div className="mt-8">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="h-px flex-1 bg-orange-500/20" />
+            <span className="text-orange-400 text-xs font-semibold uppercase tracking-widest px-2">Consigned Out ({consignedOut.length})</span>
+            <div className="h-px flex-1 bg-orange-500/20" />
+          </div>
+          <div className="space-y-2">
+            {consignedOut.map((car) => (
+              <div
+                key={car.id}
+                onClick={() => navigate(`/inventory/${car.id}`)}
+                className="flex items-center gap-3 px-4 py-3 rounded-xl bg-obsidian-800/60 border border-orange-500/20 cursor-pointer hover:border-orange-500/40 transition-colors"
+              >
+                {car.photo ? (
+                  <img src={car.photo} alt="" className="w-12 h-9 rounded-lg object-cover shrink-0 opacity-80" />
+                ) : (
+                  <div className="w-12 h-9 rounded-lg bg-obsidian-700/60 flex items-center justify-center shrink-0">
+                    <CarIcon size={14} className="text-gray-600" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-white text-sm font-medium truncate">{car.year} {car.make} {car.model}</p>
+                  <p className="text-gray-500 text-xs truncate">{car.carPlate ?? '—'} · {car.colour}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-orange-400 text-xs font-semibold">{car.outgoingConsignment!.dealer}</p>
+                  <p className="text-gray-600 text-xs">{car.outgoingConsignment!.terms === 'fixed_amount' ? `RM ${(car.outgoingConsignment!.fixedAmount ?? 0).toLocaleString()}` : `${car.outgoingConsignment!.splitPercent ?? 50}% split`}</p>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -1474,6 +1708,339 @@ export default function Inventory() {
           </button>
         </div>
       </Modal>
+
+      {/* ── Work Order View / Edit Sheet ── */}
+      {woViewCar && (() => {
+        const { car, buyer } = woViewCar;
+        const isLoan = !!buyer.loanWorkOrder;
+        const lwo = buyer.loanWorkOrder as LoanWorkOrder | undefined;
+        const cwo = buyer.cashWorkOrder as CashWorkOrder | undefined;
+        const activeWo = (lwo ?? cwo)!;
+
+        // Use edit data in edit mode, otherwise use activeWo
+        const d: any = woEditMode ? woEditData : activeWo;
+        const editExtras: { label: string; amount: number }[] = woEditMode ? (woEditData.additionalItems ?? []) : (activeWo.additionalItems ?? []);
+
+        const editNetTradeIn = (d.hasTradeIn ? ((Number(d.tradeInPrice) || 0) - (Number(d.settlementFigure) || 0)) : 0);
+        const viewNetTradeIn = (activeWo.hasTradeIn ? (activeWo.tradeInPrice - activeWo.settlementFigure) : 0);
+
+        const calcTotal = (src: any, extras: { label: string; amount: number }[]) =>
+          (Number(src.sellingPrice) || 0)
+          - (isLoan ? (Number(src.loanAmount) || 0) : 0)
+          - (Number(src.discount) || 0)
+          + (Number(src.insurance) || 0)
+          + (Number(src.bankProduct) || 0)
+          + extras.reduce((s, i) => s + (Number(i.amount) || 0), 0)
+          - (src.hasTradeIn ? ((Number(src.tradeInPrice) || 0) - (Number(src.settlementFigure) || 0)) : 0);
+
+        const displayTotal = woEditMode
+          ? calcTotal(woEditData, editExtras)
+          : (car.finalDeal?.dealPrice ?? calcTotal(activeWo, activeWo.additionalItems ?? []));
+
+        const setD = (patch: Record<string, any>) => setWoEditData((prev: any) => ({ ...prev, ...patch }));
+
+        const handleSave = async () => {
+          setWoSaving(true);
+          try {
+            const updated = { ...activeWo, ...woEditData, additionalItems: editExtras };
+            if (isLoan) {
+              await updateCustomer(buyer.id, { loanWorkOrder: updated as LoanWorkOrder });
+            } else {
+              await updateCustomer(buyer.id, { cashWorkOrder: updated as CashWorkOrder });
+            }
+            // Update woViewCar buyer reference so view mode reflects changes
+            setWoViewCar(prev => prev ? {
+              ...prev,
+              buyer: {
+                ...prev.buyer,
+                ...(isLoan ? { loanWorkOrder: updated as LoanWorkOrder } : { cashWorkOrder: updated as CashWorkOrder }),
+              },
+            } : null);
+            setWoEditMode(false);
+          } catch (e) {
+            console.error(e);
+          } finally {
+            setWoSaving(false);
+          }
+        };
+
+        const numInput = (field: string, label: string, prefix = 'RM') => (
+          <div className="flex items-center gap-3 px-4 py-3 border-b border-obsidian-400/30">
+            <span className="text-gray-400 text-sm flex-1">{label}</span>
+            <div className="flex items-center gap-1">
+              <span className="text-gray-600 text-xs">{prefix}</span>
+              <input
+                type="number"
+                value={d[field] || ''}
+                onChange={e => setD({ [field]: Number(e.target.value) })}
+                className="w-28 bg-transparent text-white text-sm text-right outline-none border-b border-transparent focus:border-gold-500/60 transition-colors"
+                placeholder="0"
+              />
+            </div>
+          </div>
+        );
+
+        const txtInput = (field: string, label: string, multiline = false) => (
+          <div className="flex items-start gap-3 px-4 py-3 border-b border-obsidian-400/30">
+            <span className="text-gray-400 text-sm flex-1 pt-0.5">{label}</span>
+            {multiline ? (
+              <textarea
+                value={d[field] || ''}
+                onChange={e => setD({ [field]: e.target.value })}
+                rows={2}
+                className="w-40 bg-transparent text-white text-sm text-right outline-none border-b border-transparent focus:border-gold-500/60 transition-colors resize-none"
+                placeholder="—"
+              />
+            ) : (
+              <input
+                type="text"
+                value={d[field] || ''}
+                onChange={e => setD({ [field]: e.target.value })}
+                className="w-40 bg-transparent text-white text-sm text-right outline-none border-b border-transparent focus:border-gold-500/60 transition-colors"
+                placeholder="—"
+              />
+            )}
+          </div>
+        );
+
+        return createPortal(
+          <div className="fixed inset-0 z-[500] bg-[#080808] overflow-y-auto">
+            {/* Header */}
+            <div
+              className="sticky top-0 z-10 bg-[#0F0E0C] border-b border-obsidian-400/60 px-4 flex items-center justify-between gap-3"
+              style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top, 0px))', paddingBottom: '0.75rem' }}
+            >
+              <div className="min-w-0">
+                <p className="text-white font-semibold text-sm">{isLoan ? 'Loan Work Order' : 'Cash Work Order'}</p>
+                <p className="text-gray-500 text-xs truncate">{car.year} {car.make} {car.model} · {buyer.name}</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {woEditMode ? (
+                  <>
+                    <button
+                      onClick={() => setWoEditMode(false)}
+                      className="px-3 py-1.5 text-xs font-semibold text-gray-400 border border-obsidian-400/60 rounded-lg hover:bg-obsidian-700/60 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSave}
+                      disabled={woSaving}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-obsidian-900 bg-gold-500 hover:bg-gold-400 rounded-lg transition-colors disabled:opacity-60"
+                    >
+                      {woSaving ? <><svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Saving</> : <><Check size={13} />Save</>}
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => { setWoEditData({ ...activeWo }); setWoEditMode(true); }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gold-400 border border-gold-500/40 rounded-lg hover:bg-gold-500/10 transition-colors"
+                  >
+                    <Edit2 size={12} />
+                    Edit
+                  </button>
+                )}
+                <button
+                  onClick={() => { setWoViewCar(null); setWoEditMode(false); }}
+                  className="p-1.5 text-gray-500 hover:text-white hover:bg-obsidian-600/60 rounded-lg transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            <div className="max-w-lg mx-auto px-4 py-5 space-y-6" style={{ paddingBottom: 'calc(2rem + env(safe-area-inset-bottom, 0px))' }}>
+
+              {/* ── Deal Section ── */}
+              <div>
+                <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest mb-3">Deal of the Car</p>
+                <div className="bg-[#0F0E0C] border border-obsidian-400/60 rounded-xl overflow-hidden divide-y divide-obsidian-400/30">
+                  {woEditMode ? (
+                    <>
+                      {numInput('sellingPrice', 'Selling Price')}
+                      {numInput('insurance', 'Insurance')}
+                      {numInput('bankProduct', 'Bank Product')}
+
+                      {/* Extra items */}
+                      {editExtras.map((item, idx) => (
+                        <div key={idx} className="flex items-center gap-3 px-4 py-3 border-b border-obsidian-400/30">
+                          <input
+                            value={item.label}
+                            onChange={e => setD({ additionalItems: editExtras.map((x, i) => i === idx ? { ...x, label: e.target.value } : x) })}
+                            placeholder="Item name..."
+                            className="flex-1 bg-transparent text-gray-300 text-sm outline-none border-b border-transparent focus:border-gold-500/60"
+                          />
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className="text-gray-600 text-xs">RM</span>
+                            <input
+                              type="number"
+                              value={item.amount || ''}
+                              onChange={e => setD({ additionalItems: editExtras.map((x, i) => i === idx ? { ...x, amount: Number(e.target.value) } : x) })}
+                              className="w-24 bg-transparent text-white text-sm text-right outline-none border-b border-transparent focus:border-gold-500/60"
+                              placeholder="0"
+                            />
+                            <button onClick={() => setD({ additionalItems: editExtras.filter((_, i) => i !== idx) })} className="ml-1 text-gray-600 hover:text-red-400 transition-colors">
+                              <X size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => setD({ additionalItems: [...editExtras, { label: '', amount: 0 }] })}
+                        className="w-full px-4 py-2.5 text-xs text-gray-600 hover:text-gold-400 text-left transition-colors border-b border-obsidian-400/30"
+                      >
+                        + Add item
+                      </button>
+
+                      {numInput('discount', 'Discount')}
+                      {isLoan && (
+                        <>
+                          <div className="flex items-center gap-3 px-4 py-3 border-b border-obsidian-400/30">
+                            <span className="text-gray-400 text-sm flex-1">Approved Bank</span>
+                            <span className="text-green-400 text-sm font-medium">{lwo?.bank ?? '—'}</span>
+                          </div>
+                          {numInput('loanAmount', 'Loan Amount')}
+                        </>
+                      )}
+                      {!isLoan && numInput('downpayment', 'Downpayment')}
+                      {numInput('bookingFee', 'Booking Fee')}
+                    </>
+                  ) : (
+                    <>
+                      <Row label="Selling Price" value={formatRM(activeWo.sellingPrice)} />
+                      {activeWo.insurance > 0 && <Row label="Insurance" value={formatRM(activeWo.insurance)} />}
+                      {activeWo.bankProduct > 0 && <Row label="Bank Product" value={formatRM(activeWo.bankProduct)} />}
+                      {(activeWo.additionalItems ?? []).map((item, i) => (
+                        <Row key={i} label={item.label || 'Extra'} value={formatRM(item.amount)} />
+                      ))}
+                      {activeWo.discount > 0 && <Row label="Discount" value={`- ${formatRM(activeWo.discount)}`} valueClass="text-red-400" />}
+                      {isLoan && lwo && (
+                        <>
+                          <Row label="Approved Bank" value={lwo.bank} valueClass="text-green-400" />
+                          <Row label="Loan Amount" value={`- ${formatRM(lwo.loanAmount)}`} valueClass="text-red-400" />
+                        </>
+                      )}
+                      {!isLoan && cwo && (cwo.downpayment ?? 0) > 0 && (
+                        <Row label="Downpayment" value={formatRM(cwo.downpayment)} />
+                      )}
+                      {activeWo.hasTradeIn && viewNetTradeIn > 0 && (
+                        <Row label="Trade-In (net)" value={`- ${formatRM(viewNetTradeIn)}`} valueClass="text-red-400" />
+                      )}
+                      {(activeWo.bookingFee ?? 0) > 0 && <Row label="Booking Fee" value={formatRM(activeWo.bookingFee)} />}
+                    </>
+                  )}
+                  <div className="flex items-center gap-3 px-4 py-3 bg-obsidian-700/30">
+                    <span className="text-white font-bold text-sm flex-1">Total</span>
+                    <span className="text-gold-400 font-bold text-sm">{formatRM(displayTotal)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Customer Section ── */}
+              <div>
+                <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest mb-3">Customer Info</p>
+                <div className="bg-[#0F0E0C] border border-obsidian-400/60 rounded-xl overflow-hidden divide-y divide-obsidian-400/30">
+                  {woEditMode ? (
+                    <>
+                      {txtInput('customerName', 'Name')}
+                      {txtInput('customerIc', 'IC')}
+                      {txtInput('customerPhone', 'Phone')}
+                      {txtInput('customerEmail', 'Email')}
+                      {txtInput('customerAddress', 'Address', true)}
+                    </>
+                  ) : (
+                    <>
+                      <Row label="Name" value={activeWo.customerName} />
+                      <Row label="IC" value={activeWo.customerIc || '—'} />
+                      <Row label="Phone" value={activeWo.customerPhone || '—'} />
+                      {activeWo.customerEmail && <Row label="Email" value={activeWo.customerEmail} />}
+                      {activeWo.customerAddress && <Row label="Address" value={activeWo.customerAddress} />}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* ── Trade-In Section ── */}
+              {(activeWo.hasTradeIn || (woEditMode && d.hasTradeIn)) && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest">Trade-In</p>
+                    {woEditMode && (
+                      <button
+                        onClick={() => setD({ hasTradeIn: !d.hasTradeIn })}
+                        className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                      >
+                        Remove trade-in
+                      </button>
+                    )}
+                  </div>
+                  <div className="bg-[#0F0E0C] border border-obsidian-400/60 rounded-xl overflow-hidden divide-y divide-obsidian-400/30">
+                    {woEditMode ? (
+                      <>
+                        {txtInput('tradeInPlate', 'Plate')}
+                        {txtInput('tradeInMake', 'Make')}
+                        {txtInput('tradeInModel', 'Model')}
+                        {txtInput('tradeInVariant', 'Variant')}
+                        {numInput('tradeInPrice', 'Trade-In Value')}
+                        {numInput('settlementFigure', 'Settlement')}
+                        <div className="flex items-center gap-3 px-4 py-3 bg-obsidian-700/30">
+                          <span className="text-gray-400 text-sm flex-1">Net Trade-In</span>
+                          <span className="text-white font-semibold text-sm">{formatRM(editNetTradeIn)}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <Row label="Plate" value={activeWo.tradeInPlate || '—'} />
+                        <Row label="Car" value={`${activeWo.tradeInMake} ${activeWo.tradeInModel}${activeWo.tradeInVariant ? ` ${activeWo.tradeInVariant}` : ''}`} />
+                        <Row label="Trade-In Value" value={formatRM(activeWo.tradeInPrice)} valueClass="text-green-400" />
+                        {activeWo.settlementFigure > 0 && <Row label="Settlement" value={`- ${formatRM(activeWo.settlementFigure)}`} valueClass="text-red-400" />}
+                        <Row label="Net Trade-In" value={formatRM(viewNetTradeIn)} valueClass="text-white font-semibold" />
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+              {woEditMode && !d.hasTradeIn && (
+                <button
+                  onClick={() => setD({ hasTradeIn: true, tradeInPlate: '', tradeInMake: '', tradeInModel: '', tradeInVariant: '', tradeInPrice: 0, settlementFigure: 0 })}
+                  className="w-full py-2.5 text-xs font-semibold text-gray-500 border border-dashed border-obsidian-400/40 rounded-xl hover:border-gold-500/40 hover:text-gold-400 transition-colors"
+                >
+                  + Add Trade-In
+                </button>
+              )}
+
+              {/* ── Meta Section ── */}
+              <div>
+                <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest mb-3">Submission</p>
+                <div className="bg-[#0F0E0C] border border-obsidian-400/60 rounded-xl overflow-hidden divide-y divide-obsidian-400/30">
+                  <Row label="Submitted by" value={activeWo.submittedBy} />
+                  <Row label="Submitted at" value={activeWo.createdAt ? new Date(activeWo.createdAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'} />
+                  {car.finalDeal?.approvalStatus && (
+                    <Row
+                      label="Approval"
+                      value={car.finalDeal.approvalStatus === 'approved' ? 'Approved' : car.finalDeal.approvalStatus === 'rejected' ? 'Rejected' : 'Pending'}
+                      valueClass={car.finalDeal.approvalStatus === 'approved' ? 'text-green-400' : car.finalDeal.approvalStatus === 'rejected' ? 'text-red-400' : 'text-amber-400'}
+                    />
+                  )}
+                  {car.finalDeal?.approvedBy && <Row label="Approved by" value={car.finalDeal.approvedBy} />}
+                  {car.finalDeal?.notes && <Row label="Notes" value={car.finalDeal.notes} />}
+                </div>
+              </div>
+
+            </div>
+          </div>,
+          document.body,
+        );
+      })()}
+    </div>
+  );
+}
+
+function Row({ label, value, valueClass }: { label: string; value: string; valueClass?: string }) {
+  return (
+    <div className="flex items-start gap-3 px-4 py-3">
+      <span className="text-gray-400 text-sm flex-1">{label}</span>
+      <span className={`text-sm text-right max-w-[60%] ${valueClass ?? 'text-white'}`}>{value}</span>
     </div>
   );
 }

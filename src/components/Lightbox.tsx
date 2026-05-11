@@ -69,7 +69,8 @@ export default function Lightbox({
       onTouchEnd={onTouchEnd}
     >
       {/* ── Top bar ─────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-4 py-3 shrink-0">
+      <div className="flex items-center justify-between px-4 shrink-0"
+        style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top, 0px))', paddingBottom: '0.75rem' }}>
         <span className="text-white/60 text-sm font-medium tabular-nums select-none">
           {current + 1} / {total}
         </span>
@@ -117,7 +118,8 @@ export default function Lightbox({
 
       {/* ── Thumbnail strip ──────────────────────────────────────────────── */}
       {total > 1 && (
-        <div className="flex gap-2 p-3 overflow-x-auto justify-center shrink-0 scrollbar-none">
+        <div className="flex gap-2 px-3 pt-3 overflow-x-auto justify-center shrink-0 scrollbar-none"
+          style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}>
           {images.map((src, i) => (
             <button
               key={i}

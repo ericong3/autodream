@@ -55,7 +55,8 @@ export default function TdScheduleModal({ customerName, initialCarId = '', cars,
   return createPortal(
     <div className="fixed inset-0 z-[200] flex flex-col bg-[#0E0D0B]">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-4 border-b border-obsidian-400/60 shrink-0">
+      <div className="flex items-center justify-between px-4 border-b border-obsidian-400/60 shrink-0"
+        style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top, 0px))', paddingBottom: '1rem' }}>
         <div>
           <p className="text-white font-semibold text-sm">Schedule Test Drive</p>
           <p className="text-gray-500 text-xs mt-0.5">{customerName}</p>

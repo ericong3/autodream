@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { Trash2, AlertTriangle } from 'lucide-react';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 
@@ -26,16 +27,17 @@ export default function ConfirmSheet({
 
   const isDanger = variant === 'danger';
 
-  return (
+  return createPortal(
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50"
+        className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[500]"
         onClick={onClose}
       />
 
       {/* Sheet */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-gradient-to-b from-obsidian-800 to-obsidian-900 border-t border-obsidian-400/60 rounded-t-2xl p-6 shadow-card-lg">
+      <div className="fixed bottom-0 left-0 right-0 z-[500] bg-gradient-to-b from-obsidian-800 to-obsidian-900 border-t border-obsidian-400/60 rounded-t-2xl px-6 pt-6 shadow-card-lg"
+        style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))' }}>
         {/* Drag handle */}
         <div className="w-10 h-1 rounded-full bg-obsidian-400/40 mx-auto mb-5" />
 
@@ -81,6 +83,7 @@ export default function ConfirmSheet({
           )}
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   );
 }

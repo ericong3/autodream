@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { thumbUrl } from '../utils/photoUrl';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
@@ -1914,8 +1915,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       </Modal>
 
       {/* ── Mark Sold by Dealer Modal ── */}
-      {consignSoldModal && car.outgoingConsignment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      {consignSoldModal && car.outgoingConsignment && createPortal(
+        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="bg-[#0F0E0C] border border-green-500/30 rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-5">
             <div>
               <h2 className="text-white font-bold text-base">Mark Sold by Dealer</h2>
@@ -2027,12 +2028,13 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* ── Outgoing Consignment Modal ── */}
-      {outgoingConsignModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      {outgoingConsignModal && createPortal(
+        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="bg-[#0F0E0C] border border-orange-500/30 rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-5">
             <div>
               <h2 className="text-white font-bold text-base">Consign Out</h2>
@@ -2123,7 +2125,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                     setOutgoingConsignSaving(true);
                     setOutgoingConsignError(null);
                     try {
-                      await updateCar(car.id, { outgoingConsignment: null as any });
+                      await updateCar(car.id, { outgoingConsignment: null as any, status: 'available' });
                       setOutgoingConsignModal(null);
                     } catch (e: any) {
                       setOutgoingConsignError(e?.message ?? 'Failed to remove');
@@ -2150,6 +2152,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                         fixedAmount: outgoingConsignModal.terms === 'fixed_amount' ? outgoingConsignModal.fixedAmount : undefined,
                         splitPercent: outgoingConsignModal.terms === 'profit_split' ? outgoingConsignModal.splitPercent : undefined,
                       },
+                      status: 'reserved',
                     });
                     setOutgoingConsignModal(null);
                     setOutgoingConsignError(null);
@@ -2165,14 +2168,16 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* ── Photo Gallery Modal ── */}
-      {showGallery && allPhotos.length > 0 && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-black/95" onClick={() => { setShowGallery(false); setEditingPhotos(false); }}>
+      {showGallery && allPhotos.length > 0 && createPortal(
+        <div className="fixed inset-0 z-[400] flex flex-col bg-black/95" onClick={() => { setShowGallery(false); setEditingPhotos(false); }}>
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-between px-4 flex-shrink-0" onClick={(e) => e.stopPropagation()}
+            style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top, 0px))', paddingBottom: '0.75rem' }}>
             <span className="text-white font-semibold text-sm">{car.year} {car.make} {car.model}</span>
             <div className="flex items-center gap-2">
               <span className="text-gray-400 text-sm">{galleryIndex + 1} / {allPhotos.length}</span>
@@ -2261,7 +2266,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
 
           {/* Thumbnail strip */}
           {allPhotos.length > 1 && (
-            <div className="flex gap-2 px-5 py-4 overflow-x-auto flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+            <div className="flex gap-2 px-5 pt-4 overflow-x-auto flex-shrink-0" onClick={(e) => e.stopPropagation()}
+              style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}>
               {allPhotos.map((src, i) => (
                 <button
                   key={i}
@@ -2279,7 +2285,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               ))}
             </div>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* ── Delivery Modal ── */}
