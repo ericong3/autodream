@@ -142,32 +142,44 @@ export default function Inventory() {
   const [woSaving, setWoSaving] = useState(false);
   const [form, setForm] = useState(emptyForm);
 
-  // Swipe to change tab (mobile)
+  // Swipe to change tab (mobile) — document-level listeners bypass browser scroll interception
   const TAB_ORDER = ['stock', 'coming_soon', 'pending_delivery'] as const;
   const swipeStartX = useRef<number | null>(null);
   const swipeStartY = useRef<number | null>(null);
-  const onSwipeStart = (e: React.TouchEvent) => {
-    swipeStartX.current = e.touches[0].clientX;
-    swipeStartY.current = e.touches[0].clientY;
-  };
-  const onSwipeEnd = (e: React.TouchEvent) => {
-    if (swipeStartX.current === null || swipeStartY.current === null) return;
-    const dx = swipeStartX.current - e.changedTouches[0].clientX;
-    const dy = swipeStartY.current - e.changedTouches[0].clientY;
-    swipeStartX.current = null;
-    swipeStartY.current = null;
-    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy)) return;
-    const idx = TAB_ORDER.indexOf(inventoryTab);
-    if (dx > 0 && idx < TAB_ORDER.length - 1) {
-      const next = TAB_ORDER[idx + 1];
-      setInventoryTab(next);
-      setSearchParams(next === 'stock' ? {} : { tab: next });
-    } else if (dx < 0 && idx > 0) {
-      const prev = TAB_ORDER[idx - 1];
-      setInventoryTab(prev);
-      setSearchParams(prev === 'stock' ? {} : { tab: prev });
-    }
-  };
+  const inventoryTabRef = useRef(inventoryTab);
+  inventoryTabRef.current = inventoryTab;
+  useEffect(() => {
+    const onStart = (e: TouchEvent) => {
+      swipeStartX.current = e.touches[0].clientX;
+      swipeStartY.current = e.touches[0].clientY;
+    };
+    const onEnd = (e: TouchEvent) => {
+      if (swipeStartX.current === null || swipeStartY.current === null) return;
+      const dx = swipeStartX.current - e.changedTouches[0].clientX;
+      const dy = swipeStartY.current - e.changedTouches[0].clientY;
+      swipeStartX.current = null;
+      swipeStartY.current = null;
+      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy)) return;
+      // Don't swipe when a modal/sheet is open (z-[500] portals)
+      if (document.querySelector('[data-modal-open]')) return;
+      const idx = TAB_ORDER.indexOf(inventoryTabRef.current);
+      if (dx > 0 && idx < TAB_ORDER.length - 1) {
+        const next = TAB_ORDER[idx + 1];
+        setInventoryTab(next);
+        setSearchParams(next === 'stock' ? {} : { tab: next });
+      } else if (dx < 0 && idx > 0) {
+        const prev = TAB_ORDER[idx - 1];
+        setInventoryTab(prev);
+        setSearchParams(prev === 'stock' ? {} : { tab: prev });
+      }
+    };
+    document.addEventListener('touchstart', onStart, { passive: true });
+    document.addEventListener('touchend', onEnd, { passive: true });
+    return () => {
+      document.removeEventListener('touchstart', onStart);
+      document.removeEventListener('touchend', onEnd);
+    };
+  }, []);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -405,7 +417,7 @@ export default function Inventory() {
   };
 
   return (
-    <div className="space-y-5" onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd}>
+    <div className="space-y-5">
       {/* Tabs */}
       <div className="flex gap-1 bg-[#0F0E0C] border border-obsidian-400/60 rounded-lg p-1 w-full sm:w-fit">
         <button
