@@ -768,7 +768,7 @@ export default function Customers() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1 bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-1">
           <button
-            onClick={() => { setTab('leads'); setStatusFilter('all'); }}
+            onClick={() => { setTab('leads'); setStatusFilter('all'); setSearch(''); }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'leads' ? 'bg-gold-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
             Leads
@@ -778,25 +778,25 @@ export default function Customers() {
             )}
           </button>
           <button
-            onClick={() => { setTab('cash'); setStatusFilter('all'); }}
+            onClick={() => { setTab('cash'); setStatusFilter('all'); setSearch(''); }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'cash' ? 'bg-green-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
             Cash <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'cash' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => c.dealType === 'cash' && !c.cashWorkOrder && !c.isDead && !c.isTrashed).length}</span>
           </button>
           <button
-            onClick={() => { setTab('loan'); setStatusFilter('all'); }}
+            onClick={() => { setTab('loan'); setStatusFilter('all'); setSearch(''); }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'loan' ? 'bg-purple-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
             Loan <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'loan' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus === 'loan_submitted' && !c.isTrashed).length}</span>
           </button>
           <button
-            onClick={() => { setTab('confirmed'); setStatusFilter('all'); }}
+            onClick={() => { setTab('confirmed'); setStatusFilter('all'); setSearch(''); }}
             className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'confirmed' ? 'bg-violet-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
             Confirmed <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'confirmed' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !c.delivered && (!!(c.cashWorkOrder || c.loanWorkOrder) || (!!c.dealPrice && !!cars.find(x => x.id === c.interestedCarId)?.finalDeal))).length}</span>
           </button>
           <button
-            onClick={() => { setTab('bin'); setStatusFilter('all'); }}
+            onClick={() => { setTab('bin'); setStatusFilter('all'); setSearch(''); }}
             className={`px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${tab === 'bin' ? 'bg-red-500/80 text-white shadow' : 'text-gray-400 hover:text-white'}`}
             title="Rejected / Trashed Cases"
           >
