@@ -380,34 +380,36 @@ export default function Inventory() {
   return (
     <div className="space-y-5">
       {/* Tabs */}
-      <div className="flex gap-1 bg-[#0F0E0C] border border-obsidian-400/60 rounded-lg p-1 w-fit flex-wrap">
+      <div className="flex gap-1 bg-[#0F0E0C] border border-obsidian-400/60 rounded-lg p-1 w-full">
         <button
           onClick={() => { setInventoryTab('stock'); setSearchParams({}); }}
-          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${inventoryTab === 'stock' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
+          className={`flex-1 px-2 sm:px-4 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${inventoryTab === 'stock' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
         >
           Stock
-          <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${inventoryTab === 'stock' ? 'bg-white/20' : 'bg-obsidian-600/60'}`}>
+          <span className={`text-[10px] sm:text-xs px-1.5 py-0.5 rounded-full font-semibold ${inventoryTab === 'stock' ? 'bg-white/20' : 'bg-obsidian-600/60'}`}>
             {cars.filter(c => c.status !== 'delivered' && c.status !== 'coming_soon' && c.status !== 'deal_pending' && !c.outgoingConsignment).length}
           </span>
         </button>
         <button
           onClick={() => { setInventoryTab('coming_soon'); setSearchParams({ tab: 'coming_soon' }); }}
-          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${inventoryTab === 'coming_soon' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
+          className={`flex-1 px-2 sm:px-4 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${inventoryTab === 'coming_soon' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
         >
-          Coming Soon
+          <span className="hidden sm:inline">Coming Soon</span>
+          <span className="sm:hidden">Coming</span>
           {cars.filter(c => c.status === 'coming_soon').length > 0 && (
-            <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${inventoryTab === 'coming_soon' ? 'bg-white/20' : 'bg-purple-500/20 text-purple-400'}`}>
+            <span className={`text-[10px] sm:text-xs px-1.5 py-0.5 rounded-full font-semibold ${inventoryTab === 'coming_soon' ? 'bg-white/20' : 'bg-purple-500/20 text-purple-400'}`}>
               {cars.filter(c => c.status === 'coming_soon').length}
             </span>
           )}
         </button>
         <button
           onClick={() => { setInventoryTab('pending_delivery'); setSearchParams({ tab: 'pending_delivery' }); }}
-          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${inventoryTab === 'pending_delivery' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'}`}
+          className={`flex-1 px-2 sm:px-4 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${inventoryTab === 'pending_delivery' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'}`}
         >
-          Pending Delivery
+          <span className="hidden sm:inline">Pending Delivery</span>
+          <span className="sm:hidden">Pending</span>
           {pendingDelivery.length > 0 && (
-            <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${inventoryTab === 'pending_delivery' ? 'bg-white/20' : 'bg-green-500/20 text-green-400'}`}>
+            <span className={`text-[10px] sm:text-xs px-1.5 py-0.5 rounded-full font-semibold ${inventoryTab === 'pending_delivery' ? 'bg-white/20' : 'bg-green-500/20 text-green-400'}`}>
               {pendingDelivery.length}
             </span>
           )}
