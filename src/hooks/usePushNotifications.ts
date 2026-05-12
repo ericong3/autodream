@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useStore } from '../store';
 
@@ -19,31 +19,50 @@ async function saveSubscription(userId: string, sub: PushSubscription) {
   );
 }
 
+async function doSubscribe(userId: string): Promise<'granted' | 'denied' | 'unavailable'> {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return 'unavailable';
+  if (!VAPID_PUBLIC_KEY) return 'unavailable';
+  const reg = await navigator.serviceWorker.ready;
+  const existing = await reg.pushManager.getSubscription();
+  if (existing) {
+    await saveSubscription(userId, existing);
+    return 'granted';
+  }
+  const permission = await Notification.requestPermission();
+  if (permission !== 'granted') return 'denied';
+  const sub = await reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY).buffer as ArrayBuffer,
+  });
+  await saveSubscription(userId, sub);
+  return 'granted';
+}
+
 export function usePushNotifications() {
   const currentUser = useStore(s => s.currentUser);
+  const [status, setStatus] = useState<'idle' | 'granted' | 'denied' | 'unavailable'>('idle');
 
+  // On load: silently refresh existing subscription (no permission prompt)
   useEffect(() => {
     if (!currentUser) return;
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-    if (!VAPID_PUBLIC_KEY) return;
-
-    navigator.serviceWorker.ready.then(async (reg) => {
-      // If already subscribed, just refresh the record in Supabase
-      const existing = await reg.pushManager.getSubscription();
-      if (existing) {
-        await saveSubscription(currentUser.id, existing);
-        return;
-      }
-
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') return;
-
-      const subscription = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY).buffer as ArrayBuffer,
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) { setStatus('unavailable'); return; }
+    if (!VAPID_PUBLIC_KEY) { setStatus('unavailable'); return; }
+    if (Notification.permission === 'granted') {
+      navigator.serviceWorker.ready.then(async (reg) => {
+        const existing = await reg.pushManager.getSubscription();
+        if (existing) { await saveSubscription(currentUser.id, existing); setStatus('granted'); }
       });
-
-      await saveSubscription(currentUser.id, subscription);
-    });
+    } else if (Notification.permission === 'denied') {
+      setStatus('denied');
+    }
   }, [currentUser?.id]);
+
+  // Called on button tap — this is the user gesture iOS requires
+  const requestPermission = async () => {
+    if (!currentUser) return;
+    const result = await doSubscribe(currentUser.id);
+    setStatus(result);
+  };
+
+  return { status, requestPermission };
 }

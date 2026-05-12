@@ -99,7 +99,7 @@ export default function Layout({ children }: LayoutProps) {
 
   const handleLogout = () => { logout(); navigate('/login'); };
 
-  usePushNotifications();
+  const { status: pushStatus, requestPermission } = usePushNotifications();
   const loadAll = useStore((s) => s.loadAll);
   const mainRef = useRef<HTMLElement>(null);
   const handleRefresh = useCallback(() => loadAll(true), [loadAll]);
@@ -198,6 +198,19 @@ export default function Layout({ children }: LayoutProps) {
             </button>
           </div>
         </header>
+
+        {/* ── Enable notifications banner ─────────────────────── */}
+        {pushStatus === 'idle' && 'Notification' in window && Notification.permission === 'default' && (
+          <div className="md:hidden flex items-center justify-between gap-3 px-4 py-2.5 bg-gold-500/10 border-b border-gold-500/20">
+            <p className="text-xs text-gold-300 font-medium">Enable notifications to stay updated</p>
+            <button
+              onClick={requestPermission}
+              className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-lg bg-gold-500 text-obsidian-950 active:bg-gold-600 transition-colors"
+            >
+              Enable
+            </button>
+          </div>
+        )}
 
         {/* ── Pull-to-refresh indicator (mobile only) ─────────── */}
         <div
