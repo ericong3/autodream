@@ -8,10 +8,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      strategies: 'injectManifest',
-      srcDir: 'src',
-      filename: 'sw.ts',
-      includeAssets: ['icon.svg', 'logo.png'],
+      includeAssets: ['icon.svg', 'logo.png', 'push-handler.js'],
       manifest: {
         name: 'AutoDream',
         short_name: 'AutoDream',
@@ -30,8 +27,9 @@ export default defineConfig({
           },
         ],
       },
-      injectManifest: {
+      workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        importScripts: ['/push-handler.js'],
       },
     }),
   ],
