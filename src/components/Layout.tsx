@@ -5,7 +5,7 @@ import {
   FileText, Calculator, GitCompare,
   ClipboardList, Bot, TrendingUp, UsersRound,
   History, Banknote, Briefcase, Search,
-  Loader2, RefreshCw,
+  Loader2, RefreshCw, Database,
 } from 'lucide-react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
@@ -45,6 +45,7 @@ const DIRECTOR_MORE = [
   { to: '/investors',       icon: Briefcase,     label: 'Investors / Consignment' },
   { to: '/quotations',      icon: FileText,      label: 'Quotations'   },
   { to: '/commission',      icon: Banknote,      label: 'Commission'   },
+  { to: '/data',            icon: Database,      label: 'Data'         },
   { to: '/reminders',       icon: ClipboardList, label: 'Instructions' },
   { to: '/history',         icon: History,       label: 'History'      },
   { to: '/ai-assistant',    icon: Bot,           label: 'AI Assistant' },
