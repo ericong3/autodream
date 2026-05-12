@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useStore } from '../store';
 
-const VAPID_PUBLIC_KEY = (import.meta.env.VITE_VAPID_PUBLIC_KEY ?? '') as string;
+const VAPID_PUBLIC_KEY = 'BP_Mna_M9YyaO3gGTnu0L_PXwg8-xm257hFGnKNTbzISjTIKoJYpjU7ZmErgGuyhyBt23OIFfmjl_POe5VMkduA';
 
 function urlBase64ToUint8Array(base64: string): Uint8Array {
   const padding = '='.repeat((4 - (base64.length % 4)) % 4);
@@ -48,6 +48,7 @@ async function doSubscribe(userId: string): Promise<'granted' | 'denied' | 'unav
     return 'granted';
   } catch (e) {
     console.error('Push subscription error:', e);
+    alert('Notification setup failed: ' + String(e));
     return 'unavailable';
   }
 }
