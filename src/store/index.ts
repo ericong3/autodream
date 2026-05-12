@@ -2,6 +2,26 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
 import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, MiscCost, ExternalSalesman, Banker } from '../types';
+import { sendPush } from '../utils/sendPush';
+
+// ── Notification helpers ─────────────────────────────────────────────────────
+const dirIds  = (users: User[]) => users.filter(u => u.role === 'director').map(u => u.id);
+const mechIds = (users: User[]) => users.filter(u => u.role === 'mechanic').map(u => u.id);
+function instrRecipients(i: Instruction, users: User[]): string[] {
+  if (i.toType === 'all') return users.filter(u => u.id !== i.fromId).map(u => u.id);
+  if (i.toType === 'department') {
+    const role = i.toDepartment === 'salesman' ? 'salesperson' : 'mechanic';
+    return users.filter(u => u.role === role).map(u => u.id);
+  }
+  return i.toIds ?? [];
+}
+const SCHED_KEY = 'autodream-sched-notif-date';
+function scheduledNotifAllowed(): boolean {
+  const today = new Date().toDateString();
+  if (localStorage.getItem(SCHED_KEY) === today) return false;
+  localStorage.setItem(SCHED_KEY, today);
+  return true;
+}
 
 interface StoreState {
   currentUser: User | null;
@@ -612,14 +632,19 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       });
     }
 
+    const allUsers   = (users.data ?? []).map(rowToUser);
+    const allRepairs = (repairs.data ?? []).map(rowToRepair);
+    const allQuotations = (quotations.data ?? []).map(rowToQuotation);
+    const allTestDrives  = (testDrives.data ?? []).map(rowToTestDrive);
+
     set({
-      users: (users.data ?? []).map(rowToUser),
+      users: allUsers,
       cars: allCars,
-      repairs: (repairs.data ?? []).map(rowToRepair),
-      quotations: (quotations.data ?? []).map(rowToQuotation),
+      repairs: allRepairs,
+      quotations: allQuotations,
       instructions: (instructions.data ?? []).map(rowToInstruction),
       customers: allCustomers,
-      testDrives: (testDrives.data ?? []).map(rowToTestDrive),
+      testDrives: allTestDrives,
       personalReminders: (reminders.data ?? []).map(rowToReminder),
       dealers: (dealers.data ?? []) as Dealer[],
       workshops: (workshops.data ?? []) as Workshop[],
@@ -630,6 +655,43 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       loaded: true,
       lastFetched: Date.now(),
     });
+
+    // ── Scheduled notifications (once per day) ──────────────────────────────
+    if (scheduledNotifAllowed()) {
+      const today = new Date().toDateString();
+      const tomorrow = new Date(Date.now() + 86400000).toDateString();
+
+      // #6 Follow-up reminder today
+      allCustomers
+        .filter(c => !c.isTrashed && !c.isDead && c.followUpDate && new Date(c.followUpDate).toDateString() === today)
+        .forEach(c => {
+          const ids = [c.assignedSalesId].filter(Boolean);
+          sendPush(ids, '📞 Follow-up reminder', `Call ${c.name} today`, '/customers');
+        });
+
+      // #7 Test drive tomorrow
+      allTestDrives
+        .filter(t => t.status === 'scheduled' && new Date(t.scheduledAt).toDateString() === tomorrow)
+        .forEach(t => {
+          const cust = allCustomers.find(c => c.id === t.customerId);
+          sendPush([t.salesId], '🚗 Test drive tomorrow', `${cust?.name ?? 'Customer'} has a test drive scheduled`, '/calendar');
+        });
+
+      // #8 Lead inactive 3 days
+      const threeDaysAgo = Date.now() - 3 * 86400000;
+      allCustomers
+        .filter(c => !c.isTrashed && !c.isDead && c.lastActionAt && new Date(c.lastActionAt).getTime() < threeDaysAgo)
+        .forEach(c => {
+          sendPush([c.assignedSalesId], '⚠️ Inactive lead', `${c.name} has had no activity for 3+ days`, '/customers');
+        });
+
+      // #27 Quotation expiring tomorrow
+      allQuotations
+        .filter(q => q.status === 'pending' && new Date(q.expiryDate).toDateString() === tomorrow)
+        .forEach(q => {
+          sendPush(dirIds(allUsers), '⏰ Quotation expiring', `${q.contactName} – ${q.make} ${q.model} expires tomorrow`, '/quotations');
+        });
+    }
 
     // Real-time subscriptions — keep all clients in sync
     supabase.channel('realtime-cars')
@@ -896,6 +958,8 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       set((s) => ({ cars: s.cars.filter((c) => c.id !== car.id) }));
       throw new Error(error.message);
     }
+    // #20 New car added
+    sendPush(dirIds(get().users), '🚘 New car added', `${car.year} ${car.make} ${car.model} added to inventory`, '/inventory');
   },
   updateCar: async (id, car) => {
     const prev = get().cars.find(c => c.id === id);
@@ -905,6 +969,48 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       if (prev) set((s) => ({ cars: s.cars.map((c) => (c.id === id ? prev : c)) }));
       console.error('updateCar failed:', error.message);
       throw new Error(error.message);
+    }
+    const dirs = dirIds(get().users);
+    const carName = `${prev?.year ?? ''} ${prev?.make ?? ''} ${prev?.model ?? ''}`.trim();
+    // #14 Disbursement received
+    if (car.disbursementDate && !prev?.disbursementDate) {
+      const ids = [...new Set([...dirs, ...(prev?.assignedSalesperson ? [prev.assignedSalesperson] : [])])];
+      sendPush(ids, '💰 Disbursement received', `${carName} – RM ${(car.disbursementAmount ?? 0).toLocaleString()}`, '/inventory');
+    }
+    // #15 New deal submitted
+    if (car.finalDeal && !prev?.finalDeal) {
+      sendPush(dirs, '📋 New deal submitted', `${carName} – submitted by ${car.finalDeal.submittedBy}`, '/inventory');
+    }
+    // #16 Deal approved
+    if (car.finalDeal?.approvalStatus === 'approved' && prev?.finalDeal?.approvalStatus !== 'approved') {
+      const submitter = get().users.find(u => u.name === car.finalDeal?.submittedBy);
+      if (submitter) sendPush([submitter.id], '✅ Deal approved!', `Your deal for ${carName} was approved`, '/inventory');
+    }
+    // #17 Deal rejected
+    if (car.finalDeal?.approvalStatus === 'rejected' && prev?.finalDeal?.approvalStatus !== 'rejected') {
+      const submitter = get().users.find(u => u.name === car.finalDeal?.submittedBy);
+      if (submitter) sendPush([submitter.id], '❌ Deal rejected', `Your deal for ${carName} was rejected`, '/inventory');
+    }
+    // #18 Car ready for delivery
+    if (car.status === 'deal_pending' && prev?.status !== 'deal_pending') {
+      const ids = [...new Set([...dirs, ...(prev?.assignedSalesperson ? [prev.assignedSalesperson] : [])])];
+      sendPush(ids, '🎉 Car ready for delivery', `${carName} is pending delivery`, '/inventory?tab=pending_delivery');
+    }
+    // #19 Car delivered
+    if (car.status === 'delivered' && prev?.status !== 'delivered') {
+      sendPush(dirs, '🏁 Car delivered', `${carName} has been delivered`, '/inventory');
+    }
+    // #21 Car status changed to Ready
+    if (car.status === 'ready' && prev?.status !== 'ready') {
+      sendPush(dirs, '✅ Car is ready', `${carName} is ready for sale`, '/inventory');
+    }
+    // #22 Car moved to workshop
+    if (car.status === 'in_workshop' && prev?.status !== 'in_workshop') {
+      sendPush(dirs, '🔧 Car in workshop', `${carName} moved to workshop`, '/inventory');
+    }
+    // #23 Car photos uploaded
+    if (car.photos && prev?.photos && car.photos.length > prev.photos.length) {
+      sendPush(dirs, '📸 Photos uploaded', `New photos added for ${carName}`, '/inventory');
     }
   },
   deleteCar: async (id) => {
@@ -932,11 +1038,25 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       if (!isDelivered) dbUpdate.status = 'in_workshop';
       await supabase.from('cars').update(dbUpdate).eq('id', repair.carId);
     }
+    // #25 New repair job assigned to workshop
+    const mechs = mechIds(get().users);
+    const carName = `${car?.year ?? ''} ${car?.make ?? ''} ${car?.model ?? ''}`.trim();
+    sendPush(mechs, '🔧 New repair job', `${repair.typeOfRepair} for ${carName}`, '/inventory');
+    // #22 Car moved to workshop (notify directors)
+    if (repair.location && repair.status !== 'queued' && !isDelivered) {
+      sendPush(dirIds(get().users), '🔧 Car in workshop', `${carName} moved to workshop`, '/inventory');
+    }
   },
   updateRepair: async (id, repair) => {
     const existing = get().repairs.find((r) => r.id === id);
     const { error: repErr } = await supabase.from('repairs').update(repairToRow(repair)).eq('id', id);
     if (repErr) console.error('updateRepair failed:', repErr.message);
+    // #24 Repair job completed
+    if (repair.status === 'done' && existing?.status !== 'done') {
+      const car = get().cars.find(c => c.id === existing?.carId);
+      const carName = `${car?.year ?? ''} ${car?.make ?? ''} ${car?.model ?? ''}`.trim();
+      sendPush(dirIds(get().users), '✅ Repair completed', `${existing?.typeOfRepair} done for ${carName}`, '/inventory');
+    }
     set((s) => {
       const updatedRepairs = s.repairs.map((r) => (r.id === id ? { ...r, ...repair } : r));
       let updatedCars = s.cars;
@@ -987,10 +1107,33 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     set((s) => ({ instructions: [...s.instructions, instruction] }));
     const { error } = await supabase.from('instructions').insert(instructionToRow(instruction));
     if (error) console.error('addInstruction failed:', error.message);
+    const { users } = get();
+    if (instruction.type === 'instruction') {
+      // #1 New instruction from director
+      const recipients = instrRecipients(instruction, users);
+      sendPush(recipients, '📋 New instruction', instruction.title, '/reminders');
+    } else {
+      // Request submitted → notify directors
+      sendPush(dirIds(users), '📩 New request', `${instruction.title} from ${users.find(u => u.id === instruction.fromId)?.name ?? 'staff'}`, '/reminders');
+    }
   },
   updateInstruction: async (id, instruction) => {
+    const existing = get().instructions.find(i => i.id === id);
     set((s) => ({ instructions: s.instructions.map((i) => (i.id === id ? { ...i, ...instruction } : i)) }));
     await supabase.from('instructions').update(instructionToRow(instruction)).eq('id', id);
+    if (!existing) return;
+    // #2 Request approved
+    if (instruction.status === 'completed' && existing.type === 'request') {
+      sendPush([existing.fromId], '✅ Request approved', existing.title, '/reminders');
+    }
+    // #3 Request rejected
+    if (instruction.status === 'rejected' && existing.type === 'request') {
+      sendPush([existing.fromId], '❌ Request rejected', existing.title, '/reminders');
+    }
+    // #4 Instruction completed by staff
+    if (instruction.status === 'completed' && existing.type === 'instruction') {
+      sendPush(dirIds(get().users), '✅ Task completed', `${existing.title} marked done`, '/reminders');
+    }
   },
   deleteInstruction: async (id) => {
     set((s) => ({ instructions: s.instructions.filter((i) => i.id !== id) }));
@@ -1023,6 +1166,10 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     set((s) => ({ customers: [...s.customers, customer] }));
     const { error } = await supabase.from('customers').insert(customerToRow(customer));
     if (error) console.error('addCustomer failed:', error.message);
+    // #5 New lead assigned
+    if (customer.assignedSalesId) {
+      sendPush([customer.assignedSalesId], '👤 New lead assigned', `${customer.name} has been assigned to you`, '/customers');
+    }
   },
   updateCustomer: async (id, customer) => {
     const prev = get().customers.find(c => c.id === id);
@@ -1032,6 +1179,38 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       if (prev) set((s) => ({ customers: s.customers.map((c) => (c.id === id ? prev : c)) }));
       console.error('updateCustomer failed:', error.message);
       throw new Error(error.message);
+    }
+    if (!prev) return;
+    const dirs = dirIds(get().users);
+    // #9 Loan submitted by salesman
+    if (customer.loanApplications && customer.loanApplications.length > (prev.loanApplications?.length ?? 0)) {
+      const latest = customer.loanApplications[customer.loanApplications.length - 1];
+      sendPush(dirs, '🏦 Loan submitted', `${prev.name} – ${latest.bank}`, '/customers');
+    }
+    // #10 Loan approved / #11 Loan rejected
+    if (customer.loanApplications) {
+      const prevApps = prev.loanApplications ?? [];
+      customer.loanApplications.forEach((app, i) => {
+        const prevApp = prevApps[i];
+        if (app.status === 'approved' && prevApp?.status !== 'approved') {
+          sendPush([prev.assignedSalesId], '✅ Loan approved!', `${prev.name} – ${app.bank}`, '/customers');
+        }
+        if (app.status === 'rejected' && prevApp?.status !== 'rejected') {
+          sendPush([prev.assignedSalesId], '❌ Loan rejected', `${prev.name} – ${app.bank}`, '/customers');
+        }
+      });
+    }
+    // #12 New loan work order
+    if (customer.loanWorkOrder && !prev.loanWorkOrder) {
+      sendPush(dirs, '📄 Loan work order', `New loan work order for ${prev.name}`, '/customers');
+    }
+    // #13 New cash work order
+    if (customer.cashWorkOrder && !prev.cashWorkOrder) {
+      sendPush(dirs, '💵 Cash work order', `New cash work order for ${prev.name}`, '/customers');
+    }
+    // #26 Commission calculated
+    if (customer.commission && !prev.commission) {
+      sendPush([prev.assignedSalesId], '💰 Commission calculated', `Your commission for ${prev.name} is RM ${customer.commission.toLocaleString()}`, '/customers');
     }
   },
   deleteCustomer: async (id) => {

@@ -14,6 +14,7 @@ import CommandPalette from './CommandPalette';
 import QuickActions from './QuickActions';
 import { useStore } from '../store';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
+import { usePushNotifications } from '../hooks/usePushNotifications';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -98,6 +99,7 @@ export default function Layout({ children }: LayoutProps) {
 
   const handleLogout = () => { logout(); navigate('/login'); };
 
+  usePushNotifications();
   const loadAll = useStore((s) => s.loadAll);
   const mainRef = useRef<HTMLElement>(null);
   const handleRefresh = useCallback(() => loadAll(true), [loadAll]);

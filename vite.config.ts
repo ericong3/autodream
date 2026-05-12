@@ -8,7 +8,10 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon.svg'],
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
+      includeAssets: ['icon.svg', 'logo.png'],
       manifest: {
         name: 'AutoDream',
         short_name: 'AutoDream',
@@ -26,6 +29,9 @@ export default defineConfig({
             purpose: 'any maskable',
           },
         ],
+      },
+      injectManifest: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
       },
     }),
   ],
