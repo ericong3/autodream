@@ -201,7 +201,7 @@ export default function Layout({ children }: LayoutProps) {
 
         {/* ── Enable notifications banner ─────────────────────── */}
         {pushStatus !== 'granted' && pushStatus !== 'unavailable' && (
-          <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-gold-500/10 border-b border-gold-500/20">
+          <div className="md:hidden flex items-center justify-between gap-3 px-4 py-2.5 bg-gold-500/10 border-b border-gold-500/20">
             <p className="text-xs text-gold-300 font-medium">Enable notifications to stay updated</p>
             <button
               onClick={requestPermission}
