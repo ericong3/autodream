@@ -559,6 +559,10 @@ function reminderToRow(r: Partial<PersonalReminder>) {
   return row;
 }
 
+// Guard: realtime channels are set up only once per session, regardless of how many
+// times loadAll is called (e.g. pull-to-refresh creates duplicate channels otherwise).
+let realtimeSubscribed = false;
+
 export const useStore = create<StoreState>()(persist((set, get) => ({
   currentUser: null,
   users: [],
@@ -637,24 +641,26 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     const allQuotations = (quotations.data ?? []).map(rowToQuotation);
     const allTestDrives  = (testDrives.data ?? []).map(rowToTestDrive);
 
-    set({
-      users: allUsers,
-      cars: allCars,
-      repairs: allRepairs,
-      quotations: allQuotations,
-      instructions: (instructions.data ?? []).map(rowToInstruction),
-      customers: allCustomers,
-      testDrives: allTestDrives,
-      personalReminders: (reminders.data ?? []).map(rowToReminder),
-      dealers: (dealers.data ?? []) as Dealer[],
-      workshops: (workshops.data ?? []) as Workshop[],
-      suppliers: (suppliers.data ?? []) as Supplier[],
-      merchants: (merchants.data ?? []) as Merchant[],
-      externalSalesmen: externalSalesmenRows.map(rowToExternalSalesman),
-      bankers: bankersRows.map(rowToBanker),
+    // Preserve existing state for any table whose query returned null (network/RLS error),
+    // so a transient failure never wipes a whole list.
+    set((s) => ({
+      users:            users.data        ? allUsers                                    : s.users,
+      cars:             cars.data         ? allCars                                     : s.cars,
+      repairs:          repairs.data      ? allRepairs                                  : s.repairs,
+      quotations:       quotations.data   ? allQuotations                               : s.quotations,
+      instructions:     instructions.data ? instructions.data.map(rowToInstruction)     : s.instructions,
+      customers:        customers.data    ? allCustomers                                : s.customers,
+      testDrives:       testDrives.data   ? allTestDrives                               : s.testDrives,
+      personalReminders:reminders.data    ? reminders.data.map(rowToReminder)           : s.personalReminders,
+      dealers:          dealers.data      ? (dealers.data as Dealer[])                  : s.dealers,
+      workshops:        workshops.data    ? (workshops.data as Workshop[])               : s.workshops,
+      suppliers:        suppliers.data    ? (suppliers.data as Supplier[])               : s.suppliers,
+      merchants:        merchants.data    ? (merchants.data as Merchant[])               : s.merchants,
+      externalSalesmen: externalSalesmenResult.data ? externalSalesmenRows.map(rowToExternalSalesman) : s.externalSalesmen,
+      bankers:          bankersResult.data          ? bankersRows.map(rowToBanker)                    : s.bankers,
       loaded: true,
       lastFetched: Date.now(),
-    });
+    }));
 
     // ── Scheduled notifications (once per day) ──────────────────────────────
     if (scheduledNotifAllowed()) {
@@ -693,7 +699,12 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         });
     }
 
-    // Real-time subscriptions — keep all clients in sync
+    // Real-time subscriptions — set up once only; calling loadAll again (e.g. pull-to-refresh)
+    // must not create duplicate channels or the server may reset the socket on seeing
+    // multiple joins for the same topic, which can wipe all in-memory data.
+    if (realtimeSubscribed) return;
+    realtimeSubscribed = true;
+
     supabase.channel('realtime-cars')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cars' }, (payload) => {
         if (payload.eventType === 'INSERT') {
@@ -721,7 +732,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
             }),
           }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ cars: s.cars.filter((c) => c.id !== (payload.old as any).id) }));
+          set((s) => ({ cars: s.cars.filter((c) => c.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -737,7 +748,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         } else if (payload.eventType === 'UPDATE') {
           set((s) => ({ customers: s.customers.map((c) => c.id === (payload.new as any).id ? rowToCustomer(payload.new) : c) }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ customers: s.customers.filter((c) => c.id !== (payload.old as any).id) }));
+          set((s) => ({ customers: s.customers.filter((c) => c.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -753,7 +764,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         } else if (payload.eventType === 'UPDATE') {
           set((s) => ({ repairs: s.repairs.map((r) => r.id === (payload.new as any).id ? rowToRepair(payload.new) : r) }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ repairs: s.repairs.filter((r) => r.id !== (payload.old as any).id) }));
+          set((s) => ({ repairs: s.repairs.filter((r) => r.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -780,7 +791,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
             };
           });
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ users: s.users.filter((u) => u.id !== (payload.old as any).id) }));
+          set((s) => ({ users: s.users.filter((u) => u.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -798,7 +809,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
             workshops: s.workshops.map((w) => w.id === (payload.new as any).id ? payload.new as Workshop : w),
           }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ workshops: s.workshops.filter((w) => w.id !== (payload.old as any).id) }));
+          set((s) => ({ workshops: s.workshops.filter((w) => w.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -816,7 +827,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
             merchants: s.merchants.map((m) => m.id === (payload.new as any).id ? payload.new as Merchant : m),
           }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ merchants: s.merchants.filter((m) => m.id !== (payload.old as any).id) }));
+          set((s) => ({ merchants: s.merchants.filter((m) => m.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -832,7 +843,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         } else if (payload.eventType === 'UPDATE') {
           set((s) => ({ quotations: s.quotations.map((q) => q.id === (payload.new as any).id ? rowToQuotation(payload.new) : q) }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ quotations: s.quotations.filter((q) => q.id !== (payload.old as any).id) }));
+          set((s) => ({ quotations: s.quotations.filter((q) => q.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -848,7 +859,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         } else if (payload.eventType === 'UPDATE') {
           set((s) => ({ instructions: s.instructions.map((i) => i.id === (payload.new as any).id ? rowToInstruction(payload.new) : i) }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ instructions: s.instructions.filter((i) => i.id !== (payload.old as any).id) }));
+          set((s) => ({ instructions: s.instructions.filter((i) => i.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -864,7 +875,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         } else if (payload.eventType === 'UPDATE') {
           set((s) => ({ testDrives: s.testDrives.map((t) => t.id === (payload.new as any).id ? rowToTestDrive(payload.new) : t) }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ testDrives: s.testDrives.filter((t) => t.id !== (payload.old as any).id) }));
+          set((s) => ({ testDrives: s.testDrives.filter((t) => t.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -880,7 +891,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         } else if (payload.eventType === 'UPDATE') {
           set((s) => ({ personalReminders: s.personalReminders.map((r) => r.id === (payload.new as any).id ? rowToReminder(payload.new) : r) }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ personalReminders: s.personalReminders.filter((r) => r.id !== (payload.old as any).id) }));
+          set((s) => ({ personalReminders: s.personalReminders.filter((r) => r.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -896,7 +907,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         } else if (payload.eventType === 'UPDATE') {
           set((s) => ({ dealers: s.dealers.map((d) => d.id === (payload.new as any).id ? payload.new as Dealer : d) }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ dealers: s.dealers.filter((d) => d.id !== (payload.old as any).id) }));
+          set((s) => ({ dealers: s.dealers.filter((d) => d.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -912,7 +923,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         } else if (payload.eventType === 'UPDATE') {
           set((s) => ({ suppliers: s.suppliers.map((x) => x.id === (payload.new as any).id ? payload.new as Supplier : x) }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ suppliers: s.suppliers.filter((x) => x.id !== (payload.old as any).id) }));
+          set((s) => ({ suppliers: s.suppliers.filter((x) => x.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -928,7 +939,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         } else if (payload.eventType === 'UPDATE') {
           set((s) => ({ externalSalesmen: s.externalSalesmen.map((x) => x.id === (payload.new as any).id ? rowToExternalSalesman(payload.new) : x) }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ externalSalesmen: s.externalSalesmen.filter((x) => x.id !== (payload.old as any).id) }));
+          set((s) => ({ externalSalesmen: s.externalSalesmen.filter((x) => x.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
