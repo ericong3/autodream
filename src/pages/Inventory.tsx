@@ -418,8 +418,6 @@ export default function Inventory() {
 
   return (
     <div className="space-y-5">
-      {/* DEBUG: remove after bug is diagnosed */}
-      <div className="text-xs text-gray-600 font-mono">store: {cars.length} | filtered: {filtered.length} | soon: {comingSoonFiltered.length} | q:"{search}" | status:"{filterStatus}"</div>
       {/* Tabs */}
       <div className="flex gap-1 bg-[#0F0E0C] border border-obsidian-400/60 rounded-lg p-1 w-full sm:w-fit">
         <button
