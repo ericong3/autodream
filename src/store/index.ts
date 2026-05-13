@@ -136,12 +136,12 @@ function parseJsonField<T>(v: any): T | undefined {
 function rowToCar(r: any): Car {
   return {
     id: r.id,
-    make: r.make,
-    model: r.model,
+    make: r.make ?? '',
+    model: r.model ?? '',
     variant: r.variant,
     year: r.year,
     carPlate: r.car_plate,
-    colour: r.colour,
+    colour: r.colour ?? '',
     mileage: r.mileage,
     condition: r.condition,
     purchasePrice: r.purchase_price,
@@ -616,13 +616,14 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     // Auto-reconcile: clear finalDeal on cars that have no confirmed customer
     const confirmedCarIds = new Set(
       allCustomers
-        .filter(c => c.cashWorkOrder || c.loanWorkOrder)
+        .filter(c => c.cashWorkOrder || c.loanWorkOrder || (c.dealPrice && c.dealPrice > 0))
         .map(c => c.interestedCarId)
         .filter(Boolean)
     );
     const orphanedCars = allCars.filter(c =>
       c.finalDeal &&
       c.status !== 'delivered' &&
+      c.status !== 'deal_pending' &&
       !confirmedCarIds.has(c.id) &&
       !c.outgoingConsignment
     );
@@ -1025,9 +1026,16 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     }
   },
   deleteCar: async (id) => {
+    // Optimistic: remove from UI immediately so the page doesn't go blank
     set((s) => ({ cars: s.cars.filter((c) => c.id !== id) }));
     const { error } = await supabase.from('cars').delete().eq('id', id);
-    if (error) console.error('deleteCar failed:', error.message);
+    if (error) {
+      console.error('deleteCar failed:', error.message);
+      // Restore state on failure — only if re-fetch has data
+      const { data } = await supabase.from('cars').select('*');
+      if (data && data.length > 0) set({ cars: data.map(rowToCar) });
+    }
+    // Success: realtime DELETE event will fire later and try to filter the same id — already gone, no-op.
   },
 
   // Repairs
