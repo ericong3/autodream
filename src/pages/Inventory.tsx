@@ -318,9 +318,9 @@ export default function Inventory() {
     if (search) {
       const q = search.toLowerCase();
       result = result.filter((c) =>
-        c.make.toLowerCase().includes(q) ||
-        c.model.toLowerCase().includes(q) ||
-        c.colour.toLowerCase().includes(q) ||
+        (c.make ?? '').toLowerCase().includes(q) ||
+        (c.model ?? '').toLowerCase().includes(q) ||
+        (c.colour ?? '').toLowerCase().includes(q) ||
         String(c.year).includes(q) ||
         (c.carPlate ?? '').toLowerCase().includes(q)
       );
@@ -345,9 +345,9 @@ export default function Inventory() {
       const q = search.toLowerCase();
       result = result.filter(
         (c) =>
-          c.make.toLowerCase().includes(q) ||
-          c.model.toLowerCase().includes(q) ||
-          c.colour.toLowerCase().includes(q) ||
+          (c.make ?? '').toLowerCase().includes(q) ||
+          (c.model ?? '').toLowerCase().includes(q) ||
+          (c.colour ?? '').toLowerCase().includes(q) ||
           String(c.year).includes(q) ||
           (c.carPlate ?? '').toLowerCase().includes(q)
       );
@@ -369,7 +369,7 @@ export default function Inventory() {
         case 'price-desc':
           return b.sellingPrice - a.sellingPrice;
         case 'brand-asc':
-          return a.make.localeCompare(b.make);
+          return (a.make ?? '').localeCompare(b.make ?? '');
         default:
           return 0;
       }
@@ -418,6 +418,8 @@ export default function Inventory() {
 
   return (
     <div className="space-y-5">
+      {/* DEBUG: remove after bug is diagnosed */}
+      <div className="text-xs text-gray-600 font-mono">store: {cars.length} | filtered: {filtered.length} | soon: {comingSoonFiltered.length} | q:"{search}" | status:"{filterStatus}"</div>
       {/* Tabs */}
       <div className="flex gap-1 bg-[#0F0E0C] border border-obsidian-400/60 rounded-lg p-1 w-full sm:w-fit">
         <button
@@ -1210,7 +1212,13 @@ export default function Inventory() {
       <DeleteConfirmModal
         isOpen={!!deleteCarId}
         onClose={() => setDeleteCarId(null)}
-        onConfirm={async () => { if (deleteCarId) await deleteCar(deleteCarId); }}
+        onConfirm={async () => {
+          if (deleteCarId) await deleteCar(deleteCarId);
+          setSearch('');
+          setFilterStatus('');
+          setFilterMake('All');
+          setFilterTransmission('All');
+        }}
         itemName={(() => { const c = cars.find((c) => c.id === deleteCarId); return c ? `${c.year} ${c.make} ${c.model}` : 'this car'; })()}
       />
 
