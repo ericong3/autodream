@@ -272,7 +272,7 @@ function SidebarLogo({ collapsed, onToggle }: { collapsed?: boolean; onToggle?: 
     <div className={`border-b border-gold-500/[0.12] flex items-center gap-2 ${collapsed ? 'flex-col py-3 px-2' : 'justify-between py-4 px-3'}`}>
       <div className={`flex items-center gap-3 min-w-0 ${collapsed ? 'justify-center' : ''}`}>
         <div className="relative w-10 h-10 rounded-xl overflow-hidden shrink-0 shadow-gold-sm">
-          <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
+          <img src="/logo.png?v=2" alt="Logo" className="w-full h-full object-contain" />
         </div>
         {!collapsed && (
           <div className="min-w-0">

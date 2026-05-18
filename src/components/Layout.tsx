@@ -131,7 +131,7 @@ export default function Layout({ children }: LayoutProps) {
           >
             {/* Logo + Avatar — mobile only */}
             <div className="md:hidden flex items-center gap-2 shrink-0">
-              <img src="/logo.png" alt="AutoDream" className="h-8 w-auto" />
+              <img src="/logo.png?v=2" alt="AutoDream" className="h-8 w-auto" />
               {currentUser?.avatar ? (
                 <img src={currentUser.avatar} alt={currentUser.name} className="h-8 w-8 rounded-full object-cover border border-gold-400/40" />
               ) : (

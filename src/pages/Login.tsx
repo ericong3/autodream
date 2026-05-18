@@ -57,7 +57,7 @@ export default function Login() {
               bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.92)_0%,rgba(0,0,0,0.72)_30%,rgba(0,0,0,0.3)_58%,transparent_75%)]
               pointer-events-none" />
             <img
-              src="/logo.png"
+              src="/logo.png?v=2"
               alt="AutoDream"
               className="relative z-10 w-[666px] lg:w-[738px]
                 drop-shadow-[0_0_90px_rgba(255,255,255,0.18)]
@@ -82,7 +82,7 @@ export default function Login() {
 
           {/* Mobile logo — outside form container so it can be full width */}
           <div className="md:hidden w-full text-center mb-10">
-            <img src="/logo.png" alt="AutoDream" className="w-[90vw] max-w-[420px] mx-auto
+            <img src="/logo.png?v=2" alt="AutoDream" className="w-[90vw] max-w-[420px] mx-auto
               drop-shadow-[0_0_40px_rgba(255,255,255,0.15)]
               drop-shadow-[0_0_20px_rgba(212,160,23,0.25)]
               drop-shadow-[0_4px_24px_rgba(0,0,0,0.9)]" />
