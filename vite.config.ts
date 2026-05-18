@@ -11,7 +11,7 @@ export default defineConfig({
       strategies: 'injectManifest',
       srcDir: 'src',
       filename: 'sw.ts',
-      includeAssets: ['icon.svg', 'logo.png'],
+      includeAssets: ['icon-192.png', 'icon-512.png', 'logo.png'],
       manifest: {
         name: 'AutoDream',
         short_name: 'AutoDream',
@@ -23,9 +23,15 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
-            src: 'icon.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
+            src: 'icon-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: 'icon-512.png',
+            sizes: '512x512',
+            type: 'image/png',
             purpose: 'any maskable',
           },
         ],
