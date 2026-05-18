@@ -30,10 +30,16 @@ export default function Login() {
   return (
     <div className="min-h-screen relative overflow-hidden bg-obsidian-950">
 
-      {/* Full-screen background video */}
+      {/* Desktop background video */}
       <video
-        className="absolute inset-0 w-full h-full object-cover"
+        className="absolute inset-0 w-full h-full object-cover md:block hidden"
         src="/background.mp4?v=2"
+        autoPlay loop muted playsInline preload="none"
+      />
+      {/* Mobile background video */}
+      <video
+        className="absolute inset-0 w-full h-full object-cover md:hidden block"
+        src="/preview_phone.mp4"
         autoPlay loop muted playsInline preload="none"
       />
 
@@ -64,23 +70,25 @@ export default function Login() {
 
         {/* ── RIGHT — Login form sits over the video's dark panel area ── */}
         <div className="w-full md:w-[38%] lg:w-[36%] flex flex-col items-center justify-center
-          pl-6 pr-0 py-12 md:pl-8 md:pr-0 lg:pl-10 lg:pr-0 relative items-start">
-
+          px-8 md:pl-8 md:pr-0 lg:pl-10 lg:pr-0 py-12 relative">
 
           {/* Subtle top glow */}
           <div className="absolute -top-10 left-1/2 -translate-x-1/2 w-80 h-48
             bg-gold-400 opacity-[0.06] blur-[60px] pointer-events-none" />
 
-          {/* Corner brackets */}
-          <div className="absolute top-7 right-7 w-7 h-7 border-r-2 border-t-2 border-gold-400/40" />
-          <div className="absolute bottom-7 right-7 w-7 h-7 border-r-2 border-b-2 border-gold-400/40" />
+          {/* Corner brackets — desktop only */}
+          <div className="hidden md:block absolute top-7 right-7 w-7 h-7 border-r-2 border-t-2 border-gold-400/40" />
+          <div className="hidden md:block absolute bottom-7 right-7 w-7 h-7 border-r-2 border-b-2 border-gold-400/40" />
 
-          <div className="w-full max-w-[320px] relative z-10 -translate-x-[30%]">
+          {/* Mobile logo — outside form container so it can be full width */}
+          <div className="md:hidden w-full text-center mb-10">
+            <img src="/logo.png" alt="AutoDream" className="w-[90vw] max-w-[420px] mx-auto
+              drop-shadow-[0_0_40px_rgba(255,255,255,0.15)]
+              drop-shadow-[0_0_20px_rgba(212,160,23,0.25)]
+              drop-shadow-[0_4px_24px_rgba(0,0,0,0.9)]" />
+          </div>
 
-            {/* Mobile logo */}
-            <div className="md:hidden text-center mb-10">
-              <img src="/logo.png" alt="AutoDream" className="w-52 mx-auto" />
-            </div>
+          <div className="w-full max-w-[320px] relative z-10 md:-translate-x-[30%]">
 
             {/* Heading */}
             <div className="mb-8 text-center">
