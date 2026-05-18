@@ -11,7 +11,6 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const login = useStore((s) => s.login);
   const navigate = useNavigate();
-  const isMobile = window.innerWidth < 768;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,148 +28,158 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-obsidian-950">
+    <div className="min-h-screen relative overflow-hidden bg-obsidian-950">
 
-      {/* Background — static image on mobile (fast), video on desktop */}
-      {isMobile ? (
-        <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-          style={{ backgroundImage: 'url(/background.jpg)' }}
-        />
-      ) : (
-        <video
-          className="absolute inset-0 w-full h-full object-cover"
-          src="/background.mp4"
-          poster="/background.jpg"
-          autoPlay
-          loop
-          muted
-          playsInline
-          preload="none"
-        />
-      )}
+      {/* Full-screen background video */}
+      <video
+        className="absolute inset-0 w-full h-full object-cover"
+        src="/background.mp4?v=2"
+        autoPlay loop muted playsInline preload="none"
+      />
 
-      {/* Dark overlay */}
-      <div className="absolute inset-0 bg-black/60 pointer-events-none" />
+      {/* Full-screen overlay */}
+      <div className="absolute inset-0 bg-black/30" />
 
-      {/* Background atmosphere */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        {/* Central radial glow */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
-          w-[600px] h-[600px] rounded-full opacity-[0.06]
-          bg-radial-[at_50%_50%] from-gold-300 to-transparent blur-3xl" />
-        {/* Top-left corner */}
-        <div className="absolute -top-32 -left-32 w-80 h-80 bg-gold-400 opacity-[0.04] rounded-full blur-3xl" />
-        {/* Bottom-right corner */}
-        <div className="absolute -bottom-32 -right-32 w-80 h-80 bg-gold-500 opacity-[0.04] rounded-full blur-3xl" />
+      {/* Layout sits on top of video */}
+      <div className="relative z-10 min-h-screen flex">
 
-        {/* Subtle grid pattern */}
-        <div className="absolute inset-0 opacity-[0.015]"
-          style={{
-            backgroundImage: 'linear-gradient(rgba(234,184,32,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(234,184,32,0.3) 1px, transparent 1px)',
-            backgroundSize: '60px 60px',
-          }}
-        />
-      </div>
-
-      <div className="w-full max-w-md relative z-10">
-
-        {/* ── Brand header ────────────────────────── */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-32 h-32 rounded-2xl overflow-hidden shadow-gold-lg mb-5">
-            <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
+        {/* ── LEFT — Logo sits over the cosmic/nebula part of the video ── */}
+        <div className="hidden md:flex md:w-[62%] lg:w-[64%] items-center justify-center px-16 select-none">
+          <div className="relative flex items-center justify-center">
+            {/* Deep radial dark behind logo */}
+            <div className="absolute w-[960px] lg:w-[1060px] aspect-square rounded-full
+              bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.92)_0%,rgba(0,0,0,0.72)_30%,rgba(0,0,0,0.3)_58%,transparent_75%)]
+              pointer-events-none" />
+            <img
+              src="/logo.png"
+              alt="AutoDream"
+              className="relative z-10 w-[666px] lg:w-[738px]
+                drop-shadow-[0_0_90px_rgba(255,255,255,0.18)]
+                drop-shadow-[0_0_35px_rgba(212,160,23,0.3)]
+                drop-shadow-[0_8px_48px_rgba(0,0,0,1)]"
+              draggable={false}
+            />
           </div>
-          <h1 className="font-display text-4xl font-bold text-white tracking-wide">AutoDream</h1>
-          <p className="text-white/50 text-sm mt-2 tracking-widest uppercase font-medium">
-            Car Dealership Management
-          </p>
-          {/* Gold accent line under title */}
-          <div className="mt-3 mx-auto w-16 h-[2px] bg-gold-gradient rounded-full opacity-60" />
         </div>
 
-        {/* ── Card ────────────────────────────────── */}
-        <div className="bg-gradient-to-b from-obsidian-700 to-obsidian-800
-          border border-obsidian-400/80 rounded-2xl
-          shadow-[0_24px_80px_rgba(0,0,0,0.6),0_0_0_1px_rgba(42,35,22,0.5)]
-          overflow-hidden">
+        {/* ── RIGHT — Login form sits over the video's dark panel area ── */}
+        <div className="w-full md:w-[38%] lg:w-[36%] flex flex-col items-center justify-center
+          pl-6 pr-0 py-12 md:pl-8 md:pr-0 lg:pl-10 lg:pr-0 relative items-start">
 
-          {/* Gold top stripe */}
-          <div className="h-[2px] w-full bg-gold-gradient" />
 
-          <div className="p-8">
+          {/* Subtle top glow */}
+          <div className="absolute -top-10 left-1/2 -translate-x-1/2 w-80 h-48
+            bg-gold-400 opacity-[0.06] blur-[60px] pointer-events-none" />
+
+          {/* Corner brackets */}
+          <div className="absolute top-7 right-7 w-7 h-7 border-r-2 border-t-2 border-gold-400/40" />
+          <div className="absolute bottom-7 right-7 w-7 h-7 border-r-2 border-b-2 border-gold-400/40" />
+
+          <div className="w-full max-w-[320px] relative z-10 -translate-x-[30%]">
+
+            {/* Mobile logo */}
+            <div className="md:hidden text-center mb-10">
+              <img src="/logo.png" alt="AutoDream" className="w-52 mx-auto" />
+            </div>
+
+            {/* Heading */}
+            <div className="mb-8 text-center">
+              <h1 className="font-display text-[1.85rem] font-bold text-white tracking-wide leading-tight mb-1">
+                Welcome Back
+              </h1>
+              <p className="text-white/40 text-sm font-sans mb-4">
+                Sign in to your account
+              </p>
+              <div className="flex items-center justify-center gap-3">
+                <div className="h-px w-16 bg-gradient-to-r from-transparent to-gold-400/50" />
+                <div className="w-1.5 h-1.5 rounded-full bg-gold-400/80 shadow-gold-sm" />
+                <div className="h-px w-16 bg-gradient-to-l from-transparent to-gold-400/50" />
+              </div>
+            </div>
+
             {/* Error */}
             {error && (
-              <div className="flex items-center gap-2.5 bg-red-500/[0.08] border border-red-500/25
+              <div className="flex items-center gap-2.5 bg-red-500/[0.08] border border-red-500/20
                 text-red-400 rounded-xl p-3.5 mb-5 text-sm">
                 <AlertCircle size={15} className="shrink-0" />
                 {error}
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-5">
-              {/* Username */}
-              <div>
-                <label className="block text-white/70 text-xs font-semibold mb-2 uppercase tracking-wider">
-                  Username
-                </label>
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Enter your username"
-                  className="input"
-                  autoComplete="username"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                />
-              </div>
+            {/* Form card */}
+            <div className="bg-black/40 border border-gold-400/12 rounded-2xl p-6
+              shadow-[0_8px_40px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(212,160,23,0.08)]">
 
-              {/* Password */}
-              <div>
-                <label className="block text-white/70 text-xs font-semibold mb-2 uppercase tracking-wider">
-                  Password
-                </label>
-                <div className="relative">
+              <form onSubmit={handleSubmit} className="space-y-5">
+
+                <div>
+                  <label className="block text-white/50 text-[10px] font-semibold mb-2 uppercase tracking-[0.18em]">
+                    Username
+                  </label>
                   <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter your password"
-                    className="input pr-11"
-                    autoComplete="current-password"
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="Enter your username"
+                    className="input"
+                    autoComplete="username"
                     autoCapitalize="none"
                     spellCheck={false}
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2
-                      text-white/40 hover:text-white/80 transition-colors"
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
                 </div>
-              </div>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="btn-gold w-full py-3 rounded-xl text-sm"
-              >
-                {loading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                    </svg>
-                    Signing in...
-                  </span>
-                ) : 'Sign In'}
-              </button>
-            </form>
+                <div>
+                  <label className="block text-white/50 text-[10px] font-semibold mb-2 uppercase tracking-[0.18em]">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Enter your password"
+                      className="input pr-11"
+                      autoComplete="current-password"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2
+                        text-white/35 hover:text-white/70 transition-colors"
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="btn-gold w-full py-3.5 rounded-xl text-sm mt-1"
+                >
+                  {loading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Signing in...
+                    </span>
+                  ) : 'Sign In'}
+                </button>
+
+              </form>
+            </div>
+
+            <p className="text-white/45 text-[10px] text-center mt-8 tracking-[0.25em] uppercase font-sans">
+              AutoDream &copy; {new Date().getFullYear()}
+            </p>
 
           </div>
         </div>
+
       </div>
     </div>
   );

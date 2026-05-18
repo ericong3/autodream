@@ -684,13 +684,6 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
           sendPush([t.salesId], '🚗 Test drive tomorrow', `${cust?.name ?? 'Customer'} has a test drive scheduled`, '/calendar');
         });
 
-      // #8 Lead inactive 3 days
-      const threeDaysAgo = Date.now() - 3 * 86400000;
-      allCustomers
-        .filter(c => !c.isTrashed && !c.isDead && c.lastActionAt && new Date(c.lastActionAt).getTime() < threeDaysAgo)
-        .forEach(c => {
-          sendPush([c.assignedSalesId], '⚠️ Inactive lead', `${c.name} has had no activity for 3+ days`, '/customers');
-        });
 
       // #27 Quotation expiring tomorrow
       allQuotations
