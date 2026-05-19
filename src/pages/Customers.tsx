@@ -948,7 +948,7 @@ export default function Customers() {
               onChange={e => setCarIdFilter(e.target.value)}
               className="input rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors"
             >
-              <option value="all">All in group</option>
+              <option value="all">Car Model</option>
               {carsInGroup.map(c => (
                 <option key={c.id} value={c.id}>{c.year} {c.make} {c.model}</option>
               ))}
@@ -1196,7 +1196,7 @@ export default function Customers() {
               onChange={e => setCarIdFilter(e.target.value)}
               className="input rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors"
             >
-              <option value="all">All in group</option>
+              <option value="all">Car Model</option>
               {carsInGroup.map(c => (
                 <option key={c.id} value={c.id}>{c.year} {c.make} {c.model}</option>
               ))}
