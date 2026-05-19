@@ -17,7 +17,7 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = 'ma
 
   // Portal to document.body so no ancestor transform can break position:fixed
   return createPortal(
-    <div className="fixed inset-0 z-50 overscroll-contain">
+    <div className="fixed inset-0 z-[500] overscroll-contain">
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/80 modal-backdrop" onClick={onClose} />
 
