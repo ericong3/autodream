@@ -99,8 +99,8 @@ export default function Customers() {
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<Customer['leadStatus'] | 'all'>('all');
-  const [sourceFilter, setSourceFilter] = useState<Customer['source'] | 'all'>('all');
-  const [carStatusFilter, setCarStatusFilter] = useState<string>('all');
+  const [carGroupFilter, setCarGroupFilter] = useState<'all' | 'in_stock' | 'incoming' | 'pending_delivery' | 'sold'>('all');
+  const [carIdFilter, setCarIdFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
 
   // Add/Edit modal
@@ -198,16 +198,16 @@ export default function Customers() {
     ), [testDrives, todayStr, isDirector, currentUser]);
 
   const leadsFiltered = useMemo(() => myCustomers.filter(c => {
-    if (c.cashWorkOrder || c.loanWorkOrder) return false; // moved to Confirmed
+    if (c.cashWorkOrder || c.loanWorkOrder) return false;
     if (c.leadStatus === 'loan_submitted') return false;
     if (c.isDead) return false;
     if (c.isTrashed) return false;
     const matchStatus = statusFilter === 'all' || c.leadStatus === statusFilter;
-    const matchSource = sourceFilter === 'all' || c.source === sourceFilter;
-    const matchCarStatus = carStatusFilter === 'all' || getCarStatusGroup(c.interestedCarId) === carStatusFilter;
+    const matchGroup = carGroupFilter === 'all' || getCarGroup(c.interestedCarId) === carGroupFilter;
+    const matchCar = carIdFilter === 'all' || c.interestedCarId === carIdFilter;
     const matchSearch = !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search);
-    return matchStatus && matchSource && matchCarStatus && matchSearch;
-  }), [myCustomers, statusFilter, sourceFilter, carStatusFilter, search]);
+    return matchStatus && matchGroup && matchCar && matchSearch;
+  }), [myCustomers, statusFilter, carGroupFilter, carIdFilter, search]);
 
   const deadLeads = useMemo(() => myCustomers.filter(c =>
     c.isDead && !c.isTrashed && !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus !== 'loan_submitted' &&
@@ -215,14 +215,14 @@ export default function Customers() {
   ), [myCustomers, search]);
 
   const loanFiltered = useMemo(() => myCustomers.filter(c => {
-    if (c.cashWorkOrder || c.loanWorkOrder) return false; // moved to Confirmed
+    if (c.cashWorkOrder || c.loanWorkOrder) return false;
     if (c.leadStatus !== 'loan_submitted') return false;
     if (c.isTrashed) return false;
-    const matchSource = sourceFilter === 'all' || c.source === sourceFilter;
-    const matchCarStatus = carStatusFilter === 'all' || getCarStatusGroup(c.interestedCarId) === carStatusFilter;
+    const matchGroup = carGroupFilter === 'all' || getCarGroup(c.interestedCarId) === carGroupFilter;
+    const matchCar = carIdFilter === 'all' || c.interestedCarId === carIdFilter;
     const matchSearch = !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search);
-    return matchSource && matchCarStatus && matchSearch;
-  }), [myCustomers, sourceFilter, carStatusFilter, search]);
+    return matchGroup && matchCar && matchSearch;
+  }), [myCustomers, carGroupFilter, carIdFilter, search]);
 
   const trashedFiltered = useMemo(() => myCustomers.filter(c => {
     if (!c.isTrashed) return false;
@@ -244,17 +244,27 @@ export default function Customers() {
   const getSalesName = (salesId: string) => users.find(u => u.id === salesId)?.name ?? salesId;
   const getCar = (id?: string) => cars.find(c => c.id === id);
 
-  const getCarStatusGroup = (carId?: string): string => {
+  const getCarGroup = (carId?: string): 'in_stock' | 'incoming' | 'pending_delivery' | 'sold' | 'none' => {
     if (!carId) return 'none';
     const car = cars.find(c => c.id === carId);
     if (!car) return 'none';
-    if (['available', 'ready', 'photo_complete'].includes(car.status)) return 'available';
-    if (car.status === 'coming_soon') return 'coming_soon';
-    if (car.status === 'in_workshop') return 'in_workshop';
-    if (['deal_pending', 'submitted', 'reserved'].includes(car.status)) return 'deal_pending';
-    if (['sold', 'delivered'].includes(car.status)) return 'sold_delivered';
+    if (['available', 'ready', 'photo_complete'].includes(car.status)) return 'in_stock';
+    if (['coming_soon', 'in_workshop'].includes(car.status)) return 'incoming';
+    if (['deal_pending', 'submitted', 'reserved'].includes(car.status)) return 'pending_delivery';
+    if (['sold', 'delivered'].includes(car.status)) return 'sold';
     return 'none';
   };
+
+  const carsInGroup = useMemo(() => {
+    if (carGroupFilter === 'all') return [];
+    const statuses: Record<string, string[]> = {
+      in_stock: ['available', 'ready', 'photo_complete'],
+      incoming: ['coming_soon', 'in_workshop'],
+      pending_delivery: ['deal_pending', 'submitted', 'reserved'],
+      sold: ['sold', 'delivered'],
+    };
+    return cars.filter(c => statuses[carGroupFilter]?.includes(c.status));
+  }, [cars, carGroupFilter]);
 
   const statusCounts = useMemo(() => {
     const leads = myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus !== 'loan_submitted' && !c.isDead && !c.isTrashed);
@@ -783,7 +793,7 @@ export default function Customers() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1 bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-1">
           <button
-            onClick={() => { setTab('leads'); setStatusFilter('all'); setCarStatusFilter('all'); setSearch(''); }}
+            onClick={() => { setTab('leads'); setStatusFilter('all'); setCarGroupFilter('all'); setCarIdFilter('all'); setSearch(''); }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'leads' ? 'bg-gold-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
             Leads
@@ -799,7 +809,7 @@ export default function Customers() {
             Cash <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'cash' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => c.dealType === 'cash' && !c.cashWorkOrder && !c.isDead && !c.isTrashed).length}</span>
           </button>
           <button
-            onClick={() => { setTab('loan'); setStatusFilter('all'); setCarStatusFilter('all'); setSearch(''); }}
+            onClick={() => { setTab('loan'); setStatusFilter('all'); setCarGroupFilter('all'); setCarIdFilter('all'); setSearch(''); }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'loan' ? 'bg-purple-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
             Loan <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'loan' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus === 'loan_submitted' && !c.isTrashed).length}</span>
@@ -922,35 +932,31 @@ export default function Customers() {
             className="flex-1 input rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors"
           />
           <select
-            value={sourceFilter}
-            onChange={e => setSourceFilter(e.target.value as Customer['source'] | 'all')}
-            className="input rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors"
-          >
-            <option value="all">All Sources</option>
-            <option value="walk_in">Walk-in</option>
-            <option value="referral">Referral</option>
-            <option value="fb_marketplace">FB Marketplace</option>
-            <option value="fb_page">FB Page</option>
-            <option value="mudah">Mudah</option>
-            <option value="online">Online</option>
-            <option value="repeat">Repeat Customer</option>
-          </select>
-          <select
-            value={carStatusFilter}
-            onChange={e => setCarStatusFilter(e.target.value)}
+            value={carGroupFilter}
+            onChange={e => { setCarGroupFilter(e.target.value as typeof carGroupFilter); setCarIdFilter('all'); }}
             className="input rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors"
           >
             <option value="all">All Cars</option>
-            <option value="available">Available</option>
-            <option value="coming_soon">Coming Soon</option>
-            <option value="in_workshop">In Workshop</option>
-            <option value="deal_pending">Deal Pending</option>
-            <option value="sold_delivered">Sold / Delivered</option>
-            <option value="none">No Car Assigned</option>
+            <option value="in_stock">In Stock</option>
+            <option value="incoming">Incoming</option>
+            <option value="pending_delivery">Pending Delivery</option>
+            <option value="sold">Sold</option>
           </select>
-          {(statusFilter !== 'all' || sourceFilter !== 'all' || carStatusFilter !== 'all' || search) && (
+          {carGroupFilter !== 'all' && (
+            <select
+              value={carIdFilter}
+              onChange={e => setCarIdFilter(e.target.value)}
+              className="input rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors"
+            >
+              <option value="all">All in group</option>
+              {carsInGroup.map(c => (
+                <option key={c.id} value={c.id}>{c.year} {c.make} {c.model}</option>
+              ))}
+            </select>
+          )}
+          {(statusFilter !== 'all' || carGroupFilter !== 'all' || search) && (
             <button
-              onClick={() => { setStatusFilter('all'); setSourceFilter('all'); setCarStatusFilter('all'); setSearch(''); }}
+              onClick={() => { setStatusFilter('all'); setCarGroupFilter('all'); setCarIdFilter('all'); setSearch(''); }}
               className="px-3 py-2.5 text-xs text-gray-500 hover:text-white border border-obsidian-400/60 hover:border-[#3C321E] rounded-lg transition-colors whitespace-nowrap"
             >
               Clear
@@ -1174,34 +1180,30 @@ export default function Customers() {
             className="flex-1 input rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors"
           />
           <select
-            value={sourceFilter}
-            onChange={e => setSourceFilter(e.target.value as Customer['source'] | 'all')}
-            className="input rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors"
-          >
-            <option value="all">All Sources</option>
-            <option value="walk_in">Walk-in</option>
-            <option value="referral">Referral</option>
-            <option value="fb_marketplace">FB Marketplace</option>
-            <option value="fb_page">FB Page</option>
-            <option value="mudah">Mudah</option>
-            <option value="online">Online</option>
-            <option value="repeat">Repeat Customer</option>
-          </select>
-          <select
-            value={carStatusFilter}
-            onChange={e => setCarStatusFilter(e.target.value)}
+            value={carGroupFilter}
+            onChange={e => { setCarGroupFilter(e.target.value as typeof carGroupFilter); setCarIdFilter('all'); }}
             className="input rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors"
           >
             <option value="all">All Cars</option>
-            <option value="available">Available</option>
-            <option value="coming_soon">Coming Soon</option>
-            <option value="in_workshop">In Workshop</option>
-            <option value="deal_pending">Deal Pending</option>
-            <option value="sold_delivered">Sold / Delivered</option>
-            <option value="none">No Car Assigned</option>
+            <option value="in_stock">In Stock</option>
+            <option value="incoming">Incoming</option>
+            <option value="pending_delivery">Pending Delivery</option>
+            <option value="sold">Sold</option>
           </select>
-          {(sourceFilter !== 'all' || carStatusFilter !== 'all' || search) && (
-            <button onClick={() => { setSourceFilter('all'); setCarStatusFilter('all'); setSearch(''); }} className="px-3 py-2.5 text-xs text-gray-500 hover:text-white border border-obsidian-400/60 hover:border-[#3C321E] rounded-lg transition-colors whitespace-nowrap">Clear</button>
+          {carGroupFilter !== 'all' && (
+            <select
+              value={carIdFilter}
+              onChange={e => setCarIdFilter(e.target.value)}
+              className="input rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors"
+            >
+              <option value="all">All in group</option>
+              {carsInGroup.map(c => (
+                <option key={c.id} value={c.id}>{c.year} {c.make} {c.model}</option>
+              ))}
+            </select>
+          )}
+          {(carGroupFilter !== 'all' || search) && (
+            <button onClick={() => { setCarGroupFilter('all'); setCarIdFilter('all'); setSearch(''); }} className="px-3 py-2.5 text-xs text-gray-500 hover:text-white border border-obsidian-400/60 hover:border-[#3C321E] rounded-lg transition-colors whitespace-nowrap">Clear</button>
           )}
         </div>
 
