@@ -197,6 +197,17 @@ export default function Customers() {
       (isDirector || td.salesId === currentUser?.id)
     ), [testDrives, todayStr, isDirector, currentUser]);
 
+  const getCarGroup = (carId?: string): 'in_stock' | 'incoming' | 'pending_delivery' | 'sold' | 'none' => {
+    if (!carId) return 'none';
+    const car = cars.find(c => c.id === carId);
+    if (!car) return 'none';
+    if (['available', 'ready', 'photo_complete'].includes(car.status)) return 'in_stock';
+    if (['coming_soon', 'in_workshop'].includes(car.status)) return 'incoming';
+    if (['deal_pending', 'submitted', 'reserved'].includes(car.status)) return 'pending_delivery';
+    if (['sold', 'delivered'].includes(car.status)) return 'sold';
+    return 'none';
+  };
+
   const leadsFiltered = useMemo(() => myCustomers.filter(c => {
     if (c.cashWorkOrder || c.loanWorkOrder) return false;
     if (c.leadStatus === 'loan_submitted') return false;
@@ -243,17 +254,6 @@ export default function Customers() {
   const salespeople = users.filter(u => u.role === 'salesperson' || u.role === 'director' || u.role === 'admin');
   const getSalesName = (salesId: string) => users.find(u => u.id === salesId)?.name ?? salesId;
   const getCar = (id?: string) => cars.find(c => c.id === id);
-
-  const getCarGroup = (carId?: string): 'in_stock' | 'incoming' | 'pending_delivery' | 'sold' | 'none' => {
-    if (!carId) return 'none';
-    const car = cars.find(c => c.id === carId);
-    if (!car) return 'none';
-    if (['available', 'ready', 'photo_complete'].includes(car.status)) return 'in_stock';
-    if (['coming_soon', 'in_workshop'].includes(car.status)) return 'incoming';
-    if (['deal_pending', 'submitted', 'reserved'].includes(car.status)) return 'pending_delivery';
-    if (['sold', 'delivered'].includes(car.status)) return 'sold';
-    return 'none';
-  };
 
   const carsInGroup = useMemo(() => {
     if (carGroupFilter === 'all') return [];
