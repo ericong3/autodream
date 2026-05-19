@@ -100,6 +100,7 @@ export default function Customers() {
   // Filters
   const [statusFilter, setStatusFilter] = useState<Customer['leadStatus'] | 'all'>('all');
   const [sourceFilter, setSourceFilter] = useState<Customer['source'] | 'all'>('all');
+  const [carStatusFilter, setCarStatusFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
 
   // Add/Edit modal
@@ -203,9 +204,10 @@ export default function Customers() {
     if (c.isTrashed) return false;
     const matchStatus = statusFilter === 'all' || c.leadStatus === statusFilter;
     const matchSource = sourceFilter === 'all' || c.source === sourceFilter;
+    const matchCarStatus = carStatusFilter === 'all' || getCarStatusGroup(c.interestedCarId) === carStatusFilter;
     const matchSearch = !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search);
-    return matchStatus && matchSource && matchSearch;
-  }), [myCustomers, statusFilter, sourceFilter, search]);
+    return matchStatus && matchSource && matchCarStatus && matchSearch;
+  }), [myCustomers, statusFilter, sourceFilter, carStatusFilter, search]);
 
   const deadLeads = useMemo(() => myCustomers.filter(c =>
     c.isDead && !c.isTrashed && !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus !== 'loan_submitted' &&
@@ -217,9 +219,10 @@ export default function Customers() {
     if (c.leadStatus !== 'loan_submitted') return false;
     if (c.isTrashed) return false;
     const matchSource = sourceFilter === 'all' || c.source === sourceFilter;
+    const matchCarStatus = carStatusFilter === 'all' || getCarStatusGroup(c.interestedCarId) === carStatusFilter;
     const matchSearch = !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search);
-    return matchSource && matchSearch;
-  }), [myCustomers, sourceFilter, search]);
+    return matchSource && matchCarStatus && matchSearch;
+  }), [myCustomers, sourceFilter, carStatusFilter, search]);
 
   const trashedFiltered = useMemo(() => myCustomers.filter(c => {
     if (!c.isTrashed) return false;
@@ -240,6 +243,18 @@ export default function Customers() {
   const salespeople = users.filter(u => u.role === 'salesperson' || u.role === 'director' || u.role === 'admin');
   const getSalesName = (salesId: string) => users.find(u => u.id === salesId)?.name ?? salesId;
   const getCar = (id?: string) => cars.find(c => c.id === id);
+
+  const getCarStatusGroup = (carId?: string): string => {
+    if (!carId) return 'none';
+    const car = cars.find(c => c.id === carId);
+    if (!car) return 'none';
+    if (['available', 'ready', 'photo_complete'].includes(car.status)) return 'available';
+    if (car.status === 'coming_soon') return 'coming_soon';
+    if (car.status === 'in_workshop') return 'in_workshop';
+    if (['deal_pending', 'submitted', 'reserved'].includes(car.status)) return 'deal_pending';
+    if (['sold', 'delivered'].includes(car.status)) return 'sold_delivered';
+    return 'none';
+  };
 
   const statusCounts = useMemo(() => {
     const leads = myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus !== 'loan_submitted' && !c.isDead && !c.isTrashed);
@@ -768,7 +783,7 @@ export default function Customers() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1 bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-1">
           <button
-            onClick={() => { setTab('leads'); setStatusFilter('all'); setSearch(''); }}
+            onClick={() => { setTab('leads'); setStatusFilter('all'); setCarStatusFilter('all'); setSearch(''); }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'leads' ? 'bg-gold-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
             Leads
@@ -784,7 +799,7 @@ export default function Customers() {
             Cash <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'cash' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => c.dealType === 'cash' && !c.cashWorkOrder && !c.isDead && !c.isTrashed).length}</span>
           </button>
           <button
-            onClick={() => { setTab('loan'); setStatusFilter('all'); setSearch(''); }}
+            onClick={() => { setTab('loan'); setStatusFilter('all'); setCarStatusFilter('all'); setSearch(''); }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'loan' ? 'bg-purple-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
             Loan <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'loan' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus === 'loan_submitted' && !c.isTrashed).length}</span>
@@ -920,9 +935,22 @@ export default function Customers() {
             <option value="online">Online</option>
             <option value="repeat">Repeat Customer</option>
           </select>
-          {(statusFilter !== 'all' || sourceFilter !== 'all' || search) && (
+          <select
+            value={carStatusFilter}
+            onChange={e => setCarStatusFilter(e.target.value)}
+            className="input rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors"
+          >
+            <option value="all">All Cars</option>
+            <option value="available">Available</option>
+            <option value="coming_soon">Coming Soon</option>
+            <option value="in_workshop">In Workshop</option>
+            <option value="deal_pending">Deal Pending</option>
+            <option value="sold_delivered">Sold / Delivered</option>
+            <option value="none">No Car Assigned</option>
+          </select>
+          {(statusFilter !== 'all' || sourceFilter !== 'all' || carStatusFilter !== 'all' || search) && (
             <button
-              onClick={() => { setStatusFilter('all'); setSourceFilter('all'); setSearch(''); }}
+              onClick={() => { setStatusFilter('all'); setSourceFilter('all'); setCarStatusFilter('all'); setSearch(''); }}
               className="px-3 py-2.5 text-xs text-gray-500 hover:text-white border border-obsidian-400/60 hover:border-[#3C321E] rounded-lg transition-colors whitespace-nowrap"
             >
               Clear
@@ -1159,8 +1187,21 @@ export default function Customers() {
             <option value="online">Online</option>
             <option value="repeat">Repeat Customer</option>
           </select>
-          {(sourceFilter !== 'all' || search) && (
-            <button onClick={() => { setSourceFilter('all'); setSearch(''); }} className="px-3 py-2.5 text-xs text-gray-500 hover:text-white border border-obsidian-400/60 hover:border-[#3C321E] rounded-lg transition-colors whitespace-nowrap">Clear</button>
+          <select
+            value={carStatusFilter}
+            onChange={e => setCarStatusFilter(e.target.value)}
+            className="input rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors"
+          >
+            <option value="all">All Cars</option>
+            <option value="available">Available</option>
+            <option value="coming_soon">Coming Soon</option>
+            <option value="in_workshop">In Workshop</option>
+            <option value="deal_pending">Deal Pending</option>
+            <option value="sold_delivered">Sold / Delivered</option>
+            <option value="none">No Car Assigned</option>
+          </select>
+          {(sourceFilter !== 'all' || carStatusFilter !== 'all' || search) && (
+            <button onClick={() => { setSourceFilter('all'); setCarStatusFilter('all'); setSearch(''); }} className="px-3 py-2.5 text-xs text-gray-500 hover:text-white border border-obsidian-400/60 hover:border-[#3C321E] rounded-lg transition-colors whitespace-nowrap">Clear</button>
           )}
         </div>
 
