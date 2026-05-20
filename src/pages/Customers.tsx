@@ -2833,13 +2833,53 @@ export default function Customers() {
                     </div>
                   )}
 
-                  {/* Loan: show calculated downpayment */}
-                  {workOrderType === 'loan' && (
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-obsidian-400/30 bg-blue-500/5">
-                      <span className="text-blue-300 text-sm">Downpayment (Customer)</span>
-                      <span className="text-blue-300 text-sm font-semibold">{formatRM(Math.max(0, downpayment))}</span>
-                    </div>
-                  )}
+                  {/* Loan: show calculated downpayment + balance due */}
+                  {workOrderType === 'loan' && (() => {
+                    const loanBalance = downpayment - woForm.bookingFee;
+                    const isOverLoan = loanBalance < 0;
+                    return (
+                      <>
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-obsidian-400/30 bg-blue-500/5">
+                          <span className="text-blue-300 text-sm">Downpayment (Customer)</span>
+                          <span className="text-blue-300 text-sm font-semibold">{formatRM(Math.max(0, downpayment))}</span>
+                        </div>
+                        <div className={`flex items-center justify-between px-4 py-3 border-b border-obsidian-400/30 ${isOverLoan ? 'bg-green-500/5' : 'bg-amber-500/5'}`}>
+                          <div>
+                            <span className={`text-sm font-semibold ${isOverLoan ? 'text-green-400' : 'text-amber-300'}`}>
+                              {isOverLoan ? '💚 Refund to Customer' : '⚠️ Balance Due from Customer'}
+                            </span>
+                            <p className="text-gray-500 text-xs mt-0.5">
+                              {isOverLoan
+                                ? `Loan covers more than needed — refund RM ${Math.abs(loanBalance).toLocaleString()}`
+                                : `After booking fee deducted`}
+                            </p>
+                          </div>
+                          <span className={`text-base font-bold ${isOverLoan ? 'text-green-400' : 'text-amber-300'}`}>
+                            {isOverLoan ? `- ${formatRM(Math.abs(loanBalance))}` : formatRM(loanBalance)}
+                          </span>
+                        </div>
+                      </>
+                    );
+                  })()}
+
+                  {/* Cash: balance due */}
+                  {workOrderType === 'cash' && (() => {
+                    const cashBalance = totalFinalDeal - woForm.bookingFee - woForm.downpayment;
+                    const isOverPaid = cashBalance < 0;
+                    return (
+                      <div className={`flex items-center justify-between px-4 py-3 border-b border-obsidian-400/30 ${isOverPaid ? 'bg-green-500/5' : 'bg-amber-500/5'}`}>
+                        <div>
+                          <span className={`text-sm font-semibold ${isOverPaid ? 'text-green-400' : 'text-amber-300'}`}>
+                            {isOverPaid ? '💚 Refund to Customer' : '⚠️ Balance Due from Customer'}
+                          </span>
+                          <p className="text-gray-500 text-xs mt-0.5">After booking fee &amp; downpayment</p>
+                        </div>
+                        <span className={`text-base font-bold ${isOverPaid ? 'text-green-400' : 'text-amber-300'}`}>
+                          {isOverPaid ? `- ${formatRM(Math.abs(cashBalance))}` : formatRM(cashBalance)}
+                        </span>
+                      </div>
+                    );
+                  })()}
 
                   {/* Total */}
                   <div className="flex items-center justify-between px-4 py-4 bg-gold-500/5">
