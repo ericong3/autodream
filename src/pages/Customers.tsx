@@ -145,6 +145,16 @@ export default function Customers() {
   const tiPhotoRef = useRef<HTMLInputElement>(null);
   const gcPhotoRef = useRef<HTMLInputElement>(null);
 
+  // Ensure booking fee is never 0 when a customer record or saved work order has it
+  useEffect(() => {
+    if (!workOrderCustomer) return;
+    if (woForm.bookingFee > 0) return;
+    const bf = workOrderCustomer.bookingFee
+      ?? workOrderCustomer.loanWorkOrder?.bookingFee
+      ?? workOrderCustomer.cashWorkOrder?.bookingFee;
+    if (bf && bf > 0) setWoForm(f => ({ ...f, bookingFee: bf }));
+  }, [workOrderCustomer?.id]);
+
   const [bankStatuses, setBankStatuses] = useState<LoanApplication[]>([]);
 
 
@@ -509,7 +519,8 @@ export default function Customers() {
   const handleWorkOrderSubmit = () => {
     if (!workOrderCustomer) return;
     const car = getCar(workOrderCarId);
-    const totalFinalDeal = woForm.sellingPrice - woForm.discount;
+    const additionalTotal = woForm.additionalItems.reduce((s, x) => s + (x.amount || 0), 0);
+    const totalFinalDeal = woForm.sellingPrice + woForm.insurance + woForm.bankProduct + additionalTotal - woForm.discount;
     const hasDiscount = car ? woForm.sellingPrice < car.sellingPrice : false;
 
     const workOrder: CashWorkOrder = {
@@ -569,6 +580,7 @@ export default function Customers() {
       interestedCarId: workOrderCarId,
       dealPrice: totalFinalDeal,
       cashWorkOrder: workOrder,
+      bookingFee: woForm.bookingFee || workOrderCustomer.bookingFee,
       lastActionAt: new Date().toISOString(),
     });
 
@@ -678,15 +690,31 @@ export default function Customers() {
       ? c.loanApplications?.find(a => a.bank === bankName && a.status === 'approved')
       : c.loanApplications?.find(a => a.status === 'approved');
     const car = getCar(c.interestedCarId);
+    const prev = c.loanWorkOrder ?? c.cashWorkOrder;
     setWoForm({
       ...emptyWorkOrder,
-      sellingPrice: car?.sellingPrice ?? 0,
-      approvedBank: approvedApp?.bank ?? bankName ?? '',
-      loanAmount: bankAmount ?? approvedApp?.approvedAmount ?? 0,
-      customerName: c.name,
-      customerIc: c.ic ?? '',
-      customerPhone: c.phone,
-      customerEmail: c.email ?? '',
+      sellingPrice: prev?.sellingPrice ?? car?.sellingPrice ?? 0,
+      insurance: prev?.insurance ?? 0,
+      bankProduct: prev?.bankProduct ?? 0,
+      additionalItems: prev?.additionalItems ?? [],
+      discount: prev?.discount ?? 0,
+      bookingFee: c.bookingFee ?? prev?.bookingFee ?? 0,
+      approvedBank: approvedApp?.bank ?? bankName ?? (c.loanWorkOrder?.bank ?? ''),
+      loanAmount: bankAmount ?? approvedApp?.approvedAmount ?? c.loanWorkOrder?.loanAmount ?? 0,
+      customerName: prev?.customerName ?? c.name,
+      customerIc: prev?.customerIc ?? c.ic ?? '',
+      customerPhone: prev?.customerPhone ?? c.phone,
+      customerEmail: prev?.customerEmail ?? c.email ?? '',
+      customerAddress: prev?.customerAddress ?? '',
+      hasTradeIn: prev?.hasTradeIn ?? false,
+      tradeInPhotos: prev?.tradeInPhotos ?? [],
+      greenCardPhoto: prev?.greenCardPhoto ?? '',
+      tradeInPlate: prev?.tradeInPlate ?? '',
+      tradeInMake: prev?.tradeInMake ?? '',
+      tradeInModel: prev?.tradeInModel ?? '',
+      tradeInVariant: prev?.tradeInVariant ?? '',
+      tradeInPrice: prev?.tradeInPrice ?? 0,
+      settlementFigure: prev?.settlementFigure ?? 0,
     });
     setWorkOrderCarId(c.interestedCarId ?? '');
     setWorkOrderCustomer(c);
@@ -697,7 +725,8 @@ export default function Customers() {
   const handleLoanWoSubmit = () => {
     if (!workOrderCustomer) return;
     const car = getCar(workOrderCarId);
-    const totalFinalDeal = woForm.sellingPrice - woForm.discount;
+    const additionalTotal = woForm.additionalItems.reduce((s, x) => s + (x.amount || 0), 0);
+    const totalFinalDeal = woForm.sellingPrice + woForm.insurance + woForm.bankProduct + additionalTotal - woForm.discount;
     const hasDiscount = car ? woForm.discount > 0 || woForm.sellingPrice < car.sellingPrice : false;
 
     const loanWorkOrder: LoanWorkOrder = {
@@ -767,6 +796,7 @@ export default function Customers() {
       loanStatus: 'approved',
       loanWorkOrder,
       loanApplications: cancelledApps,
+      bookingFee: woForm.bookingFee || workOrderCustomer.bookingFee,
       lastActionAt: new Date().toISOString(),
     });
 
@@ -1666,8 +1696,9 @@ export default function Customers() {
                     const discount = wo!.discount;
                     const loanAmount = lwo?.loanAmount ?? 0;
                     const downpayment = cwo?.downpayment ?? 0;
-                    const customerDownpayment = lwo ? sellingPrice - loanAmount : 0;
-                    const finalDeal = sellingPrice - discount;
+                    const additionalTotal = additionalItems.reduce((s, x) => s + (x.amount || 0), 0);
+                    const finalDeal = sellingPrice + insurance + bankProduct + additionalTotal - discount;
+                    const customerDownpayment = lwo ? finalDeal - loanAmount : 0;
                     const netTradeIn = wo!.hasTradeIn ? wo!.tradeInPrice - wo!.settlementFigure : 0;
 
                     const Row = ({ label, value, color = 'text-white', bold = false, sub = false }: { label: string; value: string; color?: string; bold?: boolean; sub?: boolean }) => (
@@ -1710,11 +1741,35 @@ export default function Customers() {
                         {isLoanWo && lwo && (<>
                           <Row label="Bank" value={lwo.bank} color="text-blue-300" />
                           <Row label="Loan Amount" value={formatRM(loanAmount)} color="text-blue-300" />
-                          {customerDownpayment > 0 && <Row label="Customer Downpayment" value={formatRM(customerDownpayment)} color="text-blue-300" />}
+                          {bookingFee > 0 && <Row label="Booking Fee (paid)" value={`− ${formatRM(bookingFee)}`} color="text-gray-400" sub />}
+                          {(() => {
+                            const loanBalance = customerDownpayment - bookingFee;
+                            const isOverLoan = loanBalance < 0;
+                            return (
+                              <Row
+                                label={isOverLoan ? 'Refund to Customer' : 'Balance Due from Customer'}
+                                value={formatRM(Math.abs(loanBalance))}
+                                color={isOverLoan ? 'text-green-400' : 'text-amber-300'}
+                                bold
+                              />
+                            );
+                          })()}
                         </>)}
                         {!isLoanWo && cwo && (<>
-                          {bookingFee > 0 && <Row label="Booking Fee" value={`− ${formatRM(bookingFee)}`} color="text-red-400" />}
-                          {downpayment > 0 && <Row label="Downpayment" value={`− ${formatRM(downpayment)}`} color="text-red-400" />}
+                          {bookingFee > 0 && <Row label="Booking Fee (paid)" value={`− ${formatRM(bookingFee)}`} color="text-gray-400" sub />}
+                          {downpayment > 0 && <Row label="Downpayment (paid)" value={`− ${formatRM(downpayment)}`} color="text-gray-400" sub />}
+                          {(() => {
+                            const cashBalance = finalDeal - bookingFee - downpayment;
+                            const isOverPaid = cashBalance < 0;
+                            return (
+                              <Row
+                                label={isOverPaid ? 'Refund to Customer' : 'Balance Due from Customer'}
+                                value={formatRM(Math.abs(cashBalance))}
+                                color={isOverPaid ? 'text-green-400' : 'text-amber-300'}
+                                bold
+                              />
+                            );
+                          })()}
                         </>)}
 
                         {/* Trade-in */}
@@ -2437,6 +2492,7 @@ export default function Customers() {
                       setWoForm({
                         ...emptyWorkOrder,
                         sellingPrice: car?.sellingPrice ?? 0,
+                        bookingFee: sidebarLead.bookingFee ?? sidebarLead.loanWorkOrder?.bookingFee ?? sidebarLead.cashWorkOrder?.bookingFee ?? 0,
                         customerName: sidebarLead.name,
                         customerIc: sidebarLead.ic ?? '',
                         customerPhone: sidebarLead.phone,
@@ -2681,8 +2737,16 @@ export default function Customers() {
       {/* ── Work Order Overlay (Cash & Loan) ─────────── */}
       {workOrderCustomer && (() => {
         const car = getCar(workOrderCarId);
-        const totalFinalDeal = woForm.sellingPrice - woForm.discount;
-        const downpayment = workOrderType === 'loan' ? woForm.sellingPrice - woForm.loanAmount : 0;
+        const additionalTotal = woForm.additionalItems.reduce((s, x) => s + (x.amount || 0), 0);
+        const totalFinalDeal = woForm.sellingPrice + woForm.insurance + woForm.bankProduct + additionalTotal - woForm.discount;
+        const effectiveBookingFee = woForm.bookingFee
+          || workOrderCustomer?.bookingFee
+          || workOrderCustomer?.loanWorkOrder?.bookingFee
+          || workOrderCustomer?.cashWorkOrder?.bookingFee
+          || 0;
+        const netResult = workOrderType === 'loan'
+          ? totalFinalDeal - woForm.loanAmount - effectiveBookingFee
+          : totalFinalDeal - effectiveBookingFee - woForm.downpayment;
         const netTradeIn = woForm.tradeInPrice - woForm.settlementFigure;
 
         return createPortal(
@@ -2833,58 +2897,67 @@ export default function Customers() {
                     </div>
                   )}
 
-                  {/* Loan: show calculated downpayment + balance due */}
-                  {workOrderType === 'loan' && (() => {
-                    const loanBalance = downpayment - woForm.bookingFee;
-                    const isOverLoan = loanBalance < 0;
-                    return (
-                      <>
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-obsidian-400/30 bg-blue-500/5">
-                          <span className="text-blue-300 text-sm">Downpayment (Customer)</span>
-                          <span className="text-blue-300 text-sm font-semibold">{formatRM(Math.max(0, downpayment))}</span>
+                  {/* Calculation summary */}
+                  <div className="px-4 pt-3 pb-1 bg-obsidian-900/50 border-t border-obsidian-400/20">
+                    <p className="text-gray-600 text-[10px] uppercase tracking-widest mb-2">Calculation</p>
+                    <div className="space-y-1.5">
+                      {woForm.sellingPrice > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-400">Selling Price</span>
+                          <span className="text-white font-mono">+ {formatRM(woForm.sellingPrice)}</span>
                         </div>
-                        <div className={`flex items-center justify-between px-4 py-3 border-b border-obsidian-400/30 ${isOverLoan ? 'bg-green-500/5' : 'bg-amber-500/5'}`}>
-                          <div>
-                            <span className={`text-sm font-semibold ${isOverLoan ? 'text-green-400' : 'text-amber-300'}`}>
-                              {isOverLoan ? '💚 Refund to Customer' : '⚠️ Balance Due from Customer'}
-                            </span>
-                            <p className="text-gray-500 text-xs mt-0.5">
-                              {isOverLoan
-                                ? `Loan covers more than needed — refund RM ${Math.abs(loanBalance).toLocaleString()}`
-                                : `After booking fee deducted`}
-                            </p>
-                          </div>
-                          <span className={`text-base font-bold ${isOverLoan ? 'text-green-400' : 'text-amber-300'}`}>
-                            {isOverLoan ? `- ${formatRM(Math.abs(loanBalance))}` : formatRM(loanBalance)}
-                          </span>
+                      )}
+                      {woForm.insurance > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-400">Insurance</span>
+                          <span className="text-white font-mono">+ {formatRM(woForm.insurance)}</span>
                         </div>
-                      </>
-                    );
-                  })()}
-
-                  {/* Cash: balance due */}
-                  {workOrderType === 'cash' && (() => {
-                    const cashBalance = totalFinalDeal - woForm.bookingFee - woForm.downpayment;
-                    const isOverPaid = cashBalance < 0;
-                    return (
-                      <div className={`flex items-center justify-between px-4 py-3 border-b border-obsidian-400/30 ${isOverPaid ? 'bg-green-500/5' : 'bg-amber-500/5'}`}>
-                        <div>
-                          <span className={`text-sm font-semibold ${isOverPaid ? 'text-green-400' : 'text-amber-300'}`}>
-                            {isOverPaid ? '💚 Refund to Customer' : '⚠️ Balance Due from Customer'}
-                          </span>
-                          <p className="text-gray-500 text-xs mt-0.5">After booking fee &amp; downpayment</p>
+                      )}
+                      {woForm.bankProduct > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-400">Bank Product</span>
+                          <span className="text-white font-mono">+ {formatRM(woForm.bankProduct)}</span>
                         </div>
-                        <span className={`text-base font-bold ${isOverPaid ? 'text-green-400' : 'text-amber-300'}`}>
-                          {isOverPaid ? `- ${formatRM(Math.abs(cashBalance))}` : formatRM(cashBalance)}
+                      )}
+                      {woForm.additionalItems.filter(x => x.amount > 0).map((x, i) => (
+                        <div key={i} className="flex justify-between text-sm">
+                          <span className="text-gray-400">{x.label || 'Item'}</span>
+                          <span className="text-white font-mono">+ {formatRM(x.amount)}</span>
+                        </div>
+                      ))}
+                      {workOrderType === 'loan' && woForm.loanAmount > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-400">Loan Amount</span>
+                          <span className="text-red-400 font-mono">− {formatRM(woForm.loanAmount)}</span>
+                        </div>
+                      )}
+                      {effectiveBookingFee > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-400">Booking Fee</span>
+                          <span className="text-red-400 font-mono">− {formatRM(effectiveBookingFee)}</span>
+                        </div>
+                      )}
+                      {workOrderType === 'cash' && woForm.downpayment > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-400">Downpayment</span>
+                          <span className="text-red-400 font-mono">− {formatRM(woForm.downpayment)}</span>
+                        </div>
+                      )}
+                      {woForm.discount > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-400">Discount</span>
+                          <span className="text-red-400 font-mono">− {formatRM(woForm.discount)}</span>
+                        </div>
+                      )}
+                      <div className="border-t border-obsidian-400/40 pt-2 mt-1 flex items-center justify-between pb-2">
+                        <span className={`text-sm font-bold ${netResult < 0 ? 'text-green-400' : netResult > 0 ? 'text-amber-300' : 'text-gold-400'}`}>
+                          {netResult < 0 ? 'Refund to Customer' : netResult > 0 ? 'Balance Due' : 'Fully Settled'}
+                        </span>
+                        <span className={`text-lg font-bold font-mono ${netResult < 0 ? 'text-green-400' : netResult > 0 ? 'text-amber-300' : 'text-gold-400'}`}>
+                          {netResult < 0 ? `− ${formatRM(Math.abs(netResult))}` : formatRM(netResult)}
                         </span>
                       </div>
-                    );
-                  })()}
-
-                  {/* Total */}
-                  <div className="flex items-center justify-between px-4 py-4 bg-gold-500/5">
-                    <span className="text-white font-semibold text-sm">Total Final Deal</span>
-                    <span className="text-gold-400 font-bold text-lg">{formatRM(totalFinalDeal)}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -3026,8 +3099,10 @@ export default function Customers() {
               style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}>
               <div className="max-w-lg mx-auto flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-gray-500 text-xs">Total Final Deal</p>
-                  <p className="text-gold-400 font-bold text-lg">{formatRM(totalFinalDeal)}</p>
+                  <p className="text-gray-500 text-xs">{netResult < 0 ? 'Refund to Customer' : netResult > 0 ? 'Balance Due' : 'Fully Settled'}</p>
+                  <p className={`font-bold text-lg ${netResult < 0 ? 'text-green-400' : netResult > 0 ? 'text-amber-300' : 'text-gold-400'}`}>
+                    {netResult < 0 ? `− ${formatRM(Math.abs(netResult))}` : formatRM(netResult)}
+                  </p>
                 </div>
                 <button
                   onClick={workOrderType === 'loan' ? handleLoanWoSubmit : handleWorkOrderSubmit}
