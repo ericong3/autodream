@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Car, Users, Calendar, Bell, ChevronDown, ChevronUp, AlertCircle, Plus, CheckCircle, Circle, Trash2, ChevronLeft, ChevronRight, Eye, EyeOff, Lock, RefreshCw, Skull, X, CalendarCheck } from 'lucide-react';
 import { useStore } from '../store';
 import Modal from '../components/Modal';
@@ -17,7 +18,9 @@ export default function SalesDashboard() {
   const deletePersonalReminder = useStore((s) => s.deletePersonalReminder);
   const updateTestDrive = useStore((s) => s.updateTestDrive);
   const updateCustomer = useStore((s) => s.updateCustomer);
+  const navigate = useNavigate();
 
+  const [showFollowUpList, setShowFollowUpList] = useState(false);
   const [showCommission, setShowCommission] = useState(false);
   const [monthFilter, setMonthFilter] = useState(new Date().toISOString().slice(0, 7));
 
@@ -365,32 +368,48 @@ export default function SalesDashboard() {
       {/* ── ACTIVITY ROW ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-        {/* Follow-ups Due */}
-        <div className="card-surface rounded-xl p-4 space-y-3">
-          <h2 className="text-white font-semibold text-sm flex items-center gap-2">
-            <div className="w-6 h-6 bg-yellow-500/10 rounded-lg flex items-center justify-center">
+        {/* Follow Up List */}
+        <div className="card-surface rounded-xl overflow-hidden">
+          <button
+            onClick={() => setShowFollowUpList(v => !v)}
+            className="w-full flex items-center gap-2 p-4 text-left"
+          >
+            <div className="w-6 h-6 bg-yellow-500/10 rounded-lg flex items-center justify-center shrink-0">
               <Calendar size={13} className="text-yellow-400" />
             </div>
-            Follow Up List
-          </h2>
-          {followUpList.length === 0 ? (
-            <p className="text-gray-600 text-xs py-4 text-center">No follow-ups</p>
-          ) : (
-            <div className="space-y-2">
-              {followUpList.map(c => (
-                <div key={c.id} className="flex items-center justify-between py-1">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-white text-xs font-medium truncate">{c.name}</p>
-                    <p className="text-gray-500 text-[10px] truncate">{getCarName(c.interestedCarId)}</p>
-                    {c.followUpRemark && <p className="text-gray-600 text-[10px] truncate italic">{c.followUpRemark}</p>}
-                  </div>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full ml-2 shrink-0 font-medium ${
-                    c.followUpDate! < today ? 'bg-red-500/15 text-red-400' : c.followUpDate === today ? 'bg-yellow-500/15 text-yellow-400' : 'bg-blue-500/15 text-blue-400'
-                  }`}>
-                    {c.followUpDate! < today ? 'Overdue' : c.followUpDate === today ? 'Today' : new Date(c.followUpDate! + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}
-                  </span>
+            <span className="text-white font-semibold text-sm flex-1">Follow Up List</span>
+            {followUpList.length > 0 && (
+              <span className="text-[10px] bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full font-semibold">{followUpList.length}</span>
+            )}
+            {showFollowUpList ? <ChevronUp size={14} className="text-gray-500 shrink-0" /> : <ChevronDown size={14} className="text-gray-500 shrink-0" />}
+          </button>
+
+          {showFollowUpList && (
+            <div className="border-t border-obsidian-500/20">
+              {followUpList.length === 0 ? (
+                <p className="text-gray-600 text-xs py-4 text-center">No follow-ups</p>
+              ) : (
+                <div className="divide-y divide-obsidian-500/20">
+                  {followUpList.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => navigate(`/customers?id=${c.id}`)}
+                      className="w-full flex items-center justify-between px-4 py-3 hover:bg-obsidian-700/40 transition-colors text-left"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-white text-xs font-medium truncate">{c.name}</p>
+                        <p className="text-gray-500 text-[10px] truncate">{getCarName(c.interestedCarId)}</p>
+                        {c.followUpRemark && <p className="text-gray-600 text-[10px] truncate italic">{c.followUpRemark}</p>}
+                      </div>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full ml-3 shrink-0 font-medium ${
+                        c.followUpDate! < today ? 'bg-red-500/15 text-red-400' : c.followUpDate === today ? 'bg-yellow-500/15 text-yellow-400' : 'bg-blue-500/15 text-blue-400'
+                      }`}>
+                        {c.followUpDate! < today ? 'Overdue' : c.followUpDate === today ? 'Today' : new Date(c.followUpDate! + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}
+                      </span>
+                    </button>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
           )}
         </div>

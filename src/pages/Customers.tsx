@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList, Truck, Upload, Lock, Skull, Clock, RotateCcw, MoreVertical } from 'lucide-react';
 import { useStore } from '../store';
@@ -62,6 +63,7 @@ const emptyForm = {
 };
 
 export default function Customers() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const customers = useStore((s) => s.customers);
   const cars = useStore((s) => s.cars);
   const users = useStore((s) => s.users);
@@ -185,6 +187,18 @@ export default function Customers() {
     setBankStatuses(apps);
     setShowInlineFollowup(false);
   }, [detailLead?.id]);
+
+  // Open customer detail from URL param (e.g. navigated from Follow Up List)
+  useEffect(() => {
+    const id = searchParams.get('id');
+    if (!id) return;
+    const customer = customers.find(c => c.id === id);
+    if (customer) {
+      setDetailLead(customer);
+      setDetailTab('details');
+      setSearchParams({}, { replace: true });
+    }
+  }, [customers, searchParams]);
 
   const myCustomers = useMemo(() =>
     customers
