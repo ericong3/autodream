@@ -372,7 +372,7 @@ export default function SalesDashboard() {
             <div className="w-6 h-6 bg-yellow-500/10 rounded-lg flex items-center justify-center">
               <Calendar size={13} className="text-yellow-400" />
             </div>
-            Follow-ups Due
+            Follow Up List
           </h2>
           {[...overdueFollowUps, ...followUpToday].length === 0 ? (
             <p className="text-gray-600 text-xs py-4 text-center">No urgent follow-ups</p>
