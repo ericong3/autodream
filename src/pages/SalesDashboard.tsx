@@ -686,24 +686,59 @@ export default function SalesDashboard() {
             </div>
 
             <div className="px-5 py-4 space-y-3">
-              {(() => {
-                const car = cars.find(c => c.id === followUpSelected.interestedCarId);
-                const rows: { label: string; value: string }[] = [
-                  { label: 'Interested Car', value: car ? `${car.year} ${car.make} ${car.model}${car.variant ? ` ${car.variant}` : ''}` : '—' },
-                  { label: 'Follow-up Remark', value: followUpSelected.followUpRemark || '—' },
-                  { label: 'Notes', value: followUpSelected.notes || '—' },
-                ];
-                return (
-                  <div className="space-y-2.5">
-                    {rows.map(({ label, value }) => (
-                      <div key={label}>
-                        <p className="text-gray-600 text-[10px] uppercase tracking-wider font-semibold mb-0.5">{label}</p>
-                        <p className={`text-sm ${value === '—' ? 'text-gray-700' : 'text-gray-200'}`}>{value}</p>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
+              {/* Interested Car — select */}
+              <div>
+                <p className="text-gray-600 text-[10px] uppercase tracking-wider font-semibold mb-0.5">Interested Car</p>
+                <select
+                  value={followUpSelected.interestedCarId || ''}
+                  onChange={e => {
+                    const val = e.target.value;
+                    updateCustomer(followUpSelected.id, { interestedCarId: val || undefined });
+                    setFollowUpSelected(s => s ? { ...s, interestedCarId: val || undefined } : s);
+                  }}
+                  className="w-full bg-transparent text-sm text-gray-200 border-b border-obsidian-400/40 hover:border-obsidian-400/70 focus:border-gold-500/60 outline-none py-1 transition-colors cursor-pointer appearance-none"
+                >
+                  <option value="" className="bg-obsidian-800 text-gray-400">— None —</option>
+                  {cars.filter(c => c.status === 'available' || c.status === 'coming_soon' || c.id === followUpSelected.interestedCarId).map(c => (
+                    <option key={c.id} value={c.id} className="bg-obsidian-800 text-gray-200">
+                      {c.year} {c.make} {c.model}{c.variant ? ` ${c.variant}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Follow-up Remark — single line */}
+              <div>
+                <p className="text-gray-600 text-[10px] uppercase tracking-wider font-semibold mb-0.5">Follow-up Remark</p>
+                <input
+                  type="text"
+                  defaultValue={followUpSelected.followUpRemark ?? ''}
+                  onBlur={e => {
+                    const val = e.target.value.trim();
+                    updateCustomer(followUpSelected.id, { followUpRemark: val || undefined });
+                    setFollowUpSelected(s => s ? { ...s, followUpRemark: val || undefined } : s);
+                  }}
+                  onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                  placeholder="What to follow up on..."
+                  className="w-full bg-transparent text-sm text-gray-200 placeholder-gray-700 border-b border-obsidian-400/40 hover:border-obsidian-400/70 focus:border-gold-500/60 outline-none py-1 transition-colors"
+                />
+              </div>
+
+              {/* Notes — multiline */}
+              <div>
+                <p className="text-gray-600 text-[10px] uppercase tracking-wider font-semibold mb-0.5">Notes</p>
+                <textarea
+                  defaultValue={followUpSelected.notes ?? ''}
+                  onBlur={e => {
+                    const val = e.target.value.trim();
+                    updateCustomer(followUpSelected.id, { notes: val || undefined });
+                    setFollowUpSelected(s => s ? { ...s, notes: val || undefined } : s);
+                  }}
+                  placeholder="Any notes..."
+                  rows={2}
+                  className="w-full bg-transparent text-sm text-gray-200 placeholder-gray-700 border-b border-obsidian-400/40 hover:border-obsidian-400/70 focus:border-gold-500/60 outline-none py-1 resize-none transition-colors"
+                />
+              </div>
 
               {/* Actions */}
               <div className="flex gap-2 pt-1">
