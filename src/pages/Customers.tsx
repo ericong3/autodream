@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList, Truck, Upload, Lock, Skull, Clock, RotateCcw, MoreVertical } from 'lucide-react';
 import { useStore } from '../store';
@@ -64,7 +64,6 @@ const emptyForm = {
 
 export default function Customers() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
   const customers = useStore((s) => s.customers);
   const cars = useStore((s) => s.cars);
   const users = useStore((s) => s.users);
@@ -162,7 +161,6 @@ export default function Customers() {
 
   // Detail drawer
   const [detailLead, setDetailLead] = useState<Customer | null>(null);
-  const [detailOpenedFromNav, setDetailOpenedFromNav] = useState(false);
   const [detailTab, setDetailTab] = useState<'details' | 'calculation' | 'postsale' | 'timeline'>('details');
   const [showDetailMenu, setShowDetailMenu] = useState(false);
   const [dragOffset, setDragOffset] = useState(0);
@@ -198,18 +196,11 @@ export default function Customers() {
     if (customer) {
       setDetailLead(customer);
       setDetailTab('details');
-      setDetailOpenedFromNav(true);
       setSearchParams({}, { replace: true });
     }
   }, [customers, searchParams]);
 
-  const closeDetail = () => {
-    setDetailLead(null);
-    if (detailOpenedFromNav) {
-      setDetailOpenedFromNav(false);
-      navigate(-1);
-    }
-  };
+  const closeDetail = () => setDetailLead(null);
 
   const myCustomers = useMemo(() =>
     customers

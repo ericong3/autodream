@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Car, Users, Calendar, Bell, ChevronDown, ChevronUp, AlertCircle, Plus, CheckCircle, Circle, Trash2, ChevronLeft, ChevronRight, Eye, EyeOff, Lock, RefreshCw, Skull, X, CalendarCheck } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Car, Users, Calendar, Bell, ChevronDown, ChevronUp, AlertCircle, Plus, CheckCircle, Circle, Trash2, ChevronLeft, ChevronRight, Eye, EyeOff, Lock, RefreshCw, Skull, X, CalendarCheck, Phone, MessageCircle, StickyNote } from 'lucide-react';
 import { useStore } from '../store';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
@@ -18,9 +18,8 @@ export default function SalesDashboard() {
   const deletePersonalReminder = useStore((s) => s.deletePersonalReminder);
   const updateTestDrive = useStore((s) => s.updateTestDrive);
   const updateCustomer = useStore((s) => s.updateCustomer);
-  const navigate = useNavigate();
-
   const [showFollowUpList, setShowFollowUpList] = useState(false);
+  const [followUpSelected, setFollowUpSelected] = useState<typeof customers[0] | null>(null);
   const [showCommission, setShowCommission] = useState(false);
   const [monthFilter, setMonthFilter] = useState(new Date().toISOString().slice(0, 7));
 
@@ -393,7 +392,7 @@ export default function SalesDashboard() {
                   {followUpList.map(c => (
                     <button
                       key={c.id}
-                      onClick={() => navigate(`/customers?id=${c.id}`)}
+                      onClick={() => setFollowUpSelected(c)}
                       className="w-full flex items-center justify-between px-4 py-3 hover:bg-obsidian-700/40 transition-colors text-left"
                     >
                       <div className="min-w-0 flex-1">
@@ -665,6 +664,83 @@ export default function SalesDashboard() {
           </div>
         )}
       </Modal>
+
+      {/* Follow-up customer quick-view sheet */}
+      {followUpSelected && createPortal(
+        <div className="fixed inset-0 z-[500] flex flex-col justify-end sm:justify-center sm:items-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setFollowUpSelected(null)} />
+          <div className="relative w-full sm:max-w-sm bg-gradient-to-b from-obsidian-700 to-obsidian-800 border-t border-x sm:border border-obsidian-400/80 rounded-t-2xl sm:rounded-2xl shadow-[0_-20px_60px_rgba(0,0,0,0.7)] overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-[2px] bg-gold-gradient opacity-80" />
+            {/* drag handle */}
+            <div className="flex justify-center pt-3 pb-1 sm:hidden"><div className="w-8 h-1 bg-obsidian-400/60 rounded-full" /></div>
+
+            {/* Header */}
+            <div className="flex items-start justify-between px-5 pt-3 pb-4 border-b border-obsidian-400/40">
+              <div className="min-w-0 flex-1">
+                <p className="text-white font-bold text-base truncate">{followUpSelected.name}</p>
+                <p className="text-gray-500 text-xs mt-0.5">{followUpSelected.phone}</p>
+              </div>
+              <button onClick={() => setFollowUpSelected(null)} className="p-2 text-gray-500 hover:text-white rounded-xl hover:bg-obsidian-600/60 transition-colors shrink-0 touch-manipulation ml-2">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-3">
+              {/* Car */}
+              {(() => {
+                const car = cars.find(c => c.id === followUpSelected.interestedCarId);
+                return car ? (
+                  <div className="flex items-center gap-2">
+                    <Car size={13} className="text-gold-400 shrink-0" />
+                    <span className="text-gold-300 text-sm">{car.year} {car.make} {car.model}{car.variant ? ` ${car.variant}` : ''}</span>
+                  </div>
+                ) : null;
+              })()}
+
+              {/* Follow-up remark */}
+              {followUpSelected.followUpRemark && (
+                <div className="flex items-start gap-2">
+                  <StickyNote size={13} className="text-yellow-400 shrink-0 mt-0.5" />
+                  <span className="text-gray-300 text-sm">{followUpSelected.followUpRemark}</span>
+                </div>
+              )}
+
+              {/* Notes */}
+              {followUpSelected.notes && (
+                <div className="flex items-start gap-2">
+                  <StickyNote size={13} className="text-gray-500 shrink-0 mt-0.5" />
+                  <span className="text-gray-500 text-xs">{followUpSelected.notes}</span>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-2 pt-1">
+                <a
+                  href={`https://wa.me/6${followUpSelected.phone.replace(/\D/g, '')}`}
+                  target="_blank" rel="noreferrer"
+                  className="flex items-center gap-1.5 px-4 py-2.5 text-sm text-green-400 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 rounded-xl font-medium transition-colors touch-manipulation"
+                >
+                  <MessageCircle size={14} /> WhatsApp
+                </a>
+                <a
+                  href={`tel:${followUpSelected.phone}`}
+                  className="flex items-center gap-1.5 px-4 py-2.5 text-sm text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-xl font-medium transition-colors touch-manipulation"
+                >
+                  <Phone size={14} /> Call
+                </a>
+                <button
+                  onClick={() => { updateCustomer(followUpSelected.id, { followUpDate: undefined }); setFollowUpSelected(null); }}
+                  className="ml-auto flex items-center gap-1.5 px-3 py-2.5 text-xs text-gray-500 hover:text-red-400 bg-obsidian-700/50 hover:bg-red-500/10 border border-obsidian-500/30 hover:border-red-500/30 rounded-xl transition-colors touch-manipulation"
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+            <div style={{ height: 'env(safe-area-inset-bottom, 0px)' }} />
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
