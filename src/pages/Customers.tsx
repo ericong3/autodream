@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList, Truck, Upload, Lock, Skull, Clock, RotateCcw, MoreVertical } from 'lucide-react';
 import { useStore } from '../store';
@@ -64,6 +64,7 @@ const emptyForm = {
 
 export default function Customers() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const customers = useStore((s) => s.customers);
   const cars = useStore((s) => s.cars);
   const users = useStore((s) => s.users);
@@ -161,6 +162,7 @@ export default function Customers() {
 
   // Detail drawer
   const [detailLead, setDetailLead] = useState<Customer | null>(null);
+  const [detailOpenedFromNav, setDetailOpenedFromNav] = useState(false);
   const [detailTab, setDetailTab] = useState<'details' | 'calculation' | 'postsale' | 'timeline'>('details');
   const [showDetailMenu, setShowDetailMenu] = useState(false);
   const [dragOffset, setDragOffset] = useState(0);
@@ -196,9 +198,18 @@ export default function Customers() {
     if (customer) {
       setDetailLead(customer);
       setDetailTab('details');
+      setDetailOpenedFromNav(true);
       setSearchParams({}, { replace: true });
     }
   }, [customers, searchParams]);
+
+  const closeDetail = () => {
+    setDetailLead(null);
+    if (detailOpenedFromNav) {
+      setDetailOpenedFromNav(false);
+      navigate(-1);
+    }
+  };
 
   const myCustomers = useMemo(() =>
     customers
@@ -1545,7 +1556,7 @@ export default function Customers() {
         return createPortal(
           <>
             <style>{`@keyframes drawerSpring{from{transform:translateY(100%)}80%{transform:translateY(-6px)}100%{transform:translateY(0)}} @media (max-width:639px){.cust-drawer-wrap{padding-bottom:calc(4rem + env(safe-area-inset-bottom,0px))}} @media (min-width:640px){.cust-drawer-wrap{padding-bottom:0}}`}</style>
-            <div className="fixed inset-0 z-[400] bg-black/70 backdrop-blur-sm" onClick={() => { setDetailLead(null); }} />
+            <div className="fixed inset-0 z-[400] bg-black/70 backdrop-blur-sm" onClick={closeDetail} />
             <div className="fixed inset-0 z-[400] flex items-end sm:items-center pointer-events-none cust-drawer-wrap">
               <div className="w-full sm:p-4 flex sm:justify-center">
                 <div
@@ -1563,7 +1574,7 @@ export default function Customers() {
                     className="flex justify-center pt-3 pb-1 sm:hidden shrink-0 cursor-grab active:cursor-grabbing"
                     onTouchStart={e => { dragStartY.current = e.touches[0].clientY; setIsDragging(true); }}
                     onTouchMove={e => { const d = Math.max(0, e.touches[0].clientY - dragStartY.current); setDragOffset(d); }}
-                    onTouchEnd={() => { setIsDragging(false); if (dragOffset > 90) { setDetailLead(null); } setDragOffset(0); }}
+                    onTouchEnd={() => { setIsDragging(false); if (dragOffset > 90) { closeDetail(); } setDragOffset(0); }}
                   >
                     <div className="w-10 h-1 bg-obsidian-500/60 rounded-full" />
                   </div>
@@ -1663,7 +1674,7 @@ export default function Customers() {
                             )}
                           </div>
                         )}
-                        <button onClick={() => { setDetailLead(null); setShowDetailMenu(false); }} className="p-2 text-gray-500 hover:text-white hover:bg-obsidian-600/60 rounded-xl transition-colors shrink-0 touch-manipulation">
+                        <button onClick={() => { closeDetail(); setShowDetailMenu(false); }} className="p-2 text-gray-500 hover:text-white hover:bg-obsidian-600/60 rounded-xl transition-colors shrink-0 touch-manipulation">
                           <X size={16} />
                         </button>
                       </div>
