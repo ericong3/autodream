@@ -1082,6 +1082,22 @@ export default function Customers() {
                     <button onClick={() => handleWhatsApp(c.phone, c.name)} className="flex items-center gap-1.5 px-3 py-2 text-xs text-green-400 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 hover:border-green-500/40 rounded-lg transition-colors font-medium touch-manipulation">
                       <MessageCircle size={13} />WA
                     </button>
+                    {(() => {
+                      const inList = c.followUpDate && c.followUpDate <= todayStr;
+                      return (
+                        <button
+                          onClick={() => updateCustomer(c.id, { followUpDate: inList ? undefined : todayStr })}
+                          className={`flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg transition-colors font-medium touch-manipulation border ${
+                            inList
+                              ? 'text-yellow-400 bg-yellow-500/15 border-yellow-500/30'
+                              : 'text-gray-500 bg-obsidian-700/40 border-obsidian-500/30 hover:text-yellow-400 hover:bg-yellow-500/10 hover:border-yellow-500/30'
+                          }`}
+                        >
+                          <CalendarCheck size={13} />
+                          {inList ? 'In List' : 'Follow Up'}
+                        </button>
+                      );
+                    })()}
                     {!isShareHolder && (
                       <div className="ml-auto flex items-center gap-1">
                         <button onClick={() => openEdit(c)} className="p-2 text-gray-600 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors touch-manipulation">
