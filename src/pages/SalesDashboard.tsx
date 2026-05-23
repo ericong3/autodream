@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Car, Users, Calendar, Bell, ChevronDown, ChevronUp, AlertCircle, Plus, CheckCircle, Circle, Trash2, ChevronLeft, ChevronRight, Eye, EyeOff, Lock, RefreshCw, Skull, X, CalendarCheck, Phone, MessageCircle, StickyNote } from 'lucide-react';
+import { Car, Users, Calendar, Bell, ChevronDown, ChevronUp, AlertCircle, Plus, CheckCircle, Circle, Trash2, ChevronLeft, ChevronRight, Eye, EyeOff, Lock, RefreshCw, Skull, X, CalendarCheck, Phone, MessageCircle } from 'lucide-react';
 import { useStore } from '../store';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
