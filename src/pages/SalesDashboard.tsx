@@ -686,32 +686,24 @@ export default function SalesDashboard() {
             </div>
 
             <div className="px-5 py-4 space-y-3">
-              {/* Car */}
               {(() => {
                 const car = cars.find(c => c.id === followUpSelected.interestedCarId);
-                return car ? (
-                  <div className="flex items-center gap-2">
-                    <Car size={13} className="text-gold-400 shrink-0" />
-                    <span className="text-gold-300 text-sm">{car.year} {car.make} {car.model}{car.variant ? ` ${car.variant}` : ''}</span>
+                const rows: { label: string; value: string }[] = [
+                  { label: 'Interested Car', value: car ? `${car.year} ${car.make} ${car.model}${car.variant ? ` ${car.variant}` : ''}` : '—' },
+                  { label: 'Follow-up Remark', value: followUpSelected.followUpRemark || '—' },
+                  { label: 'Notes', value: followUpSelected.notes || '—' },
+                ];
+                return (
+                  <div className="space-y-2.5">
+                    {rows.map(({ label, value }) => (
+                      <div key={label}>
+                        <p className="text-gray-600 text-[10px] uppercase tracking-wider font-semibold mb-0.5">{label}</p>
+                        <p className={`text-sm ${value === '—' ? 'text-gray-700' : 'text-gray-200'}`}>{value}</p>
+                      </div>
+                    ))}
                   </div>
-                ) : null;
+                );
               })()}
-
-              {/* Follow-up remark */}
-              {followUpSelected.followUpRemark && (
-                <div className="flex items-start gap-2">
-                  <StickyNote size={13} className="text-yellow-400 shrink-0 mt-0.5" />
-                  <span className="text-gray-300 text-sm">{followUpSelected.followUpRemark}</span>
-                </div>
-              )}
-
-              {/* Notes */}
-              {followUpSelected.notes && (
-                <div className="flex items-start gap-2">
-                  <StickyNote size={13} className="text-gray-500 shrink-0 mt-0.5" />
-                  <span className="text-gray-500 text-xs">{followUpSelected.notes}</span>
-                </div>
-              )}
 
               {/* Actions */}
               <div className="flex gap-2 pt-1">
