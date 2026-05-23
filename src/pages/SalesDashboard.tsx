@@ -114,7 +114,13 @@ export default function SalesDashboard() {
     return 'upcoming';
   };
 
-  const mySoldCars = useMemo(() => cars.filter(c => c.status === 'delivered' && c.assignedSalesperson === myId), [cars, myId]);
+  const mySoldCars = useMemo(() => cars.filter(c => {
+    if (c.status !== 'delivered') return false;
+    if (c.assignedSalesperson === myId) return true;
+    // Fall back to buyer's assignedSalesId when car.assignedSalesperson wasn't stamped
+    const buyer = customers.find(cu => cu.interestedCarId === c.id && (cu.loanWorkOrder || cu.cashWorkOrder));
+    return buyer?.assignedSalesId === myId;
+  }), [cars, customers, myId]);
   const mySoldCarsMonth = useMemo(() => mySoldCars.filter(c => getSaleDate(c).startsWith(monthFilter)), [mySoldCars, monthFilter, customers]);
   const totalCommission = useMemo(() => mySoldCars.reduce((s, c) => s + calcDealCommission(c), 0), [mySoldCars, customers, repairs]);
   const monthCommission = useMemo(() => mySoldCarsMonth.reduce((s, c) => s + calcDealCommission(c), 0), [mySoldCarsMonth, customers, repairs]);

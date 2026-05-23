@@ -214,7 +214,7 @@ function ruleBasedResponse(
   const brands = ['perodua', 'proton', 'honda', 'toyota', 'nissan', 'mercedes', 'bmw', 'mazda', 'mitsubishi'];
   for (const brand of brands) {
     if (q.includes(brand)) {
-      const brandCars = cars.filter((c) => c.make.toLowerCase() === brand);
+      const brandCars = cars.filter((c) => (c.make ?? '').toLowerCase() === brand);
       if (brandCars.length === 0) return `No ${brand.charAt(0).toUpperCase() + brand.slice(1)} cars in inventory.`;
       return `**${brandCars.length} ${brand.charAt(0).toUpperCase() + brand.slice(1)} car${brandCars.length !== 1 ? 's' : ''}**:\n${brandCars.map((c) => `• ${c.year} ${c.model} — ${formatRM(c.sellingPrice)} (${c.status})`).join('\n')}`;
     }

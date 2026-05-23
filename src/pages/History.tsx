@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { thumbUrl } from '../utils/photoUrl';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -18,12 +18,104 @@ import {
   Building2,
   HeartHandshake,
 } from 'lucide-react';
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  pointerWithin,
+  useDroppable,
+  type CollisionDetection,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  rectSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { Car } from '../types';
+import { formatRM as _formatRM } from '../utils/format';
 import Modal from '../components/Modal';
 import { useStore } from '../store';
 import { formatRM, formatMileage, shortName } from '../utils/format';
 import StatCard from '../components/StatCard';
 import { CarDetailContent } from './CarDetail';
 import { SkeletonCard, SkeletonRow } from '../components/Skeleton';
+
+// ── Drag helpers ─────────────────────────────────────────────────────────────
+
+function SortableCarItem({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.2 : 1,
+        touchAction: 'none',
+        userSelect: 'none',
+      }}
+      {...attributes}
+      {...listeners}
+      className="touch-none cursor-grab active:cursor-grabbing"
+      onDragStart={(e) => e.preventDefault()}
+    >
+      {children}
+    </div>
+  );
+}
+
+function DragGhostCard({ car }: { car: Car }) {
+  const photo = car.photos?.[0] || car.photo;
+  return (
+    <div
+      className="bg-obsidian-900 rounded-xl overflow-hidden shadow-2xl border border-gold-500/50 pointer-events-none"
+      style={{ width: 220, transform: 'rotate(2deg) scale(1.05)' }}
+    >
+      <div className="relative h-28">
+        {photo
+          ? <img src={photo} alt="" className="w-full h-full object-cover" />
+          : <div className="w-full h-full bg-obsidian-800 flex items-center justify-center"><CarIcon size={28} className="text-gray-700" /></div>
+        }
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+        <div className="absolute bottom-0 left-0 right-0 p-2.5">
+          <p className="text-white text-xs font-semibold line-clamp-1">{car.year} {car.make} {car.model}</p>
+          <p className="text-gold-400 text-xs font-bold mt-0.5">{_formatRM(car.sellingPrice)}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MonthDropZone({ id, onClick, children, isDragActive }: {
+  id: string;
+  onClick: () => void;
+  children: React.ReactNode;
+  isDragActive: boolean;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <div ref={setNodeRef}>
+      <button
+        onClick={onClick}
+        className={`px-3 py-2.5 transition-all duration-150 ${
+          isOver
+            ? 'text-white bg-gold-500 scale-125'
+            : isDragActive
+            ? 'text-gold-400 bg-gold-500/20'
+            : 'text-gray-400 hover:text-white hover:bg-obsidian-500/60'
+        }`}
+      >
+        {children}
+      </button>
+    </div>
+  );
+}
 
 // ── Select helper ─────────────────────────────────────────────────────────────
 function Select({ value, onChange, options, labels, placeholder }: {
@@ -66,6 +158,14 @@ export default function History() {
   const [search, setSearch] = useState('');
   const [monthFilter, setMonthFilter] = useState<string>(new Date().toISOString().slice(0, 7));
   const [initialLoad, setInitialLoad] = useState(true);
+  const [dragActiveId, setDragActiveId] = useState<string | null>(null);
+  const [cardOrder, setCardOrder] = useState<string[]>([]);
+  const dragActiveRef = useRef(false);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor,   { activationConstraint: { delay: 250, tolerance: 8 } }),
+  );
 
   useEffect(() => {
     const t = setTimeout(() => setInitialLoad(false), 500);
@@ -89,15 +189,29 @@ export default function History() {
       const q = search.toLowerCase();
       result = result.filter(
         (c) =>
-          c.make.toLowerCase().includes(q) ||
-          c.model.toLowerCase().includes(q) ||
-          c.colour.toLowerCase().includes(q) ||
+          (c.make ?? '').toLowerCase().includes(q) ||
+          (c.model ?? '').toLowerCase().includes(q) ||
+          (c.colour ?? '').toLowerCase().includes(q) ||
           String(c.year).includes(q) ||
           (c.carPlate ?? '').toLowerCase().includes(q)
       );
     }
     return result.sort((a, b) => new Date(b.finalDeal?.submittedAt ?? b.dateAdded).getTime() - new Date(a.finalDeal?.submittedAt ?? a.dateAdded).getTime());
   }, [cars, search, monthFilter, filterMake]);
+
+  // Sync drag order — preserve manual order, only add/remove changed cars
+  useEffect(() => {
+    setCardOrder(prev => {
+      const ids = soldCars.map(c => c.id);
+      const set = new Set(ids);
+      return [...prev.filter(id => set.has(id)), ...ids.filter(id => !prev.includes(id))];
+    });
+  }, [soldCars]);
+
+  const orderedCars = useMemo(
+    () => cardOrder.map(id => soldCars.find(c => c.id === id)).filter(Boolean) as typeof soldCars,
+    [soldCars, cardOrder],
+  );
 
   const carCalcMap = useMemo(() => {
     const map: Record<string, { dealNetPrice: number; profit: number }> = {};
@@ -158,7 +272,55 @@ export default function History() {
     );
   }
 
+  // Collision: pointer-within month zones takes priority, then closestCenter for grid
+  const collisionDetection: CollisionDetection = (args) => {
+    const monthHits = pointerWithin({
+      ...args,
+      droppableContainers: args.droppableContainers.filter(
+        c => c.id === 'prev-month' || c.id === 'next-month'
+      ),
+    });
+    if (monthHits.length > 0) return monthHits;
+    return closestCenter(args);
+  };
+
+  const handleDragEnd = (e: Parameters<NonNullable<React.ComponentProps<typeof DndContext>['onDragEnd']>>[0]) => {
+    dragActiveRef.current = false;
+    setDragActiveId(null);
+    const { active, over } = e;
+    if (!over) return;
+
+    if (over.id === 'prev-month' || over.id === 'next-month') {
+      const car = cars.find(c => c.id === active.id as string);
+      if (!car) return;
+      const dir = over.id === 'next-month' ? 1 : -1;
+      const [y, m] = monthFilter.split('-').map(Number);
+      const target = new Date(y, m - 1 + dir, 1);
+      const iso = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-01T00:00:00.000Z`;
+      if (car.finalDeal) {
+        updateCar(car.id, { finalDeal: { ...car.finalDeal, submittedAt: iso } });
+      } else {
+        updateCar(car.id, { dateAdded: iso.split('T')[0] });
+      }
+      return;
+    }
+
+    if (active.id === over.id) return;
+    setCardOrder(prev => {
+      const oi = prev.indexOf(active.id as string);
+      const ni = prev.indexOf(over.id as string);
+      return (oi >= 0 && ni >= 0) ? arrayMove(prev, oi, ni) : prev;
+    });
+  };
+
   return (
+  <DndContext
+    sensors={sensors}
+    collisionDetection={collisionDetection}
+    onDragStart={(e) => { dragActiveRef.current = true; setDragActiveId(e.active.id as string); }}
+    onDragEnd={handleDragEnd}
+    onDragCancel={() => { dragActiveRef.current = false; setDragActiveId(null); }}
+  >
     <div className="space-y-5">
       {/* Stat cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -184,13 +346,13 @@ export default function History() {
 
           {/* Month navigator */}
           <div className="flex items-center border border-obsidian-400/60 rounded-lg overflow-hidden" style={{ background: '#0E0D0B' }}>
-            <button onClick={() => shiftMonth(-1)} className="px-2.5 py-2.5 text-gray-400 hover:text-white hover:bg-obsidian-500/60 transition-colors">
+            <MonthDropZone id="prev-month" onClick={() => shiftMonth(-1)} isDragActive={!!dragActiveId}>
               <ChevronLeft size={16} />
-            </button>
+            </MonthDropZone>
             <span className="px-3 text-sm text-white font-medium whitespace-nowrap">{monthLabel}</span>
-            <button onClick={() => shiftMonth(1)} className="px-2.5 py-2.5 text-gray-400 hover:text-white hover:bg-obsidian-500/60 transition-colors">
+            <MonthDropZone id="next-month" onClick={() => shiftMonth(1)} isDragActive={!!dragActiveId}>
               <ChevronRight size={16} />
-            </button>
+            </MonthDropZone>
           </div>
 
           {/* Make filter */}
@@ -262,14 +424,15 @@ export default function History() {
 
       {/* ── Grid view ── */}
       {!initialLoad && view === 'grid' && soldCars.length > 0 && (
+        <SortableContext items={orderedCars.map(c => c.id)} strategy={rectSortingStrategy}>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {soldCars.map((car, idx) => {
+          {orderedCars.map((car, idx) => {
             const dealPrice = carCalcMap[car.id]?.dealNetPrice ?? car.sellingPrice;
             const profit = carCalcMap[car.id]?.profit;
             const staggerCls = `stagger-enter stagger-${Math.min(idx + 1, 12)}`;
             return (
+              <SortableCarItem key={car.id} id={car.id}>
               <div
-                key={car.id}
                 onClick={() => navigate(`/history/${car.id}`)}
                 className={`relative bg-obsidian-900 rounded-xl overflow-hidden cursor-pointer aspect-[4/3] shadow-card border border-obsidian-400/50 hover:border-gold-500/30 transition-colors duration-300 group card-lift card-streak ${staggerCls}`}
               >
@@ -364,9 +527,11 @@ export default function History() {
                   })()}
                 </div>
               </div>
+              </SortableCarItem>
             );
           })}
         </div>
+        </SortableContext>
       )}
 
       {/* ── List view ── */}
@@ -521,5 +686,9 @@ export default function History() {
         </div>
       </Modal>
     </div>
+    <DragOverlay dropAnimation={{ duration: 150, easing: 'ease' }}>
+      {dragActiveId && (() => { const c = cars.find(x => x.id === dragActiveId); return c ? <DragGhostCard car={c} /> : null; })()}
+    </DragOverlay>
+  </DndContext>
   );
 }

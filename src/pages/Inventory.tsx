@@ -22,10 +22,31 @@ import {
   ClipboardList,
   Edit2,
   Check,
+  Lock,
+  CheckCircle,
+  XCircle,
+  RotateCcw,
+  Calendar,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
-import { Car, Customer, LoanWorkOrder, CashWorkOrder } from '../types';
+import { Car, Customer, LoanWorkOrder, CashWorkOrder, PostSaleChecklist } from '../types';
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  rectSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, formatMileage, generateId } from '../utils/format';
@@ -89,6 +110,54 @@ const emptyForm: Omit<Car, 'id' | 'dateAdded'> = {
   intakeCommission: undefined,
 };
 
+// ── Drag helpers ─────────────────────────────────────────────────────────────
+
+function SortableCarItem({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.2 : 1,
+        touchAction: 'none',    // must be inline — Tailwind class alone can miss iOS
+        userSelect: 'none',     // prevent text selection fighting the drag
+      }}
+      {...attributes}
+      {...listeners}
+      className="touch-none cursor-grab active:cursor-grabbing"
+      onDragStart={(e) => e.preventDefault()}   // block browser native image/element drag
+    >
+      {children}
+    </div>
+  );
+}
+
+function DragGhostCard({ car }: { car: Car }) {
+  const photo = car.photos?.[0] || car.photo;
+  return (
+    <div
+      className="bg-obsidian-900 rounded-xl overflow-hidden shadow-2xl border border-gold-500/50 pointer-events-none"
+      style={{ width: 220, transform: 'rotate(2deg) scale(1.05)' }}
+    >
+      <div className="relative h-28">
+        {photo
+          ? <img src={photo} alt="" className="w-full h-full object-cover" />
+          : <div className="w-full h-full bg-obsidian-800 flex items-center justify-center"><CarIcon size={28} className="text-gray-700" /></div>
+        }
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+        <div className="absolute bottom-0 left-0 right-0 p-2.5">
+          <p className="text-white text-xs font-semibold line-clamp-1">{car.year} {car.make} {car.model}</p>
+          <p className="text-gold-400 text-xs font-bold mt-0.5">{formatRM(car.sellingPrice)}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function Inventory() {
   const cars = useStore((s) => s.cars);
   const users = useStore((s) => s.users);
@@ -137,10 +206,23 @@ export default function Inventory() {
   const [showModal, setShowModal] = useState(false);
   const [deleteCarId, setDeleteCarId] = useState<string | null>(null);
   const [woViewCar, setWoViewCar] = useState<{ car: Car; buyer: Customer } | null>(null);
+  const [reviewDealCar, setReviewDealCar] = useState<Car | null>(null);
   const [woEditMode, setWoEditMode] = useState(false);
   const [woEditData, setWoEditData] = useState<Record<string, any>>({});
   const [woSaving, setWoSaving] = useState(false);
+  const [woCancelConfirm, setWoCancelConfirm] = useState(false);
+  const [woDeliveryConfirm, setWoDeliveryConfirm] = useState(false);
+  const [woTab, setWoTab] = useState<'deal' | 'postsale'>('deal');
   const [form, setForm] = useState(emptyForm);
+  const [dragActiveId, setDragActiveId] = useState<string | null>(null);
+  const [stockOrder, setStockOrder] = useState<string[]>([]);
+  const [comingSoonOrder, setComingSoonOrder] = useState<string[]>([]);
+  const [pendingOrder, setPendingOrder] = useState<string[]>([]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor,   { activationConstraint: { delay: 250, tolerance: 8 } }),
+  );
 
   // Swipe to change tab (mobile) — document-level listeners bypass browser scroll interception
   const TAB_ORDER = ['stock', 'coming_soon', 'pending_delivery'] as const;
@@ -148,6 +230,7 @@ export default function Inventory() {
   const swipeStartY = useRef<number | null>(null);
   const inventoryTabRef = useRef(inventoryTab);
   inventoryTabRef.current = inventoryTab;
+  const dragActiveRef = useRef(false);
   useEffect(() => {
     const onStart = (e: TouchEvent) => {
       swipeStartX.current = e.touches[0].clientX;
@@ -162,6 +245,8 @@ export default function Inventory() {
       if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy)) return;
       // Don't swipe when a modal/sheet is open (z-[500] portals)
       if (document.querySelector('[data-modal-open]')) return;
+      // Don't swipe when a card drag is in progress
+      if (dragActiveRef.current) return;
       const idx = TAB_ORDER.indexOf(inventoryTabRef.current);
       if (dx > 0 && idx < TAB_ORDER.length - 1) {
         const next = TAB_ORDER[idx + 1];
@@ -378,6 +463,34 @@ export default function Inventory() {
     return result;
   }, [cars, search, filterMake, filterTransmission, filterStatus, sortBy]);
 
+  // Sync drag-order arrays — preserve user-defined order, only add/remove changed cars
+  useEffect(() => {
+    setStockOrder(prev => {
+      const ids = filtered.map(c => c.id);
+      const set = new Set(ids);
+      return [...prev.filter(id => set.has(id)), ...ids.filter(id => !prev.includes(id))];
+    });
+  }, [filtered]);
+  useEffect(() => {
+    setComingSoonOrder(prev => {
+      const ids = comingSoonFiltered.map(c => c.id);
+      const set = new Set(ids);
+      return [...prev.filter(id => set.has(id)), ...ids.filter(id => !prev.includes(id))];
+    });
+  }, [comingSoonFiltered]);
+  useEffect(() => {
+    setPendingOrder(prev => {
+      const ids = pendingDelivery.map(c => c.id);
+      const set = new Set(ids);
+      return [...prev.filter(id => set.has(id)), ...ids.filter(id => !prev.includes(id))];
+    });
+  }, [pendingDelivery]);
+
+  // Ordered views: use manual drag order, mapping back to car objects
+  const filteredOrdered   = useMemo(() => stockOrder.map(id => filtered.find(c => c.id === id)).filter(Boolean) as Car[], [filtered, stockOrder]);
+  const comingSoonOrdered = useMemo(() => comingSoonOrder.map(id => comingSoonFiltered.find(c => c.id === id)).filter(Boolean) as Car[], [comingSoonFiltered, comingSoonOrder]);
+  const pendingOrdered    = useMemo(() => pendingOrder.map(id => pendingDelivery.find(c => c.id === id)).filter(Boolean) as Car[], [pendingDelivery, pendingOrder]);
+
   const isComingSoon = form.status === 'coming_soon';
 
   const handleSubmit = async () => {
@@ -551,21 +664,39 @@ export default function Inventory() {
               <p className="text-gray-500 text-sm mt-1.5">Cars with a submitted work order will appear here</p>
             </div>
           ) : view === 'grid' ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {pendingDelivery.map((car) => {
-                  const buyer = customers.find(c => c.interestedCarId === car.id && (c.loanWorkOrder || c.cashWorkOrder));
-                  const isLoan = !!buyer?.loanWorkOrder;
-                  const wo = buyer?.loanWorkOrder ?? buyer?.cashWorkOrder;
-                  const daysPending = car.finalDeal?.submittedAt
-                    ? Math.floor((Date.now() - new Date(car.finalDeal.submittedAt).getTime()) / 86400000)
-                    : null;
-                  const needsApproval = car.finalDeal?.approvalStatus === 'pending';
-                  return (
-                    <div
-                      key={car.id}
-                      onClick={() => navigate(`/inventory/${car.id}`)}
-                      className="bg-card-gradient border border-green-500/30 hover:border-green-400/60 rounded-xl shadow-card overflow-hidden cursor-pointer hover:shadow-xl transition-all group"
-                    >
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={(e) => { dragActiveRef.current = true; setDragActiveId(e.active.id as string); }}
+              onDragEnd={(e) => {
+                dragActiveRef.current = false;
+                setDragActiveId(null);
+                const { active, over } = e;
+                if (!over || active.id === over.id) return;
+                setPendingOrder(prev => {
+                  const oi = prev.indexOf(active.id as string);
+                  const ni = prev.indexOf(over.id as string);
+                  return (oi >= 0 && ni >= 0) ? arrayMove(prev, oi, ni) : prev;
+                });
+              }}
+              onDragCancel={() => { dragActiveRef.current = false; setDragActiveId(null); }}
+            >
+              <SortableContext items={pendingOrdered.map(c => c.id)} strategy={rectSortingStrategy}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {pendingOrdered.map((car) => {
+                    const buyer = customers.find(c => c.interestedCarId === car.id && (c.loanWorkOrder || c.cashWorkOrder));
+                    const isLoan = !!buyer?.loanWorkOrder;
+                    const wo = buyer?.loanWorkOrder ?? buyer?.cashWorkOrder;
+                    const daysPending = car.finalDeal?.submittedAt
+                      ? Math.floor((Date.now() - new Date(car.finalDeal.submittedAt).getTime()) / 86400000)
+                      : null;
+                    const needsApproval = car.finalDeal?.approvalStatus === 'pending';
+                    return (
+                      <SortableCarItem key={car.id} id={car.id}>
+                        <div
+                          onClick={() => navigate(`/inventory/${car.id}`)}
+                          className="bg-card-gradient border border-green-500/30 hover:border-green-400/60 rounded-xl shadow-card overflow-hidden cursor-pointer hover:shadow-xl transition-all group"
+                        >
                       {/* Photo */}
                       <div className="h-36 bg-obsidian-700/60 flex items-center justify-center relative">
                         {car.photo ? (
@@ -613,7 +744,15 @@ export default function Inventory() {
                               {daysPending === 0 ? 'Today' : `${daysPending}d ago`}
                             </div>
                           )}
-                          {buyer && (
+                          {isDirector && car.finalDeal && car.finalDeal.approvalStatus !== 'approved' ? (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); buyer ? setWoViewCar({ car, buyer }) : setReviewDealCar(car); }}
+                              className="w-full mt-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-400 text-xs font-semibold transition-colors touch-manipulation"
+                            >
+                              <AlertCircle size={12} />
+                              Review Deal
+                            </button>
+                          ) : buyer && (
                             <button
                               onClick={(e) => { e.stopPropagation(); setWoViewCar({ car, buyer }); }}
                               className="w-full mt-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-green-500/15 hover:bg-green-500/25 border border-green-500/30 text-green-400 text-xs font-semibold transition-colors touch-manipulation"
@@ -624,10 +763,16 @@ export default function Inventory() {
                           )}
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                        </div>
+                      </SortableCarItem>
+                    );
+                  })}
+                </div>
+              </SortableContext>
+              <DragOverlay dropAnimation={{ duration: 150, easing: 'ease' }}>
+                {dragActiveId && (() => { const c = cars.find(x => x.id === dragActiveId); return c ? <DragGhostCard car={c} /> : null; })()}
+              </DragOverlay>
+            </DndContext>
             ) : (
               <div className="space-y-3">
                 {pendingDelivery.map((car) => {
@@ -687,7 +832,15 @@ export default function Inventory() {
                             </span>
                           )}
                         </div>
-                        {buyer && (
+                        {isDirector && car.finalDeal && car.finalDeal.approvalStatus !== 'approved' ? (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setReviewDealCar(car); }}
+                            className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-400 text-xs font-semibold transition-colors touch-manipulation"
+                          >
+                            <AlertCircle size={12} />
+                            Review Deal
+                          </button>
+                        ) : buyer && (
                           <button
                             onClick={(e) => { e.stopPropagation(); setWoViewCar({ car, buyer }); }}
                             className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-green-500/15 hover:bg-green-500/25 border border-green-500/30 text-green-400 text-xs font-semibold transition-colors touch-manipulation"
@@ -715,11 +868,30 @@ export default function Inventory() {
               <p className="text-gray-500 text-sm mt-1">Add a car and mark it as Coming Soon</p>
             </div>
           ) : view === 'grid' ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {comingSoonFiltered.map((car) => {
-                const inv = car.investorId ? users.find(u => u.id === car.investorId) : null;
-                return (
-                  <div key={car.id} className="relative group/card">
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={(e) => { dragActiveRef.current = true; setDragActiveId(e.active.id as string); }}
+              onDragEnd={(e) => {
+                dragActiveRef.current = false;
+                setDragActiveId(null);
+                const { active, over } = e;
+                if (!over || active.id === over.id) return;
+                setComingSoonOrder(prev => {
+                  const oi = prev.indexOf(active.id as string);
+                  const ni = prev.indexOf(over.id as string);
+                  return (oi >= 0 && ni >= 0) ? arrayMove(prev, oi, ni) : prev;
+                });
+              }}
+              onDragCancel={() => { dragActiveRef.current = false; setDragActiveId(null); }}
+            >
+              <SortableContext items={comingSoonOrdered.map(c => c.id)} strategy={rectSortingStrategy}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {comingSoonOrdered.map((car) => {
+                    const inv = car.investorId ? users.find(u => u.id === car.investorId) : null;
+                    return (
+                      <SortableCarItem key={car.id} id={car.id}>
+                        <div className="relative group/card">
                     {isDirector && (
                       <button
                         onClick={(e) => { e.stopPropagation(); setDeleteCarId(car.id); }}
@@ -787,10 +959,16 @@ export default function Inventory() {
                         </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                      </div>
+                      </SortableCarItem>
+                    );
+                  })}
+                </div>
+              </SortableContext>
+              <DragOverlay dropAnimation={{ duration: 150, easing: 'ease' }}>
+                {dragActiveId && (() => { const c = cars.find(x => x.id === dragActiveId); return c ? <DragGhostCard car={c} /> : null; })()}
+              </DragOverlay>
+            </DndContext>
           ) : (
             <div className="bg-card-gradient border border-purple-500/20 rounded-xl shadow-card divide-y divide-obsidian-400/60">
               {comingSoonFiltered.map((car) => {
@@ -870,7 +1048,7 @@ export default function Inventory() {
         </>
       )}
 
-      {/* ── Stock tab content (existing grid/list) ── */}
+      {/* ── Stock tab content ── */}
       {inventoryTab === 'stock' && <>
 
       {/* Empty state */}
@@ -903,10 +1081,29 @@ export default function Inventory() {
       )}
 
       {/* Grid view */}
-      {!initialLoad && view === 'grid' && filtered.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filtered.map((car, idx) => (
-            <div key={car.id} className={`relative group/card stagger-enter stagger-${Math.min(idx + 1, 12)}`}>
+      {!initialLoad && view === 'grid' && filteredOrdered.length > 0 && (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={(e) => { dragActiveRef.current = true; setDragActiveId(e.active.id as string); }}
+          onDragEnd={(e) => {
+            dragActiveRef.current = false;
+            setDragActiveId(null);
+            const { active, over } = e;
+            if (!over || active.id === over.id) return;
+            setStockOrder(prev => {
+              const oi = prev.indexOf(active.id as string);
+              const ni = prev.indexOf(over.id as string);
+              return (oi >= 0 && ni >= 0) ? arrayMove(prev, oi, ni) : prev;
+            });
+          }}
+          onDragCancel={() => { dragActiveRef.current = false; setDragActiveId(null); }}
+        >
+          <SortableContext items={filteredOrdered.map(c => c.id)} strategy={rectSortingStrategy}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {filteredOrdered.map((car, idx) => (
+                <SortableCarItem key={car.id} id={car.id}>
+                  <div className={`relative group/card stagger-enter stagger-${Math.min(idx + 1, 12)}`}>
               {isDirector && (
                 <button
                   onClick={(e) => { e.stopPropagation(); setDeleteCarId(car.id); }}
@@ -1059,15 +1256,21 @@ export default function Inventory() {
               {/* Bottom gold line on hover */}
               <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-transparent via-gold-500/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
             </div>
+                  </div>
+                </SortableCarItem>
+              ))}
             </div>
-          ))}
-        </div>
+          </SortableContext>
+          <DragOverlay dropAnimation={{ duration: 150, easing: 'ease' }}>
+            {dragActiveId && (() => { const c = cars.find(x => x.id === dragActiveId); return c ? <DragGhostCard car={c} /> : null; })()}
+          </DragOverlay>
+        </DndContext>
       )}
 
       {/* List view */}
-      {!initialLoad && view === 'list' && filtered.length > 0 && (
+      {!initialLoad && view === 'list' && filteredOrdered.length > 0 && (
         <div className="space-y-2">
-          {filtered.map((car, idx) => {
+          {filteredOrdered.map((car, idx) => {
             const { cls, label } = getDealBadge(car);
             const leadCount = carStats[car.id]?.leadCount ?? 0;
             const submissions = car.loanSubmissions ?? [];
@@ -1205,7 +1408,6 @@ export default function Inventory() {
       )}
 
       </>}
-
 
       <DeleteConfirmModal
         isOpen={!!deleteCarId}
@@ -1756,10 +1958,173 @@ export default function Inventory() {
         </div>
       </Modal>
 
+      {/* ── Director Deal Review Sheet (fallback: no WO on record) ── */}
+      {reviewDealCar && (() => {
+        const rc = cars.find(c => c.id === reviewDealCar.id) ?? reviewDealCar;
+        const deal = rc.finalDeal!;
+        const anyBuyer = customers.find(c => c.interestedCarId === rc.id && c.dealPrice);
+        const discount = rc.sellingPrice - deal.dealPrice;
+        const isLoanDeal = deal.bank !== 'Cash';
+        return createPortal(
+          <div className="fixed inset-0 z-50 flex flex-col bg-[#0a0f1e]">
+            {/* Header */}
+            <div className="flex items-center gap-3 px-4 py-4 border-b border-obsidian-400/30 shrink-0">
+              <button onClick={() => setReviewDealCar(null)} className="p-2 rounded-xl hover:bg-obsidian-700/60 transition-colors">
+                <X size={18} className="text-gray-400" />
+              </button>
+              <div className="flex-1 min-w-0">
+                <p className="text-white font-semibold text-sm truncate">{rc.year} {rc.make} {rc.model}</p>
+                <p className="text-amber-400 text-xs font-medium">Pending Director Approval</p>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              <div className="max-w-lg mx-auto px-4 py-5 space-y-5" style={{ paddingBottom: 'calc(2rem + env(safe-area-inset-bottom, 0px))' }}>
+
+                {/* Financial summary — mirrors WO modal layout */}
+                <div className="bg-[#0F0E0C] border border-obsidian-400/60 rounded-xl overflow-hidden">
+                  {/* Charges */}
+                  <div className="px-4 pt-3 pb-1">
+                    <p className="text-[10px] uppercase tracking-widest text-gray-600 mb-2">Charges</p>
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-400">Selling Price</span>
+                        <span className="text-white font-mono">+ {formatRM(rc.sellingPrice)}</span>
+                      </div>
+                    </div>
+                  </div>
+                  {/* Deductions */}
+                  <div className="px-4 pt-2 pb-1 border-t border-obsidian-400/20">
+                    <p className="text-[10px] uppercase tracking-widest text-gray-600 mb-2">Deductions</p>
+                    <div className="space-y-1.5">
+                      {discount > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-400">Discount</span>
+                          <span className="flex items-center gap-1.5 font-mono">
+                            <span className="text-gray-600 line-through text-xs">RM 0</span>
+                            <span className="text-red-400 text-xs">›</span>
+                            <span className="text-red-400 font-bold">− {formatRM(discount)}</span>
+                          </span>
+                        </div>
+                      )}
+                      {discount === 0 && (
+                        <p className="text-gray-600 text-xs italic">No deductions</p>
+                      )}
+                    </div>
+                  </div>
+                  {/* Balance */}
+                  <div className="flex items-center gap-3 px-4 py-3 border-t border-obsidian-400/40 bg-obsidian-700/30">
+                    <span className="text-white font-bold text-sm flex-1">Deal Price</span>
+                    <span className="text-gold-400 font-bold text-base font-mono">{formatRM(deal.dealPrice)}</span>
+                  </div>
+                </div>
+
+                {/* Deal meta */}
+                <div>
+                  <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest mb-3">Submission</p>
+                  <div className="bg-[#0F0E0C] border border-obsidian-400/60 rounded-xl overflow-hidden divide-y divide-obsidian-400/30">
+                    <div className="flex items-center gap-3 px-4 py-3">
+                      <span className="text-gray-400 text-sm flex-1">Type</span>
+                      <span className="text-white text-sm">{isLoanDeal ? `Loan · ${deal.bank}` : 'Cash'}</span>
+                    </div>
+                    {anyBuyer && (
+                      <div className="flex items-center gap-3 px-4 py-3">
+                        <span className="text-gray-400 text-sm flex-1">Buyer</span>
+                        <span className="text-white text-sm">{anyBuyer.name}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-3 px-4 py-3">
+                      <span className="text-gray-400 text-sm flex-1">Submitted by</span>
+                      <span className="text-white text-sm">{deal.submittedBy}</span>
+                    </div>
+                    <div className="flex items-center gap-3 px-4 py-3">
+                      <span className="text-gray-400 text-sm flex-1">Submitted at</span>
+                      <span className="text-white text-sm">{new Date(deal.submittedAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                    </div>
+                    {deal.notes && (
+                      <div className="flex items-start gap-3 px-4 py-3">
+                        <span className="text-gray-400 text-sm flex-1">Notes</span>
+                        <span className="text-white text-sm text-right max-w-[60%]">{deal.notes}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-3 px-4 py-3">
+                      <span className="text-gray-400 text-sm flex-1">Approval</span>
+                      <span className="text-amber-400 text-sm font-semibold">Pending</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Approve / Reject */}
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => {
+                      updateCar(rc.id, { finalDeal: { ...deal, approvalStatus: 'approved', approvedBy: currentUser!.name, approvedAt: new Date().toISOString() } });
+                      setReviewDealCar(null);
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-green-500/15 hover:bg-green-500/25 border border-green-500/40 text-green-400 font-semibold transition-colors"
+                  >
+                    <CheckCircle size={16} /> Approve
+                  </button>
+                  <button
+                    onClick={() => {
+                      const notes = window.prompt('Reason for rejection (optional):') ?? '';
+                      updateCar(rc.id, { finalDeal: { ...deal, approvalStatus: 'rejected', rejectionNotes: notes || undefined } });
+                      setReviewDealCar(null);
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/40 text-red-400 font-semibold transition-colors"
+                  >
+                    <XCircle size={16} /> Reject
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        );
+      })()}
+
       {/* ── Work Order View / Edit Sheet ── */}
       {woViewCar && (() => {
-        const { car, buyer } = woViewCar;
+        const car = cars.find(c => c.id === woViewCar.car.id) ?? woViewCar.car;
+        const buyer = customers.find(c => c.id === woViewCar.buyer.id) ?? woViewCar.buyer;
         const isLoan = !!buyer.loanWorkOrder;
+
+        const handleCancelDeal = async () => {
+          const { updateCar } = useStore.getState();
+          if (isLoan) {
+            updateCustomer(buyer.id, { loanWorkOrder: undefined, dealPrice: 0, loanStatus: 'submitted' });
+            await supabase.from('customers').update({ loan_work_order: null, deal_price: 0 }).eq('id', buyer.id);
+          } else {
+            updateCustomer(buyer.id, { cashWorkOrder: undefined, dealPrice: 0, leadStatus: 'follow_up' });
+            await supabase.from('customers').update({ cash_work_order: null, deal_price: 0 }).eq('id', buyer.id);
+          }
+          updateCar(car.id, { status: 'available', finalDeal: undefined });
+          await supabase.from('cars').update({ status: 'available', final_deal: null }).eq('id', car.id);
+          setWoViewCar(null);
+          setWoCancelConfirm(false);
+        };
+
+        const handleDelivery = () => {
+          const { repairs: allRepairs, updateCar } = useStore.getState();
+          const wo = buyer.loanWorkOrder ?? buyer.cashWorkOrder;
+          const dealPrice = wo ? (wo.sellingPrice - (wo.discount ?? 0)) : (car.sellingPrice ?? 0);
+          const repairTotal = allRepairs.filter(r => r.carId === car.id).reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
+          const netProfit = dealPrice - (car.purchasePrice ?? 0) - repairTotal;
+          const commission = netProfit > 12000 ? 2000 : 1000;
+          updateCustomer(buyer.id, {
+            delivered: true,
+            deliveredAt: new Date().toISOString(),
+            commission,
+            lastActionAt: new Date().toISOString(),
+          });
+          updateCar(car.id, {
+            status: 'delivered',
+            deliveryCollected: true,
+            ...(buyer.assignedSalesId && !car.assignedSalesperson ? { assignedSalesperson: buyer.assignedSalesId } : {}),
+          });
+          setWoViewCar(null);
+          setWoDeliveryConfirm(false);
+        };
         const lwo = buyer.loanWorkOrder as LoanWorkOrder | undefined;
         const cwo = buyer.cashWorkOrder as CashWorkOrder | undefined;
         const activeWo = (lwo ?? cwo)!;
@@ -1774,6 +2139,8 @@ export default function Inventory() {
         const calcTotal = (src: any, extras: { label: string; amount: number }[]) =>
           (Number(src.sellingPrice) || 0)
           - (isLoan ? (Number(src.loanAmount) || 0) : 0)
+          - (!isLoan ? (Number(src.downpayment) || 0) : 0)
+          - (Number(src.bookingFee) || 0)
           - (Number(src.discount) || 0)
           + (Number(src.insurance) || 0)
           + (Number(src.bankProduct) || 0)
@@ -1782,7 +2149,7 @@ export default function Inventory() {
 
         const displayTotal = woEditMode
           ? calcTotal(woEditData, editExtras)
-          : (car.finalDeal?.dealPrice ?? calcTotal(activeWo, activeWo.additionalItems ?? []));
+          : calcTotal(activeWo, activeWo.additionalItems ?? []);
 
         const setD = (patch: Record<string, any>) => setWoEditData((prev: any) => ({ ...prev, ...patch }));
 
@@ -1795,14 +2162,17 @@ export default function Inventory() {
             } else {
               await updateCustomer(buyer.id, { cashWorkOrder: updated as CashWorkOrder });
             }
-            // Update woViewCar buyer reference so view mode reflects changes
-            setWoViewCar(prev => prev ? {
-              ...prev,
-              buyer: {
-                ...prev.buyer,
-                ...(isLoan ? { loanWorkOrder: updated as LoanWorkOrder } : { cashWorkOrder: updated as CashWorkOrder }),
-              },
-            } : null);
+            // Re-queue for director approval whenever a salesman edits the deal
+            if (!isDirector && car.finalDeal) {
+              updateCar(car.id, {
+                finalDeal: {
+                  ...car.finalDeal,
+                  approvalStatus: 'pending',
+                  approvedBy: undefined,
+                  approvedAt: undefined,
+                },
+              });
+            }
             setWoEditMode(false);
           } catch (e) {
             console.error(e);
@@ -1862,7 +2232,7 @@ export default function Inventory() {
                 <p className="text-gray-500 text-xs truncate">{car.year} {car.make} {car.model} · {buyer.name}</p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                {woEditMode ? (
+                {woTab === 'deal' && (woEditMode ? (
                   <>
                     <button
                       onClick={() => setWoEditMode(false)}
@@ -1879,24 +2249,40 @@ export default function Inventory() {
                     </button>
                   </>
                 ) : (
-                  <button
-                    onClick={() => { setWoEditData({ ...activeWo }); setWoEditMode(true); }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gold-400 border border-gold-500/40 rounded-lg hover:bg-gold-500/10 transition-colors"
-                  >
-                    <Edit2 size={12} />
-                    Edit
-                  </button>
-                )}
+                  <>
+                    <button
+                      onClick={() => { setWoEditData({ ...activeWo }); setWoEditMode(true); }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gold-400 border border-gold-500/40 rounded-lg hover:bg-gold-500/10 transition-colors"
+                    >
+                      <Edit2 size={12} />
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => setWoCancelConfirm(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/10 transition-colors"
+                    >
+                      <RotateCcw size={12} />
+                      Cancel Deal
+                    </button>
+                  </>
+                ))}
                 <button
-                  onClick={() => { setWoViewCar(null); setWoEditMode(false); }}
+                  onClick={() => { setWoViewCar(null); setWoEditMode(false); setWoCancelConfirm(false); setWoDeliveryConfirm(false); setWoTab('deal'); }}
                   className="p-1.5 text-gray-500 hover:text-white hover:bg-obsidian-600/60 rounded-lg transition-colors"
                 >
                   <X size={18} />
                 </button>
               </div>
             </div>
+            {/* Tabs */}
+            <div className="border-b border-obsidian-400/60 bg-[#0F0E0C] flex justify-center">
+              <div className="flex gap-1">
+                <button onClick={() => setWoTab('deal')} className={`px-5 py-2.5 text-xs font-semibold transition-colors ${woTab === 'deal' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}>Work Order</button>
+                <button onClick={() => { setWoTab('postsale'); setWoEditMode(false); }} className={`px-5 py-2.5 text-xs font-semibold transition-colors ${woTab === 'postsale' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}>Post-Sale</button>
+              </div>
+            </div>
 
-            <div className="max-w-lg mx-auto px-4 py-5 space-y-6" style={{ paddingBottom: 'calc(2rem + env(safe-area-inset-bottom, 0px))' }}>
+            {woTab === 'deal' && <div className="max-w-lg mx-auto px-4 py-5 space-y-6" style={{ paddingBottom: 'calc(2rem + env(safe-area-inset-bottom, 0px))' }}>
 
               {/* ── Deal Section ── */}
               <div>
@@ -1904,11 +2290,13 @@ export default function Inventory() {
                 <div className="bg-[#0F0E0C] border border-obsidian-400/60 rounded-xl overflow-hidden divide-y divide-obsidian-400/30">
                   {woEditMode ? (
                     <>
+                      {/* Charges group */}
+                      <div className="px-4 pt-3 pb-1">
+                        <p className="text-[10px] uppercase tracking-widest text-gray-600 mb-1">Charges</p>
+                      </div>
                       {numInput('sellingPrice', 'Selling Price')}
                       {numInput('insurance', 'Insurance')}
                       {numInput('bankProduct', 'Bank Product')}
-
-                      {/* Extra items */}
                       {editExtras.map((item, idx) => (
                         <div key={idx} className="flex items-center gap-3 px-4 py-3 border-b border-obsidian-400/30">
                           <input
@@ -1939,7 +2327,10 @@ export default function Inventory() {
                         + Add item
                       </button>
 
-                      {numInput('discount', 'Discount')}
+                      {/* Payments Received group */}
+                      <div className="px-4 pt-3 pb-1 border-t border-obsidian-400/20">
+                        <p className="text-[10px] uppercase tracking-widest text-gray-600 mb-1">Payments Received</p>
+                      </div>
                       {isLoan && (
                         <>
                           <div className="flex items-center gap-3 px-4 py-3 border-b border-obsidian-400/30">
@@ -1951,34 +2342,101 @@ export default function Inventory() {
                       )}
                       {!isLoan && numInput('downpayment', 'Downpayment')}
                       {numInput('bookingFee', 'Booking Fee')}
+                      {numInput('discount', 'Discount')}
                     </>
                   ) : (
                     <>
-                      <Row label="Selling Price" value={formatRM(activeWo.sellingPrice)} />
-                      {activeWo.insurance > 0 && <Row label="Insurance" value={formatRM(activeWo.insurance)} />}
-                      {activeWo.bankProduct > 0 && <Row label="Bank Product" value={formatRM(activeWo.bankProduct)} />}
-                      {(activeWo.additionalItems ?? []).map((item, i) => (
-                        <Row key={i} label={item.label || 'Extra'} value={formatRM(item.amount)} />
-                      ))}
-                      {activeWo.discount > 0 && <Row label="Discount" value={`- ${formatRM(activeWo.discount)}`} valueClass="text-red-400" />}
-                      {isLoan && lwo && (
-                        <>
-                          <Row label="Approved Bank" value={lwo.bank} valueClass="text-green-400" />
-                          <Row label="Loan Amount" value={`- ${formatRM(lwo.loanAmount)}`} valueClass="text-red-400" />
-                        </>
-                      )}
-                      {!isLoan && cwo && (cwo.downpayment ?? 0) > 0 && (
-                        <Row label="Downpayment" value={formatRM(cwo.downpayment)} />
-                      )}
-                      {activeWo.hasTradeIn && viewNetTradeIn > 0 && (
-                        <Row label="Trade-In (net)" value={`- ${formatRM(viewNetTradeIn)}`} valueClass="text-red-400" />
-                      )}
-                      {(activeWo.bookingFee ?? 0) > 0 && <Row label="Booking Fee" value={formatRM(activeWo.bookingFee)} />}
+                      {/* Additions */}
+                      <div className="px-4 pt-3 pb-1">
+                        <p className="text-[10px] uppercase tracking-widest text-gray-600 mb-2">Charges</p>
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-400">Selling Price</span>
+                            {isDirector && car.finalDeal?.approvalStatus !== 'approved' && activeWo.sellingPrice !== car.sellingPrice ? (
+                              <span className="flex items-center gap-1.5 font-mono">
+                                <span className="text-gray-600 line-through text-xs">+ {formatRM(car.sellingPrice)}</span>
+                                <span className="text-red-400 text-xs">›</span>
+                                <span className="text-red-400 font-bold">+ {formatRM(activeWo.sellingPrice)}</span>
+                              </span>
+                            ) : (
+                              <span className="text-white font-mono">+ {formatRM(activeWo.sellingPrice)}</span>
+                            )}
+                          </div>
+                          {activeWo.insurance > 0 && (
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-400">Insurance</span>
+                              <span className="text-white font-mono">+ {formatRM(activeWo.insurance)}</span>
+                            </div>
+                          )}
+                          {activeWo.bankProduct > 0 && (
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-400">Bank Product</span>
+                              <span className="text-white font-mono">+ {formatRM(activeWo.bankProduct)}</span>
+                            </div>
+                          )}
+                          {(activeWo.additionalItems ?? []).filter(x => x.amount > 0).map((item, i) => (
+                            <div key={i} className="flex justify-between text-sm">
+                              <span className="text-gray-400">{item.label || 'Extra'}</span>
+                              <span className="text-white font-mono">+ {formatRM(item.amount)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Deductions */}
+                      <div className="px-4 pt-2 pb-1 border-t border-obsidian-400/20">
+                        <p className="text-[10px] uppercase tracking-widest text-gray-600 mb-2">Payments Received</p>
+                        <div className="space-y-1.5">
+                          {isLoan && lwo && (
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-400">Loan ({lwo.bank})</span>
+                              <span className="text-red-400 font-mono">− {formatRM(lwo.loanAmount)}</span>
+                            </div>
+                          )}
+                          {!isLoan && cwo && (cwo.downpayment ?? 0) > 0 && (
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-400">Downpayment</span>
+                              <span className="text-red-400 font-mono">− {formatRM(cwo.downpayment)}</span>
+                            </div>
+                          )}
+                          {(activeWo.bookingFee ?? 0) > 0 && (
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-400">Booking Fee</span>
+                              <span className="text-red-400 font-mono">− {formatRM(activeWo.bookingFee)}</span>
+                            </div>
+                          )}
+                          {activeWo.discount > 0 && (
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-400">Discount</span>
+                              {isDirector && car.finalDeal?.approvalStatus !== 'approved' ? (
+                                <span className="flex items-center gap-1.5 font-mono">
+                                  <span className="text-gray-600 line-through text-xs">RM 0</span>
+                                  <span className="text-red-400 text-xs">›</span>
+                                  <span className="text-red-400 font-bold">− {formatRM(activeWo.discount)}</span>
+                                </span>
+                              ) : (
+                                <span className="text-red-400 font-mono">− {formatRM(activeWo.discount)}</span>
+                              )}
+                            </div>
+                          )}
+                          {activeWo.hasTradeIn && viewNetTradeIn > 0 && (
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-400">Trade-In (net)</span>
+                              <span className="text-red-400 font-mono">− {formatRM(viewNetTradeIn)}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </>
                   )}
-                  <div className="flex items-center gap-3 px-4 py-3 bg-obsidian-700/30">
-                    <span className="text-white font-bold text-sm flex-1">Total</span>
-                    <span className="text-gold-400 font-bold text-sm">{formatRM(displayTotal)}</span>
+                  {/* Balance row */}
+                  <div className="flex items-center gap-3 px-4 py-3 border-t border-obsidian-400/40 bg-obsidian-700/30">
+                    <span className="text-white font-bold text-sm flex-1">
+                      {displayTotal < 0 ? 'Refund to Customer' : displayTotal > 0 ? 'Balance Due' : 'Fully Settled'}
+                    </span>
+                    <span className={`font-bold text-sm font-mono ${displayTotal < 0 ? 'text-green-400' : displayTotal > 0 ? 'text-amber-300' : 'text-gold-400'}`}>
+                      {displayTotal < 0 ? `− ${formatRM(Math.abs(displayTotal))}` : formatRM(displayTotal)}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -2072,14 +2530,315 @@ export default function Inventory() {
                   {car.finalDeal?.approvedBy && <Row label="Approved by" value={car.finalDeal.approvedBy} />}
                   {car.finalDeal?.notes && <Row label="Notes" value={car.finalDeal.notes} />}
                 </div>
+
+                {/* Director approve / reject — shown when pending or unset (legacy deals) */}
+                {isDirector && car.finalDeal && car.finalDeal.approvalStatus !== 'approved' && (
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      onClick={() => {
+                        updateCar(car.id, {
+                          finalDeal: {
+                            ...car.finalDeal!,
+                            approvalStatus: 'approved',
+                            approvedBy: currentUser!.name,
+                            approvedAt: new Date().toISOString(),
+                          },
+                        });
+                      }}
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-500/15 hover:bg-green-500/25 border border-green-500/40 text-green-400 text-sm font-semibold transition-colors"
+                    >
+                      <CheckCircle size={14} /> Approve
+                    </button>
+                    <button
+                      onClick={() => {
+                        const notes = window.prompt('Reason for rejection (optional):') ?? '';
+                        updateCar(car.id, {
+                          finalDeal: {
+                            ...car.finalDeal!,
+                            approvalStatus: 'rejected',
+                            rejectionNotes: notes || undefined,
+                          },
+                        });
+                      }}
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/40 text-red-400 text-sm font-semibold transition-colors"
+                    >
+                      <XCircle size={14} /> Reject
+                    </button>
+                  </div>
+                )}
               </div>
 
-            </div>
+            </div>}
+
+            {woTab === 'postsale' && (
+              <div className="max-w-lg mx-auto px-4 py-5 space-y-4" style={{ paddingBottom: 'calc(2rem + env(safe-area-inset-bottom, 0px))' }}>
+                <PostSalePanel buyerId={buyer.id} />
+
+                {/* Deliver — button or inline confirm, always visible in the same spot */}
+                {!woDeliveryConfirm ? (
+                  <button
+                    onClick={() => setWoDeliveryConfirm(true)}
+                    className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-semibold bg-violet-600 hover:bg-violet-500 text-white transition-colors"
+                  >
+                    <ClipboardList size={15} />
+                    Confirm Delivery
+                  </button>
+                ) : (
+                  <div className="bg-violet-500/10 border border-violet-500/30 rounded-xl p-4 space-y-3">
+                    <p className="text-violet-200 text-sm font-semibold text-center">Mark as delivered?</p>
+                    <p className="text-violet-300/60 text-xs text-center">Car moves to delivered, deal archived.</p>
+                    <div className="flex gap-2">
+                      <button onClick={() => setWoDeliveryConfirm(false)} className="flex-1 py-2.5 text-xs font-semibold text-gray-400 border border-obsidian-400/50 rounded-lg hover:bg-obsidian-700/60 transition-colors">Cancel</button>
+                      <button onClick={handleDelivery} className="flex-1 py-2.5 text-xs font-semibold text-white bg-violet-600 hover:bg-violet-500 rounded-lg transition-colors">Yes, Delivered</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Cancel Deal confirmation banner — floats above both tabs */}
+            {woCancelConfirm && (
+              <div className="max-w-lg mx-auto px-4 pb-4">
+                <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle size={16} className="text-red-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-red-400 text-sm font-semibold">Cancel this deal?</p>
+                      <p className="text-red-400/70 text-xs mt-0.5">Work order will be removed, car returns to available, and customer reverts to lead.</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => setWoCancelConfirm(false)} className="flex-1 py-2 text-xs font-semibold text-gray-400 border border-obsidian-400/50 rounded-lg hover:bg-obsidian-700/60 transition-colors">Keep Deal</button>
+                    <button onClick={handleCancelDeal} className="flex-1 py-2 text-xs font-semibold text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors">Yes, Cancel</button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>,
           document.body,
         );
       })()}
     </div>
+  );
+}
+
+function PostSalePanel({ buyerId }: { buyerId: string }) {
+  const buyer = useStore((s) => s.customers.find((c) => c.id === buyerId));
+  const updateCustomer = useStore((s) => s.updateCustomer);
+  const addPersonalReminder = useStore((s) => s.addPersonalReminder);
+
+  // Local state drives all toggles immediately — avoids realtime-overwrite flicker
+  const [cl, setCl] = React.useState<PostSaleChecklist>(() => buyer?.postSaleChecklist ?? {});
+
+  // Auto-open calendar the moment "Book Puspakom" is first ticked
+  const dateInputRef = React.useRef<HTMLInputElement>(null);
+  const prevBooked = React.useRef(!!buyer?.postSaleChecklist?.puspakomBooked);
+  React.useLayoutEffect(() => {
+    if (!prevBooked.current && cl.puspakomBooked && dateInputRef.current) {
+      try { dateInputRef.current.showPicker(); } catch { dateInputRef.current.click(); }
+    }
+    prevBooked.current = !!cl.puspakomBooked;
+  }, [cl.puspakomBooked]);
+
+  if (!buyer) return null;
+
+  const isLoan = !!buyer.loanWorkOrder;
+  const bankName = buyer.loanWorkOrder?.bank ?? '';
+
+  const update = (patch: Partial<PostSaleChecklist>) => {
+    const newCl = { ...cl, ...patch };
+    setCl(newCl);
+    updateCustomer(buyerId, { postSaleChecklist: newCl });
+  };
+
+  // B5 (+ B7 for loan) are automatically obtained once Puspakom Done is ticked
+  const puspakomDone = !!cl.puspakomDone;
+  const canEHak = isLoan && puspakomDone;
+  const canInsurance = isLoan ? !!cl.eHakDone : puspakomDone;
+  const canTransfer = !!cl.insuranceCoverNote;
+
+  // Progress steps
+  const allSteps: boolean[] = [
+    !!cl.agreementSigned,
+    !!cl.thumbprintDone,
+    !!cl.puspakomBooked,
+    ...(cl.wantsCustomPlate ? [!!cl.b2Booked, !!cl.b2Obtained] : []),
+    puspakomDone,
+    ...(isLoan ? [!!cl.eHakDone] : []),
+    !!cl.insuranceCoverNote,
+    !!cl.nameTransferDone,
+  ];
+  const doneCt = allSteps.filter(Boolean).length;
+  const totalCt = allSteps.length;
+  const pct = totalCt === 0 ? 0 : Math.round((doneCt / totalCt) * 100);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest">Post-Sale Checklist</p>
+        <span className={`text-xs font-bold ${pct === 100 ? 'text-green-400' : pct >= 60 ? 'text-gold-400' : 'text-gray-400'}`}>{doneCt}/{totalCt} · {pct}%</span>
+      </div>
+      <div className="h-1.5 bg-obsidian-700 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-green-500' : 'bg-gold-500'}`} style={{ width: `${pct}%` }} />
+      </div>
+
+      {/* ── Sale Agreement ── */}
+      <div className="bg-[#0F0E0C] border border-obsidian-400/60 rounded-xl overflow-hidden">
+        <div className="px-4 py-2 bg-obsidian-700/40 border-b border-obsidian-400/30">
+          <p className="text-white text-[10px] font-bold uppercase tracking-wide">Sale Agreement</p>
+        </div>
+        <PSStep
+          done={!!cl.agreementSigned}
+          label={isLoan ? `Sign Loan Agreement · ${bankName}` : 'Sign S&P Agreement'}
+          onToggle={() => update({ agreementSigned: !cl.agreementSigned })}
+        />
+        <PSStep
+          done={!!cl.thumbprintDone}
+          label="Buyer Thumbprint"
+          onToggle={() => update({ thumbprintDone: !cl.thumbprintDone })}
+        />
+      </div>
+
+      {/* ── Puspakom ── */}
+      <div className="bg-[#0F0E0C] border border-obsidian-400/60 rounded-xl overflow-hidden">
+        <div className="px-4 py-2 bg-obsidian-700/40 border-b border-obsidian-400/30">
+          <p className="text-white text-[10px] font-bold uppercase tracking-wide">Puspakom</p>
+        </div>
+        <PSStep
+          done={!!cl.puspakomBooked}
+          label="Book Puspakom"
+          sub={isLoan ? 'Will obtain: B5 + B7' : 'Will obtain: B5'}
+          onToggle={() => update({ puspakomBooked: !cl.puspakomBooked })}
+        />
+        {/* Date picker slides in after booking */}
+        {cl.puspakomBooked && (
+          <div className="relative border-b border-obsidian-400/20 bg-obsidian-800/30">
+            <div className="flex items-center justify-between px-4 py-3 pointer-events-none">
+              <span className="text-xs text-gray-400 flex items-center gap-2">
+                <Calendar size={13} />
+                Appointment Date
+              </span>
+              <span className={`text-xs font-medium ${cl.puspakomDate ? 'text-white' : 'text-gray-600'}`}>
+                {cl.puspakomDate
+                  ? new Date(cl.puspakomDate + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })
+                  : 'Tap to pick date'}
+              </span>
+            </div>
+            <input
+              ref={dateInputRef}
+              type="date"
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              value={cl.puspakomDate ?? ''}
+              onChange={e => {
+                const newDate = e.target.value;
+                update({ puspakomDate: newDate || undefined });
+                if (newDate && buyer.assignedSalesId) {
+                  addPersonalReminder({
+                    id: generateId(),
+                    userId: buyer.assignedSalesId,
+                    title: `Puspakom appointment – ${buyer.name}`,
+                    dueAt: newDate,
+                    isCompleted: false,
+                    createdAt: new Date().toISOString(),
+                  });
+                }
+              }}
+            />
+          </div>
+        )}
+        {/* Custom plate toggle */}
+        <div className="px-4 py-3 border-b border-obsidian-400/20 flex items-center justify-between">
+          <div>
+            <p className="text-white text-sm font-medium">Custom Plate (B2)</p>
+            <p className="text-gray-600 text-xs">Customer wants to change plate number</p>
+          </div>
+          <button
+            onClick={() => update({ wantsCustomPlate: !cl.wantsCustomPlate })}
+            className={`w-11 h-6 rounded-full transition-colors relative shrink-0 ${cl.wantsCustomPlate ? 'bg-gold-500' : 'bg-obsidian-500'}`}
+          >
+            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${cl.wantsCustomPlate ? 'left-5' : 'left-0.5'}`} />
+          </button>
+        </div>
+        {cl.wantsCustomPlate && (
+          <>
+            <PSStep done={!!cl.b2Booked} label="Book B2" sub="Custom plate application" onToggle={() => update({ b2Booked: !cl.b2Booked })} />
+            <PSStep done={!!cl.b2Obtained} label="B2 Obtained" onToggle={() => update({ b2Obtained: !cl.b2Obtained })} />
+          </>
+        )}
+        {/* Puspakom Done — auto-implies B5 (+ B7 for loan) obtained */}
+        <PSStep
+          done={puspakomDone}
+          locked={!cl.puspakomBooked}
+          label="Puspakom Done"
+          sub={!cl.puspakomBooked ? 'Book puspakom first' : undefined}
+          onToggle={() => update({ puspakomDone: !cl.puspakomDone })}
+        />
+        {/* Show B5 / B7 as auto-obtained once done */}
+        {puspakomDone && (
+          <div className="px-4 py-2.5 flex items-center gap-3 bg-green-500/5 border-t border-green-500/10">
+            <CheckCircle size={14} className="text-green-500 shrink-0" />
+            <span className="text-xs text-green-400">{isLoan ? 'B5 + B7 obtained' : 'B5 obtained'}</span>
+          </div>
+        )}
+      </div>
+
+      {/* ── eHak (loan only) ── */}
+      {isLoan && (
+        <div className="bg-[#0F0E0C] border border-obsidian-400/60 rounded-xl overflow-hidden">
+          <div className="px-4 py-2 bg-obsidian-700/40 border-b border-obsidian-400/30">
+            <p className="text-white text-[10px] font-bold uppercase tracking-wide">eHak</p>
+          </div>
+          <PSStep
+            done={!!cl.eHakDone}
+            locked={!canEHak}
+            label="eHak Done"
+            sub={!canEHak ? 'Complete Puspakom first' : 'Hire purchase ownership transfer'}
+            onToggle={() => update({ eHakDone: !cl.eHakDone })}
+          />
+        </div>
+      )}
+
+      {/* ── Insurance & Transfer ── */}
+      <div className="bg-[#0F0E0C] border border-obsidian-400/60 rounded-xl overflow-hidden">
+        <div className="px-4 py-2 bg-obsidian-700/40 border-b border-obsidian-400/30">
+          <p className="text-white text-[10px] font-bold uppercase tracking-wide">Insurance & Transfer</p>
+        </div>
+        <PSStep
+          done={!!cl.insuranceCoverNote}
+          locked={!canInsurance}
+          label="Insurance Cover Note"
+          sub={!canInsurance ? (isLoan ? 'Complete eHak first' : 'Complete Puspakom first') : undefined}
+          onToggle={() => update({ insuranceCoverNote: !cl.insuranceCoverNote })}
+        />
+        <PSStep
+          done={!!cl.nameTransferDone}
+          locked={!canTransfer}
+          label="Name Transfer (JPJ)"
+          sub={!canTransfer ? 'Requires insurance cover note' : undefined}
+          onToggle={() => update({ nameTransferDone: !cl.nameTransferDone })}
+        />
+      </div>
+    </div>
+  );
+}
+
+function PSStep({ done, locked, label, sub, onToggle }: { done: boolean; locked?: boolean; label: string; sub?: string; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={!!locked}
+      className={`w-full flex items-center gap-3 px-4 py-3 border-b border-obsidian-400/20 text-left transition-colors ${locked ? 'opacity-40 cursor-not-allowed' : 'hover:bg-obsidian-700/40'}`}
+    >
+      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${done ? 'bg-green-500 border-green-500' : locked ? 'border-gray-600' : 'border-gray-500'}`}>
+        {done && <CheckCircle size={12} className="text-white" />}
+        {locked && !done && <Lock size={9} className="text-gray-600" />}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className={`text-sm font-medium ${done ? 'text-green-400 line-through opacity-60' : locked ? 'text-gray-600' : 'text-white'}`}>{label}</p>
+        {sub && <p className="text-xs text-gray-600 mt-0.5">{sub}</p>}
+      </div>
+    </button>
   );
 }
 

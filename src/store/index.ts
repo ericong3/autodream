@@ -39,7 +39,7 @@ interface StoreState {
   merchants: Merchant[];
   externalSalesmen: ExternalSalesman[];
   bankers: Banker[];
-  viewPreference: Record<string, 'grid' | 'list'>;
+  viewPreference: Record<string, 'grid' | 'list' | 'board'>;
   loaded: boolean;
   lastFetched: number | null;
 
@@ -121,7 +121,7 @@ interface StoreState {
   deleteMiscCost: (carId: string, miscId: string) => Promise<void>;
 
   // View preference
-  setViewPreference: (userId: string, page: string, view: 'grid' | 'list') => void;
+  setViewPreference: (userId: string, page: string, view: 'grid' | 'list' | 'board') => void;
 }
 
 // Supabase realtime can send JSONB columns as serialized strings instead of parsed objects.
@@ -968,6 +968,10 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   },
   updateCar: async (id, car) => {
     const prev = get().cars.find(c => c.id === id);
+    // Protect deal_pending cars: only delivery or explicit cancellation may change their status
+    if (prev?.status === 'deal_pending' && car.status && car.status !== 'delivered' && car.status !== 'available') {
+      delete (car as any).status;
+    }
     set((s) => ({ cars: s.cars.map((c) => (c.id === id ? { ...c, ...car } : c)) }));
     const { error } = await supabase.from('cars').update(carToRow(car)).eq('id', id);
     if (error) {
@@ -984,7 +988,11 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     }
     // #15 New deal submitted
     if (car.finalDeal && !prev?.finalDeal) {
-      sendPush(dirs, '📋 New deal submitted', `${carName} – submitted by ${car.finalDeal.submittedBy}`, '/inventory');
+      sendPush(dirs, '📋 New deal submitted', `${carName} – submitted by ${car.finalDeal.submittedBy}`, '/inventory?tab=pending_delivery');
+    }
+    // #15b Deal edited — needs re-approval
+    if (car.finalDeal?.approvalStatus === 'pending' && prev?.finalDeal?.approvalStatus !== 'pending') {
+      sendPush(dirs, '⚠️ Deal needs approval', `${carName} – ${car.finalDeal.submittedBy} updated the deal`, '/inventory?tab=pending_delivery');
     }
     // #16 Deal approved
     if (car.finalDeal?.approvalStatus === 'approved' && prev?.finalDeal?.approvalStatus !== 'approved') {
@@ -1034,11 +1042,11 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   // Repairs
   addRepair: async (repair) => {
     const car = get().cars.find((c) => c.id === repair.carId);
-    const isDelivered = car?.status === 'delivered';
+    const protectedStatus = car?.status === 'delivered' || car?.status === 'deal_pending';
     const updatedCars = repair.location && repair.status !== 'queued'
       ? get().cars.map((c) =>
           c.id === repair.carId
-            ? { ...c, currentLocation: repair.location, ...(isDelivered ? {} : { status: 'in_workshop' as Car['status'] }) }
+            ? { ...c, currentLocation: repair.location, ...(protectedStatus ? {} : { status: 'in_workshop' as Car['status'] }) }
             : c
         )
       : get().cars;
@@ -1047,7 +1055,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     if (error) console.error('addRepair failed:', error.message);
     if (repair.location && repair.status !== 'queued') {
       const dbUpdate: any = { current_location: repair.location };
-      if (!isDelivered) dbUpdate.status = 'in_workshop';
+      if (!protectedStatus) dbUpdate.status = 'in_workshop';
       await supabase.from('cars').update(dbUpdate).eq('id', repair.carId);
     }
     // #25 New repair job assigned to workshop
@@ -1055,7 +1063,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     const carName = `${car?.year ?? ''} ${car?.make ?? ''} ${car?.model ?? ''}`.trim();
     sendPush(mechs, '🔧 New repair job', `${repair.typeOfRepair} for ${carName}`, '/inventory');
     // #22 Car moved to workshop (notify directors)
-    if (repair.location && repair.status !== 'queued' && !isDelivered) {
+    if (repair.location && repair.status !== 'queued' && !protectedStatus) {
       sendPush(dirIds(get().users), '🔧 Car in workshop', `${carName} moved to workshop`, '/inventory');
     }
   },
@@ -1082,7 +1090,8 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
           if (location) {
             updatedCars = s.cars.map((c) => {
               if (c.id !== existing.carId) return c;
-              return { ...c, currentLocation: location, ...(c.status === 'delivered' ? {} : { status: 'in_workshop' as Car['status'] }) };
+              const isProtected = c.status === 'delivered' || c.status === 'deal_pending';
+              return { ...c, currentLocation: location, ...(isProtected ? {} : { status: 'in_workshop' as Car['status'] }) };
             });
           }
         } else if (repair.location) {

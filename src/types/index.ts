@@ -356,13 +356,13 @@ export const DEFAULT_CHECKLIST_LABELS = [
 export interface PostSaleChecklist {
   agreementSigned?: boolean;
   thumbprintDone?: boolean;
-  wantsCustomPlate?: boolean;
   puspakomBooked?: boolean;
   puspakomDate?: string;
-  b5Obtained?: boolean;
-  b7Obtained?: boolean;
+  wantsCustomPlate?: boolean;
   b2Booked?: boolean;
   b2Obtained?: boolean;
+  puspakomDone?: boolean;   // auto-implies b5 (+ b7 for loan) obtained
+  eHakDone?: boolean;       // loan only — hire purchase transfer, after puspakom
   insuranceCoverNote?: boolean;
   nameTransferDone?: boolean;
 }
