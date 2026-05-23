@@ -225,9 +225,7 @@ export default function History() {
       const miscCosts = (c.miscCosts ?? []).reduce((a, m) => a + m.amount, 0);
       const dealNetPrice = grossPrice - discount;
       const profitBeforeCommission = dealNetPrice - c.purchasePrice - repairCosts - miscCosts - additionalTotal;
-      const commission = c.outgoingConsignment ? 0 : c.priceFloor != null
-        ? (dealNetPrice >= c.priceFloor ? (profitBeforeCommission >= 10000 ? 2000 : 1500) : 1000)
-        : (profitBeforeCommission >= 10000 ? 1500 : 1000);
+      const commission = c.outgoingConsignment ? 0 : (c.priceFloor != null && dealNetPrice < c.priceFloor) ? 1000 : 1500;
       map[c.id] = { dealNetPrice, profit: profitBeforeCommission - commission };
     }
     return map;

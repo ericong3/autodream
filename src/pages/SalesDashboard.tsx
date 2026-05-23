@@ -78,12 +78,8 @@ export default function SalesDashboard() {
     const wo = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
     const workOrder = wo?.loanWorkOrder ?? wo?.cashWorkOrder;
     const dealPrice = (workOrder?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (workOrder?.discount ?? 0);
-    const repairCost = repairs.filter(r => r.carId === car.id && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
-    const miscCost = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
-    const additionalTotal = workOrder?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
-    const net = dealPrice - car.purchasePrice - repairCost - miscCost - additionalTotal;
-    if (car.priceFloor != null) return dealPrice >= car.priceFloor ? (net >= 10000 ? 2000 : 1500) : 1000;
-    return net >= 10000 ? 1500 : 1000;
+    if (car.priceFloor != null && dealPrice < car.priceFloor) return 1000;
+    return 1500;
   };
 
   const getSaleDate = (car: typeof cars[0]): string => {

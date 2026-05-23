@@ -359,9 +359,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     : (car.finalDeal?.dealPrice ?? car.sellingPrice);
   const _additionalTotal = _wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
   const _profitBeforeComm = _dealPrice - car.purchasePrice - totalRepairCost - totalMiscCost - _additionalTotal;
-  const _commission = car.outgoingConsignment ? 0 : car.priceFloor != null
-    ? (_dealPrice >= car.priceFloor ? (_profitBeforeComm >= 10000 ? 2000 : 1500) : 1000)
-    : (_profitBeforeComm >= 10000 ? 1500 : 1000);
+  const _commission = car.outgoingConsignment ? 0 : (car.priceFloor != null && _dealPrice < car.priceFloor) ? 1000 : 1500;
   const netProfit = _profitBeforeComm - _commission;
 
   // Checklist helpers
@@ -1150,15 +1148,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           // Director profit
           const dealNetPrice = sellingPrice - discount;
           const profitBeforeCommission = dealNetPrice - purchasePrice - totalRepairCost - totalMiscCost - additionalTotal;
-          const commission = (() => {
-            if (car.outgoingConsignment) return 0;
-            if (car.priceFloor != null) {
-              return dealNetPrice >= car.priceFloor
-                ? (profitBeforeCommission >= 10000 ? 2000 : 1500)
-                : 1000;
-            }
-            return profitBeforeCommission >= 10000 ? 1500 : 1000;
-          })();
+          const commission = car.outgoingConsignment ? 0 : (car.priceFloor != null && dealNetPrice < car.priceFloor) ? 1000 : 1500;
           const netProfit = profitBeforeCommission - commission;
 
           return (
@@ -1241,7 +1231,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   {!car.outgoingConsignment && <DRow label="− Salesman Commission" value={formatRM(commission)} valueClass="text-purple-400" />}
                   {car.priceFloor != null && (
                     <p className="text-xs text-gray-500 text-right pr-5 pb-1">
-                      Deal ({formatRM(dealNetPrice)}) {dealNetPrice >= car.priceFloor ? '≥' : '<'} floor → {commission === 1000 ? 'RM 1,000 fixed' : commission === 2000 ? 'RM 2,000 (profit ≥ 10k)' : 'RM 1,500 (profit < 10k)'}
+                      Deal ({formatRM(dealNetPrice)}) {dealNetPrice >= car.priceFloor ? '≥' : '<'} floor → {commission === 1000 ? 'RM 1,000' : 'RM 1,500'}
                     </p>
                   )}
                   <div className="flex justify-between items-center pt-3 mt-1 border-t-2 border-obsidian-400/50">
@@ -1539,7 +1529,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 onChange={(e) => setEditForm({ ...editForm, priceFloor: e.target.value ? Number(e.target.value) : undefined })}
                 placeholder="e.g. 55800 — below this = RM1k commission"
               />
-              <p className="text-gray-600 text-xs mt-1">Deal ≥ floor → 2k or 1.5k commission · Deal below floor → 1k commission</p>
+              <p className="text-gray-600 text-xs mt-1">Deal ≥ floor → 1.5k commission · Deal below floor → 1k commission</p>
             </FormField>
           )}
           <FormField label="Transmission">

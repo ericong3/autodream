@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList, Truck, Upload, Lock, Skull, Clock, RotateCcw, MoreVertical } from 'lucide-react';
 import { useStore } from '../store';
-import { Customer, LoanApplication, LoanSubmission, CashWorkOrder, LoanWorkOrder, WorkOrderItem, BANKS, NO_BANKER_BANKS, PostSaleChecklist } from '../types';
+import { Customer, LoanApplication, LoanSubmission, CashWorkOrder, LoanWorkOrder, WorkOrderItem, BANKS, NO_BANKER_BANKS } from '../types';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import MiniCalendar from '../components/MiniCalendar';
@@ -72,7 +72,6 @@ export default function Customers() {
 
   const addTestDrive = useStore((s) => s.addTestDrive);
   const testDrives = useStore((s) => s.testDrives);
-  const addPersonalReminder = useStore((s) => s.addPersonalReminder);
   const bankers = useStore((s) => s.bankers);
 
   const isDirector = currentUser?.role === 'director';
@@ -374,15 +373,12 @@ export default function Customers() {
 
   // ── Delivery ──────────────────────────────────────────────
   const handleDeliveryConfirm = async (c: Customer) => {
-    const { cars: allCars, repairs: allRepairs, updateCar } = useStore.getState();
+    const { cars: allCars, updateCar } = useStore.getState();
     const car = allCars.find(x => x.id === c.interestedCarId);
     // Commission auto-calc: profit = selling - purchase - repairs; RM 2k if > 12k else RM 1k
     const wo = c.loanWorkOrder ?? c.cashWorkOrder;
     const dealPrice = wo ? (wo.sellingPrice - (wo.discount ?? 0)) : (car?.sellingPrice ?? 0);
-    const purchasePrice = car?.purchasePrice ?? 0;
-    const repairTotal = allRepairs.filter(r => r.carId === c.interestedCarId).reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
-    const netProfit = dealPrice - purchasePrice - repairTotal;
-    const commission = netProfit > 12000 ? 2000 : 1000;
+    const commission = (car?.priceFloor != null && dealPrice < car.priceFloor) ? 1000 : 1500;
 
     updateCustomer(c.id, {
       delivered: true,
@@ -1680,7 +1676,6 @@ export default function Customers() {
                   <div className="flex border-b border-obsidian-400/60 shrink-0">
                     <button onClick={() => setDetailTab('details')} className={`flex-1 py-3.5 text-xs font-semibold transition-colors touch-manipulation ${detailTab === 'details' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}>Details</button>
                     {hasWorkOrder && <button onClick={() => setDetailTab('calculation')} className={`flex-1 py-3.5 text-xs font-semibold transition-colors touch-manipulation ${detailTab === 'calculation' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}>Deal</button>}
-                    {hasWorkOrder && <button onClick={() => setDetailTab('postsale')} className={`flex-1 py-3.5 text-xs font-semibold transition-colors touch-manipulation ${detailTab === 'postsale' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}>Post-Sale</button>}
                     <button onClick={() => setDetailTab('timeline')} className={`flex-1 py-3.5 text-xs font-semibold transition-colors touch-manipulation ${detailTab === 'timeline' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}>Timeline</button>
                   </div>
 
@@ -1784,132 +1779,6 @@ export default function Customers() {
                         </>)}
 
                         <div className="h-6" />
-                      </div>
-                    );
-                  })()}
-
-                  {/* Post-Sale Tab */}
-                  {hasWorkOrder && detailTab === 'postsale' && (() => {
-                    const liveCustomer = customers.find(c => c.id === detailLead.id) ?? detailLead;
-                    const cl: PostSaleChecklist = liveCustomer.postSaleChecklist ?? {};
-                    const isLoanCase = !!detailLead.loanWorkOrder;
-                    const update = (patch: Partial<PostSaleChecklist>) => {
-                      const updated = { ...cl, ...patch };
-                      updateCustomer(detailLead.id, { postSaleChecklist: updated });
-                    };
-                    const b5b7Done = isLoanCase ? (cl.b5Obtained && cl.b7Obtained) : cl.b5Obtained;
-                    const canTransfer = !!b5b7Done && !!cl.insuranceCoverNote;
-                    const b2Required = !!cl.wantsCustomPlate;
-
-                    const Step = ({ done, locked, label, sub, onToggle }: { done: boolean; locked?: boolean; label: string; sub?: string; onToggle: () => void }) => (
-                      <button
-                        onClick={() => !locked && onToggle()}
-                        disabled={locked}
-                        className={`w-full flex items-center gap-3 px-4 py-3 border-b border-obsidian-400/20 text-left transition-colors ${locked ? 'opacity-40 cursor-not-allowed' : 'hover:bg-obsidian-700/40'}`}
-                      >
-                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${done ? 'bg-green-500 border-green-500' : locked ? 'border-gray-600' : 'border-gray-500'}`}>
-                          {done && <CheckCircle size={12} className="text-white" />}
-                          {locked && !done && <Lock size={9} className="text-gray-600" />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-sm font-medium ${done ? 'text-green-400 line-through opacity-60' : locked ? 'text-gray-600' : 'text-white'}`}>{label}</p>
-                          {sub && <p className="text-xs text-gray-600 mt-0.5">{sub}</p>}
-                        </div>
-                      </button>
-                    );
-
-                    return (
-                      <div className="flex-1 overflow-y-auto min-h-0 pb-20">
-                        {/* Progress bar — at the top */}
-                        {(() => {
-                          const steps = [cl.agreementSigned, cl.thumbprintDone, cl.puspakomBooked, cl.b5Obtained, isLoanCase && cl.b7Obtained, b2Required && cl.b2Booked, b2Required && cl.b2Obtained, cl.insuranceCoverNote, cl.nameTransferDone].filter(s => s !== false);
-                          const done = steps.filter(Boolean).length;
-                          const total = steps.length;
-                          const pct = Math.round((done / total) * 100);
-                          return (
-                            <div className="px-5 pt-4 pb-3 border-b border-obsidian-400/20">
-                              <div className="flex items-center justify-between mb-2">
-                                <span className="text-white text-sm font-semibold">{done}/{total} steps done</span>
-                                <span className={`text-sm font-bold ${pct === 100 ? 'text-green-400' : pct >= 60 ? 'text-gold-400' : 'text-gray-400'}`}>{pct}%</span>
-                              </div>
-                              <div className="h-2 bg-obsidian-600 rounded-full overflow-hidden">
-                                <div className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-green-500' : 'bg-gold-500'}`} style={{ width: `${pct}%` }} />
-                              </div>
-                            </div>
-                          );
-                        })()}
-
-                        {/* Agreement & Thumbprint */}
-                        <div className="px-4 py-2.5 bg-obsidian-700/40 border-b border-obsidian-400/30">
-                          <p className="text-white text-xs font-bold uppercase tracking-wide">Sale Agreement</p>
-                        </div>
-                        <Step done={!!cl.agreementSigned} label="S&P Agreement Signed" sub="Customer signs the sale & purchase agreement" onToggle={() => update({ agreementSigned: !cl.agreementSigned })} />
-                        <Step done={!!cl.thumbprintDone} label="Thumbprint Done" sub="Customer thumbprint on agreement" onToggle={() => update({ thumbprintDone: !cl.thumbprintDone })} />
-
-                        {/* Custom plate toggle */}
-                        <div className="px-4 py-3 border-b border-obsidian-400/30 flex items-center justify-between">
-                          <div>
-                            <p className="text-white text-sm font-medium">Custom Plate (B2)</p>
-                            <p className="text-gray-600 text-xs">Customer wants to change car plate</p>
-                          </div>
-                          <button
-                            onClick={() => update({ wantsCustomPlate: !cl.wantsCustomPlate })}
-                            className={`w-11 h-6 rounded-full transition-colors relative ${cl.wantsCustomPlate ? 'bg-gold-500' : 'bg-obsidian-500'}`}
-                          >
-                            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${cl.wantsCustomPlate ? 'left-5' : 'left-0.5'}`} />
-                          </button>
-                        </div>
-
-                        {/* Puspakom */}
-                        <div className="px-4 py-2.5 bg-obsidian-700/40 border-t border-b border-obsidian-400/30 mt-2">
-                          <p className="text-white text-xs font-bold uppercase tracking-wide">Puspakom</p>
-                        </div>
-                        <Step done={!!cl.puspakomBooked} label="Book Puspakom" sub={isLoanCase ? 'B5 + B7 required' : 'B5 required'} onToggle={() => update({ puspakomBooked: !cl.puspakomBooked })} />
-                        {/* Puspakom date input */}
-                        <div className="flex items-center justify-between px-4 py-2.5 border-b border-obsidian-400/20 bg-obsidian-800/30">
-                          <span className="text-xs text-gray-500">Puspakom Date</span>
-                          <input
-                            type="date"
-                            className="bg-obsidian-700/60 border border-obsidian-400/60 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-gold-500/60"
-                            value={cl.puspakomDate ?? ''}
-                            onChange={e => {
-                              const newDate = e.target.value;
-                              update({ puspakomDate: newDate || undefined });
-                              if (newDate && liveCustomer.assignedSalesId) {
-                                // Auto-create a reminder for the salesperson
-                                addPersonalReminder({
-                                  id: generateId(),
-                                  userId: liveCustomer.assignedSalesId,
-                                  title: `Puspakom appointment – ${liveCustomer.name}`,
-                                  dueAt: newDate,
-                                  isCompleted: false,
-                                  createdAt: new Date().toISOString(),
-                                });
-                              }
-                            }}
-                          />
-                        </div>
-                        <Step done={!!cl.b5Obtained} label="B5 Obtained" onToggle={() => update({ b5Obtained: !cl.b5Obtained })} />
-                        {isLoanCase && <Step done={!!cl.b7Obtained} label="B7 Obtained" sub="Required for hire purchase transfer" onToggle={() => update({ b7Obtained: !cl.b7Obtained })} />}
-                        {b2Required && <>
-                          <Step done={!!cl.b2Booked} label="Book B2" sub="For custom plate change" onToggle={() => update({ b2Booked: !cl.b2Booked })} />
-                          <Step done={!!cl.b2Obtained} label="B2 Obtained" onToggle={() => update({ b2Obtained: !cl.b2Obtained })} />
-                        </>}
-
-                        {/* Insurance & Transfer */}
-                        <div className="px-4 py-2.5 bg-obsidian-700/40 border-t border-b border-obsidian-400/30 mt-2">
-                          <p className="text-white text-xs font-bold uppercase tracking-wide">Insurance & Transfer</p>
-                        </div>
-                        <Step done={!!cl.insuranceCoverNote} label="Insurance Cover Note" sub="Get cover note before name transfer" onToggle={() => update({ insuranceCoverNote: !cl.insuranceCoverNote })} />
-                        <Step
-                          done={!!cl.nameTransferDone}
-                          locked={!canTransfer}
-                          label="Name Transfer (JPJ)"
-                          sub={!canTransfer ? `Requires: ${!b5b7Done ? (isLoanCase ? 'B5, B7' : 'B5') : ''}${!b5b7Done && !cl.insuranceCoverNote ? ', ' : ''}${!cl.insuranceCoverNote ? 'cover note' : ''}` : undefined}
-                          onToggle={() => update({ nameTransferDone: !cl.nameTransferDone })}
-                        />
-
-                        <div className="h-4" />
                       </div>
                     );
                   })()}

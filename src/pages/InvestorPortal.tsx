@@ -61,11 +61,7 @@ export default function InvestorPortal() {
         : car.finalDeal?.dealPrice ?? car.sellingPrice;
       const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
 
-      const commission = car.priceFloor != null
-        ? (dealPrice >= car.priceFloor
-            ? ((dealPrice - car.purchasePrice - repairCost - miscCost - additionalTotal) >= 10000 ? 2000 : 1500)
-            : 1000)
-        : ((dealPrice - car.purchasePrice - repairCost - miscCost - additionalTotal) >= 10000 ? 1500 : 1000);
+      const commission = (car.priceFloor != null && dealPrice < car.priceFloor) ? 1000 : 1500;
 
       const totalExpenses = repairCost + miscCost + additionalTotal + commission;
       const netProfit = dealPrice - car.purchasePrice - totalExpenses;

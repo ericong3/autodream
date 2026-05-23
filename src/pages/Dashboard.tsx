@@ -60,11 +60,7 @@ export default function Dashboard() {
     const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
 
     const profitBeforeComm = dealPrice - car.purchasePrice - repairCost - miscCost - additionalTotal;
-    const commission = car.outgoingConsignment ? 0 : car.priceFloor != null
-      ? (dealPrice >= car.priceFloor
-          ? (profitBeforeComm >= 10000 ? 2000 : 1500)
-          : 1000)
-      : (profitBeforeComm >= 10000 ? 1500 : 1000);
+    const commission = car.outgoingConsignment ? 0 : (car.priceFloor != null && dealPrice < car.priceFloor) ? 1000 : 1500;
     const intakeComm = car.intakeCommission ?? 0;
     const sourceComm = car.sourceCommission ?? 0;
 

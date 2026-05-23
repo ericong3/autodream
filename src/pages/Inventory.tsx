@@ -390,9 +390,7 @@ export default function Inventory() {
       const repairCosts = repairs.filter(r => r.carId === car.id && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
       const miscCosts = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
       const profitBeforeComm = dealPrice - car.purchasePrice - repairCosts - miscCosts - additionalTotal;
-      const commission = car.outgoingConsignment ? 0 : car.priceFloor != null
-        ? (dealPrice >= car.priceFloor ? (profitBeforeComm >= 10000 ? 2000 : 1500) : 1000)
-        : (profitBeforeComm >= 10000 ? 1500 : 1000);
+      const commission = car.outgoingConsignment ? 0 : (car.priceFloor != null && dealPrice < car.priceFloor) ? 1000 : 1500;
       map[car.id] = profitBeforeComm - commission;
     }
     return map;
@@ -1509,7 +1507,7 @@ export default function Inventory() {
                 onChange={(e) => setForm({ ...form, priceFloor: e.target.value ? Number(e.target.value) : undefined })}
                 placeholder="e.g. 55800"
               />
-              <p className="text-gray-600 text-xs mt-1">Deal ≥ floor → 2k or 1.5k commission · Deal below floor → 1k commission</p>
+              <p className="text-gray-600 text-xs mt-1">Deal ≥ floor → 1.5k commission · Deal below floor → 1k commission</p>
             </FormField>
           )}
           <FormField label="Transmission">
@@ -2105,12 +2103,10 @@ export default function Inventory() {
         };
 
         const handleDelivery = () => {
-          const { repairs: allRepairs, updateCar } = useStore.getState();
+          const { updateCar } = useStore.getState();
           const wo = buyer.loanWorkOrder ?? buyer.cashWorkOrder;
           const dealPrice = wo ? (wo.sellingPrice - (wo.discount ?? 0)) : (car.sellingPrice ?? 0);
-          const repairTotal = allRepairs.filter(r => r.carId === car.id).reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
-          const netProfit = dealPrice - (car.purchasePrice ?? 0) - repairTotal;
-          const commission = netProfit > 12000 ? 2000 : 1000;
+          const commission = (car.priceFloor != null && dealPrice < car.priceFloor) ? 1000 : 1500;
           updateCustomer(buyer.id, {
             delivered: true,
             deliveredAt: new Date().toISOString(),

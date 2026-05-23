@@ -74,7 +74,6 @@ const ROLE_CONFIG = {
 
 function EmployeeDetailModal({ member, onClose, currentUserId }: { member: User; onClose: () => void; currentUserId?: string }) {
   const cars = useStore((s) => s.cars);
-  const repairs = useStore((s) => s.repairs);
   const customers = useStore((s) => s.customers);
 
   const cfg = ROLE_CONFIG[member.role as keyof typeof ROLE_CONFIG];
@@ -87,21 +86,13 @@ function EmployeeDetailModal({ member, onClose, currentUserId }: { member: User;
   const soldCars = cars.filter((c) => c.status === 'delivered' && getDealSalespersonId(c) === member.id);
   const activeCars = cars.filter((c) => c.status !== 'delivered' && c.assignedSalesperson === member.id);
 
-  const getRepairCosts = (carId: string) =>
-    repairs.filter(r => r.carId === carId && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
   const calcCommission = (car: typeof cars[0]): number => {
     if (car.outgoingConsignment) return 0;
     const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
     const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
     const dealPrice = (wo?.sellingPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
-    const repairCosts = getRepairCosts(car.id);
-    const miscCosts = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
-    const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
-    const netBeforeComm = dealPrice - car.purchasePrice - repairCosts - miscCosts - additionalTotal;
-    if (car.priceFloor != null) {
-      return dealPrice >= car.priceFloor ? (netBeforeComm >= 10000 ? 2000 : 1500) : 1000;
-    }
-    return netBeforeComm >= 10000 ? 1500 : 1000;
+    if (car.priceFloor != null && dealPrice < car.priceFloor) return 1000;
+    return 1500;
   };
 
   const commission = soldCars.reduce((s, c) => s + calcCommission(c), 0);
@@ -290,7 +281,6 @@ function EmployeeDetailModal({ member, onClose, currentUserId }: { member: User;
 export default function TeamMembers() {
   const users = useStore((s) => s.users);
   const cars = useStore((s) => s.cars);
-  const repairs = useStore((s) => s.repairs);
   const customers = useStore((s) => s.customers);
   const currentUser = useStore((s) => s.currentUser);
   const addUser = useStore((s) => s.addUser);
@@ -304,21 +294,13 @@ export default function TeamMembers() {
     return car.assignedSalesperson || dealCustomer?.assignedSalesId;
   };
 
-  const getRepairCosts = (carId: string) =>
-    repairs.filter(r => r.carId === carId && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
   const calcCommission = (car: typeof cars[0]): number => {
     if (car.outgoingConsignment) return 0;
     const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
     const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
     const dealPrice = (wo?.sellingPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
-    const repairCosts = getRepairCosts(car.id);
-    const miscCosts = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
-    const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
-    const netBeforeComm = dealPrice - car.purchasePrice - repairCosts - miscCosts - additionalTotal;
-    if (car.priceFloor != null) {
-      return dealPrice >= car.priceFloor ? (netBeforeComm >= 10000 ? 2000 : 1500) : 1000;
-    }
-    return netBeforeComm >= 10000 ? 1500 : 1000;
+    if (car.priceFloor != null && dealPrice < car.priceFloor) return 1000;
+    return 1500;
   };
 
   const isShareHolder = currentUser?.role === 'shareholder';
