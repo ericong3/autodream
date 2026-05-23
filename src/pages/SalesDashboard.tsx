@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Car, Users, Calendar, Bell, ChevronDown, ChevronUp, AlertCircle, Plus, CheckCircle, Circle, Trash2, ChevronLeft, ChevronRight, Eye, EyeOff, Lock, RefreshCw, Skull, X, CalendarCheck, Phone, MessageCircle } from 'lucide-react';
 import { useStore } from '../store';
@@ -20,6 +20,17 @@ export default function SalesDashboard() {
   const updateCustomer = useStore((s) => s.updateCustomer);
   const [showFollowUpList, setShowFollowUpList] = useState(false);
   const [followUpSelected, setFollowUpSelected] = useState<typeof customers[0] | null>(null);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setFollowUpSelected(null);
+        setShowFollowUpList(false);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
   const [showCommission, setShowCommission] = useState(false);
   const [monthFilter, setMonthFilter] = useState(new Date().toISOString().slice(0, 7));
 
@@ -368,50 +379,19 @@ export default function SalesDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
         {/* Follow Up List */}
-        <div className="card-surface rounded-xl overflow-hidden">
-          <button
-            onClick={() => setShowFollowUpList(v => !v)}
-            className="w-full flex items-center gap-2 p-4 text-left"
-          >
-            <div className="w-6 h-6 bg-yellow-500/10 rounded-lg flex items-center justify-center shrink-0">
-              <Calendar size={13} className="text-yellow-400" />
-            </div>
-            <span className="text-white font-semibold text-sm flex-1">Follow Up List</span>
-            {followUpList.length > 0 && (
-              <span className="text-[10px] bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full font-semibold">{followUpList.length}</span>
-            )}
-            {showFollowUpList ? <ChevronUp size={14} className="text-gray-500 shrink-0" /> : <ChevronDown size={14} className="text-gray-500 shrink-0" />}
-          </button>
-
-          {showFollowUpList && (
-            <div className="border-t border-obsidian-500/20">
-              {followUpList.length === 0 ? (
-                <p className="text-gray-600 text-xs py-4 text-center">No follow-ups</p>
-              ) : (
-                <div className="divide-y divide-obsidian-500/20">
-                  {followUpList.map(c => (
-                    <button
-                      key={c.id}
-                      onClick={() => setFollowUpSelected(c)}
-                      className="w-full flex items-center justify-between px-4 py-3 hover:bg-obsidian-700/40 transition-colors text-left"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="text-white text-xs font-medium truncate">{c.name}</p>
-                        <p className="text-gray-500 text-[10px] truncate">{getCarName(c.interestedCarId)}</p>
-                        {c.followUpRemark && <p className="text-gray-600 text-[10px] truncate italic">{c.followUpRemark}</p>}
-                      </div>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full ml-3 shrink-0 font-medium ${
-                        c.followUpDate! < today ? 'bg-red-500/15 text-red-400' : c.followUpDate === today ? 'bg-yellow-500/15 text-yellow-400' : 'bg-blue-500/15 text-blue-400'
-                      }`}>
-                        {c.followUpDate! < today ? 'Overdue' : c.followUpDate === today ? 'Today' : new Date(c.followUpDate! + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+        <button
+          onClick={() => setShowFollowUpList(true)}
+          className="card-surface rounded-xl w-full flex items-center gap-2 p-4 text-left hover:border-yellow-500/20 transition-colors"
+        >
+          <div className="w-6 h-6 bg-yellow-500/10 rounded-lg flex items-center justify-center shrink-0">
+            <Calendar size={13} className="text-yellow-400" />
+          </div>
+          <span className="text-white font-semibold text-sm flex-1">Follow Up List</span>
+          {followUpList.length > 0 && (
+            <span className="text-[10px] bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full font-semibold">{followUpList.length}</span>
           )}
-        </div>
+          <ChevronRight size={14} className="text-gray-500 shrink-0" />
+        </button>
 
         {/* Test Drives */}
         <div className="card-surface rounded-xl p-4 space-y-3">
@@ -664,6 +644,56 @@ export default function SalesDashboard() {
           </div>
         )}
       </Modal>
+
+      {/* Follow Up List popup */}
+      {showFollowUpList && createPortal(
+        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowFollowUpList(false)} />
+          <div className="relative w-full max-w-sm bg-obsidian-800 border border-obsidian-500/40 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[70vh]">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-obsidian-500/30 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 bg-yellow-500/10 rounded-lg flex items-center justify-center">
+                  <Calendar size={13} className="text-yellow-400" />
+                </div>
+                <span className="text-white font-semibold text-sm">Follow Up List</span>
+                {followUpList.length > 0 && (
+                  <span className="text-[10px] bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full font-semibold">{followUpList.length}</span>
+                )}
+              </div>
+              <button onClick={() => setShowFollowUpList(false)} className="p-1.5 text-gray-500 hover:text-white rounded-lg hover:bg-obsidian-700/60 transition-colors">
+                <X size={15} />
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1">
+              {followUpList.length === 0 ? (
+                <p className="text-gray-600 text-xs py-8 text-center">No follow-ups in list</p>
+              ) : (
+                <div className="divide-y divide-obsidian-500/20">
+                  {followUpList.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => { setShowFollowUpList(false); setFollowUpSelected(c); }}
+                      className="w-full flex items-center justify-between px-4 py-3 hover:bg-obsidian-700/40 transition-colors text-left"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-white text-xs font-medium truncate">{c.name}</p>
+                        <p className="text-gray-500 text-[10px] truncate">{getCarName(c.interestedCarId)}</p>
+                        {c.followUpRemark && <p className="text-gray-600 text-[10px] truncate italic">{c.followUpRemark}</p>}
+                      </div>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full ml-3 shrink-0 font-medium ${
+                        c.followUpDate! < today ? 'bg-red-500/15 text-red-400' : c.followUpDate === today ? 'bg-yellow-500/15 text-yellow-400' : 'bg-blue-500/15 text-blue-400'
+                      }`}>
+                        {c.followUpDate! < today ? 'Overdue' : c.followUpDate === today ? 'Today' : new Date(c.followUpDate! + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* Follow-up customer quick-view sheet */}
       {followUpSelected && createPortal(
