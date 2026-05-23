@@ -89,8 +89,7 @@ export default function SalesDashboard() {
 
   const myCustomers = useMemo(() => customers.filter(c => c.assignedSalesId === myId), [customers, myId]);
   const activeLeads = useMemo(() => myCustomers.filter(c => !c.isDead && !c.isTrashed), [myCustomers]);
-  const followUpToday = myCustomers.filter(c => !c.isDead && !c.isTrashed && c.followUpDate === today);
-  const overdueFollowUps = myCustomers.filter(c => !c.isDead && !c.isTrashed && c.followUpDate && c.followUpDate < today);
+  const followUpList = myCustomers.filter(c => !c.isDead && !c.isTrashed && c.followUpDate);
 
   const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
   // All active scheduled test drives — overdue included so salesman sees them
@@ -346,11 +345,11 @@ export default function SalesDashboard() {
         <QuickStat
           icon={AlertCircle}
           label="Follow-ups"
-          value={followUpToday.length + overdueFollowUps.length}
-          sub={overdueFollowUps.length > 0 ? `${overdueFollowUps.length} overdue` : 'today'}
-          color={overdueFollowUps.length > 0 ? 'text-red-400' : followUpToday.length > 0 ? 'text-yellow-400' : 'text-gray-500'}
-          iconBg={overdueFollowUps.length > 0 ? 'bg-red-500/10' : 'bg-yellow-500/10'}
-          alert={overdueFollowUps.length > 0}
+          value={followUpList.length}
+          sub={followUpList.filter(c => c.followUpDate! <= today).length > 0 ? `${followUpList.filter(c => c.followUpDate! <= today).length} due` : 'in list'}
+          color={followUpList.some(c => c.followUpDate! < today) ? 'text-red-400' : followUpList.length > 0 ? 'text-yellow-400' : 'text-gray-500'}
+          iconBg={followUpList.some(c => c.followUpDate! < today) ? 'bg-red-500/10' : 'bg-yellow-500/10'}
+          alert={followUpList.some(c => c.followUpDate! < today)}
         />
         <QuickStat
           icon={Car}
@@ -374,20 +373,21 @@ export default function SalesDashboard() {
             </div>
             Follow Up List
           </h2>
-          {[...overdueFollowUps, ...followUpToday].length === 0 ? (
-            <p className="text-gray-600 text-xs py-4 text-center">No urgent follow-ups</p>
+          {followUpList.length === 0 ? (
+            <p className="text-gray-600 text-xs py-4 text-center">No follow-ups</p>
           ) : (
             <div className="space-y-2">
-              {[...overdueFollowUps, ...followUpToday].map(c => (
+              {followUpList.map(c => (
                 <div key={c.id} className="flex items-center justify-between py-1">
                   <div className="min-w-0 flex-1">
                     <p className="text-white text-xs font-medium truncate">{c.name}</p>
                     <p className="text-gray-500 text-[10px] truncate">{getCarName(c.interestedCarId)}</p>
+                    {c.followUpRemark && <p className="text-gray-600 text-[10px] truncate italic">{c.followUpRemark}</p>}
                   </div>
                   <span className={`text-[10px] px-2 py-0.5 rounded-full ml-2 shrink-0 font-medium ${
-                    c.followUpDate! < today ? 'bg-red-500/15 text-red-400' : 'bg-yellow-500/15 text-yellow-400'
+                    c.followUpDate! < today ? 'bg-red-500/15 text-red-400' : c.followUpDate === today ? 'bg-yellow-500/15 text-yellow-400' : 'bg-blue-500/15 text-blue-400'
                   }`}>
-                    {c.followUpDate! < today ? 'Overdue' : 'Today'}
+                    {c.followUpDate! < today ? 'Overdue' : c.followUpDate === today ? 'Today' : new Date(c.followUpDate! + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}
                   </span>
                 </div>
               ))}

@@ -1083,7 +1083,7 @@ export default function Customers() {
                       <MessageCircle size={13} />WA
                     </button>
                     {(() => {
-                      const inList = c.followUpDate && c.followUpDate <= todayStr;
+                      const inList = !!c.followUpDate;
                       return (
                         <button
                           onClick={() => updateCustomer(c.id, { followUpDate: inList ? undefined : todayStr })}
