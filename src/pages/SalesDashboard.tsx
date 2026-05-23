@@ -649,7 +649,7 @@ export default function SalesDashboard() {
       {showFollowUpList && createPortal(
         <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowFollowUpList(false)} />
-          <div className="relative w-full max-w-sm bg-obsidian-800 border border-obsidian-500/40 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[70vh]">
+          <div className="relative w-full max-w-sm bg-obsidian-800 border border-obsidian-500/40 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
             <div className="flex items-center justify-between px-4 py-3 border-b border-obsidian-500/30 shrink-0">
               <div className="flex items-center gap-2">
                 <div className="w-6 h-6 bg-yellow-500/10 rounded-lg flex items-center justify-center">
@@ -697,15 +697,13 @@ export default function SalesDashboard() {
 
       {/* Follow-up customer quick-view sheet */}
       {followUpSelected && createPortal(
-        <div className="fixed inset-0 z-[500] flex flex-col justify-end sm:justify-center sm:items-center">
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setFollowUpSelected(null)} />
-          <div className="relative w-full sm:max-w-sm bg-gradient-to-b from-obsidian-700 to-obsidian-800 border-t border-x sm:border border-obsidian-400/80 rounded-t-2xl sm:rounded-2xl shadow-[0_-20px_60px_rgba(0,0,0,0.7)] overflow-hidden">
+          <div className="relative w-full max-w-sm bg-gradient-to-b from-obsidian-700 to-obsidian-800 border border-obsidian-400/80 rounded-2xl shadow-2xl overflow-hidden max-h-[80vh] flex flex-col">
             <div className="absolute top-0 left-0 right-0 h-[2px] bg-gold-gradient opacity-80" />
-            {/* drag handle */}
-            <div className="flex justify-center pt-3 pb-1 sm:hidden"><div className="w-8 h-1 bg-obsidian-400/60 rounded-full" /></div>
 
             {/* Header */}
-            <div className="flex items-start justify-between px-5 pt-3 pb-4 border-b border-obsidian-400/40">
+            <div className="flex items-start justify-between px-5 pt-4 pb-4 border-b border-obsidian-400/40 shrink-0">
               <div className="min-w-0 flex-1">
                 <p className="text-white font-bold text-base truncate">{followUpSelected.name}</p>
                 <p className="text-gray-500 text-xs mt-0.5">{followUpSelected.phone}</p>
@@ -715,7 +713,7 @@ export default function SalesDashboard() {
               </button>
             </div>
 
-            <div className="px-5 py-4 space-y-3">
+            <div className="px-5 py-4 space-y-3 overflow-y-auto flex-1">
               {/* Interested Car — select */}
               <div>
                 <p className="text-gray-600 text-[10px] uppercase tracking-wider font-semibold mb-0.5">Interested Car</p>
@@ -793,7 +791,6 @@ export default function SalesDashboard() {
                 </button>
               </div>
             </div>
-            <div style={{ height: 'env(safe-area-inset-bottom, 0px)' }} />
           </div>
         </div>,
         document.body
