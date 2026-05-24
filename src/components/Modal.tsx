@@ -8,10 +8,11 @@ interface ModalProps {
   onClose: () => void;
   title: string;
   children: React.ReactNode;
+  footer?: React.ReactNode;
   maxWidth?: string;
 }
 
-export default function Modal({ isOpen, onClose, title, children, maxWidth = 'max-w-lg' }: ModalProps) {
+export default function Modal({ isOpen, onClose, title, children, footer, maxWidth = 'max-w-lg' }: ModalProps) {
   useBodyScrollLock(isOpen);
   if (!isOpen) return null;
 
@@ -22,7 +23,8 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = 'ma
       <div className="absolute inset-0 bg-black/80 modal-backdrop" onClick={onClose} />
 
       {/* Mobile: bottom sheet — Desktop: centered */}
-      <div className="absolute inset-0 flex items-end sm:items-center justify-center sm:p-4 pointer-events-none">
+      <div className="absolute inset-0 flex items-end sm:items-center justify-center sm:p-4 pointer-events-none"
+        style={{ paddingTop: 'env(safe-area-inset-top, 44px)' }}>
         <div className={`relative w-full ${maxWidth} flex flex-col glass-panel shadow-card-lg
           rounded-t-2xl sm:rounded-xl overflow-hidden modal-enter pointer-events-auto`}>
 
@@ -48,10 +50,20 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = 'ma
           {/* Scrollable body */}
           <div
             className="p-5 overflow-y-auto max-h-[75vh] sm:max-h-[85vh]"
-            style={{ paddingBottom: 'calc(1.25rem + env(safe-area-inset-bottom, 0px))' }}
+            style={{ paddingBottom: footer ? '1.25rem' : 'calc(1.25rem + env(safe-area-inset-bottom, 0px))' }}
           >
             {children}
           </div>
+
+          {/* Sticky footer — buttons always visible, never buried under scroll */}
+          {footer && (
+            <div
+              className="px-5 pt-3 pb-5 border-t border-obsidian-500/30 shrink-0 bg-obsidian-800/60"
+              style={{ paddingBottom: 'calc(1.25rem + env(safe-area-inset-bottom, 0px))' }}
+            >
+              {footer}
+            </div>
+          )}
         </div>
       </div>
     </div>,
