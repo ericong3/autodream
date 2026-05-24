@@ -510,6 +510,9 @@ export default function Inventory() {
       ...form,
       id: generateId(),
       dateAdded: new Date().toISOString().split('T')[0],
+      consignment: form.consignment?.terms === 'fixed_amount'
+        ? { ...form.consignment, fixedAmount: form.purchasePrice || 0 }
+        : form.consignment,
     };
 
     setSubmitting(true);
@@ -1592,14 +1595,10 @@ export default function Inventory() {
                 </div>
 
                 {form.consignment.terms === 'fixed_amount' && (
-                  <FormField label="Dealer Takes Back (RM)">
-                    <input
-                      type="number"
-                      className={inputCls()}
-                      value={form.consignment.fixedAmount ?? 0}
-                      onChange={(e) => setForm({ ...form, consignment: { ...form.consignment!, fixedAmount: Number(e.target.value) } })}
-                    />
-                  </FormField>
+                  <div className="flex items-center justify-between bg-obsidian-700/40 border border-obsidian-400/40 rounded-lg px-3 py-2.5">
+                    <p className="text-gray-400 text-xs">Dealer Takes Back</p>
+                    <p className="text-blue-400 font-semibold text-sm">{formatRM(form.purchasePrice || 0)}</p>
+                  </div>
                 )}
 
                 {form.consignment.terms === 'profit_split' && (

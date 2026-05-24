@@ -393,7 +393,12 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     setEditErrors(e);
     if (Object.keys(e).length > 0) return;
     setShowEditModal(false);
-    updateCar(car.id, editForm);
+    updateCar(car.id, {
+      ...editForm,
+      consignment: editForm.consignment?.terms === 'fixed_amount'
+        ? { ...editForm.consignment, fixedAmount: editForm.purchasePrice || 0 }
+        : editForm.consignment,
+    });
   };
 
   // ── Add Repair ──
@@ -1712,12 +1717,10 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   </div>
                 </div>
                 {editForm.consignment.terms === 'fixed_amount' && (
-                  <FormField label="Dealer Takes Back (RM)">
-                    <input type="number" className={inputCls()}
-                      value={editForm.consignment.fixedAmount ?? 0}
-                      onChange={(e) => setEditForm({ ...editForm, consignment: { ...editForm.consignment!, fixedAmount: Number(e.target.value) } })}
-                    />
-                  </FormField>
+                  <div className="flex items-center justify-between bg-obsidian-700/40 border border-obsidian-400/40 rounded-lg px-3 py-2.5">
+                    <p className="text-gray-400 text-xs">Dealer Takes Back</p>
+                    <p className="text-blue-400 font-semibold text-sm">{formatRM(editForm.purchasePrice || 0)}</p>
+                  </div>
                 )}
                 {editForm.consignment.terms === 'profit_split' && (
                   <FormField label="Dealer's Split (%)">
