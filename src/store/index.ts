@@ -613,10 +613,12 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     const allCars = (cars.data ?? []).map(rowToCar);
     const allCustomers = (customers.data ?? []).map(rowToCustomer);
 
-    // Auto-reconcile: clear finalDeal on cars that have no confirmed customer
+    // Auto-reconcile: clear finalDeal ONLY on cars whose status is available/ready/etc
+    // AND have no confirmed customer with a work order.
+    // Never touch deal_pending or delivered cars — their status is sacred.
     const confirmedCarIds = new Set(
       allCustomers
-        .filter(c => c.cashWorkOrder || c.loanWorkOrder || (c.dealPrice && c.dealPrice > 0))
+        .filter(c => c.cashWorkOrder || c.loanWorkOrder)
         .map(c => c.interestedCarId)
         .filter(Boolean)
     );
@@ -629,11 +631,11 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     );
     if (orphanedCars.length > 0) {
       await Promise.all(orphanedCars.map(c =>
-        supabase.from('cars').update({ final_deal: null, status: 'available' }).eq('id', c.id)
+        supabase.from('cars').update({ final_deal: null }).eq('id', c.id)
       ));
       orphanedCars.forEach(c => {
         const idx = allCars.findIndex(x => x.id === c.id);
-        if (idx !== -1) allCars[idx] = { ...allCars[idx], finalDeal: undefined, status: 'available' };
+        if (idx !== -1) allCars[idx] = { ...allCars[idx], finalDeal: undefined };
       });
     }
 
@@ -968,8 +970,13 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   },
   updateCar: async (id, car) => {
     const prev = get().cars.find(c => c.id === id);
-    // Protect deal_pending cars: only delivery or explicit cancellation may change their status
-    if (prev?.status === 'deal_pending' && car.status && car.status !== 'delivered' && car.status !== 'available') {
+    // deal_pending cars: ONLY 'delivered' can change the status. Everything else is blocked.
+    // Cancellation must go through the dedicated cancel flow, not a status field edit.
+    if (prev?.status === 'deal_pending' && car.status && car.status !== 'delivered') {
+      delete (car as any).status;
+    }
+    // delivered cars: status is permanently locked — nothing can change it
+    if (prev?.status === 'delivered' && car.status) {
       delete (car as any).status;
     }
     set((s) => ({ cars: s.cars.map((c) => (c.id === id ? { ...c, ...car } : c)) }));
