@@ -1550,20 +1550,22 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               <option value="manual">Manual</option>
             </select>
           </FormField>
-          <FormField label="Status">
-            <select className={inputCls()} value={editForm.status ?? 'coming_soon'} onChange={(e) => setEditForm({ ...editForm, status: e.target.value as Car['status'] })}>
-              <option value="coming_soon">Coming Soon</option>
-              <option value="in_workshop">In Workshop</option>
-              <option value="ready">Ready</option>
-              <option value="photo_complete">Photo Complete</option>
-              <option value="submitted">Submitted</option>
-              <option value="deal_pending">Deal Pending</option>
-              <option value="available">Available</option>
-              <option value="reserved">Reserved</option>
-              <option value="sold">Sold</option>
-              <option value="delivered">Delivered</option>
-            </select>
-          </FormField>
+          {car.status !== 'deal_pending' && car.status !== 'delivered' && (
+            <FormField label="Status">
+              <select className={inputCls()} value={editForm.status ?? 'coming_soon'} onChange={(e) => setEditForm({ ...editForm, status: e.target.value as Car['status'] })}>
+                <option value="coming_soon">Coming Soon</option>
+                <option value="in_workshop">In Workshop</option>
+                <option value="ready">Ready</option>
+                <option value="photo_complete">Photo Complete</option>
+                <option value="submitted">Submitted</option>
+                <option value="deal_pending">Deal Pending</option>
+                <option value="available">Available</option>
+                <option value="reserved">Reserved</option>
+                <option value="sold">Sold</option>
+                <option value="delivered">Delivered</option>
+              </select>
+            </FormField>
+          )}
 
           {isDirector && (() => {
             const investors = users.filter(u => u.role === 'investor');
