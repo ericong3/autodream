@@ -1653,6 +1653,78 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             )}
           </div>
 
+          {/* Incoming Consignment */}
+          <div className="col-span-2">
+            <button
+              type="button"
+              onClick={() => setEditForm({ ...editForm, consignment: editForm.consignment ? undefined : { dealer: '', terms: 'fixed_amount', fixedAmount: 0 } })}
+              className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${editForm.consignment ? 'bg-blue-500/10 border-blue-500/40 text-blue-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
+            >
+              <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${editForm.consignment ? 'bg-blue-500 border-blue-500' : 'border-gray-600'}`}>
+                {editForm.consignment && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+              </div>
+              <div>
+                <p className="text-sm font-medium">Consign In — Dealer's car, we sell it</p>
+                <p className="text-xs opacity-60 mt-0.5">Car belongs to another dealer, sold on their behalf</p>
+              </div>
+            </button>
+            {editForm.consignment && (
+              <div className="mt-3 space-y-3 pl-2 border-l-2 border-blue-500/30">
+                <FormField label="Dealer Name">
+                  <select
+                    className={inputCls()}
+                    value={editForm.consignment.dealer}
+                    onChange={(e) => setEditForm({ ...editForm, consignment: { ...editForm.consignment!, dealer: e.target.value } })}
+                  >
+                    <option value="">— Select dealer —</option>
+                    {dealers.map((d) => (
+                      <option key={d.id} value={d.name}>{d.name}</option>
+                    ))}
+                  </select>
+                  {dealers.length === 0 && (
+                    <p className="text-xs text-gray-500 mt-1">No dealers yet — add them in the Data page under Car Dealers</p>
+                  )}
+                </FormField>
+                <div>
+                  <label className="block text-gray-300 text-xs font-medium mb-2">Consignment Terms</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button"
+                      onClick={() => setEditForm({ ...editForm, consignment: { ...editForm.consignment!, terms: 'fixed_amount' } })}
+                      className={`px-3 py-2.5 rounded-lg border text-sm transition-colors text-left ${editForm.consignment.terms === 'fixed_amount' ? 'bg-blue-500/15 border-blue-500/50 text-blue-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400'}`}
+                    >
+                      <p className="font-medium">Fixed Amount</p>
+                      <p className="text-xs opacity-60 mt-0.5">Dealer takes back a set amount</p>
+                    </button>
+                    <button type="button"
+                      onClick={() => setEditForm({ ...editForm, consignment: { ...editForm.consignment!, terms: 'profit_split', splitPercent: 50 } })}
+                      className={`px-3 py-2.5 rounded-lg border text-sm transition-colors text-left ${editForm.consignment.terms === 'profit_split' ? 'bg-blue-500/15 border-blue-500/50 text-blue-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400'}`}
+                    >
+                      <p className="font-medium">Profit Split</p>
+                      <p className="text-xs opacity-60 mt-0.5">Split profit after expenses</p>
+                    </button>
+                  </div>
+                </div>
+                {editForm.consignment.terms === 'fixed_amount' && (
+                  <FormField label="Dealer Takes Back (RM)">
+                    <input type="number" className={inputCls()}
+                      value={editForm.consignment.fixedAmount ?? 0}
+                      onChange={(e) => setEditForm({ ...editForm, consignment: { ...editForm.consignment!, fixedAmount: Number(e.target.value) } })}
+                    />
+                  </FormField>
+                )}
+                {editForm.consignment.terms === 'profit_split' && (
+                  <FormField label="Dealer's Split (%)">
+                    <input type="number" className={inputCls()}
+                      value={editForm.consignment.splitPercent ?? 50}
+                      min={1} max={99}
+                      onChange={(e) => setEditForm({ ...editForm, consignment: { ...editForm.consignment!, splitPercent: Number(e.target.value) } })}
+                    />
+                  </FormField>
+                )}
+              </div>
+            )}
+          </div>
+
           <FormField label="Notes" className="col-span-2">
             <textarea className={`${inputCls()} h-20 resize-none`} value={editForm.notes ?? ''} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
           </FormField>
