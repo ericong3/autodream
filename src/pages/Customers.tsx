@@ -1546,7 +1546,7 @@ export default function Customers() {
         const hasWorkOrder = !!wo;
         return createPortal(
           <>
-            <style>{`@keyframes drawerSpring{from{transform:translateY(100%)}80%{transform:translateY(-6px)}100%{transform:translateY(0)}} @media (max-width:639px){.cust-drawer-wrap{padding-bottom:calc(4rem + env(safe-area-inset-bottom,0px))}} @media (min-width:640px){.cust-drawer-wrap{padding-bottom:0}}`}</style>
+            <style>{`@keyframes drawerSpring{from{transform:translateY(100%)}80%{transform:translateY(-6px)}100%{transform:translateY(0)}} @media (max-width:639px){.cust-drawer-wrap{padding-top:env(safe-area-inset-top,44px);padding-bottom:calc(4rem + env(safe-area-inset-bottom,0px))}} @media (min-width:640px){.cust-drawer-wrap{padding-bottom:0}}`}</style>
             <div className="fixed inset-0 z-[400] bg-black/70 backdrop-blur-sm" onClick={closeDetail} />
             <div className="fixed inset-0 z-[400] flex items-end sm:items-center pointer-events-none cust-drawer-wrap">
               <div className="w-full sm:p-4 flex sm:justify-center">
@@ -1554,7 +1554,7 @@ export default function Customers() {
                   key={detailLead.id}
                   className="pointer-events-auto relative w-full sm:max-w-lg bg-gradient-to-b from-obsidian-700 to-obsidian-800 border-t border-x sm:border border-obsidian-400/80 rounded-t-2xl sm:rounded-2xl shadow-[0_-20px_80px_rgba(0,0,0,0.8)] sm:shadow-[0_20px_80px_rgba(0,0,0,0.8)] flex flex-col"
                   style={{
-                    maxHeight: '92vh',
+                    maxHeight: 'calc(100vh - env(safe-area-inset-top, 44px))',
                     transform: dragOffset > 0 ? `translateY(${dragOffset}px)` : undefined,
                     transition: isDragging ? 'none' : 'transform 0.35s cubic-bezier(0.34,1.56,0.64,1)',
                     animation: isDragging ? 'none' : 'drawerSpring 0.4s cubic-bezier(0.34,1.56,0.64,1) forwards',
@@ -3064,8 +3064,8 @@ export default function Customers() {
         const close = () => { setBankModalLeadId(null); setBankModalPendingData(null); };
 
         return createPortal(
-          <div className="fixed inset-0 z-[400] flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm" onClick={close}>
-            <div className="w-full sm:max-w-sm bg-obsidian-800 sm:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
+          <div className="fixed inset-0 z-[400] flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm" style={{ paddingTop: 'env(safe-area-inset-top, 44px)' }} onClick={close}>
+            <div className="w-full sm:max-w-sm bg-obsidian-800 sm:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: 'calc(100vh - env(safe-area-inset-top, 44px))' }} onClick={e => e.stopPropagation()}>
 
               {/* Handle bar */}
               <div className="flex justify-center pt-3 pb-1 sm:hidden">
