@@ -1539,7 +1539,7 @@ export default function Inventory() {
           <div className="col-span-2">
             <button
               type="button"
-              onClick={() => setForm({ ...form, consignment: form.consignment ? undefined : { dealer: '', terms: 'fixed_amount', fixedAmount: 0 }, outgoingConsignment: undefined })}
+              onClick={() => setForm({ ...form, consignment: form.consignment ? undefined : { dealer: '', terms: 'fixed_amount', fixedAmount: form.purchasePrice || 0 }, outgoingConsignment: undefined })}
               className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${form.consignment ? 'bg-blue-500/10 border-blue-500/40 text-blue-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
             >
               <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${form.consignment ? 'bg-blue-500 border-blue-500' : 'border-gray-600'}`}>
@@ -1574,11 +1574,11 @@ export default function Inventory() {
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
-                      onClick={() => setForm({ ...form, consignment: { ...form.consignment!, terms: 'fixed_amount' } })}
+                      onClick={() => setForm({ ...form, consignment: { ...form.consignment!, terms: 'fixed_amount', fixedAmount: form.purchasePrice || form.consignment!.fixedAmount || 0 } })}
                       className={`px-3 py-2.5 rounded-lg border text-sm transition-colors text-left ${form.consignment.terms === 'fixed_amount' ? 'bg-blue-500/15 border-blue-500/50 text-blue-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400'}`}
                     >
                       <p className="font-medium">Fixed Amount</p>
-                      <p className="text-xs opacity-60 mt-0.5">Dealer takes back a set amount</p>
+                      <p className="text-xs opacity-60 mt-0.5">Dealer takes back purchase price</p>
                     </button>
                     <button
                       type="button"
