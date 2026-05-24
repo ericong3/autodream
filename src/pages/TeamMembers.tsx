@@ -755,6 +755,8 @@ export default function TeamMembers() {
               onChange={(e) => setPwForm({ ...pwForm, password: e.target.value })}
               placeholder="Min. 6 characters"
               autoComplete="new-password"
+              autoCapitalize="none"
+              spellCheck={false}
             />
           </FormField>
           <FormField label="Confirm Password" error={pwErrors.confirm}>
@@ -765,6 +767,8 @@ export default function TeamMembers() {
               onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })}
               placeholder="Re-enter new password"
               autoComplete="new-password"
+              autoCapitalize="none"
+              spellCheck={false}
             />
           </FormField>
         </div>

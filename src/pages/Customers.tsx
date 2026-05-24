@@ -94,6 +94,7 @@ export default function Customers() {
   // Tab
   const [tab, setTab] = useState<'leads' | 'cash' | 'loan' | 'confirmed' | 'bin'>('leads');
   const [binMonth, setBinMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [confirmedMonth, setConfirmedMonth] = useState(() => new Date().toISOString().slice(0, 7));
 
   // Director view toggle: 'all' | 'own' | salesperson userId
   const [directorView, setDirectorView] = useState<'all' | 'own' | string>('all');
@@ -124,7 +125,6 @@ export default function Customers() {
   const [sidebarView, setSidebarView] = useState<'options' | 'car_select' | 'loan' | 'cash'>('options');
   const [sidebarCashFlow, setSidebarCashFlow] = useState(false);
   const [loanForm, setLoanForm] = useState({ dealPrice: '', carId: '' });
-  const [cashForm, setCashForm] = useState({ dealPrice: '', notes: '' });
 
   // Work order overlay
   const [workOrderCustomer, setWorkOrderCustomer] = useState<Customer | null>(null);
@@ -238,6 +238,7 @@ export default function Customers() {
     if (c.leadStatus === 'loan_submitted') return false;
     if (c.isDead) return false;
     if (c.isTrashed) return false;
+    if (c.dealType === 'cash') return false;
     const matchStatus = statusFilter === 'all' || c.leadStatus === statusFilter;
     const matchGroup = carGroupFilter === 'all' || getCarGroup(c.interestedCarId) === carGroupFilter;
     const matchCar = carIdFilter === 'all' || c.interestedCarId === carIdFilter;
@@ -254,6 +255,7 @@ export default function Customers() {
     if (c.cashWorkOrder || c.loanWorkOrder) return false;
     if (c.leadStatus !== 'loan_submitted') return false;
     if (c.isTrashed) return false;
+    if (c.delivered) return false;
     const matchGroup = carGroupFilter === 'all' || getCarGroup(c.interestedCarId) === carGroupFilter;
     const matchCar = carIdFilter === 'all' || c.interestedCarId === carIdFilter;
     const matchSearch = !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search);
@@ -268,13 +270,11 @@ export default function Customers() {
   }), [myCustomers, binMonth, search]);
 
   const confirmedFiltered = useMemo(() => myCustomers.filter(c => {
-    if (c.delivered) return false; // delivered = archived in History
-    const hasWorkOrder = !!(c.cashWorkOrder || c.loanWorkOrder);
-    const legacyConfirmed = !!c.dealPrice && !!cars.find(x => x.id === c.interestedCarId)?.finalDeal;
-    if (!hasWorkOrder && !legacyConfirmed) return false;
+    if (c.isTrashed) return false;
+    if (!c.cashWorkOrder && !c.loanWorkOrder) return false;
     const matchSearch = !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search);
     return matchSearch;
-  }), [myCustomers, cars, search]);
+  }), [myCustomers, search]);
 
   const salespeople = users.filter(u => u.role === 'salesperson' || u.role === 'director' || u.role === 'admin');
   const getSalesName = (salesId: string) => users.find(u => u.id === salesId)?.name ?? salesId;
@@ -365,8 +365,8 @@ export default function Customers() {
         await supabase.from('cars').update({ status: 'available', final_deal: null }).eq('id', car.id);
       }
     } else if (c.leadStatus === 'loan_submitted') {
-      // Loan tab → Leads: reset status and loan data
-      updateCustomer(c.id, { leadStatus: 'follow_up', loanStatus: 'not_started', loanBankSubmitted: '', loanApplications: [], dealPrice: 0 });
+      // Loan tab → Leads: reset status, loan data, and deal type
+      updateCustomer(c.id, { leadStatus: 'follow_up', loanStatus: 'not_started', loanBankSubmitted: '', loanApplications: [], dealPrice: 0, dealType: undefined });
     } else if (c.dealType === 'cash' && !c.cashWorkOrder) {
       updateCustomer(c.id, { dealType: undefined });
     } else if (c.leadStatus === 'follow_up') {
@@ -449,7 +449,6 @@ export default function Customers() {
     setSidebarCashFlow(false);
     const interestedCar = cars.find(car => car.id === c.interestedCarId);
     setLoanForm({ dealPrice: String(interestedCar?.sellingPrice ?? ''), carId: c.interestedCarId ?? '' });
-    setCashForm({ dealPrice: String(interestedCar?.sellingPrice ?? ''), notes: '' });
   };
 
   const closeSidebar = () => {
@@ -476,39 +475,6 @@ export default function Customers() {
     setBankModalLeadId(leadId);
   };
 
-  const handleCashDeal = () => {
-    if (!sidebarLead) return;
-    const dealPrice = Number(cashForm.dealPrice);
-    const car = getCar(loanForm.carId || sidebarLead.interestedCarId);
-    const hasDiscount = car ? dealPrice < car.sellingPrice : false;
-    updateCustomer(sidebarLead.id, {
-      leadStatus: 'loan_submitted',
-      loanStatus: 'approved',
-      loanBankSubmitted: 'Cash',
-      loanApplications: [{ bank: 'Cash', status: 'approved' }],
-      interestedCarId: loanForm.carId || sidebarLead.interestedCarId,
-      dealPrice,
-      notes: cashForm.notes
-        ? (sidebarLead.notes ? sidebarLead.notes + '\n' + cashForm.notes : cashForm.notes)
-        : sidebarLead.notes,
-    });
-    if (car) {
-      const updateCar = useStore.getState().updateCar;
-      updateCar(car.id, {
-        status: 'deal_pending',
-        finalDeal: {
-          submittedBy: currentUser?.name ?? '',
-          submittedAt: new Date().toISOString(),
-          dealPrice,
-          bank: 'Cash',
-          approvalStatus: hasDiscount ? 'pending' : 'approved',
-          approvedBy: hasDiscount ? undefined : currentUser?.name,
-          approvedAt: hasDiscount ? undefined : new Date().toISOString(),
-        },
-      });
-    }
-    closeSidebar();
-  };
 
   // ── Work order ────────────────────────────────────────────
   const handleWoPhoto = (e: React.ChangeEvent<HTMLInputElement>, field: 'tradeIn' | 'greenCard') => {
@@ -623,7 +589,7 @@ export default function Customers() {
     setDetailLead(prev => prev ? { ...prev, loanApplications: list, loanStatus: overallStatus } : prev);
 
     // Sync to car.loanSubmissions so the Loan Log on CarDetail stays up to date
-    const customer = customers.find(c => c.id === customerId) ?? detailLead;
+    const customer = useStore.getState().customers.find(c => c.id === customerId) ?? detailLead;
     if (customer?.interestedCarId) {
       const { cars: allCars, updateCar } = useStore.getState();
       const car = allCars.find(c => c.id === customer.interestedCarId);
@@ -860,7 +826,7 @@ export default function Customers() {
             onClick={() => { setTab('confirmed'); setStatusFilter('all'); setSearch(''); }}
             className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'confirmed' ? 'bg-violet-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
-            Confirmed <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'confirmed' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !c.delivered && (!!(c.cashWorkOrder || c.loanWorkOrder) || (!!c.dealPrice && !!cars.find(x => x.id === c.interestedCarId)?.finalDeal))).length}</span>
+            Confirmed <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'confirmed' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !c.isTrashed && !!(c.cashWorkOrder || c.loanWorkOrder)).length}</span>
           </button>
           <button
             onClick={() => { setTab('bin'); setStatusFilter('all'); setSearch(''); }}
@@ -1162,7 +1128,7 @@ export default function Customers() {
       </>)}
 
       {tab === 'cash' && (() => {
-        const cashLeads = myCustomers.filter(c => c.dealType === 'cash' && !c.cashWorkOrder && !c.isDead)
+        const cashLeads = myCustomers.filter(c => c.dealType === 'cash' && !c.cashWorkOrder && !c.isDead && !c.isTrashed)
           .filter(c => !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search))
           .sort((a, b) => (b.lastActionAt ?? b.createdAt).localeCompare(a.lastActionAt ?? a.createdAt));
         return (
@@ -1212,7 +1178,22 @@ export default function Customers() {
                           </button>
                         )}
                         {!isShareHolder && (
+                          <button
+                            onClick={() => {
+                              updateCustomer(c.id, { dealType: 'loan' });
+                              setBankModalPendingData({ carId: c.interestedCarId || '', dealPrice: c.dealPrice ?? 0 });
+                              setBankModalPicks({});
+                              setBankModalLeadId(c.id);
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-2 text-xs text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 rounded-lg transition-colors font-medium touch-manipulation"
+                            title="Switch to Loan"
+                          >
+                            Switch to Loan
+                          </button>
+                        )}
+                        {!isShareHolder && (
                           <div className="ml-auto flex items-center gap-1">
+                            <button onClick={() => updateCustomer(c.id, { dealType: undefined })} className="p-2 text-gray-600 hover:text-orange-400 hover:bg-orange-500/10 rounded-lg transition-colors touch-manipulation" title="Remove Cash Tag"><RotateCcw size={14} /></button>
                             <button onClick={() => openEdit(c)} className="p-2 text-gray-600 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors touch-manipulation"><Edit2 size={14} /></button>
                             <button onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })} className="p-2 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors touch-manipulation"><Trash2 size={14} /></button>
                           </div>
@@ -1381,6 +1362,34 @@ export default function Customers() {
                       </button>
                     </div>
                   )}
+
+                  {/* All banks rejected / no hope — prompt next action */}
+                  {!hasApproved && c.loanApplications && c.loanApplications.length > 0 && c.loanApplications.every(a => a.status === 'rejected' || a.status === 'cancelled') && (
+                    <div className="px-4 pb-4" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center gap-2 p-3 bg-red-500/5 border border-red-500/20 rounded-xl mb-2">
+                        <XCircle size={13} className="text-red-400 shrink-0" />
+                        <span className="text-red-400 text-xs font-medium">All banks rejected</span>
+                      </div>
+                      <div className="flex gap-2">
+                        {!isShareHolder && BANKS.some(b => !c.loanApplications?.some(a => a.bank === b)) && (
+                          <button
+                            onClick={() => { setBankModalPicks({}); setBankModalLeadId(c.id); }}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-dashed border-obsidian-400/50 text-xs text-gold-400 hover:text-gold-300 hover:border-gold-500/30 transition-colors touch-manipulation"
+                          >
+                            <Plus size={12} />Try Other Banks
+                          </button>
+                        )}
+                        {!isShareHolder && (
+                          <button
+                            onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-red-500/20 text-xs text-red-400 hover:bg-red-500/10 transition-colors touch-manipulation"
+                          >
+                            <Trash2 size={12} />Close Case
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -1493,49 +1502,115 @@ export default function Customers() {
             <p className="text-gray-400">No confirmed cases yet</p>
             <p className="text-gray-600 text-xs mt-1">Cases appear here once a work order is submitted</p>
           </div>
-        ) : (
-          <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card divide-y divide-obsidian-400/60">
-            {confirmedFiltered.map(c => {
-              const car = getCar(c.interestedCarId);
-              const isLoan = !!c.loanWorkOrder;
-              const wo = c.loanWorkOrder ?? c.cashWorkOrder;
-              return (
-                <div key={c.id} className="flex items-center gap-3 px-4 py-3 hover:bg-obsidian-700/50 transition-colors cursor-pointer" onClick={() => { setDetailLead(c); setDetailTab('details'); }}>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-white text-sm font-medium">{c.name}</span>
-                      <span className="text-gray-500 text-xs">{c.phone}</span>
-                      {isDirectorLevel && <span className="text-gray-600 text-xs">{getSalesName(c.assignedSalesId)}</span>}
-                    </div>
-                    <div className="flex items-center gap-3 mt-1 flex-wrap">
-                      {car && <span className="text-gray-400 text-xs">{car.year} {car.make} {car.model}</span>}
-                      {(wo?.sellingPrice || c.dealPrice) ? <span className="text-gold-400 text-xs font-semibold">{formatRM(wo?.sellingPrice ?? c.dealPrice ?? 0)}</span> : null}
-                      {wo && <span className="text-gray-600 text-xs">{new Date(wo.createdAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</span>}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
-                    <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${isLoan ? 'bg-blue-500/10 border-blue-500/30 text-blue-400' : 'bg-green-500/10 border-green-500/30 text-green-400'}`}>
-                      {isLoan ? `Loan · ${c.loanWorkOrder?.bank}` : 'Cash'}
-                    </span>
-                    {c.delivered
-                      ? <span className="text-xs font-medium px-2.5 py-1 rounded-full border bg-green-500/10 border-green-500/30 text-green-400 flex items-center gap-1"><Truck size={10} />Delivered</span>
-                      : <span className="text-xs font-medium px-2.5 py-1 rounded-full border bg-violet-500/10 border-violet-500/30 text-violet-400">Confirmed</span>
-                    }
-                    {!isShareHolder && (
-                      <button
-                        onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })}
-                        className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                        title="Move to bin"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    )}
-                  </div>
+        ) : (() => {
+          const getMonthKey = (c: Customer) => {
+            if (c.delivered && c.deliveredAt) return c.deliveredAt.slice(0, 7);
+            const wo = c.loanWorkOrder ?? c.cashWorkOrder;
+            return (wo?.createdAt ?? c.createdAt).slice(0, 7);
+          };
+
+          // All months that have data — for knowing when prev/next exist
+          const allMonths = [...new Set(confirmedFiltered.map(getMonthKey))].sort((a, b) => b.localeCompare(a));
+          const currentIdx = allMonths.indexOf(confirmedMonth);
+          const hasPrev = currentIdx < allMonths.length - 1;
+          const hasNext = currentIdx > 0;
+
+          const monthCases = confirmedFiltered
+            .filter(c => getMonthKey(c) === confirmedMonth)
+            .sort((a, b) => Number(!!a.delivered) - Number(!!b.delivered));
+          const monthLabel = new Date(confirmedMonth + '-02').toLocaleDateString('en-MY', { month: 'long', year: 'numeric' });
+          const deliveredCount = monthCases.filter(c => c.delivered).length;
+
+          // If current month has no data, snap to closest month that does
+          if (allMonths.length > 0 && currentIdx === -1) {
+            setConfirmedMonth(allMonths[0]);
+            return null;
+          }
+
+          const goToPrev = () => hasPrev && setConfirmedMonth(allMonths[currentIdx + 1]);
+          const goToNext = () => hasNext && setConfirmedMonth(allMonths[currentIdx - 1]);
+
+          return (
+            <div className="space-y-4">
+              {/* Month navigator */}
+              <div className="flex items-center justify-between bg-card-gradient border border-obsidian-400/70 rounded-xl px-4 py-3 shadow-card">
+                <button
+                  onClick={goToPrev}
+                  disabled={!hasPrev}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-obsidian-600/60 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronRight size={16} className="rotate-180" />
+                </button>
+                <div className="text-center">
+                  <p className="text-white font-semibold text-sm">{monthLabel}</p>
+                  <p className="text-gray-500 text-xs mt-0.5">
+                    {monthCases.length} case{monthCases.length !== 1 ? 's' : ''}
+                    {deliveredCount > 0 && <span className="text-green-400 ml-1.5">· {deliveredCount} delivered</span>}
+                  </p>
                 </div>
-              );
-            })}
-          </div>
-        )}
+                <button
+                  onClick={goToNext}
+                  disabled={!hasNext}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-obsidian-600/60 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+
+              {/* Cases for selected month */}
+              {monthCases.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16">
+                  <CheckCircle size={36} className="text-gray-600 mb-3" />
+                  <p className="text-gray-400 text-sm">No cases in {monthLabel}</p>
+                </div>
+              ) : (
+                <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card divide-y divide-obsidian-400/60">
+                  {monthCases.map(c => {
+                    const car = getCar(c.interestedCarId);
+                    const isLoan = !!c.loanWorkOrder;
+                    const wo = c.loanWorkOrder ?? c.cashWorkOrder;
+                    return (
+                      <div key={c.id} className="flex items-center gap-3 px-4 py-3 hover:bg-obsidian-700/50 transition-colors cursor-pointer" onClick={() => { setDetailLead(c); setDetailTab('details'); }}>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-white text-sm font-medium">{c.name}</span>
+                            <span className="text-gray-500 text-xs">{c.phone}</span>
+                            {isDirectorLevel && <span className="text-gray-600 text-xs">{getSalesName(c.assignedSalesId)}</span>}
+                          </div>
+                          <div className="flex items-center gap-3 mt-1 flex-wrap">
+                            {car && <span className="text-gray-400 text-xs">{car.year} {car.make} {car.model}</span>}
+                            {wo?.sellingPrice ? <span className="text-gold-400 text-xs font-semibold">{formatRM(wo.sellingPrice)}</span> : null}
+                            {c.delivered && c.deliveredAt && (
+                              <span className="text-gray-600 text-xs">Delivered {new Date(c.deliveredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+                          <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${isLoan ? 'bg-blue-500/10 border-blue-500/30 text-blue-400' : 'bg-green-500/10 border-green-500/30 text-green-400'}`}>
+                            {isLoan ? `Loan · ${c.loanWorkOrder?.bank}` : 'Cash'}
+                          </span>
+                          {c.delivered
+                            ? <span className="text-xs font-medium px-2.5 py-1 rounded-full border bg-green-500/10 border-green-500/30 text-green-400 flex items-center gap-1"><Truck size={10} />Delivered</span>
+                            : <span className="text-xs font-medium px-2.5 py-1 rounded-full border bg-violet-500/10 border-violet-500/30 text-violet-400">Confirmed</span>
+                          }
+                          {!isShareHolder && (
+                            <button
+                              onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })}
+                              className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                              title="Move to bin"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </>)}
 
       {/* ── Lead Detail Modal ────────────────────────── */}
@@ -2070,6 +2145,10 @@ export default function Customers() {
                       <button
                         onClick={() => {
                           updateCustomer(detailLead.id, { dealType: 'loan' });
+                          setBankModalPendingData({
+                            carId: detailLead.interestedCarId || '',
+                            dealPrice: detailLead.dealPrice ?? 0,
+                          });
                           setBankModalPicks({});
                           setBankModalLeadId(detailLead.id);
                           setDetailLead(null);
@@ -2404,7 +2483,6 @@ export default function Customers() {
                       setWorkOrderType('cash');
                       closeSidebar();
                     } else {
-                      setCashForm(f => ({ ...f, dealPrice: String(car?.sellingPrice ?? f.dealPrice) }));
                       setSidebarView('loan');
                     }
                   }}
@@ -2462,64 +2540,6 @@ export default function Customers() {
               );
             })()}
 
-            {/* ── Cash Purchase view ── */}
-            {sidebarView === 'cash' && (() => {
-              const selectedCar = getCar(loanForm.carId);
-              const dealPrice = Number(cashForm.dealPrice) || 0;
-              const hasDiscount = selectedCar ? dealPrice < selectedCar.sellingPrice : false;
-              return (
-                <>
-                  <button onClick={() => setSidebarView('car_select')} className="flex items-center gap-1 text-xs text-gray-500 hover:text-white transition-colors">← Back</button>
-
-                  {selectedCar && (
-                    <div className="flex items-center gap-3 bg-obsidian-700/60 border border-purple-500/20 rounded-xl p-3">
-                      <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center shrink-0">
-                        <Car size={15} className="text-purple-400" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-white text-sm font-medium truncate">{selectedCar.year} {selectedCar.make} {selectedCar.model}</p>
-                        <p className="text-gray-500 text-xs">{selectedCar.colour} · {selectedCar.sellingPrice > 0 ? formatRM(selectedCar.sellingPrice) : 'TBD'}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="space-y-3">
-                    <FormField label="Cash Deal Price (RM)">
-                      <input
-                        type="number"
-                        className={inputCls()}
-                        value={cashForm.dealPrice}
-                        onChange={e => setCashForm({ ...cashForm, dealPrice: e.target.value })}
-                        placeholder="e.g. 45000"
-                        autoFocus
-                      />
-                    </FormField>
-                    {hasDiscount && dealPrice > 0 && (
-                      <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2.5 text-xs text-amber-400">
-                        <AlertCircle size={13} className="shrink-0 mt-0.5" />
-                        <span>Discount of <strong>{formatRM(selectedCar!.sellingPrice - dealPrice)}</strong> from listed price — requires Director approval.</span>
-                      </div>
-                    )}
-                    <FormField label="Notes">
-                      <textarea
-                        className={`${inputCls()} h-20 resize-none`}
-                        value={cashForm.notes}
-                        onChange={e => setCashForm({ ...cashForm, notes: e.target.value })}
-                        placeholder="Any remarks about this cash deal..."
-                      />
-                    </FormField>
-                  </div>
-
-                  <button
-                    onClick={handleCashDeal}
-                    disabled={!cashForm.dealPrice}
-                    className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
-                  >
-                    Confirm Cash Deal
-                  </button>
-                </>
-              );
-            })()}
           </div>
         )}
       </Modal>

@@ -244,7 +244,7 @@ export default function Data() {
               </div>
               <div>
                 <label className="block text-gray-400 text-xs mb-1">Email</label>
-                <input className={inputCls()} type="email" placeholder="e.g. ahmad@bank.com" value={bankerForm.email} onChange={e => setBankerForm({ ...bankerForm, email: e.target.value })} />
+                <input className={inputCls()} type="email" placeholder="e.g. ahmad@bank.com" value={bankerForm.email} onChange={e => setBankerForm({ ...bankerForm, email: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
               </div>
               <div className="col-span-2">
                 <label className="block text-gray-400 text-xs mb-1">Notes</label>
@@ -290,7 +290,7 @@ export default function Data() {
                             {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
                           </select>
                           <input className={inputCls()} placeholder="Phone" value={bankerEditForm.phone} onChange={e => setBankerEditForm({ ...bankerEditForm, phone: e.target.value })} />
-                          <input className={inputCls()} placeholder="Email" value={bankerEditForm.email} onChange={e => setBankerEditForm({ ...bankerEditForm, email: e.target.value })} />
+                          <input className={inputCls()} placeholder="Email" value={bankerEditForm.email} onChange={e => setBankerEditForm({ ...bankerEditForm, email: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
                           <input className={`${inputCls()} col-span-2`} placeholder="Notes" value={bankerEditForm.notes} onChange={e => setBankerEditForm({ ...bankerEditForm, notes: e.target.value })} />
                         </div>
                         <div className="flex gap-2">
@@ -510,9 +510,9 @@ function ExternalSalesmenTab({
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <input className={inputCls()} placeholder="Full Name *" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
-          <input className={inputCls()} placeholder="IC Number" value={form.ic} onChange={e => setForm({ ...form, ic: e.target.value })} />
+          <input className={inputCls()} placeholder="IC Number" value={form.ic} onChange={e => setForm({ ...form, ic: e.target.value })} autoCapitalize="none" spellCheck={false} />
           <input className={inputCls()} placeholder="Phone" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
-          <input className={inputCls()} placeholder="Email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+          <input className={inputCls()} placeholder="Email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
           <input className={inputCls()} placeholder="Bank" value={form.bank} onChange={e => setForm({ ...form, bank: e.target.value })} />
           <div className="flex gap-2">
             <input className={inputCls()} placeholder="Bank Account No." value={form.bankAccount} onChange={e => setForm({ ...form, bankAccount: e.target.value })} />

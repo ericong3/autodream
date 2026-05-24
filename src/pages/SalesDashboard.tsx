@@ -546,6 +546,8 @@ export default function SalesDashboard() {
             onChange={e => { setPinInput(e.target.value); setPinError(''); }}
             onKeyDown={e => { if (e.key === 'Enter') handlePinSubmit(); }}
             autoFocus
+            autoCapitalize="none"
+            spellCheck={false}
           />
           {pinError && <p className="text-red-400 text-xs">{pinError}</p>}
           <button
