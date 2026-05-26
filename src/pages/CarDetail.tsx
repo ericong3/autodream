@@ -111,6 +111,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const navigate = useNavigate();
   const location = useLocation();
   const fromHistory = (location.state as any)?.from === 'history';
+  const fromTab = (location.state as any)?.inventoryTab;
+  const inventoryBackUrl = fromTab && fromTab !== 'stock' ? `/inventory?tab=${fromTab}` : '/inventory';
   const cars = useStore((s) => s.cars);
   const users = useStore((s) => s.users);
   const customers = useStore((s) => s.customers);
@@ -507,7 +509,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       <nav className="flex items-center gap-1.5 text-xs text-gray-500 mb-4">
         <span
           className="hover:text-gold-400 cursor-pointer transition-colors"
-          onClick={() => navigate(fromHistory ? '/history' : '/inventory')}
+          onClick={() => navigate(fromHistory ? '/history' : inventoryBackUrl)}
         >
           {fromHistory ? 'Delivered' : 'Inventory'}
         </span>
@@ -2545,5 +2547,8 @@ function InfoItem({ label, value, valueClass }: { label: string; value: string; 
 export default function CarDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  return <CarDetailContent id={id!} onBack={() => navigate('/inventory')} />;
+  const location = useLocation();
+  const fromTab = (location.state as any)?.inventoryTab;
+  const backUrl = fromTab && fromTab !== 'stock' ? `/inventory?tab=${fromTab}` : '/inventory';
+  return <CarDetailContent id={id!} onBack={() => navigate(backUrl)} />;
 }

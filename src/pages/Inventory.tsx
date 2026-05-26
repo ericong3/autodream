@@ -703,7 +703,7 @@ export default function Inventory() {
                     return (
                       <SortableCarItem key={car.id} id={car.id}>
                         <div
-                          onClick={() => navigate(`/inventory/${car.id}`)}
+                          onClick={() => navigate(`/inventory/${car.id}`, { state: { inventoryTab } })}
                           className="bg-card-gradient border border-green-500/30 hover:border-green-400/60 rounded-xl shadow-card overflow-hidden cursor-pointer hover:shadow-xl transition-all group"
                         >
                       {/* Photo */}
@@ -795,7 +795,7 @@ export default function Inventory() {
                   return (
                     <div
                       key={car.id}
-                      onClick={() => navigate(`/inventory/${car.id}`)}
+                      onClick={() => navigate(`/inventory/${car.id}`, { state: { inventoryTab } })}
                       className="flex gap-4 p-4 rounded-2xl bg-obsidian-800/60 border border-obsidian-400/40 cursor-pointer hover:border-green-500/40 transition-colors group"
                     >
                       {/* Car photo */}
@@ -910,7 +910,7 @@ export default function Inventory() {
                       </button>
                     )}
                     <div
-                      onClick={() => navigate(`/inventory/${car.id}`)}
+                      onClick={() => navigate(`/inventory/${car.id}`, { state: { inventoryTab } })}
                       className="bg-card-gradient border border-purple-500/30 hover:border-purple-400/60 rounded-xl shadow-card overflow-hidden cursor-pointer hover:shadow-xl transition-all group"
                     >
                       {/* Photo */}
@@ -985,7 +985,7 @@ export default function Inventory() {
                 return (
                   <div
                     key={car.id}
-                    onClick={() => navigate(`/inventory/${car.id}`)}
+                    onClick={() => navigate(`/inventory/${car.id}`, { state: { inventoryTab } })}
                     className="flex items-center gap-4 px-4 py-3 hover:bg-obsidian-700/40 transition-colors cursor-pointer"
                   >
                     {/* Thumbnail */}
@@ -1123,7 +1123,7 @@ export default function Inventory() {
                 </button>
               )}
             <div
-              onClick={() => navigate(`/inventory/${car.id}`)}
+              onClick={() => navigate(`/inventory/${car.id}`, { state: { inventoryTab } })}
               className="relative bg-obsidian-900 rounded-xl overflow-hidden cursor-pointer aspect-[4/3] shadow-card border border-obsidian-400/50 hover:border-gold-500/30 transition-colors duration-300 group card-lift card-streak"
             >
               {/* Full-bleed photo */}
@@ -1292,7 +1292,7 @@ export default function Inventory() {
             return (
               <div
                 key={car.id}
-                onClick={() => navigate(`/inventory/${car.id}`)}
+                onClick={() => navigate(`/inventory/${car.id}`, { state: { inventoryTab } })}
                 className={`row-item bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card cursor-pointer hover:border-gold-500/40 hover:bg-obsidian-700/30 transition-all flex items-center gap-4 px-4 py-3 relative stagger-enter stagger-${Math.min(idx + 1, 12)}${car.status === 'delivered' ? ' opacity-60' : ''}`}
               >
                 {/* Thumbnail */}
@@ -1392,7 +1392,7 @@ export default function Inventory() {
             {consignedOut.map((car) => (
               <div
                 key={car.id}
-                onClick={() => navigate(`/inventory/${car.id}`)}
+                onClick={() => navigate(`/inventory/${car.id}`, { state: { inventoryTab } })}
                 className="flex items-center gap-3 px-4 py-3 rounded-xl bg-obsidian-800/60 border border-orange-500/20 cursor-pointer hover:border-orange-500/40 transition-colors"
               >
                 {car.photo ? (
