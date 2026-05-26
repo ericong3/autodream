@@ -20,6 +20,7 @@ import {
   ShoppingBag,
   Database,
   Briefcase,
+  FolderOpen,
 } from 'lucide-react';
 import { useStore } from '../store';
 
@@ -73,6 +74,10 @@ const mechanicItems: NavItem[] = [
   { to: '/inventory', icon: Car, label: 'Inventory' },
   { to: '/reminders', icon: ClipboardList, label: 'Instructions' },
   { to: '/ai-assistant', icon: Bot, label: 'AI Assistant' },
+];
+
+const bankerItems: NavItem[] = [
+  { to: '/banker-dashboard', icon: FolderOpen, label: 'Cases' },
 ];
 
 // Admin: same nav as director but no Finance page (no purchase price / profit access)
@@ -146,6 +151,7 @@ export default function Sidebar() {
   const isAdmin = currentUser?.role === 'admin';
   const isSalesperson = currentUser?.role === 'salesperson';
   const isInvestor = currentUser?.role === 'investor';
+  const isBanker = currentUser?.role === 'banker';
 
   const isSalesRouteActive = SALES_ROUTES.some(r => location.pathname === r);
   const [salesOpen, setSalesOpen] = useState(isSalesRouteActive);
@@ -248,6 +254,18 @@ export default function Sidebar() {
         <SidebarLogo collapsed={collapsed} onToggle={() => setCollapsed(v => !v)} />
         <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto overflow-x-hidden">
           {investorItems.map(item => <NavItemLink key={item.to} item={item} collapsed={collapsed} />)}
+        </nav>
+        <SidebarFooter collapsed={collapsed} />
+      </aside>
+    );
+  }
+
+  if (isBanker) {
+    return (
+      <aside className={asideClass}>
+        <SidebarLogo collapsed={collapsed} onToggle={() => setCollapsed(v => !v)} />
+        <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto overflow-x-hidden">
+          {bankerItems.map(item => <NavItemLink key={item.to} item={item} collapsed={collapsed} />)}
         </nav>
         <SidebarFooter collapsed={collapsed} />
       </aside>
