@@ -34,27 +34,35 @@ import BankerDashboard from './pages/BankerDashboard';
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
   if (!currentUser) return <Navigate to="/login" replace />;
+  if (currentUser.role === 'banker') return <Navigate to="/banker-dashboard" replace />;
+  if (currentUser.role === 'investor') return <Navigate to="/investor-portal" replace />;
   return <>{children}</>;
+}
+
+function roleHome(role: string) {
+  if (role === 'banker') return '/banker-dashboard';
+  if (role === 'investor') return '/investor-portal';
+  return '/inventory';
 }
 
 function RequireDirector({ children }: { children: React.ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
   if (!currentUser) return <Navigate to="/login" replace />;
-  if (currentUser.role !== 'director' && currentUser.role !== 'shareholder') return <Navigate to="/inventory" replace />;
+  if (currentUser.role !== 'director' && currentUser.role !== 'shareholder') return <Navigate to={roleHome(currentUser.role)} replace />;
   return <>{children}</>;
 }
 
 function RequireDirectorOrAdmin({ children }: { children: React.ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
   if (!currentUser) return <Navigate to="/login" replace />;
-  if (!['director', 'admin', 'shareholder'].includes(currentUser.role)) return <Navigate to="/inventory" replace />;
+  if (!['director', 'admin', 'shareholder'].includes(currentUser.role)) return <Navigate to={roleHome(currentUser.role)} replace />;
   return <>{children}</>;
 }
 
 function RequireSalesOrDirector({ children }: { children: React.ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
   if (!currentUser) return <Navigate to="/login" replace />;
-  if (!['director', 'salesperson', 'shareholder'].includes(currentUser.role)) return <Navigate to="/inventory" replace />;
+  if (!['director', 'salesperson', 'shareholder'].includes(currentUser.role)) return <Navigate to={roleHome(currentUser.role)} replace />;
   return <>{children}</>;
 }
 
