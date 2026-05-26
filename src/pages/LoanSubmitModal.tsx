@@ -23,14 +23,7 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
   const updateCustomer = useStore(s => s.updateCustomer);
 
   // bankPicks: bank → bankerId ('' means no banker chosen = bank not selected)
-  const [bankPicks, setBankPicks] = useState<Record<string, string>>(() => {
-    const initial: Record<string, string> = {};
-    for (const bank of BANKS) {
-      const bankers = users.filter(u => u.role === 'banker' && u.banks?.includes(bank));
-      if (bankers.length === 1) initial[bank] = bankers[0].id;
-    }
-    return initial;
-  });
+  const [bankPicks, setBankPicks] = useState<Record<string, string>>({});
   const [carId, setCarId] = useState(initialCarId ?? '');
   const [loanAmount, setLoanAmount] = useState(initialAmount ? String(initialAmount) : '');
   const [applicantText, setApplicantText] = useState('');
