@@ -1348,6 +1348,23 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     }
   },
   deleteCustomer: async (id) => {
+    const now = new Date().toISOString();
+    const activeCases = get().loanCases.filter(
+      c => c.customerId === id && !['cancelled', 'withdrawn', 'approved'].includes(c.status)
+    );
+    if (activeCases.length > 0) {
+      set((s) => ({
+        loanCases: s.loanCases.map(c =>
+          c.customerId === id && !['cancelled', 'withdrawn', 'approved'].includes(c.status)
+            ? { ...c, status: 'cancelled', updatedAt: now }
+            : c
+        ),
+      }));
+      await supabase.from('loan_cases')
+        .update({ status: 'cancelled', updated_at: now })
+        .eq('customer_id', id)
+        .not('status', 'in', '("cancelled","withdrawn","approved")');
+    }
     set((s) => ({ customers: s.customers.filter((c) => c.id !== id) }));
     await supabase.from('customers').delete().eq('id', id);
   },
