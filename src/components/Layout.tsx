@@ -5,7 +5,7 @@ import {
   FileText, Calculator, GitCompare,
   ClipboardList, Bot, TrendingUp, UsersRound,
   History, Banknote, Briefcase, Search,
-  Loader2, RefreshCw, Database,
+  Loader2, RefreshCw, Database, FolderOpen,
 } from 'lucide-react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
@@ -27,11 +27,16 @@ const SALESPERSON_PRIMARY = [
   { to: '/calendar',        icon: CalendarDays,    label: 'Calendar'   },
 ];
 const SALESPERSON_MORE = [
+  { to: '/loan-cases',      icon: FolderOpen,    label: 'Loan Cases'      },
   { to: '/quotations',      icon: FileText,      label: 'Quotations'      },
   { to: '/loan-calculator', icon: Calculator,    label: 'Loan Calculator' },
   { to: '/car-compare',     icon: GitCompare,    label: 'Car Compare'     },
   { to: '/reminders',       icon: ClipboardList, label: 'Instructions'    },
   { to: '/ai-assistant',    icon: Bot,           label: 'AI Assistant'    },
+];
+
+const BANKER_PRIMARY = [
+  { to: '/banker-dashboard', icon: FolderOpen, label: 'Cases' },
 ];
 
 const DIRECTOR_PRIMARY = [
@@ -109,7 +114,8 @@ export default function Layout({ children }: LayoutProps) {
   const isShareHolder = currentUser?.role === 'shareholder';
   const isSalesperson = currentUser?.role === 'salesperson';
   const isInvestor = currentUser?.role === 'investor';
-  const primaryNav = (isDirector || isShareHolder) ? DIRECTOR_PRIMARY : isSalesperson ? SALESPERSON_PRIMARY : isInvestor ? INVESTOR_PRIMARY : MECHANIC_PRIMARY;
+  const isBanker = currentUser?.role === 'banker';
+  const primaryNav = (isDirector || isShareHolder) ? DIRECTOR_PRIMARY : isSalesperson ? SALESPERSON_PRIMARY : isInvestor ? INVESTOR_PRIMARY : isBanker ? BANKER_PRIMARY : MECHANIC_PRIMARY;
   const moreNav = (isDirector || isShareHolder) ? DIRECTOR_MORE : isSalesperson ? SALESPERSON_MORE : [];
 
   return (

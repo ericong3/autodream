@@ -407,7 +407,7 @@ export default function TeamMembers() {
     setPwTarget(null);
   };
 
-  const teamUsers = users.filter((u) => u.role !== 'investor');
+  const teamUsers = users.filter((u) => u.role !== 'investor' && u.role !== 'banker');
   const filteredUsers =
     filterRole === 'all' ? teamUsers : teamUsers.filter((u) => u.role === filterRole);
 

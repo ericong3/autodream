@@ -5,6 +5,7 @@ import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList, Truck, Upload, Lock, Skull, Clock, RotateCcw, MoreVertical } from 'lucide-react';
 import { useStore } from '../store';
 import { Customer, LoanApplication, LoanSubmission, CashWorkOrder, LoanWorkOrder, WorkOrderItem, BANKS, NO_BANKER_BANKS } from '../types';
+import LoanSubmitModal from './LoanSubmitModal';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import MiniCalendar from '../components/MiniCalendar';
@@ -68,6 +69,8 @@ export default function Customers() {
   const cars = useStore((s) => s.cars);
   const users = useStore((s) => s.users);
   const currentUser = useStore((s) => s.currentUser);
+  const loanCases = useStore((s) => s.loanCases);
+  const loanCaseActivities = useStore((s) => s.loanCaseActivities);
   const addCustomer = useStore((s) => s.addCustomer);
   const updateCustomer = useStore((s) => s.updateCustomer);
   const deleteCustomer = useStore((s) => s.deleteCustomer);
@@ -103,6 +106,7 @@ export default function Customers() {
   const [statusFilter, setStatusFilter] = useState<Customer['leadStatus'] | 'all'>('all');
   const [carGroupFilter, setCarGroupFilter] = useState<'all' | 'in_stock' | 'incoming' | 'pending_delivery' | 'sold'>('all');
   const [carIdFilter, setCarIdFilter] = useState<string>('all');
+  const [loanBankFilter, setLoanBankFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
 
   // Add/Edit modal
@@ -171,12 +175,13 @@ export default function Customers() {
   const [deliveryPhotoUrl, setDeliveryPhotoUrl] = useState('');
   const [deliveryUploading, setDeliveryUploading] = useState(false);
   const deliveryPhotoRef = useRef<HTMLInputElement>(null);
-  // Bank submission modal
+  // Bank submission modal (old multi-bank tracking)
   const [bankModalLeadId, setBankModalLeadId] = useState<string | null>(null);
-  // bankModalPicks: { [bankName]: bankerId | '' }
   const [bankModalPicks, setBankModalPicks] = useState<Record<string, string>>({});
-  // pending form data captured from sidebar before it closes — only set for first-time loan submission
   const [bankModalPendingData, setBankModalPendingData] = useState<{ carId: string; dealPrice: number } | null>(null);
+  // Banker portal submission modal
+  const [loanSubmitCustomer, setLoanSubmitCustomer] = useState<Customer | null>(null);
+  const [loanSubmitInitial, setLoanSubmitInitial] = useState<{ carId?: string; amount?: number }>({});
   useBodyScrollLock(!!detailLead || !!workOrderCustomer);
 
   useEffect(() => {
@@ -258,9 +263,10 @@ export default function Customers() {
     if (c.delivered) return false;
     const matchGroup = carGroupFilter === 'all' || getCarGroup(c.interestedCarId) === carGroupFilter;
     const matchCar = carIdFilter === 'all' || c.interestedCarId === carIdFilter;
+    const matchBank = loanBankFilter === 'all' || (c.loanApplications ?? []).some(a => a.bank === loanBankFilter);
     const matchSearch = !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search);
-    return matchGroup && matchCar && matchSearch;
-  }), [myCustomers, carGroupFilter, carIdFilter, search]);
+    return matchGroup && matchCar && matchBank && matchSearch;
+  }), [myCustomers, carGroupFilter, carIdFilter, loanBankFilter, search]);
 
   const trashedFiltered = useMemo(() => myCustomers.filter(c => {
     if (!c.isTrashed) return false;
@@ -465,14 +471,11 @@ export default function Customers() {
 
   const handleProceedLoan = () => {
     if (!sidebarLead) return;
-    const leadId = sidebarLead.id;
-    setBankModalPendingData({
-      carId: loanForm.carId || sidebarLead.interestedCarId || '',
-      dealPrice: loanForm.dealPrice ? Number(loanForm.dealPrice) : (sidebarLead.dealPrice ?? 0),
-    });
+    const resolvedCarId = loanForm.carId || sidebarLead.interestedCarId || '';
+    const resolvedAmount = loanForm.dealPrice ? Number(loanForm.dealPrice) : (sidebarLead.dealPrice ?? 0);
     closeSidebar();
-    setBankModalPicks({});
-    setBankModalLeadId(leadId);
+    setLoanSubmitInitial({ carId: resolvedCarId || undefined, amount: resolvedAmount || undefined });
+    setLoanSubmitCustomer(sidebarLead);
   };
 
 
@@ -817,7 +820,7 @@ export default function Customers() {
             Cash <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'cash' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => c.dealType === 'cash' && !c.cashWorkOrder && !c.isDead && !c.isTrashed).length}</span>
           </button>
           <button
-            onClick={() => { setTab('loan'); setStatusFilter('all'); setCarGroupFilter('all'); setCarIdFilter('all'); setSearch(''); }}
+            onClick={() => { setTab('loan'); setStatusFilter('all'); setCarGroupFilter('all'); setCarIdFilter('all'); setLoanBankFilter('all'); setSearch(''); }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'loan' ? 'bg-purple-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
             Loan <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'loan' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus === 'loan_submitted' && !c.isTrashed).length}</span>
@@ -1209,15 +1212,25 @@ export default function Customers() {
       })()}
 
       {tab === 'loan' && (<>
-        {/* Loan search */}
-        <div className="flex gap-2">
+        {/* Loan search + filters */}
+        <div className="flex gap-2 flex-wrap">
           <input
             type="text"
             placeholder="Search by name or phone..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="flex-1 input rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors"
+            className="flex-1 min-w-0 input rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors"
           />
+          <select
+            value={loanBankFilter}
+            onChange={e => setLoanBankFilter(e.target.value)}
+            className="input rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors"
+          >
+            <option value="all">All Banks</option>
+            {BANKS.map(b => (
+              <option key={b} value={b}>{b}</option>
+            ))}
+          </select>
           <select
             value={carGroupFilter}
             onChange={e => { setCarGroupFilter(e.target.value as typeof carGroupFilter); setCarIdFilter('all'); }}
@@ -1241,8 +1254,8 @@ export default function Customers() {
               ))}
             </select>
           )}
-          {(carGroupFilter !== 'all' || search) && (
-            <button onClick={() => { setCarGroupFilter('all'); setCarIdFilter('all'); setSearch(''); }} className="px-3 py-2.5 text-xs text-gray-500 hover:text-white border border-obsidian-400/60 hover:border-[#3C321E] rounded-lg transition-colors whitespace-nowrap">Clear</button>
+          {(carGroupFilter !== 'all' || loanBankFilter !== 'all' || search) && (
+            <button onClick={() => { setCarGroupFilter('all'); setCarIdFilter('all'); setLoanBankFilter('all'); setSearch(''); }} className="px-3 py-2.5 text-xs text-gray-500 hover:text-white border border-obsidian-400/60 hover:border-[#3C321E] rounded-lg transition-colors whitespace-nowrap">Clear</button>
           )}
         </div>
 
@@ -1995,10 +2008,68 @@ export default function Customers() {
                           <Plus size={12} />Add bank
                         </button>
                       )}
+                      {/* Submit to Banker Portal */}
+                      {!isShareHolder && (
+                        <button
+                          onClick={() => { setLoanSubmitInitial({ carId: detailLead.interestedCarId || undefined, amount: detailLead.dealPrice || undefined }); setLoanSubmitCustomer(detailLead); }}
+                          className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-dashed border-sky-500/30 text-xs text-sky-400 hover:text-sky-300 hover:border-sky-500/50 transition-colors touch-manipulation"
+                        >
+                          <Plus size={12} />Submit to Banker Portal
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}
 
+                {/* Portal Loan Cases for this customer */}
+                {(() => {
+                  const portalCases = loanCases.filter(c => c.customerId === detailLead.id);
+                  if (portalCases.length === 0) return null;
+                  const STATUS_COLORS: Record<string, string> = {
+                    pending: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30',
+                    under_review: 'bg-blue-500/15 text-blue-300 border-blue-500/30',
+                    approved: 'bg-green-500/15 text-green-300 border-green-500/30',
+                    rejected: 'bg-red-500/15 text-red-300 border-red-500/30',
+                    need_more_info: 'bg-orange-500/15 text-orange-300 border-orange-500/30',
+                    appeal: 'bg-purple-500/15 text-purple-300 border-purple-500/30',
+                    withdrawn: 'bg-gray-500/15 text-gray-400 border-gray-500/30',
+                    cancelled: 'bg-gray-500/15 text-gray-400 border-gray-500/30',
+                  };
+                  const STATUS_LABELS: Record<string, string> = {
+                    pending: 'Pending', under_review: 'Under Review', approved: 'Approved',
+                    rejected: 'Rejected', need_more_info: 'More Info Needed', appeal: 'Appeal',
+                    withdrawn: 'Withdrawn', cancelled: 'Cancelled',
+                  };
+                  return (
+                    <div className="space-y-2">
+                      <p className="text-gray-500 text-xs font-medium uppercase tracking-wide">Banker Portal Cases</p>
+                      <div className="space-y-2">
+                        {portalCases.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(lc => {
+                          const banker = users.find(u => u.id === lc.bankerId);
+                          const car = cars.find(c => c.id === lc.carId);
+                          const lastActivity = loanCaseActivities.filter(a => a.caseId === lc.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+                          return (
+                            <div key={lc.id} className="rounded-xl border border-obsidian-400/40 bg-obsidian-700/30 p-3 space-y-1.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-white text-sm font-medium">{lc.bank}</span>
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${STATUS_COLORS[lc.status] ?? ''}`}>
+                                    {STATUS_LABELS[lc.status] ?? lc.status}
+                                  </span>
+                                </div>
+                                <span className="text-[10px] text-gray-500 shrink-0">{new Date(lc.createdAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}</span>
+                              </div>
+                              <p className="text-xs text-gray-400">RM {lc.loanAmount.toLocaleString()} · {banker?.name ?? 'Unknown banker'}{car ? ` · ${car.year} ${car.make} ${car.model}` : ''}</p>
+                              {lastActivity && lastActivity.type !== 'status_change' && (
+                                <p className="text-xs text-gray-500 italic line-clamp-1">{lastActivity.content}</p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Contact */}
                 <div className="space-y-2">
@@ -3198,6 +3269,16 @@ export default function Customers() {
           document.body,
         );
       })()}
+
+      {/* Banker Portal Submission Modal */}
+      {loanSubmitCustomer && (
+        <LoanSubmitModal
+          customer={loanSubmitCustomer}
+          initialCarId={loanSubmitInitial.carId}
+          initialAmount={loanSubmitInitial.amount}
+          onClose={() => setLoanSubmitCustomer(null)}
+        />
+      )}
     </div>
   );
 }

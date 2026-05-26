@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
-import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, MiscCost, ExternalSalesman, Banker } from '../types';
+import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, MiscCost, ExternalSalesman, Banker, LoanCase, LoanCaseDocument, LoanCaseActivity } from '../types';
 import { sendPush } from '../utils/sendPush';
 
 // ── Notification helpers ─────────────────────────────────────────────────────
@@ -39,6 +39,9 @@ interface StoreState {
   merchants: Merchant[];
   externalSalesmen: ExternalSalesman[];
   bankers: Banker[];
+  loanCases: LoanCase[];
+  loanCaseDocuments: LoanCaseDocument[];
+  loanCaseActivities: LoanCaseActivity[];
   viewPreference: Record<string, 'grid' | 'list' | 'board'>;
   loaded: boolean;
   lastFetched: number | null;
@@ -115,6 +118,13 @@ interface StoreState {
   addBanker: (b: Banker) => Promise<void>;
   updateBanker: (id: string, b: Partial<Banker>) => Promise<void>;
   deleteBanker: (id: string) => Promise<void>;
+
+  // Loan Cases
+  addLoanCase: (loanCase: LoanCase) => Promise<void>;
+  updateLoanCase: (id: string, updates: Partial<LoanCase>) => Promise<void>;
+  addLoanCaseActivity: (activity: LoanCaseActivity) => Promise<void>;
+  addLoanCaseDocument: (doc: LoanCaseDocument) => Promise<void>;
+  deleteLoanCaseDocument: (id: string) => Promise<void>;
 
   // Misc Costs
   addMiscCost: (carId: string, misc: MiscCost) => Promise<void>;
@@ -504,6 +514,7 @@ function rowToUser(r: any): User {
     monthlyTarget: r.monthly_target,
     carsInMonth: r.cars_in_month,
     capitalAmount: r.capital_amount ?? undefined,
+    banks: r.banks ?? [],
     avatar: r.avatar ?? undefined,
     position: r.position ?? undefined,
     bio: r.bio ?? undefined,
@@ -526,6 +537,7 @@ function userToRow(u: Partial<User>) {
   if (u.monthlyTarget !== undefined) row.monthly_target = u.monthlyTarget;
   if (u.carsInMonth !== undefined) row.cars_in_month = u.carsInMonth;
   if (u.capitalAmount !== undefined) row.capital_amount = u.capitalAmount;
+  if (u.banks !== undefined) row.banks = u.banks;
   if (u.avatar !== undefined) row.avatar = u.avatar;
   if (u.position !== undefined) row.position = u.position;
   if (u.bio !== undefined) row.bio = u.bio;
@@ -535,6 +547,49 @@ function userToRow(u: Partial<User>) {
   if (u.facebook !== undefined) row.facebook = u.facebook;
   if (u.website !== undefined) row.website = u.website;
   return row;
+}
+
+function rowToLoanCase(r: any): LoanCase {
+  return {
+    id: r.id,
+    customerId: r.customer_id ?? '',
+    carId: r.car_id ?? undefined,
+    salesmanId: r.salesman_id,
+    bankerId: r.banker_id,
+    bank: r.bank,
+    loanAmount: r.loan_amount,
+    applicantInterviewText: r.applicant_interview_text ?? undefined,
+    guarantorInterviewText: r.guarantor_interview_text ?? undefined,
+    status: r.status,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+function rowToLoanCaseDocument(r: any): LoanCaseDocument {
+  return {
+    id: r.id,
+    caseId: r.case_id,
+    type: r.type,
+    fileName: r.file_name,
+    filePath: r.file_path,
+    uploadedAt: r.uploaded_at,
+  };
+}
+
+function rowToLoanCaseActivity(r: any): LoanCaseActivity {
+  return {
+    id: r.id,
+    caseId: r.case_id,
+    userId: r.user_id,
+    userName: r.user_name,
+    userRole: r.user_role,
+    type: r.type,
+    content: r.content ?? undefined,
+    oldStatus: r.old_status ?? undefined,
+    newStatus: r.new_status ?? undefined,
+    createdAt: r.created_at,
+  };
 }
 
 function rowToReminder(r: any): PersonalReminder {
@@ -579,6 +634,9 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   merchants: [],
   externalSalesmen: [],
   bankers: [],
+  loanCases: [],
+  loanCaseDocuments: [],
+  loanCaseActivities: [],
   viewPreference: {},
   loaded: false,
   lastFetched: null,
@@ -604,11 +662,14 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         supabase.from('merchants').select('*'),
       ]);
 
-    // Load external salesmen and bankers separately so a missing table doesn't block the main load
+    // Load external salesmen, bankers, and loan cases separately so a missing table doesn't block the main load
     const externalSalesmenResult = await supabase.from('external_salesmen').select('*');
     const externalSalesmenRows = externalSalesmenResult.data ?? [];
     const bankersResult = await supabase.from('bankers').select('*');
     const bankersRows = bankersResult.data ?? [];
+    const loanCasesResult = await supabase.from('loan_cases').select('*');
+    const loanCaseDocsResult = await supabase.from('loan_case_documents').select('*');
+    const loanCaseActivitiesResult = await supabase.from('loan_case_activity').select('*');
 
     const allCars = (cars.data ?? []).map(rowToCar);
     const allCustomers = (customers.data ?? []).map(rowToCustomer);
@@ -659,8 +720,11 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       workshops:        workshops.data    ? (workshops.data as Workshop[])               : s.workshops,
       suppliers:        suppliers.data    ? (suppliers.data as Supplier[])               : s.suppliers,
       merchants:        merchants.data    ? (merchants.data as Merchant[])               : s.merchants,
-      externalSalesmen: externalSalesmenResult.data ? externalSalesmenRows.map(rowToExternalSalesman) : s.externalSalesmen,
-      bankers:          bankersResult.data          ? bankersRows.map(rowToBanker)                    : s.bankers,
+      externalSalesmen:    externalSalesmenResult.data    ? externalSalesmenRows.map(rowToExternalSalesman)                  : s.externalSalesmen,
+      bankers:             bankersResult.data             ? bankersRows.map(rowToBanker)                                      : s.bankers,
+      loanCases:           loanCasesResult.data           ? loanCasesResult.data.map(rowToLoanCase)                           : s.loanCases,
+      loanCaseDocuments:   loanCaseDocsResult.data        ? loanCaseDocsResult.data.map(rowToLoanCaseDocument)                : s.loanCaseDocuments,
+      loanCaseActivities:  loanCaseActivitiesResult.data  ? loanCaseActivitiesResult.data.map(rowToLoanCaseActivity)          : s.loanCaseActivities,
       loaded: true,
       lastFetched: Date.now(),
     }));
@@ -936,6 +1000,48 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
           set((s) => ({ externalSalesmen: s.externalSalesmen.map((x) => x.id === (payload.new as any).id ? rowToExternalSalesman(payload.new) : x) }));
         } else if (payload.eventType === 'DELETE') {
           set((s) => ({ externalSalesmen: s.externalSalesmen.filter((x) => x.id !== (payload.old as any)?.id) }));
+        }
+      })
+      .subscribe();
+
+    supabase.channel('realtime-loan-cases')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_cases' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          set((s) => ({
+            loanCases: s.loanCases.some((c) => c.id === (payload.new as any).id)
+              ? s.loanCases
+              : [...s.loanCases, rowToLoanCase(payload.new)],
+          }));
+        } else if (payload.eventType === 'UPDATE') {
+          set((s) => ({ loanCases: s.loanCases.map((c) => c.id === (payload.new as any).id ? rowToLoanCase(payload.new) : c) }));
+        } else if (payload.eventType === 'DELETE') {
+          set((s) => ({ loanCases: s.loanCases.filter((c) => c.id !== (payload.old as any)?.id) }));
+        }
+      })
+      .subscribe();
+
+    supabase.channel('realtime-loan-case-documents')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_case_documents' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          set((s) => ({
+            loanCaseDocuments: s.loanCaseDocuments.some((d) => d.id === (payload.new as any).id)
+              ? s.loanCaseDocuments
+              : [...s.loanCaseDocuments, rowToLoanCaseDocument(payload.new)],
+          }));
+        } else if (payload.eventType === 'DELETE') {
+          set((s) => ({ loanCaseDocuments: s.loanCaseDocuments.filter((d) => d.id !== (payload.old as any)?.id) }));
+        }
+      })
+      .subscribe();
+
+    supabase.channel('realtime-loan-case-activity')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_case_activity' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          set((s) => ({
+            loanCaseActivities: s.loanCaseActivities.some((a) => a.id === (payload.new as any).id)
+              ? s.loanCaseActivities
+              : [...s.loanCaseActivities, rowToLoanCaseActivity(payload.new)],
+          }));
         }
       })
       .subscribe();
@@ -1378,6 +1484,99 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   deleteBanker: async (id) => {
     set((st) => ({ bankers: st.bankers.filter((x) => x.id !== id) }));
     await supabase.from('bankers').delete().eq('id', id);
+  },
+
+  // Loan Cases
+  addLoanCase: async (loanCase) => {
+    set((s) => ({ loanCases: [...s.loanCases, loanCase] }));
+    const { error } = await supabase.from('loan_cases').insert({
+      id: loanCase.id,
+      customer_id: loanCase.customerId,
+      car_id: loanCase.carId ?? null,
+      salesman_id: loanCase.salesmanId,
+      banker_id: loanCase.bankerId,
+      bank: loanCase.bank,
+      loan_amount: loanCase.loanAmount,
+      applicant_interview_text: loanCase.applicantInterviewText ?? null,
+      guarantor_interview_text: loanCase.guarantorInterviewText ?? null,
+      status: loanCase.status,
+      created_at: loanCase.createdAt,
+      updated_at: loanCase.updatedAt,
+    });
+    if (error) {
+      set((s) => ({ loanCases: s.loanCases.filter((c) => c.id !== loanCase.id) }));
+      throw new Error(error.message);
+    }
+    // Notify the banker
+    const banker = get().users.find(u => u.id === loanCase.bankerId);
+    const salesman = get().users.find(u => u.id === loanCase.salesmanId);
+    if (banker) {
+      sendPush([banker.id], '📋 New case submitted', `${salesman?.name ?? 'Salesman'} submitted a case – RM ${loanCase.loanAmount.toLocaleString()}`, '/banker-dashboard');
+    }
+  },
+  updateLoanCase: async (id, updates) => {
+    const prev = get().loanCases.find(c => c.id === id);
+    const now = new Date().toISOString();
+    set((s) => ({ loanCases: s.loanCases.map((c) => c.id === id ? { ...c, ...updates, updatedAt: now } : c) }));
+    const dbRow: any = { updated_at: now };
+    if (updates.status !== undefined) dbRow.status = updates.status;
+    if (updates.applicantInterviewText !== undefined) dbRow.applicant_interview_text = updates.applicantInterviewText;
+    if (updates.guarantorInterviewText !== undefined) dbRow.guarantor_interview_text = updates.guarantorInterviewText;
+    const { error } = await supabase.from('loan_cases').update(dbRow).eq('id', id);
+    if (error) {
+      if (prev) set((s) => ({ loanCases: s.loanCases.map((c) => c.id === id ? prev : c) }));
+      throw new Error(error.message);
+    }
+    // Notify salesman of status change
+    if (updates.status && prev?.status !== updates.status && prev) {
+      const statusLabels: Record<string, string> = {
+        under_review: 'Under Review',
+        approved: 'Approved',
+        rejected: 'Rejected',
+        need_more_info: 'More Info Needed',
+        appeal: 'Appeal Received',
+      };
+      const label = statusLabels[updates.status];
+      if (label) {
+        sendPush([prev.salesmanId], `📋 Case ${label}`, `Your ${prev.bank} case has been updated`, '/loan-cases');
+      }
+    }
+  },
+  addLoanCaseActivity: async (activity) => {
+    set((s) => ({ loanCaseActivities: [...s.loanCaseActivities, activity] }));
+    await supabase.from('loan_case_activity').insert({
+      id: activity.id,
+      case_id: activity.caseId,
+      user_id: activity.userId,
+      user_name: activity.userName,
+      user_role: activity.userRole,
+      type: activity.type,
+      content: activity.content ?? null,
+      old_status: activity.oldStatus ?? null,
+      new_status: activity.newStatus ?? null,
+      created_at: activity.createdAt,
+    });
+  },
+  addLoanCaseDocument: async (doc) => {
+    set((s) => ({ loanCaseDocuments: [...s.loanCaseDocuments, doc] }));
+    const { error } = await supabase.from('loan_case_documents').insert({
+      id: doc.id,
+      case_id: doc.caseId,
+      type: doc.type,
+      file_name: doc.fileName,
+      file_path: doc.filePath,
+      uploaded_at: doc.uploadedAt,
+    });
+    if (error) {
+      set((s) => ({ loanCaseDocuments: s.loanCaseDocuments.filter((d) => d.id !== doc.id) }));
+      throw new Error(error.message);
+    }
+  },
+  deleteLoanCaseDocument: async (id) => {
+    const doc = get().loanCaseDocuments.find(d => d.id === id);
+    set((s) => ({ loanCaseDocuments: s.loanCaseDocuments.filter((d) => d.id !== id) }));
+    if (doc) await supabase.storage.from('loan-documents').remove([doc.filePath]);
+    await supabase.from('loan_case_documents').delete().eq('id', id);
   },
 
   addMiscCost: async (carId, misc) => {

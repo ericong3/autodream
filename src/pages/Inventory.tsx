@@ -461,26 +461,34 @@ export default function Inventory() {
     return result;
   }, [cars, search, filterMake, filterTransmission, filterStatus, sortBy]);
 
-  // Sync drag-order arrays — preserve user-defined order, only add/remove changed cars
+  // Sync drag-order arrays — preserve user-defined order, only add/remove changed cars.
+  // Return the SAME reference when the set of IDs is unchanged (data-only update like expenses)
+  // so the order state is not disturbed.
   useEffect(() => {
     setStockOrder(prev => {
       const ids = filtered.map(c => c.id);
-      const set = new Set(ids);
-      return [...prev.filter(id => set.has(id)), ...ids.filter(id => !prev.includes(id))];
+      const newSet = new Set(ids);
+      const prevSet = new Set(prev);
+      if (ids.every(id => prevSet.has(id)) && prev.every(id => newSet.has(id))) return prev;
+      return [...prev.filter(id => newSet.has(id)), ...ids.filter(id => !prevSet.has(id))];
     });
   }, [filtered]);
   useEffect(() => {
     setComingSoonOrder(prev => {
       const ids = comingSoonFiltered.map(c => c.id);
-      const set = new Set(ids);
-      return [...prev.filter(id => set.has(id)), ...ids.filter(id => !prev.includes(id))];
+      const newSet = new Set(ids);
+      const prevSet = new Set(prev);
+      if (ids.every(id => prevSet.has(id)) && prev.every(id => newSet.has(id))) return prev;
+      return [...prev.filter(id => newSet.has(id)), ...ids.filter(id => !prevSet.has(id))];
     });
   }, [comingSoonFiltered]);
   useEffect(() => {
     setPendingOrder(prev => {
       const ids = pendingDelivery.map(c => c.id);
-      const set = new Set(ids);
-      return [...prev.filter(id => set.has(id)), ...ids.filter(id => !prev.includes(id))];
+      const newSet = new Set(ids);
+      const prevSet = new Set(prev);
+      if (ids.every(id => prevSet.has(id)) && prev.every(id => newSet.has(id))) return prev;
+      return [...prev.filter(id => newSet.has(id)), ...ids.filter(id => !prevSet.has(id))];
     });
   }, [pendingDelivery]);
 
@@ -2425,13 +2433,28 @@ export default function Inventory() {
                     </>
                   )}
                   {/* Balance row */}
-                  <div className="flex items-center gap-3 px-4 py-3 border-t border-obsidian-400/40 bg-obsidian-700/30">
-                    <span className="text-white font-bold text-sm flex-1">
-                      {displayTotal < 0 ? 'Refund to Customer' : displayTotal > 0 ? 'Balance Due' : 'Fully Settled'}
-                    </span>
-                    <span className={`font-bold text-sm font-mono ${displayTotal < 0 ? 'text-green-400' : displayTotal > 0 ? 'text-amber-300' : 'text-gold-400'}`}>
-                      {displayTotal < 0 ? `− ${formatRM(Math.abs(displayTotal))}` : formatRM(displayTotal)}
-                    </span>
+                  <div className={`mx-3 mb-3 mt-2 rounded-xl px-4 py-3 border ${
+                    displayTotal < 0
+                      ? 'bg-blue-500/10 border-blue-500/30'
+                      : displayTotal > 0
+                      ? 'bg-amber-500/10 border-amber-500/30'
+                      : 'bg-green-500/10 border-green-500/30'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className={`font-bold text-sm ${displayTotal < 0 ? 'text-blue-300' : displayTotal > 0 ? 'text-amber-300' : 'text-green-400'}`}>
+                        {displayTotal < 0 ? 'We Owe Customer' : displayTotal > 0 ? 'Customer Owes Us' : 'Fully Settled'}
+                      </span>
+                      <span className={`font-bold text-base font-mono ${displayTotal < 0 ? 'text-blue-300' : displayTotal > 0 ? 'text-amber-300' : 'text-green-400'}`}>
+                        {formatRM(Math.abs(displayTotal))}
+                      </span>
+                    </div>
+                    {displayTotal !== 0 && (
+                      <p className={`text-xs mt-1 ${displayTotal < 0 ? 'text-blue-400/70' : 'text-amber-400/70'}`}>
+                        {displayTotal < 0
+                          ? `Transfer ${formatRM(Math.abs(displayTotal))} to customer`
+                          : `Collect ${formatRM(displayTotal)} from customer`}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>

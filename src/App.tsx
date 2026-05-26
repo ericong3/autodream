@@ -28,6 +28,8 @@ import Calendar from './pages/Calendar';
 import Data from './pages/Data';
 import Investors from './pages/Investors';
 import InvestorPortal from './pages/InvestorPortal';
+import LoanCases from './pages/LoanCases';
+import BankerDashboard from './pages/BankerDashboard';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
@@ -63,6 +65,13 @@ function RequireInvestor({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function RequireBanker({ children }: { children: React.ReactNode }) {
+  const currentUser = useStore((s) => s.currentUser);
+  if (!currentUser) return <Navigate to="/login" replace />;
+  if (currentUser.role !== 'banker') return <Navigate to="/inventory" replace />;
+  return <>{children}</>;
+}
+
 export default function App() {
   const currentUser = useStore((s) => s.currentUser);
   const loadAll = useStore((s) => s.loadAll);
@@ -94,11 +103,11 @@ export default function App() {
       <Routes>
         <Route
           path="/login"
-          element={currentUser ? <Navigate to={currentUser.role === 'investor' ? '/investor-portal' : '/inventory'} replace /> : <Login />}
+          element={currentUser ? <Navigate to={currentUser.role === 'investor' ? '/investor-portal' : currentUser.role === 'banker' ? '/banker-dashboard' : '/inventory'} replace /> : <Login />}
         />
         <Route
           path="/"
-          element={<Navigate to={currentUser ? (currentUser.role === 'investor' ? '/investor-portal' : '/inventory') : '/login'} replace />}
+          element={<Navigate to={currentUser ? (currentUser.role === 'investor' ? '/investor-portal' : currentUser.role === 'banker' ? '/banker-dashboard' : '/inventory') : '/login'} replace />}
         />
         <Route
           path="/dashboard"
@@ -298,6 +307,26 @@ export default function App() {
                 <InvestorPortal />
               </Layout>
             </RequireInvestor>
+          }
+        />
+        <Route
+          path="/loan-cases"
+          element={
+            <RequireSalesOrDirector>
+              <Layout>
+                <LoanCases />
+              </Layout>
+            </RequireSalesOrDirector>
+          }
+        />
+        <Route
+          path="/banker-dashboard"
+          element={
+            <RequireBanker>
+              <Layout>
+                <BankerDashboard />
+              </Layout>
+            </RequireBanker>
           }
         />
         <Route path="*" element={<Navigate to="/" replace />} />

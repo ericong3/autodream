@@ -7,7 +7,7 @@ import './index.css'
 document.addEventListener('input', (e) => {
   const target = e.target as HTMLInputElement;
   const skipAutocomplete = ['username', 'email', 'current-password', 'new-password'];
-  if (target.dataset.noCapitalize || skipAutocomplete.includes(target.autocomplete)) return;
+  if (target.dataset.noCapitalize || skipAutocomplete.includes(target.autocomplete) || target.getAttribute('autocapitalize') === 'none') return;
   if (
     (target.tagName === 'INPUT' && target.type === 'text') ||
     target.tagName === 'TEXTAREA'

@@ -3,11 +3,12 @@ export interface User {
   name: string;
   username: string;
   password: string;
-  role: 'director' | 'salesperson' | 'mechanic' | 'admin' | 'investor' | 'shareholder';
+  role: 'director' | 'salesperson' | 'mechanic' | 'admin' | 'investor' | 'shareholder' | 'banker';
   phone: string;
   monthlyTarget: number;
   carsInMonth: number;
   capitalAmount?: number; // investor total capital in RM
+  banks?: string[];       // for banker role — which banks they handle
   // Profile / name card fields
   avatar?: string;
   position?: string;
@@ -17,6 +18,45 @@ export interface User {
   instagram?: string;
   facebook?: string;
   website?: string;
+}
+
+export type LoanCaseStatus = 'pending' | 'under_review' | 'approved' | 'rejected' | 'need_more_info' | 'appeal' | 'withdrawn' | 'cancelled';
+
+export interface LoanCase {
+  id: string;
+  customerId: string;
+  carId?: string;
+  salesmanId: string;
+  bankerId: string;
+  bank: string;
+  loanAmount: number;
+  applicantInterviewText?: string;
+  guarantorInterviewText?: string;
+  status: LoanCaseStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LoanCaseDocument {
+  id: string;
+  caseId: string;
+  type: 'applicant' | 'guarantor';
+  fileName: string;
+  filePath: string;
+  uploadedAt: string;
+}
+
+export interface LoanCaseActivity {
+  id: string;
+  caseId: string;
+  userId: string;
+  userName: string;
+  userRole: string;
+  type: 'status_change' | 'remark' | 'instruction';
+  content?: string;
+  oldStatus?: string;
+  newStatus?: string;
+  createdAt: string;
 }
 
 export interface ChecklistItem {
