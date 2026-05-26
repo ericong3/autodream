@@ -45,6 +45,8 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
 
   if (!isOpen || !currentUser) return null;
 
+  const isSalesperson = currentUser.role === 'salesperson';
+
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -103,22 +105,101 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
 
   const displayRole = currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1);
 
+  const changePasswordSection = (
+    <div className="pt-2">
+      <div className="border-t border-white/[0.07] pt-4">
+        <div className="flex items-center gap-2 mb-4">
+          <Lock size={13} className="text-gray-400" />
+          <span className="text-[11px] text-gray-400 font-semibold uppercase tracking-wider">Change Password</span>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="text-[11px] text-gray-400 font-medium uppercase tracking-wider block mb-1">Current Password</label>
+            <div className="relative">
+              <input type={showOldPw ? 'text' : 'password'} value={oldPw} onChange={(e) => { setOldPw(e.target.value); setPwError(''); }} placeholder="Enter current password" autoCapitalize="none" spellCheck={false}
+                className="w-full px-3 py-2 pr-10 rounded-lg bg-obsidian-700/40 border border-white/[0.08] text-white text-sm placeholder-gray-600 focus:outline-none focus:border-gold-500/50 transition-colors" />
+              <button type="button" onClick={() => setShowOldPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors">
+                {showOldPw ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="text-[11px] text-gray-400 font-medium uppercase tracking-wider block mb-1">New Password</label>
+            <div className="relative">
+              <input type={showNewPw ? 'text' : 'password'} value={newPw} onChange={(e) => { setNewPw(e.target.value); setPwError(''); }} placeholder="At least 6 characters" autoCapitalize="none" spellCheck={false}
+                className="w-full px-3 py-2 pr-10 rounded-lg bg-obsidian-700/40 border border-white/[0.08] text-white text-sm placeholder-gray-600 focus:outline-none focus:border-gold-500/50 transition-colors" />
+              <button type="button" onClick={() => setShowNewPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors">
+                {showNewPw ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="text-[11px] text-gray-400 font-medium uppercase tracking-wider block mb-1">Confirm New Password</label>
+            <div className="relative">
+              <input type={showConfirmPw ? 'text' : 'password'} value={confirmPw} onChange={(e) => { setConfirmPw(e.target.value); setPwError(''); }} placeholder="Re-enter new password" autoCapitalize="none" spellCheck={false}
+                className={`w-full px-3 py-2 pr-10 rounded-lg bg-obsidian-700/40 border text-white text-sm placeholder-gray-600 focus:outline-none transition-colors ${
+                  confirmPw && newPw && confirmPw === newPw ? 'border-green-500/40 focus:border-green-500/60'
+                  : confirmPw && newPw && confirmPw !== newPw ? 'border-red-500/40 focus:border-red-500/60'
+                  : 'border-white/[0.08] focus:border-gold-500/50'}`} />
+              <button type="button" onClick={() => setShowConfirmPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors">
+                {showConfirmPw ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+              {confirmPw && newPw && confirmPw === newPw && <CheckCircle2 size={12} className="absolute right-9 top-1/2 -translate-y-1/2 text-green-400" />}
+            </div>
+          </div>
+          {pwError && (
+            <div className="flex items-center gap-2 text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+              <AlertCircle size={12} className="shrink-0" />{pwError}
+            </div>
+          )}
+          {pwSuccess && (
+            <div className="flex items-center gap-2 text-green-400 text-xs bg-green-500/10 border border-green-500/20 rounded-lg px-3 py-2">
+              <CheckCircle2 size={12} className="shrink-0" />Password changed successfully!
+            </div>
+          )}
+          <button onClick={handleChangePassword} disabled={pwSaving || !oldPw || !newPw || !confirmPw}
+            className="w-full py-2.5 rounded-lg border border-white/10 bg-obsidian-700/60 hover:bg-obsidian-600/60 text-white text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+            {pwSaving ? 'Updating...' : 'Update Password'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   const modal = (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/85 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-md glass-panel shadow-card-lg rounded-xl overflow-hidden max-h-[90vh] overflow-y-auto overscroll-contain">
 
-          {/* Gold accent */}
-          <div className="absolute top-0 left-0 right-0 h-[2px] rounded-t-xl bg-gold-gradient opacity-80" />
+        {/* Gold accent */}
+        <div className="absolute top-0 left-0 right-0 h-[2px] rounded-t-xl bg-gold-gradient opacity-80" />
 
-          {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gold-500/10 bg-gradient-to-r from-white/[0.03] to-transparent">
-            <h2 className="font-display text-white font-semibold text-sm tracking-wide">My Profile</h2>
-            <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-obsidian-500/60 transition-colors">
-              <X size={17} />
-            </button>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gold-500/10 bg-gradient-to-r from-white/[0.03] to-transparent">
+          <h2 className="font-display text-white font-semibold text-sm tracking-wide">My Profile</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-obsidian-500/60 transition-colors">
+            <X size={17} />
+          </button>
+        </div>
+
+        {!isSalesperson ? (
+          /* ── Simple profile for non-salespeople ── */
+          <div className="p-5 space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[11px] text-gray-400 font-medium uppercase tracking-wider block mb-1">Name</label>
+                <div className="px-3 py-2 rounded-lg bg-obsidian-700/40 text-white text-sm">{currentUser.name}</div>
+              </div>
+              <div>
+                <label className="text-[11px] text-gray-400 font-medium uppercase tracking-wider block mb-1">Role</label>
+                <div className="px-3 py-2 rounded-lg bg-obsidian-700/40 text-white text-sm capitalize">{currentUser.role}</div>
+              </div>
+            </div>
+            {changePasswordSection}
           </div>
-
+        ) : (
+          /* ── Full profile + name card for salespeople ── */
+          <>
           {/* Tabs */}
           <div className="flex border-b border-gold-500/10">
             <button
@@ -278,110 +359,7 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                 {saving ? 'Saving...' : saved ? '✓ Saved!' : 'Save Profile'}
               </button>
 
-              {/* ── Change Password ── */}
-              <div className="pt-2">
-                <div className="border-t border-white/[0.07] pt-4">
-                  <div className="flex items-center gap-2 mb-4">
-                    <Lock size={13} className="text-gray-400" />
-                    <span className="text-[11px] text-gray-400 font-semibold uppercase tracking-wider">Change Password</span>
-                  </div>
-
-                  <div className="space-y-3">
-                    {/* Current password */}
-                    <div>
-                      <label className="text-[11px] text-gray-400 font-medium uppercase tracking-wider block mb-1">Current Password</label>
-                      <div className="relative">
-                        <input
-                          type={showOldPw ? 'text' : 'password'}
-                          value={oldPw}
-                          onChange={(e) => { setOldPw(e.target.value); setPwError(''); }}
-                          placeholder="Enter current password"
-                          autoCapitalize="none"
-                          spellCheck={false}
-                          className="w-full px-3 py-2 pr-10 rounded-lg bg-obsidian-700/40 border border-white/[0.08] text-white text-sm placeholder-gray-600 focus:outline-none focus:border-gold-500/50 transition-colors"
-                        />
-                        <button type="button" onClick={() => setShowOldPw(v => !v)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors">
-                          {showOldPw ? <EyeOff size={14} /> : <Eye size={14} />}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* New password */}
-                    <div>
-                      <label className="text-[11px] text-gray-400 font-medium uppercase tracking-wider block mb-1">New Password</label>
-                      <div className="relative">
-                        <input
-                          type={showNewPw ? 'text' : 'password'}
-                          value={newPw}
-                          onChange={(e) => { setNewPw(e.target.value); setPwError(''); }}
-                          placeholder="At least 6 characters"
-                          autoCapitalize="none"
-                          spellCheck={false}
-                          className="w-full px-3 py-2 pr-10 rounded-lg bg-obsidian-700/40 border border-white/[0.08] text-white text-sm placeholder-gray-600 focus:outline-none focus:border-gold-500/50 transition-colors"
-                        />
-                        <button type="button" onClick={() => setShowNewPw(v => !v)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors">
-                          {showNewPw ? <EyeOff size={14} /> : <Eye size={14} />}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Confirm new password */}
-                    <div>
-                      <label className="text-[11px] text-gray-400 font-medium uppercase tracking-wider block mb-1">Confirm New Password</label>
-                      <div className="relative">
-                        <input
-                          type={showConfirmPw ? 'text' : 'password'}
-                          value={confirmPw}
-                          onChange={(e) => { setConfirmPw(e.target.value); setPwError(''); }}
-                          placeholder="Re-enter new password"
-                          autoCapitalize="none"
-                          spellCheck={false}
-                          className={`w-full px-3 py-2 pr-10 rounded-lg bg-obsidian-700/40 border text-white text-sm placeholder-gray-600 focus:outline-none transition-colors ${
-                            confirmPw && newPw && confirmPw === newPw
-                              ? 'border-green-500/40 focus:border-green-500/60'
-                              : confirmPw && newPw && confirmPw !== newPw
-                              ? 'border-red-500/40 focus:border-red-500/60'
-                              : 'border-white/[0.08] focus:border-gold-500/50'
-                          }`}
-                        />
-                        <button type="button" onClick={() => setShowConfirmPw(v => !v)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors">
-                          {showConfirmPw ? <EyeOff size={14} /> : <Eye size={14} />}
-                        </button>
-                        {confirmPw && newPw && confirmPw === newPw && (
-                          <CheckCircle2 size={12} className="absolute right-9 top-1/2 -translate-y-1/2 text-green-400" />
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Error */}
-                    {pwError && (
-                      <div className="flex items-center gap-2 text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-                        <AlertCircle size={12} className="shrink-0" />
-                        {pwError}
-                      </div>
-                    )}
-
-                    {/* Success */}
-                    {pwSuccess && (
-                      <div className="flex items-center gap-2 text-green-400 text-xs bg-green-500/10 border border-green-500/20 rounded-lg px-3 py-2">
-                        <CheckCircle2 size={12} className="shrink-0" />
-                        Password changed successfully!
-                      </div>
-                    )}
-
-                    <button
-                      onClick={handleChangePassword}
-                      disabled={pwSaving || !oldPw || !newPw || !confirmPw}
-                      className="w-full py-2.5 rounded-lg border border-white/10 bg-obsidian-700/60 hover:bg-obsidian-600/60 text-white text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      {pwSaving ? 'Updating...' : 'Update Password'}
-                    </button>
-                  </div>
-                </div>
-              </div>
+              {changePasswordSection}
             </div>
           )}
 
@@ -473,7 +451,9 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
               </button>
             </div>
           )}
-        </div>
+          </>
+        )}
+      </div>
     </div>
   );
 
