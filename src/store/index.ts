@@ -1531,8 +1531,9 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     // Notify the banker
     const banker = get().users.find(u => u.id === loanCase.bankerId);
     const salesman = get().users.find(u => u.id === loanCase.salesmanId);
+    const customer = get().customers.find(c => c.id === loanCase.customerId);
     if (banker) {
-      sendPush([banker.id], '📋 New case submitted', `${salesman?.name ?? 'Salesman'} submitted a case – RM ${loanCase.loanAmount.toLocaleString()}`, '/banker-dashboard');
+      sendPush([banker.id], '📋 New case submitted', `${salesman?.name ?? 'Salesman'} – ${customer?.name ?? 'Customer'} · RM ${loanCase.loanAmount.toLocaleString()}`, '/banker-dashboard');
     }
   },
   updateLoanCase: async (id, updates) => {
@@ -1548,18 +1549,33 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       if (prev) set((s) => ({ loanCases: s.loanCases.map((c) => c.id === id ? prev : c) }));
       throw new Error(error.message);
     }
-    // Notify salesman of status change
+    // Notify on status change
     if (updates.status && prev?.status !== updates.status && prev) {
-      const statusLabels: Record<string, string> = {
-        under_review: 'Under Review',
-        approved: 'Approved',
-        rejected: 'Rejected',
+      const cust = get().customers.find(c => c.id === prev.customerId);
+      const custName = cust?.name ?? 'Customer';
+      // Banker → salesman updates
+      const toSalesmanLabels: Record<string, string> = {
+        under_review:   'Under Review',
+        approved:       'Approved ✅',
+        rejected:       'Rejected ❌',
         need_more_info: 'More Info Needed',
-        appeal: 'Appeal Received',
       };
-      const label = statusLabels[updates.status];
-      if (label) {
-        sendPush([prev.salesmanId], `📋 Case ${label}`, `Your ${prev.bank} case has been updated`, '/loan-cases');
+      const salesLabel = toSalesmanLabels[updates.status];
+      if (salesLabel) {
+        sendPush([prev.salesmanId], `📋 Case ${salesLabel}`, `${prev.bank} · ${custName}`, '/loan-cases');
+      }
+      // Salesman → banker updates
+      if (updates.status === 'appeal') {
+        const banker = get().users.find(u => u.id === prev.bankerId);
+        if (banker) {
+          sendPush([banker.id], '🔁 Appeal filed', `${custName} · ${prev.bank} case appealed`, '/banker-dashboard');
+        }
+      }
+      if (updates.status === 'withdrawn') {
+        const banker = get().users.find(u => u.id === prev.bankerId);
+        if (banker) {
+          sendPush([banker.id], '↩️ Case withdrawn', `${custName} · ${prev.bank} case withdrawn`, '/banker-dashboard');
+        }
       }
     }
   },
@@ -1577,6 +1593,26 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       new_status: activity.newStatus ?? null,
       created_at: activity.createdAt,
     });
+    // Banker adds remark/instruction → notify salesman
+    if ((activity.type === 'remark' || activity.type === 'instruction') && activity.userRole === 'banker') {
+      const lc = get().loanCases.find(c => c.id === activity.caseId);
+      if (lc) {
+        const cust = get().customers.find(c => c.id === lc.customerId);
+        const label = activity.type === 'instruction' ? 'Instruction' : 'Remark';
+        sendPush([lc.salesmanId], `💬 Banker ${label}`, `${lc.bank} · ${cust?.name ?? 'Customer'}: ${activity.content ?? ''}`.slice(0, 100), '/loan-cases');
+      }
+    }
+    // Salesman adds remark → notify banker
+    if (activity.type === 'remark' && activity.userRole !== 'banker') {
+      const lc = get().loanCases.find(c => c.id === activity.caseId);
+      if (lc) {
+        const cust = get().customers.find(c => c.id === lc.customerId);
+        const banker = get().users.find(u => u.id === lc.bankerId);
+        if (banker) {
+          sendPush([banker.id], '💬 Salesman Remark', `${lc.bank} · ${cust?.name ?? 'Customer'}: ${activity.content ?? ''}`.slice(0, 100), '/banker-dashboard');
+        }
+      }
+    }
   },
   addLoanCaseDocument: async (doc) => {
     set((s) => ({ loanCaseDocuments: [...s.loanCaseDocuments, doc] }));
@@ -1591,6 +1627,15 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     if (error) {
       set((s) => ({ loanCaseDocuments: s.loanCaseDocuments.filter((d) => d.id !== doc.id) }));
       throw new Error(error.message);
+    }
+    // Notify banker that new documents have been uploaded
+    const lc = get().loanCases.find(c => c.id === doc.caseId);
+    if (lc) {
+      const banker = get().users.find(u => u.id === lc.bankerId);
+      const cust = get().customers.find(c => c.id === lc.customerId);
+      if (banker) {
+        sendPush([banker.id], '📎 Document uploaded', `${lc.bank} · ${cust?.name ?? 'Customer'} – ${doc.fileName}`, '/banker-dashboard');
+      }
     }
   },
   deleteLoanCaseDocument: async (id) => {
