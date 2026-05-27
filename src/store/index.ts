@@ -788,6 +788,10 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
               if (!('money_received' in (payload.new as any))) {
                 incoming.moneyReceived = c.moneyReceived;
               }
+              // A car with a confirmed deal must always be deal_pending (or delivered)
+              if (incoming.finalDeal != null && incoming.status !== 'delivered') {
+                incoming.status = 'deal_pending';
+              }
               return incoming;
             }),
           }));
@@ -1078,7 +1082,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     const prev = get().cars.find(c => c.id === id);
     // deal_pending cars: ONLY 'delivered' can change the status. Everything else is blocked.
     // Cancellation must go through the dedicated cancel flow, not a status field edit.
-    if (prev?.status === 'deal_pending' && car.status && car.status !== 'delivered') {
+    if ((prev?.status === 'deal_pending' || prev?.finalDeal != null) && car.status && car.status !== 'delivered') {
       delete (car as any).status;
     }
     // delivered cars: status is permanently locked — nothing can change it
