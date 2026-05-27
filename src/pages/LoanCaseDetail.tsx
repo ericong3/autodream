@@ -141,9 +141,14 @@ export default function LoanCaseDetail({ loanCase, onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm"
+      style={{ paddingTop: 'env(safe-area-inset-top, 44px)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+      onClick={onClose}
+    >
       <div
-        className="w-full max-w-lg bg-gradient-to-b from-obsidian-800 to-obsidian-900 border border-obsidian-400/20 rounded-t-3xl md:rounded-2xl shadow-2xl max-h-[92vh] flex flex-col"
+        className="w-full max-w-lg bg-gradient-to-b from-obsidian-800 to-obsidian-900 border border-obsidian-400/20 rounded-t-3xl md:rounded-2xl shadow-2xl flex flex-col"
+        style={{ maxHeight: 'calc(100dvh - env(safe-area-inset-top, 44px) - env(safe-area-inset-bottom, 0px))' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}

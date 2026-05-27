@@ -1642,7 +1642,7 @@ export default function Customers() {
                   key={detailLead.id}
                   className="pointer-events-auto relative w-full sm:max-w-lg bg-gradient-to-b from-obsidian-700 to-obsidian-800 border-t border-x sm:border border-obsidian-400/80 rounded-t-2xl sm:rounded-2xl shadow-[0_-20px_80px_rgba(0,0,0,0.8)] sm:shadow-[0_20px_80px_rgba(0,0,0,0.8)] flex flex-col"
                   style={{
-                    maxHeight: 'calc(100vh - env(safe-area-inset-top, 44px))',
+                    maxHeight: 'calc(100dvh - env(safe-area-inset-top, 44px) - env(safe-area-inset-bottom, 0px) - 4rem)',
                     transform: dragOffset > 0 ? `translateY(${dragOffset}px)` : undefined,
                     transition: isDragging ? 'none' : 'transform 0.35s cubic-bezier(0.34,1.56,0.64,1)',
                     animation: isDragging ? 'none' : 'drawerSpring 0.4s cubic-bezier(0.34,1.56,0.64,1) forwards',
