@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { FileText } from 'lucide-react';
+import { FileText, CheckCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
 import { toast } from '../utils/toast';
 import LoanCaseDetail from './LoanCaseDetail';
@@ -44,6 +45,7 @@ export default function LoanCases() {
   const addLoanCaseActivity = useStore(s => s.addLoanCaseActivity);
   const updateLoanCase = useStore(s => s.updateLoanCase);
 
+  const navigate = useNavigate();
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
 
   const myCases = loanCases
@@ -112,6 +114,7 @@ export default function LoanCases() {
             const customer = customers.find(c => c.id === lc.customerId);
             const canWithdraw = ['pending', 'under_review'].includes(lc.status);
             const canAppeal = ['rejected', 'need_more_info'].includes(lc.status);
+            const canConfirmDeal = lc.status === 'approved';
             const docs = loanCaseDocuments.filter(d => d.caseId === lc.id);
             const lastActivity = loanCaseActivities
               .filter(a => a.caseId === lc.id)
@@ -169,6 +172,14 @@ export default function LoanCases() {
                     </button>
                   )}
                 </div>
+                {canConfirmDeal && (
+                  <button
+                    onClick={() => navigate(`/customers?id=${lc.customerId}`)}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-green-500/15 border border-green-500/30 text-green-300 text-xs font-semibold hover:bg-green-500/20 transition-colors"
+                  >
+                    <CheckCircle size={12} />Confirm Deal — go to customer
+                  </button>
+                )}
               </div>
             );
           })}

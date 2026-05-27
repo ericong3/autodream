@@ -666,7 +666,7 @@ export default function Customers() {
     setDetailLead(null);
   };
 
-  const openFinalDeal = (c: Customer, bankName?: string, bankAmount?: number) => {
+  const openFinalDeal = (c: Customer, bankName?: string, bankAmount?: number, carIdOverride?: string) => {
     const approvedApp = bankName
       ? c.loanApplications?.find(a => a.bank === bankName && a.status === 'approved')
       : c.loanApplications?.find(a => a.status === 'approved');
@@ -697,7 +697,7 @@ export default function Customers() {
       tradeInPrice: prev?.tradeInPrice ?? 0,
       settlementFigure: prev?.settlementFigure ?? 0,
     });
-    setWorkOrderCarId(c.interestedCarId ?? '');
+    setWorkOrderCarId(carIdOverride ?? c.interestedCarId ?? '');
     setWorkOrderCustomer(c);
     setWorkOrderType('loan');
     setDetailLead(null);
@@ -2062,6 +2062,14 @@ export default function Customers() {
                               <p className="text-xs text-gray-400">RM {lc.loanAmount.toLocaleString()} · {banker?.name ?? 'Unknown banker'}{car ? ` · ${car.year} ${car.make} ${car.model}` : ''}</p>
                               {lastActivity && lastActivity.type !== 'status_change' && (
                                 <p className="text-xs text-gray-500 italic line-clamp-1">{lastActivity.content}</p>
+                              )}
+                              {lc.status === 'approved' && !detailLead.loanWorkOrder && !isShareHolder && (
+                                <button
+                                  onClick={() => openFinalDeal(detailLead, lc.bank, lc.loanAmount, lc.carId)}
+                                  className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-green-500/15 border border-green-500/30 text-green-300 text-xs font-semibold hover:bg-green-500/20 transition-colors touch-manipulation"
+                                >
+                                  <CheckCircle size={12} />Confirm Deal
+                                </button>
                               )}
                             </div>
                           );
