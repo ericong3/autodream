@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList, Truck, Upload, Lock, Skull, Clock, RotateCcw, MoreVertical } from 'lucide-react';
 import { useStore } from '../store';
-import { Customer, LoanApplication, LoanSubmission, CashWorkOrder, LoanWorkOrder, WorkOrderItem, BANKS, NO_BANKER_BANKS } from '../types';
+import { Customer, CashWorkOrder, LoanWorkOrder, WorkOrderItem, BANKS } from '../types';
 import LoanSubmitModal from './LoanSubmitModal';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
@@ -77,8 +77,6 @@ export default function Customers() {
 
   const addTestDrive = useStore((s) => s.addTestDrive);
   const testDrives = useStore((s) => s.testDrives);
-  const bankers = useStore((s) => s.bankers);
-
   const isDirector = currentUser?.role === 'director';
   const isAdmin = currentUser?.role === 'admin';
   const isShareHolder = currentUser?.role === 'shareholder';
@@ -160,9 +158,6 @@ export default function Customers() {
     if (bf && bf > 0) setWoForm(f => ({ ...f, bookingFee: bf }));
   }, [workOrderCustomer?.id]);
 
-  const [bankStatuses, setBankStatuses] = useState<LoanApplication[]>([]);
-
-
   // Detail drawer
   const [detailLead, setDetailLead] = useState<Customer | null>(null);
   const [detailTab, setDetailTab] = useState<'details' | 'calculation' | 'postsale' | 'timeline'>('details');
@@ -175,10 +170,6 @@ export default function Customers() {
   const [deliveryPhotoUrl, setDeliveryPhotoUrl] = useState('');
   const [deliveryUploading, setDeliveryUploading] = useState(false);
   const deliveryPhotoRef = useRef<HTMLInputElement>(null);
-  // Bank submission modal (old multi-bank tracking)
-  const [bankModalLeadId, setBankModalLeadId] = useState<string | null>(null);
-  const [bankModalPicks, setBankModalPicks] = useState<Record<string, string>>({});
-  const [bankModalPendingData, setBankModalPendingData] = useState<{ carId: string; dealPrice: number } | null>(null);
   // Banker portal submission modal
   const [loanSubmitCustomer, setLoanSubmitCustomer] = useState<Customer | null>(null);
   const [loanSubmitInitial, setLoanSubmitInitial] = useState<{ carId?: string; amount?: number }>({});
@@ -186,10 +177,6 @@ export default function Customers() {
 
   useEffect(() => {
     if (!detailLead) return;
-    const apps = detailLead.loanApplications?.length
-      ? detailLead.loanApplications
-      : (detailLead.loanBankSubmitted ?? '').split(',').filter(Boolean).map(b => ({ bank: b.trim(), status: 'submitted' as const }));
-    setBankStatuses(apps);
     setShowInlineFollowup(false);
   }, [detailLead?.id]);
 
@@ -582,51 +569,6 @@ export default function Customers() {
     setWorkOrderCustomer(null);
   };
 
-
-  const handleSaveBankStatuses = (customerId: string, apps?: LoanApplication[]) => {
-    const list = apps ?? bankStatuses;
-    const anyApproved = list.some(a => a.status === 'approved');
-    const allResolved = list.every(a => a.status !== 'submitted');
-    const overallStatus: Customer['loanStatus'] = anyApproved ? 'approved' : allResolved ? 'rejected' : 'submitted';
-    updateCustomer(customerId, { loanApplications: list, loanStatus: overallStatus, lastActionAt: new Date().toISOString() });
-    setDetailLead(prev => prev ? { ...prev, loanApplications: list, loanStatus: overallStatus } : prev);
-
-    // Sync to car.loanSubmissions so the Loan Log on CarDetail stays up to date
-    const customer = useStore.getState().customers.find(c => c.id === customerId) ?? detailLead;
-    if (customer?.interestedCarId) {
-      const { cars: allCars, updateCar } = useStore.getState();
-      const car = allCars.find(c => c.id === customer.interestedCarId);
-      if (car) {
-        const existing = car.loanSubmissions ?? [];
-        const otherEntries = existing.filter(s => s.customerPhone !== customer.phone);
-        const updatedEntries: LoanSubmission[] = list.map(app => {
-          const prev = existing.find(s => s.customerPhone === customer.phone && s.bank === app.bank);
-          return {
-            id: prev?.id ?? generateId(),
-            bank: app.bank,
-            customerName: customer.name,
-            customerPhone: customer.phone,
-            submittedBy: prev?.submittedBy ?? currentUser?.id ?? '',
-            submittedAt: prev?.submittedAt ?? new Date().toISOString(),
-            status: app.status,
-            notes: prev?.notes,
-          };
-        });
-        updateCar(car.id, { loanSubmissions: [...otherEntries, ...updatedEntries] });
-      }
-    }
-  };
-
-  const toggleBankStatus = (bank: string, newStatus: 'approved' | 'rejected' | 'submitted') => {
-    setBankStatuses(prev => prev.map(a => {
-      if (a.bank !== bank) return a;
-      return {
-        ...a,
-        status: newStatus,
-        approvedAt: newStatus === 'approved' && !a.approvedAt ? new Date().toISOString() : a.approvedAt,
-      };
-    }));
-  };
 
   // ── Loan Work Order ───────────────────────────────────────
   const openEditWorkOrder = (c: Customer) => {
@@ -1182,12 +1124,7 @@ export default function Customers() {
                         )}
                         {!isShareHolder && (
                           <button
-                            onClick={() => {
-                              updateCustomer(c.id, { dealType: 'loan' });
-                              setBankModalPendingData({ carId: c.interestedCarId || '', dealPrice: c.dealPrice ?? 0 });
-                              setBankModalPicks({});
-                              setBankModalLeadId(c.id);
-                            }}
+                            onClick={() => updateCustomer(c.id, { dealType: 'loan' })}
                             className="flex items-center gap-1.5 px-3 py-2 text-xs text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 rounded-lg transition-colors font-medium touch-manipulation"
                             title="Switch to Loan"
                           >
@@ -1332,8 +1269,6 @@ export default function Customers() {
                             );
                           })}
                         </div>
-                      ) : c.loanBankSubmitted ? (
-                        <span className="text-gray-500 text-xs">{c.loanBankSubmitted}</span>
                       ) : null}
 
                       {c.dealPrice ? <span className="text-gold-400 text-xs font-semibold">{formatRM(c.dealPrice)}</span> : null}
@@ -1384,14 +1319,6 @@ export default function Customers() {
                         <span className="text-red-400 text-xs font-medium">All banks rejected</span>
                       </div>
                       <div className="flex gap-2">
-                        {!isShareHolder && BANKS.some(b => !c.loanApplications?.some(a => a.bank === b)) && (
-                          <button
-                            onClick={() => { setBankModalPicks({}); setBankModalLeadId(c.id); }}
-                            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-dashed border-obsidian-400/50 text-xs text-gold-400 hover:text-gold-300 hover:border-gold-500/30 transition-colors touch-manipulation"
-                          >
-                            <Plus size={12} />Try Other Banks
-                          </button>
-                        )}
                         {!isShareHolder && (
                           <button
                             onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })}
@@ -1906,125 +1833,9 @@ export default function Customers() {
                   {/* Scrollable content — Details tab */}
                   {(!hasWorkOrder || detailTab === 'details') && <div className="flex-1 overflow-y-auto p-5 space-y-5 min-h-0 pb-20">
 
-                {/* Banks — at a glance, no expand/collapse, sorted approved first */}
-                {detailLead.loanStatus && detailLead.loanStatus !== 'not_started' && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-gray-500 text-xs font-medium uppercase tracking-wide">Banks</p>
-                      {!!detailLead.dealPrice && <span className="text-white text-xs font-semibold">{formatRM(detailLead.dealPrice)}</span>}
-                    </div>
-                    <div className="space-y-2">
-                      {[...bankStatuses]
-                        .sort((a, b) => {
-                          const order: Record<string, number> = { approved: 0, submitted: 1, rejected: 2, cancelled: 3 };
-                          return (order[a.status] ?? 4) - (order[b.status] ?? 4);
-                        })
-                        .map(app => (
-                        <div key={app.bank} className={`rounded-xl border overflow-hidden ${
-                          app.status === 'approved' ? 'border-green-500/40 bg-green-500/5' :
-                          app.status === 'rejected' ? 'border-red-500/20 bg-obsidian-700/40' :
-                          app.status === 'cancelled' ? 'border-obsidian-500/30 bg-obsidian-800/40' :
-                          'border-obsidian-400/50 bg-obsidian-700/50'
-                        }`}>
-                          {/* Top row: name + status pill + remove */}
-                          <div className="flex items-center gap-2 px-3 pt-3 pb-2">
-                            <div className="flex-1 min-w-0">
-                              <span className="text-white text-sm font-medium">{app.bank}</span>
-                              {app.bankerName && <span className="text-sky-400 text-xs ml-1.5">via {app.bankerName}</span>}
-                            </div>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                              app.status === 'approved' ? 'bg-green-500/20 text-green-300' :
-                              app.status === 'rejected' ? 'bg-red-500/10 text-red-400' :
-                              app.status === 'cancelled' ? 'bg-gray-500/10 text-gray-500' :
-                              'bg-yellow-500/10 text-yellow-400'
-                            }`}>
-                              {app.status === 'approved' ? 'Approved' : app.status === 'rejected' ? 'Rejected' : app.status === 'cancelled' ? 'Cancelled' : 'Submitted'}
-                            </span>
-                            {!isShareHolder && (
-                              <button onClick={() => { const u = bankStatuses.filter(a => a.bank !== app.bank); setBankStatuses(u); handleSaveBankStatuses(detailLead.id, u); }} className="text-gray-600 hover:text-red-400 transition-colors touch-manipulation p-0.5">
-                                <X size={12} />
-                              </button>
-                            )}
-                          </div>
-                          {/* Approval details */}
-                          {app.status === 'approved' && (app.approvedAmount || app.interestRate || app.approvedAt) && (
-                            <div className="px-3 pb-2 flex items-center gap-3 flex-wrap">
-                              {app.approvedAmount && <span className="text-green-400 text-sm font-bold">RM {app.approvedAmount.toLocaleString()}</span>}
-                              {app.interestRate && <span className="text-green-400/70 text-xs">{app.interestRate}% p.a.</span>}
-                              {app.approvedAt && (() => {
-                                const daysLeft = 90 - Math.floor((Date.now() - new Date(app.approvedAt).getTime()) / 86400000);
-                                return daysLeft <= 20
-                                  ? <span className="text-orange-400 text-xs flex items-center gap-1"><AlertCircle size={10} />{daysLeft}d left</span>
-                                  : <span className="text-gray-500 text-xs">{daysLeft}d remaining</span>;
-                              })()}
-                            </div>
-                          )}
-                          {app.rejectionReason && <p className="px-3 pb-2 text-red-400/70 text-xs">{app.rejectionReason}</p>}
-                          {app.approvalReason && <p className="px-3 pb-2 text-green-400/60 text-xs">{app.approvalReason}</p>}
-                          {/* Status buttons — always visible */}
-                          {!isShareHolder && (
-                            <div className="flex gap-1.5 px-3 pb-3">
-                              <button onClick={() => toggleBankStatus(app.bank, 'approved')} className={`flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-xs font-semibold border transition-colors touch-manipulation ${app.status === 'approved' ? 'bg-green-500/20 border-green-500/40 text-green-300' : 'border-obsidian-400/50 text-gray-600 hover:text-green-400 hover:border-green-500/30'}`}>
-                                <CheckCircle size={11} />Approve
-                              </button>
-                              <button onClick={() => toggleBankStatus(app.bank, 'submitted')} className={`flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-xs font-semibold border transition-colors touch-manipulation ${app.status === 'submitted' ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300' : 'border-obsidian-400/50 text-gray-600 hover:text-yellow-400 hover:border-yellow-500/30'}`}>
-                                Pending
-                              </button>
-                              <button onClick={() => toggleBankStatus(app.bank, 'rejected')} className={`flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-xs font-semibold border transition-colors touch-manipulation ${app.status === 'rejected' ? 'bg-red-500/20 border-red-500/40 text-red-300' : 'border-obsidian-400/50 text-gray-600 hover:text-red-400 hover:border-red-500/30'}`}>
-                                <XCircle size={11} />Reject
-                              </button>
-                            </div>
-                          )}
-                          {/* Inline amount/rate fields when approved */}
-                          {!isShareHolder && app.status === 'approved' && (
-                            <div className="px-3 pb-3 space-y-2 border-t border-green-500/20 pt-2">
-                              <div className="grid grid-cols-2 gap-2">
-                                <input type="number" className="input text-xs w-full" placeholder="Amount (RM)" value={app.approvedAmount ?? ''} onChange={e => setBankStatuses(prev => prev.map(a => a.bank === app.bank ? { ...a, approvedAmount: e.target.value ? Number(e.target.value) : undefined } : a))} onBlur={() => handleSaveBankStatuses(detailLead.id)} />
-                                <input type="number" step="0.01" className="input text-xs w-full" placeholder="Rate (%)" value={app.interestRate ?? ''} onChange={e => setBankStatuses(prev => prev.map(a => a.bank === app.bank ? { ...a, interestRate: e.target.value ? Number(e.target.value) : undefined } : a))} onBlur={() => handleSaveBankStatuses(detailLead.id)} />
-                              </div>
-                              <input className="input text-xs w-full" placeholder="Approval notes..." value={app.approvalReason ?? ''} onChange={e => setBankStatuses(prev => prev.map(a => a.bank === app.bank ? { ...a, approvalReason: e.target.value } : a))} onBlur={() => handleSaveBankStatuses(detailLead.id)} />
-                              {!detailLead.loanWorkOrder && (
-                                <button
-                                  onClick={() => openFinalDeal(detailLead, app.bank, app.approvedAmount)}
-                                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-500 hover:bg-green-400 text-obsidian-900 text-xs font-bold transition-colors touch-manipulation active:scale-95"
-                                >
-                                  <ClipboardList size={13} />
-                                  Proceed with {app.bank} — Final Deal
-                                  <ArrowRight size={13} />
-                                </button>
-                              )}
-                            </div>
-                          )}
-                          {!isShareHolder && app.status === 'rejected' && (
-                            <div className="px-3 pb-3 border-t border-red-500/10 pt-2">
-                              <input className="input text-xs w-full" placeholder="Rejection reason..." value={app.rejectionReason ?? ''} onChange={e => setBankStatuses(prev => prev.map(a => a.bank === app.bank ? { ...a, rejectionReason: e.target.value } : a))} onBlur={() => handleSaveBankStatuses(detailLead.id)} />
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                      {/* Add more banks */}
-                      {!isShareHolder && BANKS.some(b => !bankStatuses.some(a => a.bank === b)) && (
-                        <button onClick={() => { setBankModalPicks({}); setBankModalLeadId(detailLead.id); }} className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-dashed border-obsidian-400/50 text-xs text-gold-400 hover:text-gold-300 hover:border-gold-500/30 transition-colors touch-manipulation">
-                          <Plus size={12} />Add bank
-                        </button>
-                      )}
-                      {/* Submit to Banker Portal */}
-                      {!isShareHolder && (
-                        <button
-                          onClick={() => { setLoanSubmitInitial({ carId: detailLead.interestedCarId || undefined, amount: detailLead.dealPrice || undefined }); setLoanSubmitCustomer(detailLead); }}
-                          className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-dashed border-sky-500/30 text-xs text-sky-400 hover:text-sky-300 hover:border-sky-500/50 transition-colors touch-manipulation"
-                        >
-                          <Plus size={12} />Submit to Banker Portal
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-
                 {/* Portal Loan Cases for this customer */}
                 {(() => {
                   const portalCases = loanCases.filter(c => c.customerId === detailLead.id);
-                  if (portalCases.length === 0) return null;
                   const STATUS_COLORS: Record<string, string> = {
                     pending: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30',
                     under_review: 'bg-blue-500/15 text-blue-300 border-blue-500/30',
@@ -2074,6 +1885,14 @@ export default function Customers() {
                             </div>
                           );
                         })}
+                        {!isShareHolder && (
+                          <button
+                            onClick={() => { setLoanSubmitInitial({ carId: detailLead.interestedCarId || undefined, amount: detailLead.dealPrice || undefined }); setLoanSubmitCustomer(detailLead); }}
+                            className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-dashed border-sky-500/30 text-xs text-sky-400 hover:text-sky-300 hover:border-sky-500/50 transition-colors touch-manipulation"
+                          >
+                            <Plus size={12} />Submit to Banker Portal
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -2224,13 +2043,6 @@ export default function Customers() {
                       <button
                         onClick={() => {
                           updateCustomer(detailLead.id, { dealType: 'loan' });
-                          setBankModalPendingData({
-                            carId: detailLead.interestedCarId || '',
-                            dealPrice: detailLead.dealPrice ?? 0,
-                          });
-                          setBankModalPicks({});
-                          setBankModalLeadId(detailLead.id);
-                          setDetailLead(null);
                         }}
                         className="flex items-center justify-center gap-2 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-400 py-3 rounded-xl text-sm font-semibold transition-colors touch-manipulation"
                       >
@@ -3125,158 +2937,6 @@ export default function Customers() {
         onConfirm={async () => { if (binDeleteTarget) { await deleteCustomer(binDeleteTarget.id); setBinDeleteTarget(null); } }}
         itemName={binDeleteTarget?.label ?? ''}
       />
-
-      {/* Bank Submit Modal */}
-      {bankModalLeadId && (() => {
-        const lead = customers.find(c => c.id === bankModalLeadId);
-        if (!lead) return null;
-        const alreadySubmitted = (lead.loanApplications ?? []).map(a => a.bank);
-        const available = BANKS.filter(b => !alreadySubmitted.includes(b));
-        const selectedBanks = Object.keys(bankModalPicks);
-        const carName = (() => { const c = cars.find(x => x.id === lead.interestedCarId); return c ? `${c.year} ${c.make} ${c.model}` : null; })();
-
-        const toggle = (bank: string) => {
-          const next = { ...bankModalPicks };
-          if (bank in next) { delete next[bank]; } else { next[bank] = ''; }
-          setBankModalPicks(next);
-        };
-
-        const doSubmit = () => {
-          const newApps: LoanApplication[] = selectedBanks.map(bank => {
-            const banker = bankers.find(b => b.id === bankModalPicks[bank]);
-            return { bank, status: 'submitted' as const, ...(banker ? { bankerId: banker.id, bankerName: banker.name } : {}) };
-          });
-          if (bankModalPendingData) {
-            updateCustomer(bankModalLeadId, {
-              leadStatus: 'loan_submitted',
-              loanStatus: 'submitted',
-              ...(bankModalPendingData.carId ? { interestedCarId: bankModalPendingData.carId } : {}),
-              ...(bankModalPendingData.dealPrice ? { dealPrice: bankModalPendingData.dealPrice } : {}),
-              lastActionAt: new Date().toISOString(),
-            });
-          }
-          handleSaveBankStatuses(bankModalLeadId, [...(lead.loanApplications ?? []), ...newApps]);
-          setBankModalLeadId(null);
-          setBankModalPendingData(null);
-        };
-
-        const close = () => { setBankModalLeadId(null); setBankModalPendingData(null); };
-
-        return createPortal(
-          <div className="fixed inset-0 z-[400] flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm" style={{ paddingTop: 'env(safe-area-inset-top, 44px)' }} onClick={close}>
-            <div className="w-full sm:max-w-sm bg-obsidian-800 sm:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: 'calc(100vh - env(safe-area-inset-top, 44px))' }} onClick={e => e.stopPropagation()}>
-
-              {/* Handle bar */}
-              <div className="flex justify-center pt-3 pb-1 sm:hidden">
-                <div className="w-10 h-1 bg-obsidian-500/60 rounded-full" />
-              </div>
-
-              {/* Header */}
-              <div className="px-6 pt-5 pb-4 flex items-start justify-between">
-                <div>
-                  <p className="text-white font-bold text-lg">Submit Loan</p>
-                  <p className="text-gray-500 text-sm mt-0.5">{lead.name}{carName ? ` · ${carName}` : ''}</p>
-                </div>
-                <button onClick={close} className="mt-1 text-gray-500 hover:text-white transition-colors"><X size={18} /></button>
-              </div>
-
-              {/* Scrollable body */}
-              <div className="px-4 pb-2 space-y-4 flex-1 min-h-0 overflow-y-auto">
-
-                {/* Bank selection + inline banker picker */}
-                {available.length === 0 ? (
-                  <p className="text-gray-600 text-sm text-center py-8">All banks already submitted</p>
-                ) : (
-                  <div className="space-y-2">
-                    {available.map(bank => {
-                      const selected = bank in bankModalPicks;
-                      const needsBanker = selected && !(NO_BANKER_BANKS as readonly string[]).includes(bank);
-                      const bankBankers = needsBanker ? bankers.filter(b => b.bank === bank) : [];
-                      const selectedBankerId = bankModalPicks[bank] ?? '';
-                      return (
-                        <React.Fragment key={bank}>
-                          {/* Bank card — uniform height */}
-                          <button
-                            onClick={() => toggle(bank)}
-                            className={`w-full flex items-center justify-between px-5 py-4 rounded-2xl border transition-all ${
-                              selected
-                                ? 'border-gold-500/50 bg-gold-500/5'
-                                : 'border-obsidian-500/30 bg-obsidian-700/30 hover:border-obsidian-400/50'
-                            }`}
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 transition-all ${
-                                selected ? 'bg-gold-500 text-obsidian-900' : 'bg-obsidian-600/60 text-gray-400'
-                              }`}>
-                                {bank[0]}
-                              </div>
-                              <p className={`font-semibold text-sm transition-colors ${selected ? 'text-white' : 'text-gray-400'}`}>{bank}</p>
-                            </div>
-                            <div className={`w-5 h-5 rounded-full border-2 transition-all flex items-center justify-center ${
-                              selected ? 'border-gold-400 bg-gold-400' : 'border-obsidian-500/60'
-                            }`}>
-                              {selected && <div className="w-2 h-2 rounded-full bg-obsidian-900" />}
-                            </div>
-                          </button>
-
-                          {/* Banker picker — appears directly below this bank when selected */}
-                          {needsBanker && (
-                            <div className="ml-3 pl-3 border-l-2 border-gold-500/30 -mt-1 pb-1">
-                              {bankBankers.length === 0 ? (
-                                <p className="text-gray-600 text-xs py-2 px-1">No bankers added — go to Data → Bankers</p>
-                              ) : (
-                                <div className="flex flex-wrap gap-2 py-2">
-                                  {bankBankers.map(b => {
-                                    const isChosen = selectedBankerId === b.id;
-                                    return (
-                                      <button
-                                        key={b.id}
-                                        onClick={() => setBankModalPicks({ ...bankModalPicks, [bank]: isChosen ? '' : b.id })}
-                                        className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
-                                          isChosen
-                                            ? 'border-gold-500/60 bg-gold-500/10 text-gold-300'
-                                            : 'border-obsidian-500/30 bg-obsidian-700/40 text-gray-400 hover:border-obsidian-400/60'
-                                        }`}
-                                      >
-                                        <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${
-                                          isChosen ? 'bg-gold-500 text-obsidian-900' : 'bg-obsidian-600/60'
-                                        }`}>
-                                          {b.name[0]}
-                                        </div>
-                                        {b.name}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </div>
-                )}
-
-              </div>
-
-              {/* Submit */}
-              <div className="px-4 pt-3 shrink-0"
-                style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))' }}>
-                <button
-                  onClick={doSubmit}
-                  disabled={selectedBanks.length === 0}
-                  className="w-full btn-gold py-4 rounded-2xl text-sm font-bold disabled:opacity-30"
-                >
-                  {selectedBanks.length === 0
-                    ? 'Select at least one bank'
-                    : `Submit to ${selectedBanks.length} bank${selectedBanks.length > 1 ? 's' : ''}`}
-                </button>
-              </div>
-            </div>
-          </div>,
-          document.body,
-        );
-      })()}
 
       {/* Banker Portal Submission Modal */}
       {loanSubmitCustomer && (
