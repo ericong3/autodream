@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Upload, Trash2, FileText, Loader2 } from 'lucide-react';
+import { X, Upload, Trash2, FileText, Loader2, RefreshCw } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
 import { Customer, LoanCase, LoanCaseDocument, LoanCaseActivity, BANKS } from '../types';
@@ -17,19 +17,31 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
   const currentUser = useStore(s => s.currentUser)!;
   const users = useStore(s => s.users);
   const cars = useStore(s => s.cars);
+  const loanCases = useStore(s => s.loanCases);
+  const loanCaseDocuments = useStore(s => s.loanCaseDocuments);
   const addLoanCase = useStore(s => s.addLoanCase);
   const addLoanCaseDocument = useStore(s => s.addLoanCaseDocument);
   const addLoanCaseActivity = useStore(s => s.addLoanCaseActivity);
   const updateCustomer = useStore(s => s.updateCustomer);
 
-  // bankPicks: bank → bankerId ('' means no banker chosen = bank not selected)
+  // Find most recent previous case for this customer (by this salesman) that has docs
+  const prevCase = [...loanCases]
+    .filter(c => c.customerId === customer.id && c.salesmanId === currentUser.id)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .find(c => loanCaseDocuments.some(d => d.caseId === c.id));
+
+  const prevDocs = prevCase ? loanCaseDocuments.filter(d => d.caseId === prevCase.id) : [];
+  const prevApplicantDocs = prevDocs.filter(d => d.type === 'applicant');
+  const prevGuarantorDocs = prevDocs.filter(d => d.type === 'guarantor');
+
   const [bankPicks, setBankPicks] = useState<Record<string, string>>({});
   const [carId, setCarId] = useState(initialCarId ?? '');
   const [loanAmount, setLoanAmount] = useState(initialAmount ? String(initialAmount) : '');
-  const [applicantText, setApplicantText] = useState('');
-  const [guarantorText, setGuarantorText] = useState('');
+  const [applicantText, setApplicantText] = useState(prevCase?.applicantInterviewText ?? '');
+  const [guarantorText, setGuarantorText] = useState(prevCase?.guarantorInterviewText ?? '');
   const [applicantFiles, setApplicantFiles] = useState<File[]>([]);
   const [guarantorFiles, setGuarantorFiles] = useState<File[]>([]);
+  const [reuseDocs, setReuseDocs] = useState(prevApplicantDocs.length > 0);
   const [submitting, setSubmitting] = useState(false);
   const applicantRef = useRef<HTMLInputElement>(null);
   const guarantorRef = useRef<HTMLInputElement>(null);
@@ -39,11 +51,12 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
   );
 
   const selectedBanks = Object.keys(bankPicks).filter(b => bankPicks[b] !== '');
+  const hasApplicantDocs = reuseDocs ? prevApplicantDocs.length > 0 : applicantFiles.length > 0;
 
   async function handleSubmit() {
     if (selectedBanks.length === 0) { toast.error('Select at least one bank'); return; }
     if (!loanAmount) { toast.error('Please enter loan amount'); return; }
-    if (applicantFiles.length === 0) { toast.error('Please upload at least one applicant document'); return; }
+    if (!hasApplicantDocs) { toast.error('Please upload at least one applicant document'); return; }
 
     setSubmitting(true);
     try {
@@ -67,25 +80,39 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
         };
         await addLoanCase(newCase);
 
-        const uploadFile = async (file: File, type: 'applicant' | 'guarantor') => {
-          const path = `${caseId}/${type}/${Date.now()}_${file.name}`;
-          const { error } = await supabase.storage.from('loan-documents').upload(path, file);
-          if (error) throw error;
-          const doc: LoanCaseDocument = {
-            id: crypto.randomUUID(),
-            caseId,
-            type,
-            fileName: file.name,
-            filePath: path,
-            uploadedAt: new Date().toISOString(),
+        if (reuseDocs && prevApplicantDocs.length > 0) {
+          // Copy document references from the previous case — no re-upload needed
+          for (const doc of prevDocs) {
+            const newDoc: LoanCaseDocument = {
+              id: crypto.randomUUID(),
+              caseId,
+              type: doc.type,
+              fileName: doc.fileName,
+              filePath: doc.filePath,
+              uploadedAt: now,
+            };
+            await addLoanCaseDocument(newDoc);
+          }
+        } else {
+          const uploadFile = async (file: File, type: 'applicant' | 'guarantor') => {
+            const path = `${caseId}/${type}/${Date.now()}_${file.name}`;
+            const { error } = await supabase.storage.from('loan-documents').upload(path, file);
+            if (error) throw error;
+            const doc: LoanCaseDocument = {
+              id: crypto.randomUUID(),
+              caseId,
+              type,
+              fileName: file.name,
+              filePath: path,
+              uploadedAt: new Date().toISOString(),
+            };
+            await addLoanCaseDocument(doc);
           };
-          await addLoanCaseDocument(doc);
-        };
-
-        await Promise.all([
-          ...applicantFiles.map(f => uploadFile(f, 'applicant')),
-          ...guarantorFiles.map(f => uploadFile(f, 'guarantor')),
-        ]);
+          await Promise.all([
+            ...applicantFiles.map(f => uploadFile(f, 'applicant')),
+            ...guarantorFiles.map(f => uploadFile(f, 'guarantor')),
+          ]);
+        }
 
         const activity: LoanCaseActivity = {
           id: crypto.randomUUID(),
@@ -215,27 +242,93 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
             />
           </div>
 
-          {/* Applicant Documents */}
-          <div className="space-y-1.5">
-            <label className="text-xs text-gray-400 font-medium">Applicant Documents (PDF) *</label>
-            <input ref={applicantRef} type="file" accept="application/pdf" multiple className="hidden" onChange={e => setApplicantFiles(Array.from(e.target.files ?? []))} />
-            <button
-              type="button"
-              onClick={() => applicantRef.current?.click()}
-              className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-obsidian-400/50 text-gray-400 hover:border-gold-500/40 hover:text-gray-300 transition-colors text-sm"
-            >
-              <Upload size={14} />
-              {applicantFiles.length > 0 ? `${applicantFiles.length} file(s) selected` : 'Upload PDF(s)'}
-            </button>
-            {applicantFiles.map((f, i) => (
-              <div key={i} className="flex items-center gap-2 text-xs text-gray-300 px-2">
-                <FileText size={12} className="text-gold-400 shrink-0" />
-                <span className="truncate flex-1">{f.name}</span>
-                <button type="button" onClick={() => setApplicantFiles(prev => prev.filter((_, j) => j !== i))} className="text-red-400">
-                  <Trash2 size={11} />
+          {/* Documents */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-gray-400 font-medium">Documents</p>
+              {prevApplicantDocs.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setReuseDocs(v => !v)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition-colors ${
+                    reuseDocs
+                      ? 'bg-blue-500/15 border-blue-500/30 text-blue-300'
+                      : 'bg-obsidian-700/50 border-obsidian-500/30 text-gray-400'
+                  }`}
+                >
+                  <RefreshCw size={10} />
+                  {reuseDocs ? 'Reusing previous docs' : 'Reuse previous docs'}
+                </button>
+              )}
+            </div>
+
+            {reuseDocs && prevApplicantDocs.length > 0 ? (
+              <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 px-3 py-2.5 space-y-1.5">
+                <p className="text-[11px] text-blue-300 font-semibold">Documents from previous submission</p>
+                {prevDocs.map(doc => (
+                  <div key={doc.id} className="flex items-center gap-2 text-xs text-gray-300">
+                    <FileText size={12} className="text-gold-400 shrink-0" />
+                    <span className="truncate flex-1">{doc.fileName}</span>
+                    <span className="text-[10px] text-gray-500 shrink-0">{doc.type}</span>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setReuseDocs(false)}
+                  className="text-[11px] text-gray-500 hover:text-gray-300 transition-colors mt-1"
+                >
+                  Upload different documents instead
                 </button>
               </div>
-            ))}
+            ) : (
+              <>
+                {/* Applicant Documents */}
+                <div className="space-y-1.5">
+                  <label className="text-xs text-gray-500">Applicant Documents (PDF) *</label>
+                  <input ref={applicantRef} type="file" accept="application/pdf" multiple className="hidden" onChange={e => setApplicantFiles(Array.from(e.target.files ?? []))} />
+                  <button
+                    type="button"
+                    onClick={() => applicantRef.current?.click()}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-obsidian-400/50 text-gray-400 hover:border-gold-500/40 hover:text-gray-300 transition-colors text-sm"
+                  >
+                    <Upload size={14} />
+                    {applicantFiles.length > 0 ? `${applicantFiles.length} file(s) selected` : 'Upload PDF(s)'}
+                  </button>
+                  {applicantFiles.map((f, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs text-gray-300 px-2">
+                      <FileText size={12} className="text-gold-400 shrink-0" />
+                      <span className="truncate flex-1">{f.name}</span>
+                      <button type="button" onClick={() => setApplicantFiles(prev => prev.filter((_, j) => j !== i))} className="text-red-400">
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Guarantor Documents */}
+                <div className="space-y-1.5">
+                  <label className="text-xs text-gray-500">Guarantor Documents (optional)</label>
+                  <input ref={guarantorRef} type="file" accept="application/pdf" multiple className="hidden" onChange={e => setGuarantorFiles(Array.from(e.target.files ?? []))} />
+                  <button
+                    type="button"
+                    onClick={() => guarantorRef.current?.click()}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-obsidian-400/50 text-gray-400 hover:border-gold-500/40 hover:text-gray-300 transition-colors text-sm"
+                  >
+                    <Upload size={14} />
+                    {guarantorFiles.length > 0 ? `${guarantorFiles.length} file(s) selected` : 'Upload PDF(s)'}
+                  </button>
+                  {guarantorFiles.map((f, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs text-gray-300 px-2">
+                      <FileText size={12} className="text-gold-400 shrink-0" />
+                      <span className="truncate flex-1">{f.name}</span>
+                      <button type="button" onClick={() => setGuarantorFiles(prev => prev.filter((_, j) => j !== i))} className="text-red-400">
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
 
           {/* Applicant Interview */}
@@ -250,31 +343,8 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
             />
           </div>
 
-          {/* Guarantor Documents */}
-          <div className="space-y-1.5">
-            <label className="text-xs text-gray-400 font-medium">Guarantor Documents (optional)</label>
-            <input ref={guarantorRef} type="file" accept="application/pdf" multiple className="hidden" onChange={e => setGuarantorFiles(Array.from(e.target.files ?? []))} />
-            <button
-              type="button"
-              onClick={() => guarantorRef.current?.click()}
-              className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-obsidian-400/50 text-gray-400 hover:border-gold-500/40 hover:text-gray-300 transition-colors text-sm"
-            >
-              <Upload size={14} />
-              {guarantorFiles.length > 0 ? `${guarantorFiles.length} file(s) selected` : 'Upload PDF(s)'}
-            </button>
-            {guarantorFiles.map((f, i) => (
-              <div key={i} className="flex items-center gap-2 text-xs text-gray-300 px-2">
-                <FileText size={12} className="text-gold-400 shrink-0" />
-                <span className="truncate flex-1">{f.name}</span>
-                <button type="button" onClick={() => setGuarantorFiles(prev => prev.filter((_, j) => j !== i))} className="text-red-400">
-                  <Trash2 size={11} />
-                </button>
-              </div>
-            ))}
-          </div>
-
           {/* Guarantor Interview */}
-          {guarantorFiles.length > 0 && (
+          {(!reuseDocs ? guarantorFiles.length > 0 : prevGuarantorDocs.length > 0) && (
             <div className="space-y-1.5">
               <label className="text-xs text-gray-400 font-medium">Guarantor Interview Form</label>
               <textarea
@@ -292,7 +362,7 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
         <div className="px-5 pt-3 shrink-0 border-t border-obsidian-400/20" style={{ paddingBottom: 'calc(1.25rem + env(safe-area-inset-bottom, 0px))' }}>
           <button
             onClick={handleSubmit}
-            disabled={submitting || selectedBanks.length === 0 || !loanAmount || applicantFiles.length === 0}
+            disabled={submitting || selectedBanks.length === 0 || !loanAmount || !hasApplicantDocs}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gold-gradient text-obsidian-950 font-bold text-sm disabled:opacity-40 active:opacity-80 transition-opacity shadow-gold-sm"
           >
             {submitting && <Loader2 size={15} className="animate-spin" />}
