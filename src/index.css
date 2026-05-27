@@ -482,18 +482,18 @@ button:not(.btn-gold):not(.btn-ghost):active:not(:disabled) {
 }
 .modal-backdrop { animation: modal-backdrop-in 0.2s ease forwards; }
 
-/* ─── Toast arc from bottom-right (#19) ──────────────────────────────────── */
+/* ─── Toast slide up from bottom ─────────────────────────────────────────── */
 @keyframes toast-in {
-  0%   { transform: translateX(110%) translateY(10px); opacity: 0; }
-  60%  { transform: translateX(-4px) translateY(-2px); opacity: 1; }
-  100% { transform: translateX(0) translateY(0); opacity: 1; }
+  0%   { transform: translateY(0.75rem); opacity: 0; }
+  60%  { transform: translateY(-2px);    opacity: 1; }
+  100% { transform: translateY(0);       opacity: 1; }
 }
 @keyframes toast-out {
-  from { transform: translateX(0); opacity: 1; }
-  to   { transform: translateX(110%); opacity: 0; }
+  from { transform: translateY(0);       opacity: 1; }
+  to   { transform: translateY(0.75rem); opacity: 0; }
 }
-.toast-enter { animation: toast-in 0.38s cubic-bezier(0.34, 1.4, 0.64, 1) forwards; }
-.toast-exit  { animation: toast-out 0.25s ease-in forwards; }
+.toast-enter { animation: toast-in 0.32s cubic-bezier(0.34, 1.4, 0.64, 1) forwards; }
+.toast-exit  { animation: toast-out 0.2s ease-in forwards; }
 
 /* ─── Page transitions (#20) ─────────────────────────────────────────────── */
 /* NOTE: opacity-only — never use transform here. A transform on the <main>
