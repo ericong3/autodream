@@ -1155,7 +1155,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   // Repairs
   addRepair: async (repair) => {
     const car = get().cars.find((c) => c.id === repair.carId);
-    const protectedStatus = car?.status === 'delivered' || car?.status === 'deal_pending';
+    const protectedStatus = car?.status === 'delivered' || car?.status === 'deal_pending' || car?.finalDeal != null;
     const updatedCars = repair.location && repair.status !== 'queued'
       ? get().cars.map((c) =>
           c.id === repair.carId
@@ -1203,7 +1203,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
           if (location) {
             updatedCars = s.cars.map((c) => {
               if (c.id !== existing.carId) return c;
-              const isProtected = c.status === 'delivered' || c.status === 'deal_pending';
+              const isProtected = c.status === 'delivered' || c.status === 'deal_pending' || c.finalDeal != null;
               return { ...c, currentLocation: location, ...(isProtected ? {} : { status: 'in_workshop' as Car['status'] }) };
             });
           }
