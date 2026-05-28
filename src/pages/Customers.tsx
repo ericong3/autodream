@@ -94,7 +94,7 @@ export default function Customers() {
 
   // Tab
   const [tab, setTab] = useState<'leads' | 'cash' | 'loan' | 'confirmed' | 'bin'>('leads');
-  const [binMonth, setBinMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [binMonth, setBinMonth] = useState('');
   const [confirmedMonth, setConfirmedMonth] = useState(() => new Date().toISOString().slice(0, 7));
 
   // Director view toggle: 'all' | 'own' | salesperson userId

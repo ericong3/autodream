@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { FileText } from 'lucide-react';
 import { useStore } from '../store';
 import LoanCaseDetail from './LoanCaseDetail';
@@ -25,12 +25,13 @@ const STATUS_LABELS: Record<string, string> = {
   cancelled:      'Cancelled',
 };
 
-const FILTER_TABS: { value: 'new' | 'submitted' | 'approved' | 'rejected' | 'appeal'; label: string }[] = [
+const FILTER_TABS: { value: 'new' | 'submitted' | 'approved' | 'rejected' | 'appeal' | 'cancelled'; label: string }[] = [
   { value: 'new',       label: 'New Case' },
   { value: 'submitted', label: 'Submitted' },
   { value: 'approved',  label: 'Approved' },
   { value: 'rejected',  label: 'Rejected' },
   { value: 'appeal',    label: 'Appeal' },
+  { value: 'cancelled', label: 'Cancelled' },
 ];
 
 export default function BankerDashboard() {
@@ -42,23 +43,44 @@ export default function BankerDashboard() {
   const loanCaseDocuments = useStore(s => s.loanCaseDocuments);
   const loanCaseActivities = useStore(s => s.loanCaseActivities);
 
-  const [filter, setFilter] = useState<'new' | 'submitted' | 'approved' | 'rejected' | 'appeal'>('new');
+  const [filter, setFilter] = useState<'new' | 'submitted' | 'approved' | 'rejected' | 'appeal' | 'cancelled'>('new');
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
 
-  const myCases = loanCases
-    .filter(c => c.bankerId === currentUser.id)
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const myCases = useMemo(() =>
+    loanCases
+      .filter(c => c.bankerId === currentUser.id)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    [loanCases, currentUser.id]
+  );
 
-  const filteredCases = myCases.filter(c => {
+  const filteredCases = useMemo(() => myCases.filter(c => {
     if (filter === 'new')       return c.status === 'pending';
     if (filter === 'submitted') return c.status === 'under_review' || c.status === 'need_more_info';
     if (filter === 'approved')  return c.status === 'approved';
     if (filter === 'rejected')  return c.status === 'rejected';
     if (filter === 'appeal')    return c.status === 'appeal';
+    if (filter === 'cancelled') return c.status === 'cancelled' || c.status === 'withdrawn';
     return false;
-  });
+  }), [myCases, filter]);
 
+  // Group filtered cases by customer — one card per customer
+  const caseGroups = useMemo(() => {
+    const seen = new Set<string>();
+    const groups: typeof filteredCases[] = [];
+    for (const lc of filteredCases) {
+      if (!seen.has(lc.customerId)) {
+        seen.add(lc.customerId);
+        groups.push(filteredCases.filter(c => c.customerId === lc.customerId));
+      }
+    }
+    return groups;
+  }, [filteredCases]);
+
+  // When a card is clicked, find all myCases for that customer (all banks) for the popup
   const selectedCase = loanCases.find(c => c.id === selectedCaseId) ?? null;
+  const selectedGroupCases = selectedCase
+    ? myCases.filter(c => c.customerId === selectedCase.customerId)
+    : null;
 
   const newCaseCount = myCases.filter(c => c.status === 'pending').length;
   const appealCount  = myCases.filter(c => c.status === 'appeal').length;
@@ -101,27 +123,30 @@ export default function BankerDashboard() {
       </div>
 
       {/* Cases */}
-      {filteredCases.length === 0 ? (
+      {caseGroups.length === 0 ? (
         <div className="text-center py-16 text-gray-500">
           <FileText size={40} className="mx-auto mb-3 opacity-30" />
           <p className="text-sm">No cases in this category.</p>
         </div>
       ) : (
         <div className="space-y-3">
-          {filteredCases.map(lc => {
-            const salesman = users.find(u => u.id === lc.salesmanId);
-            const customer = customers.find(c => c.id === lc.customerId);
-            const car = cars.find(c => c.id === lc.carId);
-            const docs = loanCaseDocuments.filter(d => d.caseId === lc.id);
+          {caseGroups.map(group => {
+            const first = group[0];
+            const salesman = users.find(u => u.id === first.salesmanId);
+            const customer = customers.find(c => c.id === first.customerId);
+            const car = cars.find(c => c.id === first.carId);
+            // Aggregate docs across all cases in the group
+            const allDocs = loanCaseDocuments.filter(d => group.some(lc => lc.id === d.caseId));
+            // Latest activity across all cases in the group
             const lastActivity = loanCaseActivities
-              .filter(a => a.caseId === lc.id)
+              .filter(a => group.some(lc => lc.id === a.caseId))
               .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-            const isNew = lc.status === 'pending' || lc.status === 'appeal';
+            const isNew = group.some(lc => lc.status === 'pending' || lc.status === 'appeal');
 
             return (
               <button
-                key={lc.id}
-                onClick={() => setSelectedCaseId(lc.id)}
+                key={first.customerId}
+                onClick={() => setSelectedCaseId(first.id)}
                 className="w-full text-left card-glass rounded-2xl border border-obsidian-400/20 p-4 space-y-2.5 hover:border-gold-500/20 active:scale-[0.99] transition-all"
               >
                 <div className="flex items-start justify-between gap-2">
@@ -131,18 +156,40 @@ export default function BankerDashboard() {
                         <span className="w-1.5 h-1.5 rounded-full bg-gold-400 shadow-[0_0_6px_rgba(234,184,32,0.7)] shrink-0" />
                       )}
                       <span className="text-white font-semibold text-sm truncate">{customer?.name ?? salesman?.name ?? 'Unknown'}</span>
-                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${STATUS_COLORS[lc.status] ?? ''}`}>
-                        {STATUS_LABELS[lc.status] ?? lc.status}
-                      </span>
-                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-sky-500/15 text-sky-300 border-sky-500/30">
-                        {lc.bank}
-                      </span>
+                      {/* Bank badges, then status — shared if all same, paired if different */}
+                      {(() => {
+                        const allSameStatus = group.every(lc => lc.status === first.status);
+                        if (allSameStatus) {
+                          return (
+                            <>
+                              {group.map(lc => (
+                                <span key={lc.id} className="text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-sky-500/15 text-sky-300 border-sky-500/30">
+                                  {lc.bank}
+                                </span>
+                              ))}
+                              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${STATUS_COLORS[first.status] ?? ''}`}>
+                                {STATUS_LABELS[first.status] ?? first.status}
+                              </span>
+                            </>
+                          );
+                        }
+                        return group.map(lc => (
+                          <span key={lc.id} className="flex items-center gap-1">
+                            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-sky-500/15 text-sky-300 border-sky-500/30">
+                              {lc.bank}
+                            </span>
+                            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${STATUS_COLORS[lc.status] ?? ''}`}>
+                              {STATUS_LABELS[lc.status] ?? lc.status}
+                            </span>
+                          </span>
+                        ));
+                      })()}
                     </div>
-                    <p className="text-xs text-gray-400">RM {lc.loanAmount.toLocaleString()} · {docs.length} doc{docs.length !== 1 ? 's' : ''}{car ? ` · ${car.year} ${car.make} ${car.model}` : ''}</p>
+                    <p className="text-xs text-gray-400">RM {first.loanAmount.toLocaleString()} · {allDocs.length} doc{allDocs.length !== 1 ? 's' : ''}{car ? ` · ${car.year} ${car.make} ${car.model}` : ''}</p>
                     <p className="text-[11px] text-gray-500">via {salesman?.name ?? 'Unknown salesman'}</p>
                   </div>
                   <span className="text-[10px] text-gray-500 shrink-0">
-                    {new Date(lc.createdAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}
+                    {new Date(first.createdAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}
                   </span>
                 </div>
 
@@ -157,16 +204,16 @@ export default function BankerDashboard() {
                 )}
 
                 {/* Docs preview */}
-                {docs.length > 0 && (
+                {allDocs.length > 0 && (
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    {docs.slice(0, 4).map(doc => (
+                    {allDocs.slice(0, 4).map(doc => (
                       <div key={doc.id} className="flex items-center gap-1 bg-obsidian-700/40 rounded-lg px-2 py-1">
                         <FileText size={10} className="text-gold-400" />
                         <span className="text-[10px] text-gray-400 max-w-[80px] truncate">{doc.fileName}</span>
                       </div>
                     ))}
-                    {docs.length > 4 && (
-                      <span className="text-[10px] text-gray-500">+{docs.length - 4} more</span>
+                    {allDocs.length > 4 && (
+                      <span className="text-[10px] text-gray-500">+{allDocs.length - 4} more</span>
                     )}
                   </div>
                 )}
@@ -180,6 +227,7 @@ export default function BankerDashboard() {
       {selectedCase && (
         <LoanCaseDetail
           loanCase={selectedCase}
+          groupCases={selectedGroupCases ?? undefined}
           onClose={() => setSelectedCaseId(null)}
         />
       )}

@@ -1318,6 +1318,54 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       console.error('updateCustomer failed:', error.message);
       throw new Error(error.message);
     }
+    // When a lead is moved to the bin, cancel any active loan cases
+    if (customer.isTrashed && !prev?.isTrashed) {
+      const now = new Date().toISOString();
+      const activeCases = get().loanCases.filter(
+        c => c.customerId === id && !['cancelled', 'withdrawn', 'approved'].includes(c.status)
+      );
+      if (activeCases.length > 0) {
+        // Optimistic state update
+        set((s) => ({
+          loanCases: s.loanCases.map(c =>
+            c.customerId === id && !['cancelled', 'withdrawn', 'approved'].includes(c.status)
+              ? { ...c, status: 'cancelled', updatedAt: now }
+              : c
+          ),
+        }));
+        // Persist to DB
+        const { error: cancelErr } = await supabase.from('loan_cases')
+          .update({ status: 'cancelled', updated_at: now })
+          .eq('customer_id', id)
+          .not('status', 'in', '("cancelled","withdrawn","approved")');
+        if (cancelErr) console.error('cancelLoanCases failed:', cancelErr.message);
+        // Add a visible activity entry on each case so the banker sees why it was cancelled
+        const salesPerson = get().users.find(u => u.id === (prev ?? get().customers.find(c => c.id === id))?.assignedSalesId);
+        for (const lc of activeCases) {
+          const activityRow = {
+            id: crypto.randomUUID(),
+            case_id: lc.id,
+            user_id: prev?.assignedSalesId ?? '',
+            user_name: salesPerson?.name ?? 'Salesman',
+            user_role: 'salesperson',
+            type: 'status_change',
+            content: 'Case cancelled — customer moved to bin',
+            old_status: lc.status,
+            new_status: 'cancelled',
+            created_at: now,
+          };
+          set((s) => ({
+            loanCaseActivities: [...s.loanCaseActivities, {
+              id: activityRow.id, caseId: lc.id,
+              userId: activityRow.user_id, userName: activityRow.user_name, userRole: 'salesperson',
+              type: 'status_change', content: activityRow.content,
+              oldStatus: lc.status, newStatus: 'cancelled', createdAt: now,
+            }],
+          }));
+          await supabase.from('loan_case_activity').insert(activityRow);
+        }
+      }
+    }
     if (!prev) return;
     const dirs = dirIds(get().users);
     // #9 Loan submitted by salesman
@@ -1370,7 +1418,11 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         .not('status', 'in', '("cancelled","withdrawn","approved")');
     }
     set((s) => ({ customers: s.customers.filter((c) => c.id !== id) }));
-    await supabase.from('customers').delete().eq('id', id);
+    const { error } = await supabase.from('customers').delete().eq('id', id);
+    if (error) console.error('deleteCustomer failed:', error.message);
+    // Always re-sync after delete — prevents cases where other leads temporarily vanish
+    const { data } = await supabase.from('customers').select('*');
+    if (data) set({ customers: data.map(rowToCustomer) });
   },
 
   // Test Drives
