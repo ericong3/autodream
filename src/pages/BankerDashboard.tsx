@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { FileText } from 'lucide-react';
 import { useStore } from '../store';
-import { LoanCaseStatus } from '../types';
 import LoanCaseDetail from './LoanCaseDetail';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -16,8 +15,8 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  pending:        'Pending',
-  under_review:   'Under Review',
+  pending:        'New Submission',
+  under_review:   'Submitted',
   approved:       'Approved',
   rejected:       'Rejected',
   need_more_info: 'More Info Needed',
@@ -26,11 +25,12 @@ const STATUS_LABELS: Record<string, string> = {
   cancelled:      'Cancelled',
 };
 
-const FILTER_TABS: { value: 'active' | 'all' | LoanCaseStatus; label: string }[] = [
-  { value: 'active', label: 'Active' },
-  { value: 'appeal', label: 'Appeal' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'all', label: 'All' },
+const FILTER_TABS: { value: 'new' | 'submitted' | 'approved' | 'rejected' | 'appeal'; label: string }[] = [
+  { value: 'new',       label: 'New Case' },
+  { value: 'submitted', label: 'Submitted' },
+  { value: 'approved',  label: 'Approved' },
+  { value: 'rejected',  label: 'Rejected' },
+  { value: 'appeal',    label: 'Appeal' },
 ];
 
 export default function BankerDashboard() {
@@ -42,24 +42,26 @@ export default function BankerDashboard() {
   const loanCaseDocuments = useStore(s => s.loanCaseDocuments);
   const loanCaseActivities = useStore(s => s.loanCaseActivities);
 
-  const [filter, setFilter] = useState<'active' | 'all' | LoanCaseStatus>('active');
+  const [filter, setFilter] = useState<'new' | 'submitted' | 'approved' | 'rejected' | 'appeal'>('new');
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
 
   const myCases = loanCases
     .filter(c => c.bankerId === currentUser.id)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-  const ACTIVE_STATUSES: LoanCaseStatus[] = ['pending', 'under_review', 'need_more_info'];
   const filteredCases = myCases.filter(c => {
-    if (filter === 'active') return ACTIVE_STATUSES.includes(c.status as LoanCaseStatus);
-    if (filter === 'all') return true;
-    return c.status === filter;
+    if (filter === 'new')       return c.status === 'pending';
+    if (filter === 'submitted') return c.status === 'under_review' || c.status === 'need_more_info';
+    if (filter === 'approved')  return c.status === 'approved';
+    if (filter === 'rejected')  return c.status === 'rejected';
+    if (filter === 'appeal')    return c.status === 'appeal';
+    return false;
   });
 
   const selectedCase = loanCases.find(c => c.id === selectedCaseId) ?? null;
 
-  const pendingCount = myCases.filter(c => ACTIVE_STATUSES.includes(c.status as LoanCaseStatus)).length;
-  const appealCount = myCases.filter(c => c.status === 'appeal').length;
+  const newCaseCount = myCases.filter(c => c.status === 'pending').length;
+  const appealCount  = myCases.filter(c => c.status === 'appeal').length;
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
@@ -67,7 +69,7 @@ export default function BankerDashboard() {
       <div>
         <h1 className="text-xl font-display font-bold text-white">My Case Queue</h1>
         <p className="text-xs text-gray-400 mt-0.5">
-          {pendingCount} active · {appealCount > 0 ? `${appealCount} appeal${appealCount !== 1 ? 's' : ''} · ` : ''}{myCases.length} total
+          {newCaseCount} new · {appealCount > 0 ? `${appealCount} appeal${appealCount !== 1 ? 's' : ''} · ` : ''}{myCases.length} total
         </p>
       </div>
 
@@ -84,9 +86,9 @@ export default function BankerDashboard() {
             }`}
           >
             {tab.label}
-            {tab.value === 'active' && pendingCount > 0 && (
+            {tab.value === 'new' && newCaseCount > 0 && (
               <span className="ml-1.5 bg-obsidian-900/50 text-gold-300 px-1.5 py-0.5 rounded-full text-[10px]">
-                {pendingCount}
+                {newCaseCount}
               </span>
             )}
             {tab.value === 'appeal' && appealCount > 0 && (

@@ -17,8 +17,8 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  pending:        'Pending',
-  under_review:   'Under Review',
+  pending:        'New Submission',
+  under_review:   'Submitted',
   approved:       'Approved',
   rejected:       'Rejected',
   need_more_info: 'More Info Needed',
@@ -28,10 +28,10 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const BANKER_STATUS_OPTIONS: { value: LoanCaseStatus; label: string }[] = [
-  { value: 'under_review',   label: 'Under Review' },
+  { value: 'under_review',   label: 'Submitted to Bank' },
+  { value: 'need_more_info', label: 'Need More Info' },
   { value: 'approved',       label: 'Approved' },
   { value: 'rejected',       label: 'Rejected' },
-  { value: 'need_more_info', label: 'Need More Info' },
 ];
 
 interface Props {

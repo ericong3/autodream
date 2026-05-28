@@ -17,8 +17,8 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  pending:        'Pending',
-  under_review:   'Under Review',
+  pending:        'New Submission',
+  under_review:   'Submitted',
   approved:       'Approved',
   rejected:       'Rejected',
   need_more_info: 'More Info Needed',
@@ -45,8 +45,8 @@ const STATUS_GUIDANCE: Record<string, { icon: string; text: string; cls: string 
   rejected:       { icon: '❌', text: 'Banker rejected this case. You can file an appeal if you disagree.', cls: 'bg-red-500/10 border-red-500/20 text-red-300' },
   need_more_info: { icon: '📋', text: 'Banker needs more information. Open the case to upload documents or write a reply.', cls: 'bg-orange-500/10 border-orange-500/20 text-orange-300' },
   appeal:         { icon: '🔁', text: 'Appeal submitted. Waiting for the banker to respond.', cls: 'bg-purple-500/10 border-purple-500/20 text-purple-300' },
-  under_review:   { icon: '👀', text: 'Banker is reviewing your case. No action needed yet.', cls: 'bg-blue-500/10 border-blue-500/20 text-blue-300' },
-  pending:        { icon: '⏳', text: 'Submitted. Waiting for banker to begin review.', cls: 'bg-yellow-500/10 border-yellow-500/20 text-yellow-300' },
+  under_review:   { icon: '🏦', text: 'Banker has submitted your case to the bank. Awaiting bank decision.', cls: 'bg-blue-500/10 border-blue-500/20 text-blue-300' },
+  pending:        { icon: '⏳', text: 'New submission received. Waiting for banker to review and submit to bank.', cls: 'bg-yellow-500/10 border-yellow-500/20 text-yellow-300' },
 };
 
 // Sort: action-required cases float to top
