@@ -180,7 +180,9 @@ export default function Customers() {
     setShowInlineFollowup(false);
   }, [detailLead?.id]);
 
-  // Open customer detail from URL param (e.g. navigated from Follow Up List)
+  // Open customer detail from URL param (e.g. navigated from LoanCases "Confirm Deal")
+  // Only depends on searchParams — NOT customers — so a delete doesn't re-trigger this
+  // and accidentally re-open the drawer (which has a full-screen black backdrop).
   useEffect(() => {
     const id = searchParams.get('id');
     if (!id) return;
@@ -190,7 +192,8 @@ export default function Customers() {
       setDetailTab('details');
       setSearchParams({}, { replace: true });
     }
-  }, [customers, searchParams]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const closeDetail = () => setDetailLead(null);
 
