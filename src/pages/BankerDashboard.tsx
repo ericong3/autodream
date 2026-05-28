@@ -132,6 +132,9 @@ export default function BankerDashboard() {
                       <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${STATUS_COLORS[lc.status] ?? ''}`}>
                         {STATUS_LABELS[lc.status] ?? lc.status}
                       </span>
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-sky-500/15 text-sky-300 border-sky-500/30">
+                        {lc.bank}
+                      </span>
                     </div>
                     <p className="text-xs text-gray-400">RM {lc.loanAmount.toLocaleString()} · {docs.length} doc{docs.length !== 1 ? 's' : ''}{car ? ` · ${car.year} ${car.make} ${car.model}` : ''}</p>
                     <p className="text-[11px] text-gray-500">via {salesman?.name ?? 'Unknown salesman'}</p>
