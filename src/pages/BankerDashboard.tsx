@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { FileText } from 'lucide-react';
 import { useStore } from '../store';
 import LoanCaseDetail from './LoanCaseDetail';
@@ -43,7 +43,12 @@ export default function BankerDashboard() {
   const loanCaseDocuments = useStore(s => s.loanCaseDocuments);
   const loanCaseActivities = useStore(s => s.loanCaseActivities);
 
-  const [filter, setFilter] = useState<'new' | 'submitted' | 'approved' | 'rejected' | 'appeal' | 'cancelled'>('new');
+  const VALID_FILTERS = ['new', 'submitted', 'approved', 'rejected', 'appeal', 'cancelled'] as const;
+  const [filter, setFilter] = useState<typeof VALID_FILTERS[number]>(() => {
+    const saved = localStorage.getItem('banker_filter');
+    return (VALID_FILTERS as readonly string[]).includes(saved ?? '') ? saved as typeof VALID_FILTERS[number] : 'new';
+  });
+  useEffect(() => { localStorage.setItem('banker_filter', filter); }, [filter]);
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
 
   const myCases = useMemo(() =>

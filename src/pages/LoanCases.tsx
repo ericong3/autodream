@@ -3,6 +3,7 @@ import { FileText, CheckCircle, MessageSquare } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
 import { toast } from '../utils/toast';
+import { notifyUsers } from '../utils/notify';
 import LoanCaseDetail from './LoanCaseDetail';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -122,6 +123,13 @@ export default function LoanCases() {
       newStatus: 'appeal',
       createdAt: new Date().toISOString(),
     });
+    const customer = customers.find(c => c.id === lc.customerId);
+    notifyUsers(
+      [lc.bankerId],
+      'Appeal Filed',
+      `${customer?.name ?? 'A customer'} filed an appeal for ${lc.bank}`,
+      '/banker-dashboard',
+    );
     toast.success('Appeal submitted');
   }
 

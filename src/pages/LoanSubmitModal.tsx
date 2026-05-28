@@ -5,6 +5,7 @@ import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
 import { Customer, LoanCase, LoanCaseDocument, LoanCaseActivity, BANKS } from '../types';
 import { toast } from '../utils/toast';
+import { notifyUsers } from '../utils/notify';
 
 interface Props {
   customer: Customer;
@@ -79,6 +80,12 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
           updatedAt: now,
         };
         await addLoanCase(newCase);
+        notifyUsers(
+          [bankPicks[bank]],
+          'New Case Submitted',
+          `${customer.name} — ${bank} · RM ${parseFloat(loanAmount).toLocaleString()}`,
+          '/banker-dashboard',
+        );
 
         if (reuseDocs && prevApplicantDocs.length > 0) {
           // Copy document references from the previous case — no re-upload needed

@@ -6,6 +6,7 @@ import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, C
 import { useStore } from '../store';
 import { Customer, CashWorkOrder, LoanWorkOrder, WorkOrderItem, BANKS } from '../types';
 import LoanSubmitModal from './LoanSubmitModal';
+import LoanCaseDetail from './LoanCaseDetail';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import MiniCalendar from '../components/MiniCalendar';
@@ -92,8 +93,13 @@ export default function Customers() {
 
   const todayStr = new Date().toISOString().slice(0, 10);
 
-  // Tab
-  const [tab, setTab] = useState<'leads' | 'cash' | 'loan' | 'confirmed' | 'bin'>('leads');
+  // Tab — persisted across refreshes
+  const VALID_TABS = ['leads', 'cash', 'loan', 'confirmed', 'bin'] as const;
+  const [tab, setTab] = useState<typeof VALID_TABS[number]>(() => {
+    const saved = localStorage.getItem('customers_tab');
+    return (VALID_TABS as readonly string[]).includes(saved ?? '') ? saved as typeof VALID_TABS[number] : 'leads';
+  });
+  useEffect(() => { localStorage.setItem('customers_tab', tab); }, [tab]);
   const [binMonth, setBinMonth] = useState('');
   const [confirmedMonth, setConfirmedMonth] = useState(() => new Date().toISOString().slice(0, 7));
 
@@ -173,6 +179,7 @@ export default function Customers() {
   // Banker portal submission modal
   const [loanSubmitCustomer, setLoanSubmitCustomer] = useState<Customer | null>(null);
   const [loanSubmitInitial, setLoanSubmitInitial] = useState<{ carId?: string; amount?: number }>({});
+  const [selectedLoanCaseId, setSelectedLoanCaseId] = useState<string | null>(null);
   useBodyScrollLock(!!detailLead || !!workOrderCustomer);
 
   useEffect(() => {
@@ -1863,7 +1870,11 @@ export default function Customers() {
                           const car = cars.find(c => c.id === lc.carId);
                           const lastActivity = loanCaseActivities.filter(a => a.caseId === lc.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
                           return (
-                            <div key={lc.id} className="rounded-xl border border-obsidian-400/40 bg-obsidian-700/30 p-3 space-y-1.5">
+                            <button
+                              key={lc.id}
+                              onClick={() => setSelectedLoanCaseId(lc.id)}
+                              className="w-full text-left rounded-xl border border-obsidian-400/40 bg-obsidian-700/30 p-3 space-y-1.5 hover:border-gold-500/30 active:scale-[0.99] transition-all touch-manipulation"
+                            >
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="text-white text-sm font-medium">{lc.bank}</span>
@@ -1878,14 +1889,14 @@ export default function Customers() {
                                 <p className="text-xs text-gray-500 italic line-clamp-1">{lastActivity.content}</p>
                               )}
                               {lc.status === 'approved' && !detailLead.loanWorkOrder && !isShareHolder && (
-                                <button
-                                  onClick={() => openFinalDeal(detailLead, lc.bank, lc.loanAmount, lc.carId)}
-                                  className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-green-500/15 border border-green-500/30 text-green-300 text-xs font-semibold hover:bg-green-500/20 transition-colors touch-manipulation"
+                                <div
+                                  onClick={e => { e.stopPropagation(); openFinalDeal(detailLead, lc.bank, lc.loanAmount, lc.carId); }}
+                                  className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-green-500/15 border border-green-500/30 text-green-300 text-xs font-semibold hover:bg-green-500/20 transition-colors"
                                 >
                                   <CheckCircle size={12} />Confirm Deal
-                                </button>
+                                </div>
                               )}
-                            </div>
+                            </button>
                           );
                         })}
                         {!isShareHolder && (
@@ -2950,6 +2961,15 @@ export default function Customers() {
           onClose={() => setLoanSubmitCustomer(null)}
         />
       )}
+
+      {selectedLoanCaseId && (() => {
+        const lc = loanCases.find(c => c.id === selectedLoanCaseId);
+        if (!lc) return null;
+        return createPortal(
+          <LoanCaseDetail loanCase={lc} onClose={() => setSelectedLoanCaseId(null)} />,
+          document.body
+        );
+      })()}
     </div>
   );
 }

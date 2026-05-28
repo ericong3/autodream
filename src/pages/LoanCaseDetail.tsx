@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { X, FileText, Download, ChevronDown, Loader2, User, Car as CarIcon, CreditCard } from 'lucide-react';
+import { X, FileText, Download, ChevronDown, Loader2, User, Car as CarIcon, CreditCard, Send } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
 import { LoanCase, LoanCaseStatus } from '../types';
 import { toast } from '../utils/toast';
+import { notifyUsers } from '../utils/notify';
 
 const STATUS_COLORS: Record<string, string> = {
   pending:        'bg-yellow-500/15 text-yellow-300 border-yellow-500/30',
@@ -59,7 +60,8 @@ export default function LoanCaseDetail({ loanCase, groupCases, onClose }: Props)
   const activeCaseId = activeTab === 'details' ? loanCase.id : activeTab;
   const activeCase = groupCases?.find(c => c.id === activeCaseId) ?? loanCase;
 
-  const isBanker = currentUser.role === 'banker';
+  const isBanker   = currentUser.role === 'banker';
+  const isSalesman = currentUser.role === 'salesperson';
 
   // Aggregate docs across all cases in the group (for Details tab)
   const allGroupCases = groupCases ?? [loanCase];
@@ -82,12 +84,15 @@ export default function LoanCaseDetail({ loanCase, groupCases, onClose }: Props)
   const [saving, setSaving] = useState(false);
   const [applicantInterviewOpen, setApplicantInterviewOpen] = useState(false);
   const [guarantorInterviewOpen, setGuarantorInterviewOpen] = useState(false);
+  const [reply, setReply] = useState('');
+  const [replySending, setReplySending] = useState(false);
 
   // Reset form state when switching tabs
   useEffect(() => {
     setNewStatus(activeCase.status as LoanCaseStatus);
     setRemark('');
     setInstruction('');
+    setReply('');
     setApplicantInterviewOpen(false);
     setGuarantorInterviewOpen(false);
   }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -164,9 +169,38 @@ export default function LoanCaseDetail({ loanCase, groupCases, onClose }: Props)
     }
   }
 
+  async function handleReply() {
+    if (!reply.trim()) return;
+    setReplySending(true);
+    try {
+      await addLoanCaseActivity({
+        id: crypto.randomUUID(),
+        caseId: activeCase.id,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        type: 'remark',
+        content: reply.trim(),
+        createdAt: new Date().toISOString(),
+      });
+      setReply('');
+      notifyUsers(
+        [activeCase.bankerId],
+        `Reply from ${currentUser.name}`,
+        reply.trim(),
+        '/banker-dashboard',
+      );
+      toast.success('Reply sent');
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to send');
+    } finally {
+      setReplySending(false);
+    }
+  }
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm"
+      className="fixed inset-0 z-[500] flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm"
       style={{ paddingTop: 'env(safe-area-inset-top, 44px)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       onClick={onClose}
     >
@@ -436,41 +470,50 @@ export default function LoanCaseDetail({ loanCase, groupCases, onClose }: Props)
             <section className="space-y-2">
               <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide">Activity</p>
               <div className="space-y-2">
-                {activities.map(act => (
-                  <div key={act.id} className="flex gap-3">
-                    <div className="flex flex-col items-center shrink-0">
-                      <div className={`w-2 h-2 rounded-full mt-1.5 ${
-                        act.type === 'status_change' ? 'bg-gold-400' :
-                        act.type === 'instruction' ? 'bg-orange-400' : 'bg-blue-400'
-                      }`} />
-                      <div className="w-px flex-1 bg-obsidian-400/20 mt-1" />
-                    </div>
-                    <div className="pb-3 flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-[11px] font-medium text-white">{act.userName}</span>
-                        <span className="text-[10px] text-gray-500">·</span>
-                        <span className={`text-[10px] font-semibold uppercase tracking-wide ${
-                          act.type === 'status_change' ? 'text-gold-400' :
-                          act.type === 'instruction' ? 'text-orange-400' : 'text-blue-400'
-                        }`}>
-                          {act.type === 'status_change' ? 'Status' : act.type === 'instruction' ? 'Instruction' : 'Remark'}
-                        </span>
-                        <span className="text-[10px] text-gray-500 ml-auto">
-                          {new Date(act.createdAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                        </span>
+                {activities.map(act => {
+                  const isBankerAct = act.userRole === 'banker';
+                  const dotColor =
+                    act.type === 'status_change' ? 'bg-gold-400' :
+                    act.type === 'instruction'   ? 'bg-orange-400' :
+                    isBankerAct                  ? 'bg-blue-400' : 'bg-emerald-400';
+                  const labelColor =
+                    act.type === 'status_change' ? 'text-gold-400' :
+                    act.type === 'instruction'   ? 'text-orange-400' :
+                    isBankerAct                  ? 'text-blue-400' : 'text-emerald-400';
+                  const label =
+                    act.type === 'status_change' ? 'Status' :
+                    act.type === 'instruction'   ? 'Instruction' :
+                    isBankerAct                  ? 'Remark' : 'Reply';
+                  return (
+                    <div key={act.id} className="flex gap-3">
+                      <div className="flex flex-col items-center shrink-0">
+                        <div className={`w-2 h-2 rounded-full mt-1.5 ${dotColor}`} />
+                        <div className="w-px flex-1 bg-obsidian-400/20 mt-1" />
                       </div>
-                      {act.content && (
-                        <p className="text-xs text-gray-300 mt-0.5 leading-relaxed">{act.content}</p>
-                      )}
+                      <div className="pb-3 flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[11px] font-medium text-white">{act.userName}</span>
+                          <span className="text-[10px] text-gray-500">·</span>
+                          <span className={`text-[10px] font-semibold uppercase tracking-wide ${labelColor}`}>
+                            {label}
+                          </span>
+                          <span className="text-[10px] text-gray-500 ml-auto">
+                            {new Date(act.createdAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        {act.content && (
+                          <p className="text-xs text-gray-300 mt-0.5 leading-relaxed">{act.content}</p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
           )}
 
           {/* Banker Actions */}
-          {activeTab !== 'details' && isBanker && !['withdrawn', 'cancelled', 'approved'].includes(activeCase.status) && (
+          {activeTab !== 'details' && isBanker && !['withdrawn', 'cancelled'].includes(activeCase.status) && (
             <section className="space-y-3 border-t border-obsidian-400/20 pt-4">
               <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide">Update Case</p>
 
@@ -522,6 +565,28 @@ export default function LoanCaseDetail({ loanCase, groupCases, onClose }: Props)
               >
                 {saving ? <Loader2 size={15} className="animate-spin" /> : null}
                 {saving ? 'Saving…' : 'Save Update'}
+              </button>
+            </section>
+          )}
+
+          {/* Salesman reply */}
+          {activeTab !== 'details' && isSalesman && !['withdrawn', 'cancelled'].includes(activeCase.status) && (
+            <section className="space-y-3 border-t border-obsidian-400/20 pt-4">
+              <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide">Reply to Banker</p>
+              <textarea
+                value={reply}
+                onChange={e => setReply(e.target.value)}
+                placeholder="Type your message…"
+                rows={3}
+                className="w-full bg-obsidian-700 border border-obsidian-500/50 rounded-xl px-3 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-gold-500/50 resize-none"
+              />
+              <button
+                onClick={handleReply}
+                disabled={replySending || !reply.trim()}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gold-gradient text-obsidian-950 font-bold text-sm disabled:opacity-50 active:opacity-80 transition-opacity shadow-gold-sm"
+              >
+                {replySending ? <Loader2 size={15} className="animate-spin" /> : <Send size={14} />}
+                {replySending ? 'Sending…' : 'Send Reply'}
               </button>
             </section>
           )}
