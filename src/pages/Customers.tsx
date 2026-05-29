@@ -1262,6 +1262,14 @@ export default function Customers() {
                       )}
 
                       {/* Bank status chips — grouped by status */}
+                      {!c.loanApplications?.length && c.loanBankSubmitted && (
+                        <div className="flex flex-wrap gap-1.5 mb-1.5">
+                          <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-sky-500/15 border-sky-500/30 text-sky-300">
+                            <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+                            {c.loanBankSubmitted}
+                          </span>
+                        </div>
+                      )}
                       {c.loanApplications?.length ? (() => {
                         const order = ['approved', 'submitted', 'rejected', 'cancelled'] as const;
                         const groups = order
