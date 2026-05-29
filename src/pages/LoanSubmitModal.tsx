@@ -4,8 +4,20 @@ import { X, Upload, Trash2, FileText, Loader2, RefreshCw } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
 import { Customer, LoanCase, LoanCaseDocument, LoanCaseActivity, BANKS } from '../types';
+import { PDFDocument } from 'pdf-lib';
 import { toast } from '../utils/toast';
 import { notifyUsers } from '../utils/notify';
+
+async function compressPdf(file: File): Promise<File> {
+  try {
+    const buf = await file.arrayBuffer();
+    const pdf = await PDFDocument.load(buf, { ignoreEncryption: true });
+    const out = await pdf.save({ useObjectStreams: true, addDefaultPage: false });
+    return new File([out], file.name, { type: 'application/pdf' });
+  } catch {
+    return file; // if compression fails, use original
+  }
+}
 
 interface Props {
   customer: Customer;
@@ -44,6 +56,7 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
   const [guarantorFiles, setGuarantorFiles] = useState<File[]>([]);
   const [reuseDocs, setReuseDocs] = useState(prevApplicantDocs.length > 0);
   const [submitting, setSubmitting] = useState(false);
+  const [compressing, setCompressing] = useState(false);
   const applicantRef = useRef<HTMLInputElement>(null);
   const guarantorRef = useRef<HTMLInputElement>(null);
 
@@ -292,14 +305,21 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
                 {/* Applicant Documents */}
                 <div className="space-y-1.5">
                   <label className="text-xs text-gray-500">Applicant Documents (PDF) *</label>
-                  <input ref={applicantRef} type="file" accept="application/pdf" multiple className="hidden" onChange={e => setApplicantFiles(Array.from(e.target.files ?? []))} />
+                  <input ref={applicantRef} type="file" accept="application/pdf" multiple className="hidden" onChange={async e => {
+                    const files = Array.from(e.target.files ?? []);
+                    setCompressing(true);
+                    const compressed = await Promise.all(files.map(compressPdf));
+                    setApplicantFiles(compressed);
+                    setCompressing(false);
+                  }} />
                   <button
                     type="button"
                     onClick={() => applicantRef.current?.click()}
-                    className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-obsidian-400/50 text-gray-400 hover:border-gold-500/40 hover:text-gray-300 transition-colors text-sm"
+                    disabled={compressing}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-obsidian-400/50 text-gray-400 hover:border-gold-500/40 hover:text-gray-300 transition-colors text-sm disabled:opacity-50"
                   >
-                    <Upload size={14} />
-                    {applicantFiles.length > 0 ? `${applicantFiles.length} file(s) selected` : 'Upload PDF(s)'}
+                    {compressing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                    {compressing ? 'Compressing…' : applicantFiles.length > 0 ? `${applicantFiles.length} file(s) selected` : 'Upload PDF(s)'}
                   </button>
                   {applicantFiles.map((f, i) => (
                     <div key={i} className="flex items-center gap-2 text-xs text-gray-300 px-2">
@@ -315,14 +335,21 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
                 {/* Guarantor Documents */}
                 <div className="space-y-1.5">
                   <label className="text-xs text-gray-500">Guarantor Documents (optional)</label>
-                  <input ref={guarantorRef} type="file" accept="application/pdf" multiple className="hidden" onChange={e => setGuarantorFiles(Array.from(e.target.files ?? []))} />
+                  <input ref={guarantorRef} type="file" accept="application/pdf" multiple className="hidden" onChange={async e => {
+                    const files = Array.from(e.target.files ?? []);
+                    setCompressing(true);
+                    const compressed = await Promise.all(files.map(compressPdf));
+                    setGuarantorFiles(compressed);
+                    setCompressing(false);
+                  }} />
                   <button
                     type="button"
                     onClick={() => guarantorRef.current?.click()}
-                    className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-obsidian-400/50 text-gray-400 hover:border-gold-500/40 hover:text-gray-300 transition-colors text-sm"
+                    disabled={compressing}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-obsidian-400/50 text-gray-400 hover:border-gold-500/40 hover:text-gray-300 transition-colors text-sm disabled:opacity-50"
                   >
-                    <Upload size={14} />
-                    {guarantorFiles.length > 0 ? `${guarantorFiles.length} file(s) selected` : 'Upload PDF(s)'}
+                    {compressing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                    {compressing ? 'Compressing…' : guarantorFiles.length > 0 ? `${guarantorFiles.length} file(s) selected` : 'Upload PDF(s)'}
                   </button>
                   {guarantorFiles.map((f, i) => (
                     <div key={i} className="flex items-center gap-2 text-xs text-gray-300 px-2">
@@ -369,7 +396,7 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
         <div className="px-5 pt-3 shrink-0 border-t border-obsidian-400/20" style={{ paddingBottom: 'calc(1.25rem + env(safe-area-inset-bottom, 0px))' }}>
           <button
             onClick={handleSubmit}
-            disabled={submitting || selectedBanks.length === 0 || !loanAmount || !hasApplicantDocs}
+            disabled={submitting || compressing || selectedBanks.length === 0 || !loanAmount || !hasApplicantDocs}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gold-gradient text-obsidian-950 font-bold text-sm disabled:opacity-40 active:opacity-80 transition-opacity shadow-gold-sm"
           >
             {submitting && <Loader2 size={15} className="animate-spin" />}

@@ -1160,10 +1160,10 @@ export default function Customers() {
 
       {tab === 'loan' && (<>
         {/* Loan search + filters */}
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2">
           <input
             type="text"
-            placeholder="Search by name or phone..."
+            placeholder="Search..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="flex-1 min-w-0 input rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors"
@@ -1174,9 +1174,7 @@ export default function Customers() {
             className="input rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors"
           >
             <option value="all">All Banks</option>
-            {BANKS.map(b => (
-              <option key={b} value={b}>{b}</option>
-            ))}
+            {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
           </select>
           <select
             value={carGroupFilter}
@@ -1189,20 +1187,8 @@ export default function Customers() {
             <option value="pending_delivery">Pending Delivery</option>
             <option value="sold">Sold</option>
           </select>
-          {carGroupFilter !== 'all' && (
-            <select
-              value={carIdFilter}
-              onChange={e => setCarIdFilter(e.target.value)}
-              className="input rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500 transition-colors"
-            >
-              <option value="all">Car Model</option>
-              {carsInGroup.map(c => (
-                <option key={c.id} value={c.id}>{c.year} {c.make} {c.model}</option>
-              ))}
-            </select>
-          )}
           {(carGroupFilter !== 'all' || loanBankFilter !== 'all' || search) && (
-            <button onClick={() => { setCarGroupFilter('all'); setCarIdFilter('all'); setLoanBankFilter('all'); setSearch(''); }} className="px-3 py-2.5 text-xs text-gray-500 hover:text-white border border-obsidian-400/60 hover:border-[#3C321E] rounded-lg transition-colors whitespace-nowrap">Clear</button>
+            <button onClick={() => { setCarGroupFilter('all'); setCarIdFilter('all'); setLoanBankFilter('all'); setSearch(''); }} className="px-3 py-2.5 text-xs text-gray-500 hover:text-white border border-obsidian-400/60 rounded-lg transition-colors whitespace-nowrap">Clear</button>
           )}
         </div>
 
