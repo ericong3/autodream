@@ -180,6 +180,7 @@ export default function Customers() {
   const [loanSubmitCustomer, setLoanSubmitCustomer] = useState<Customer | null>(null);
   const [loanSubmitInitial, setLoanSubmitInitial] = useState<{ carId?: string; amount?: number }>({});
   const [selectedLoanCaseId, setSelectedLoanCaseId] = useState<string | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   useBodyScrollLock(!!detailLead || !!workOrderCustomer);
 
   useEffect(() => {
@@ -855,31 +856,28 @@ export default function Customers() {
       )}
 
       {tab === 'leads' && (<>
-        {/* Status filter cards */}
-        <div className="grid grid-cols-4 gap-2">
+        {/* Status filter pills */}
+        <div className="flex gap-1.5 flex-wrap">
           {LEAD_STAGES.map(s => {
             const count = statusCounts[s] ?? 0;
             const isActive = statusFilter === s;
             const label = s === 'all' ? 'All' : LEAD_STATUS_LABELS[s as Customer['leadStatus']];
-            const color = s === 'all'
-              ? { text: 'text-white', border: 'border-gold-500', bg: 'bg-gold-500/10', dot: '' }
-              : ({
-                  contacted:     { text: 'text-blue-400',   border: 'border-blue-500/60',   bg: 'bg-blue-500/10',   dot: 'bg-blue-400' },
-                  test_drive:    { text: 'text-yellow-400', border: 'border-yellow-500/60', bg: 'bg-yellow-500/10', dot: 'bg-yellow-400' },
-                  follow_up:     { text: 'text-gold-400',   border: 'border-gold-500/60',   bg: 'bg-gold-500/10',   dot: 'bg-gold-400' },
-                  loan_submitted:{ text: 'text-green-400',  border: 'border-green-500/60',  bg: 'bg-green-500/10',  dot: 'bg-green-400' },
-                } as Record<string, { text: string; border: string; bg: string; dot: string }>)[s] ?? { text: 'text-gray-400', border: 'border-gray-500/60', bg: 'bg-gray-500/10', dot: 'bg-gray-400' };
+            const activeCls =
+              s === 'all'           ? 'bg-white/10 border-white/20 text-white' :
+              s === 'contacted'     ? 'bg-blue-500/15 border-blue-500/40 text-blue-400' :
+              s === 'test_drive'    ? 'bg-yellow-500/15 border-yellow-500/40 text-yellow-400' :
+              s === 'follow_up'     ? 'bg-amber-500/15 border-amber-500/40 text-amber-400' :
+                                      'bg-green-500/15 border-green-500/40 text-green-400';
             return (
               <button
                 key={s}
                 onClick={() => setStatusFilter(s)}
-                className={`rounded-xl p-3 text-left border transition-all ${isActive ? `${color.bg} ${color.border}` : 'bg-[#0F0E0C] border-obsidian-400/60 hover:border-[#3C321E]'}`}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
+                  isActive ? activeCls : 'bg-[#0F0E0C] border-obsidian-400/40 text-gray-500 hover:text-gray-300 hover:border-obsidian-400/60'
+                }`}
               >
-                <p className={`text-xl font-bold ${isActive ? color.text : 'text-white'}`}>{count}</p>
-                <div className="flex items-center gap-1.5 mt-1">
-                  {s !== 'all' && <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? (color as any).dot : 'bg-gray-600'}`} />}
-                  <p className={`text-xs truncate ${isActive ? color.text : 'text-gray-500'}`}>{label}</p>
-                </div>
+                {label}
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${isActive ? 'bg-black/20' : 'bg-obsidian-600/60 text-gray-600'}`}>{count}</span>
               </button>
             );
           })}
@@ -974,21 +972,20 @@ export default function Customers() {
                     }`}>{LEAD_STATUS_LABELS[c.leadStatus]}</span>
                   </div>
 
-                  {/* Row 2: Phone + source */}
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-gray-500 text-xs">{c.phone}</span>
-                    <span className="text-gray-600 text-[10px] px-1.5 py-0.5 bg-obsidian-700/50 rounded border border-obsidian-500/30">{SOURCE_LABELS[c.source]}</span>
-                    {isDirectorLevel && <span className="text-gray-600 text-xs hidden lg:inline">{getSalesName(c.assignedSalesId)}</span>}
+                  {/* Info: phone · source · salesman · car */}
+                  <div className="flex items-center gap-1 flex-wrap text-xs text-gray-500 mb-1.5">
+                    <span>{c.phone}</span>
+                    <span className="text-gray-700">·</span>
+                    <span>{SOURCE_LABELS[c.source]}</span>
+                    {isDirectorLevel && <><span className="text-gray-700">·</span><span className="hidden lg:inline">{getSalesName(c.assignedSalesId)}</span></>}
+                    {car && (
+                      <>
+                        <span className="text-gray-700">·</span>
+                        <span className="text-gray-400">{car.year} {car.make} {car.model}{car.variant ? ` ${car.variant}` : ''}</span>
+                        {car.carPlate && <span className="font-mono text-[10px] text-gray-600">{car.carPlate}</span>}
+                      </>
+                    )}
                   </div>
-
-                  {/* Row 3: Car badge */}
-                  {car && (
-                    <div className="flex items-center gap-1.5 mb-2">
-                      <Car size={10} className="text-gold-500/50 shrink-0" />
-                      <span className="text-gold-400/80 text-xs font-medium">{car.year} {car.make} {car.model}{car.variant ? ` ${car.variant}` : ''}</span>
-                      {car.carPlate && <span className="text-[10px] font-mono text-gold-500/60 bg-obsidian-700/50 px-1.5 py-0.5 rounded border border-obsidian-500/30">{car.carPlate}</span>}
-                    </div>
-                  )}
 
                   {/* Row 4: Follow-up countdown */}
                   {followUpInfo && (
@@ -1014,9 +1011,9 @@ export default function Customers() {
                     className="w-full text-xs bg-transparent border-b border-obsidian-400/40 hover:border-obsidian-400/70 focus:border-gold-500/60 text-gray-400 placeholder-gray-700 focus:text-gray-200 outline-none py-1 transition-colors"
                   />
 
-                  {/* Row 6: Quick actions */}
-                  <div className="flex items-center gap-2 mt-3" onClick={e => e.stopPropagation()}>
-                    <button onClick={() => handleWhatsApp(c.phone, c.name)} className="flex items-center gap-1.5 px-3 py-2 text-xs text-green-400 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 hover:border-green-500/40 rounded-lg transition-colors font-medium touch-manipulation">
+                  {/* Quick actions */}
+                  <div className="flex items-center gap-2 mt-2.5" onClick={e => e.stopPropagation()}>
+                    <button onClick={() => handleWhatsApp(c.phone, c.name)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-green-400 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 hover:border-green-500/40 rounded-lg transition-colors font-medium touch-manipulation">
                       <MessageCircle size={13} />WA
                     </button>
                     {(() => {
@@ -1024,10 +1021,8 @@ export default function Customers() {
                       return (
                         <button
                           onClick={() => updateCustomer(c.id, { followUpDate: inList ? undefined : todayStr })}
-                          className={`flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg transition-colors font-medium touch-manipulation border ${
-                            inList
-                              ? 'text-yellow-400 bg-yellow-500/15 border-yellow-500/30'
-                              : 'text-gray-500 bg-obsidian-700/40 border-obsidian-500/30 hover:text-yellow-400 hover:bg-yellow-500/10 hover:border-yellow-500/30'
+                          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-colors font-medium touch-manipulation border ${
+                            inList ? 'text-yellow-400 bg-yellow-500/15 border-yellow-500/30' : 'text-gray-500 bg-obsidian-700/40 border-obsidian-500/30 hover:text-yellow-400 hover:bg-yellow-500/10 hover:border-yellow-500/30'
                           }`}
                         >
                           <CalendarCheck size={13} />
@@ -1036,16 +1031,26 @@ export default function Customers() {
                       );
                     })()}
                     {!isShareHolder && (
-                      <div className="ml-auto flex items-center gap-1">
-                        <button onClick={() => openEdit(c)} className="p-2 text-gray-600 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors touch-manipulation">
-                          <Edit2 size={14} />
-                        </button>
-                        <button onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })} className="p-2 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors touch-manipulation" title="Move to bin">
-                          <Trash2 size={14} />
+                      <div className="ml-auto">
+                        <button
+                          onClick={() => setOpenMenuId(openMenuId === c.id ? null : c.id)}
+                          className={`p-2 rounded-lg transition-colors touch-manipulation ${openMenuId === c.id ? 'text-white bg-obsidian-600/60' : 'text-gray-600 hover:text-gray-300 hover:bg-obsidian-600/60'}`}
+                        >
+                          <MoreVertical size={14} />
                         </button>
                       </div>
                     )}
                   </div>
+                  {!isShareHolder && openMenuId === c.id && (
+                    <div className="flex gap-1.5 mt-1.5" onClick={e => e.stopPropagation()}>
+                      <button onClick={() => { openEdit(c); setOpenMenuId(null); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-300 bg-obsidian-700/60 border border-obsidian-500/30 rounded-lg transition-colors touch-manipulation">
+                        <Edit2 size={12} />Edit
+                      </button>
+                      <button onClick={() => { updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() }); setOpenMenuId(null); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg transition-colors touch-manipulation">
+                        <Trash2 size={12} />Bin
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -1109,9 +1114,9 @@ export default function Customers() {
                         <span className="text-white text-sm font-semibold">{c.name}</span>
                         <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full border shrink-0 bg-green-500/10 border-green-500/30 text-green-400">Cash Buyer</span>
                       </div>
-                      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                        <span className="text-gray-500 text-xs">{c.phone}</span>
-                        {car && <span className="text-xs px-2 py-0.5 rounded-full bg-gold-500/10 border border-gold-500/20 text-gold-400">{car.year} {car.make} {car.model}</span>}
+                      <div className="flex items-center gap-1 flex-wrap text-xs text-gray-500 mb-1.5">
+                        <span>{c.phone}</span>
+                        {car && <><span className="text-gray-700">·</span><span className="text-gray-400">{car.year} {car.make} {car.model}</span></>}
                       </div>
                       {c.followUpDate && (() => {
                         const today = new Date(); today.setHours(0,0,0,0);
@@ -1142,13 +1147,23 @@ export default function Customers() {
                           </button>
                         )}
                         {!isShareHolder && (
-                          <div className="ml-auto flex items-center gap-1">
-                            <button onClick={() => updateCustomer(c.id, { dealType: undefined })} className="p-2 text-gray-600 hover:text-orange-400 hover:bg-orange-500/10 rounded-lg transition-colors touch-manipulation" title="Remove Cash Tag"><RotateCcw size={14} /></button>
-                            <button onClick={() => openEdit(c)} className="p-2 text-gray-600 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors touch-manipulation"><Edit2 size={14} /></button>
-                            <button onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })} className="p-2 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors touch-manipulation"><Trash2 size={14} /></button>
+                          <div className="ml-auto">
+                            <button
+                              onClick={() => setOpenMenuId(openMenuId === c.id ? null : c.id)}
+                              className={`p-2 rounded-lg transition-colors touch-manipulation ${openMenuId === c.id ? 'text-white bg-obsidian-600/60' : 'text-gray-600 hover:text-gray-300 hover:bg-obsidian-600/60'}`}
+                            >
+                              <MoreVertical size={14} />
+                            </button>
                           </div>
                         )}
                       </div>
+                      {!isShareHolder && openMenuId === c.id && (
+                        <div className="flex gap-1.5 mt-1.5" onClick={e => e.stopPropagation()}>
+                          <button onClick={() => { updateCustomer(c.id, { dealType: undefined }); setOpenMenuId(null); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-orange-400 bg-orange-500/10 border border-orange-500/20 rounded-lg touch-manipulation"><RotateCcw size={12} />Remove Cash Tag</button>
+                          <button onClick={() => { openEdit(c); setOpenMenuId(null); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-300 bg-obsidian-700/60 border border-obsidian-500/30 rounded-lg touch-manipulation"><Edit2 size={12} />Edit</button>
+                          <button onClick={() => { updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() }); setOpenMenuId(null); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg touch-manipulation"><Trash2 size={12} />Bin</button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1240,9 +1255,9 @@ export default function Customers() {
                       {/* Car badge */}
                       {car && (
                         <div className="flex items-center gap-1.5 mb-2">
-                          <Car size={10} className="text-gold-500/50 shrink-0" />
-                          <span className="text-gold-400/80 text-xs font-medium">{car.year} {car.make} {car.model}{car.variant ? ` ${car.variant}` : ''}</span>
-                          {car.carPlate && <span className="text-[10px] font-mono text-gold-500/60 bg-obsidian-700/50 px-1.5 py-0.5 rounded border border-obsidian-500/30">{car.carPlate}</span>}
+                          <Car size={10} className="text-gray-600 shrink-0" />
+                          <span className="text-gray-400 text-xs font-medium">{car.year} {car.make} {car.model}{car.variant ? ` ${car.variant}` : ''}</span>
+                          {car.carPlate && <span className="text-[10px] font-mono text-gray-500 bg-obsidian-700/50 px-1.5 py-0.5 rounded border border-obsidian-500/30">{car.carPlate}</span>}
                         </div>
                       )}
 
@@ -1281,15 +1296,25 @@ export default function Customers() {
                         <button onClick={() => handleWhatsApp(c.phone, c.name)} className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-green-400 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 rounded-lg transition-colors touch-manipulation">
                           <MessageCircle size={12} />WA
                         </button>
-                        {!isShareHolder && (<>
-                          <button onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })} className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors touch-manipulation" title="Move to bin">
-                            <Trash2 size={13} />
+                        {!isShareHolder && (
+                          <button
+                            onClick={() => setOpenMenuId(openMenuId === c.id ? null : c.id)}
+                            className={`p-1.5 rounded-lg transition-colors touch-manipulation ${openMenuId === c.id ? 'text-white bg-obsidian-600/60' : 'text-gray-600 hover:text-gray-300 hover:bg-obsidian-600/60'}`}
+                          >
+                            <MoreVertical size={14} />
                           </button>
-                          <button onClick={() => openEdit(c)} className="p-1.5 text-gray-600 hover:text-gold-400 hover:bg-obsidian-600/60 rounded-lg transition-colors touch-manipulation">
-                            <Edit2 size={13} />
-                          </button>
-                        </>)}
+                        )}
                       </div>
+                      {!isShareHolder && openMenuId === c.id && (
+                        <div className="flex gap-1.5 mt-1.5" onClick={e => e.stopPropagation()}>
+                          <button onClick={() => { openEdit(c); setOpenMenuId(null); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-300 bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/40 rounded-lg transition-colors font-medium touch-manipulation">
+                            <Edit2 size={12} />Edit
+                          </button>
+                          <button onClick={() => { updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() }); setOpenMenuId(null); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-lg transition-colors font-medium touch-manipulation">
+                            <Trash2 size={12} />Bin
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
 
