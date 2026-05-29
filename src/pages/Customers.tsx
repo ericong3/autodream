@@ -1218,8 +1218,7 @@ export default function Customers() {
           <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card divide-y divide-obsidian-400/60 overflow-hidden">
             {loanFiltered.map(c => {
               const car = getCar(c.interestedCarId);
-              const loanInfo = LOAN_STATUS_LABELS[c.loanStatus ?? 'not_started'];
-              const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
+const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
 
               const expiringApp = c.loanApplications?.find(a => {
                 if (!a.approvedAt) return false;
