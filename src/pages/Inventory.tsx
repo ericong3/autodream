@@ -27,7 +27,6 @@ import {
   XCircle,
   RotateCcw,
   Calendar,
-  GripVertical,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
@@ -36,7 +35,6 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
-  TouchSensor,
   useSensor,
   useSensors,
   closestCenter,
@@ -123,18 +121,13 @@ function SortableCarItem({ id, children }: { id: string; children: React.ReactNo
         transform: CSS.Transform.toString(transform),
         transition,
         opacity: isDragging ? 0.2 : 1,
-        touchAction: 'none',
         userSelect: 'none',
       }}
       {...attributes}
       {...listeners}
-      className="touch-none cursor-grab active:cursor-grabbing"
+      className="cursor-grab active:cursor-grabbing"
       onDragStart={(e) => e.preventDefault()}
     >
-      {/* Mobile drag handle — long-press this strip to reorder */}
-      <div className="sm:hidden flex items-center justify-center gap-1 py-1.5 opacity-40">
-        <GripVertical size={16} className="text-gray-400" />
-      </div>
       {children}
     </div>
   );
@@ -227,7 +220,6 @@ export default function Inventory() {
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor,   { activationConstraint: { delay: 250, tolerance: 8 } }),
   );
 
   // Swipe to change tab (mobile) — document-level listeners bypass browser scroll interception
