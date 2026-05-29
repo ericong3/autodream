@@ -1262,11 +1262,18 @@ export default function Customers() {
                       )}
 
                       {/* Bank status chips — grouped by status */}
-                      {!c.loanApplications?.length && c.loanBankSubmitted && (
+                      {!c.loanApplications?.length && c.loanStatus && c.loanStatus !== 'not_started' && (
                         <div className="flex flex-wrap gap-1.5 mb-1.5">
-                          <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-sky-500/15 border-sky-500/30 text-sky-300">
-                            <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
-                            {c.loanBankSubmitted}
+                          <span className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                            c.loanStatus === 'approved' ? 'bg-green-500/15 border-green-500/30 text-green-400' :
+                            c.loanStatus === 'rejected' ? 'bg-orange-500/15 border-orange-500/30 text-orange-400' :
+                            'bg-sky-500/15 border-sky-500/30 text-sky-300'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${
+                              c.loanStatus === 'approved' ? 'bg-green-400' :
+                              c.loanStatus === 'rejected' ? 'bg-orange-400' : 'bg-sky-400'
+                            }`} />
+                            {c.loanBankSubmitted || (c.loanStatus === 'approved' ? 'Approved' : c.loanStatus === 'rejected' ? 'Rejected' : 'Submitted')}
                           </span>
                         </div>
                       )}
