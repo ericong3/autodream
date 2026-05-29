@@ -13,7 +13,7 @@ async function compressPdf(file: File): Promise<File> {
     const buf = await file.arrayBuffer();
     const pdf = await PDFDocument.load(buf, { ignoreEncryption: true });
     const out = await pdf.save({ useObjectStreams: true, addDefaultPage: false });
-    return new File([out], file.name, { type: 'application/pdf' });
+    return new File([out.buffer as ArrayBuffer], file.name, { type: 'application/pdf' });
   } catch {
     return file; // if compression fails, use original
   }
