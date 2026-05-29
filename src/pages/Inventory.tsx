@@ -27,6 +27,7 @@ import {
   XCircle,
   RotateCcw,
   Calendar,
+  GripVertical,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
@@ -44,6 +45,7 @@ import {
   SortableContext,
   useSortable,
   rectSortingStrategy,
+  verticalListSortingStrategy,
   arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -121,14 +123,18 @@ function SortableCarItem({ id, children }: { id: string; children: React.ReactNo
         transform: CSS.Transform.toString(transform),
         transition,
         opacity: isDragging ? 0.2 : 1,
-        touchAction: 'none',    // must be inline — Tailwind class alone can miss iOS
-        userSelect: 'none',     // prevent text selection fighting the drag
+        touchAction: 'none',
+        userSelect: 'none',
       }}
       {...attributes}
       {...listeners}
       className="touch-none cursor-grab active:cursor-grabbing"
-      onDragStart={(e) => e.preventDefault()}   // block browser native image/element drag
+      onDragStart={(e) => e.preventDefault()}
     >
+      {/* Mobile drag handle — long-press this strip to reorder */}
+      <div className="sm:hidden flex items-center justify-center gap-1 py-1.5 opacity-40">
+        <GripVertical size={16} className="text-gray-400" />
+      </div>
       {children}
     </div>
   );
@@ -783,8 +789,25 @@ export default function Inventory() {
               </DragOverlay>
             </DndContext>
             ) : (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragStart={(e) => { dragActiveRef.current = true; setDragActiveId(e.active.id as string); }}
+                onDragEnd={(e) => {
+                  dragActiveRef.current = false; setDragActiveId(null);
+                  const { active, over } = e;
+                  if (!over || active.id === over.id) return;
+                  setPendingOrder(prev => {
+                    const oi = prev.indexOf(active.id as string);
+                    const ni = prev.indexOf(over.id as string);
+                    return (oi >= 0 && ni >= 0) ? arrayMove(prev, oi, ni) : prev;
+                  });
+                }}
+                onDragCancel={() => { dragActiveRef.current = false; setDragActiveId(null); }}
+              >
+              <SortableContext items={pendingOrdered.map(c => c.id)} strategy={verticalListSortingStrategy}>
               <div className="space-y-3">
-                {pendingDelivery.map((car) => {
+                {pendingOrdered.map((car) => {
                   const buyer = customers.find(c => c.interestedCarId === car.id && (c.loanWorkOrder || c.cashWorkOrder));
                   const isLoan = !!buyer?.loanWorkOrder;
                   const wo = buyer?.loanWorkOrder ?? buyer?.cashWorkOrder;
@@ -793,8 +816,8 @@ export default function Inventory() {
                     : null;
                   const needsApproval = car.finalDeal?.approvalStatus === 'pending';
                   return (
+                    <SortableCarItem key={car.id} id={car.id}>
                     <div
-                      key={car.id}
                       onClick={() => navigate(`/inventory/${car.id}`, { state: { inventoryTab } })}
                       className="flex gap-4 p-4 rounded-2xl bg-obsidian-800/60 border border-obsidian-400/40 cursor-pointer hover:border-green-500/40 transition-colors group"
                     >
@@ -860,9 +883,12 @@ export default function Inventory() {
                         )}
                       </div>
                     </div>
+                    </SortableCarItem>
                   );
                 })}
               </div>
+              </SortableContext>
+              </DndContext>
             )}
         </>
       )}
@@ -979,12 +1005,29 @@ export default function Inventory() {
               </DragOverlay>
             </DndContext>
           ) : (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={(e) => { dragActiveRef.current = true; setDragActiveId(e.active.id as string); }}
+              onDragEnd={(e) => {
+                dragActiveRef.current = false; setDragActiveId(null);
+                const { active, over } = e;
+                if (!over || active.id === over.id) return;
+                setComingSoonOrder(prev => {
+                  const oi = prev.indexOf(active.id as string);
+                  const ni = prev.indexOf(over.id as string);
+                  return (oi >= 0 && ni >= 0) ? arrayMove(prev, oi, ni) : prev;
+                });
+              }}
+              onDragCancel={() => { dragActiveRef.current = false; setDragActiveId(null); }}
+            >
+            <SortableContext items={comingSoonOrdered.map(c => c.id)} strategy={verticalListSortingStrategy}>
             <div className="bg-card-gradient border border-purple-500/20 rounded-xl shadow-card divide-y divide-obsidian-400/60">
-              {comingSoonFiltered.map((car) => {
+              {comingSoonOrdered.map((car) => {
                 const inv = car.investorId ? users.find(u => u.id === car.investorId) : null;
                 return (
+                  <SortableCarItem key={car.id} id={car.id}>
                   <div
-                    key={car.id}
                     onClick={() => navigate(`/inventory/${car.id}`, { state: { inventoryTab } })}
                     className="flex items-center gap-4 px-4 py-3 hover:bg-obsidian-700/40 transition-colors cursor-pointer"
                   >
@@ -1050,9 +1093,12 @@ export default function Inventory() {
                       )}
                     </div>
                   </div>
+                  </SortableCarItem>
                 );
               })}
             </div>
+            </SortableContext>
+            </DndContext>
           )}
         </>
       )}
@@ -1278,6 +1324,23 @@ export default function Inventory() {
 
       {/* List view */}
       {!initialLoad && view === 'list' && filteredOrdered.length > 0 && (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={(e) => { dragActiveRef.current = true; setDragActiveId(e.active.id as string); }}
+          onDragEnd={(e) => {
+            dragActiveRef.current = false; setDragActiveId(null);
+            const { active, over } = e;
+            if (!over || active.id === over.id) return;
+            setStockOrder(prev => {
+              const oi = prev.indexOf(active.id as string);
+              const ni = prev.indexOf(over.id as string);
+              return (oi >= 0 && ni >= 0) ? arrayMove(prev, oi, ni) : prev;
+            });
+          }}
+          onDragCancel={() => { dragActiveRef.current = false; setDragActiveId(null); }}
+        >
+        <SortableContext items={filteredOrdered.map(c => c.id)} strategy={verticalListSortingStrategy}>
         <div className="space-y-2">
           {filteredOrdered.map((car, idx) => {
             const { cls, label } = getDealBadge(car);
@@ -1290,8 +1353,8 @@ export default function Inventory() {
             const profit = carProfitMap[car.id] ?? 0;
 
             return (
+              <SortableCarItem key={car.id} id={car.id}>
               <div
-                key={car.id}
                 onClick={() => navigate(`/inventory/${car.id}`, { state: { inventoryTab } })}
                 className={`row-item bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card cursor-pointer hover:border-gold-500/40 hover:bg-obsidian-700/30 transition-all flex items-center gap-4 px-4 py-3 relative stagger-enter stagger-${Math.min(idx + 1, 12)}${car.status === 'delivered' ? ' opacity-60' : ''}`}
               >
@@ -1375,9 +1438,12 @@ export default function Inventory() {
                   </button>
                 )}
               </div>
+              </SortableCarItem>
             );
           })}
         </div>
+        </SortableContext>
+        </DndContext>
       )}
 
       {/* ── Consigned Out section ── */}
