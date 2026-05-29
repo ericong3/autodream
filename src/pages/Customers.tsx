@@ -1297,8 +1297,8 @@ export default function Customers() {
                     <div className="flex flex-col items-end gap-2 shrink-0" onClick={e => e.stopPropagation()}>
                       <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full border ${
                         loanInfo.label === 'Approved' ? 'bg-green-500/10 border-green-500/30 text-green-400' :
-                        loanInfo.label === 'Rejected' ? 'bg-red-500/10 border-red-500/30 text-red-400' :
-                        'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
+                        loanInfo.label === 'Rejected' ? 'bg-orange-500/10 border-orange-500/30 text-orange-400' :
+                        'bg-sky-500/10 border-sky-500/30 text-sky-300'
                       }`}>{loanInfo.label}</span>
                       <div className="flex items-center gap-1">
                         <button onClick={() => handleWhatsApp(c.phone, c.name)} className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-green-400 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 rounded-lg transition-colors touch-manipulation">
