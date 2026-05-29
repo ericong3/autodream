@@ -1868,7 +1868,7 @@ export default function Inventory() {
           </div>}
 
           {/* Green Card */}
-          {<div className="col-span-2">
+          <div className="col-span-2">
             <label className="block text-gray-300 text-xs font-medium mb-1.5">
               Green Card
               <span className="ml-1.5 text-gray-500 font-normal">(JPG, PNG or PDF)</span>
