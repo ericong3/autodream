@@ -46,12 +46,6 @@ function FormField({ label, children, error, className }: { label: string; child
 
 const LEAD_STAGES: Array<Customer['leadStatus'] | 'all'> = ['all', 'contacted', 'test_drive', 'follow_up'];
 
-const _LOAN_STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  not_started: { label: 'Pending',  color: 'text-gray-400' },
-  submitted:   { label: 'Submitted', color: 'text-yellow-400' },
-  approved:    { label: 'Approved',  color: 'text-green-400' },
-  rejected:    { label: 'Rejected',  color: 'text-red-400' },
-};
 const STAGE_ORDER: Customer['leadStatus'][] = ['contacted', 'test_drive', 'follow_up', 'loan_submitted'];
 
 
