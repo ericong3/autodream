@@ -238,6 +238,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     }
   };
 
+  const editGreenCardRef = useRef<HTMLInputElement>(null);
+
   // ── Delivery Modal ──
   const [showDeliveryModal, setShowDeliveryModal] = useState(false);
   const [deliveryPhoto, setDeliveryPhoto] = useState('');
@@ -1742,6 +1744,44 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           <FormField label="Notes" className="col-span-2">
             <textarea className={`${inputCls()} h-20 resize-none`} value={editForm.notes ?? ''} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
           </FormField>
+
+          {/* Green Card */}
+          <div className="col-span-2">
+            <label className="block text-gray-300 text-xs font-medium mb-1.5">
+              Green Card
+              <span className="ml-1.5 text-gray-500 font-normal">(JPG, PNG or PDF)</span>
+            </label>
+            {editForm.greenCard ? (
+              <div className="flex items-center gap-3 bg-obsidian-700/60 border border-obsidian-400/60 rounded-lg p-3">
+                <div className="w-12 h-10 bg-green-500/10 border border-green-500/30 rounded flex items-center justify-center shrink-0">
+                  <FileText size={18} className="text-green-400" />
+                </div>
+                <p className="text-white text-xs font-medium flex-1">Green card uploaded</p>
+                <button type="button" onClick={() => editGreenCardRef.current?.click()} className="text-xs text-gold-400 hover:text-gold-300">Replace</button>
+                <button type="button" onClick={() => setEditForm(f => ({ ...f, greenCard: '' }))} className="text-xs text-red-400 hover:text-red-300">Remove</button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => editGreenCardRef.current?.click()}
+                className="w-full border-2 border-dashed border-obsidian-400/60 hover:border-gold-500/50 rounded-lg p-4 flex items-center justify-center gap-2 text-gray-500 hover:text-gold-400 transition-colors text-sm"
+              >
+                <Upload size={16} /> Upload green card
+              </button>
+            )}
+            <input
+              ref={editGreenCardRef}
+              type="file"
+              accept="image/*,application/pdf"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file || !car) return;
+                const url = await uploadToStorage(file, 'greencards');
+                setEditForm(f => ({ ...f, greenCard: url }));
+              }}
+            />
+          </div>
         </div>
       </Modal>
 
