@@ -1263,18 +1263,11 @@ export default function Customers() {
 
                       {/* Bank status chips — grouped by status */}
                       {!c.loanApplications?.length && c.loanStatus && c.loanStatus !== 'not_started' && (
-                        <div className="flex flex-wrap gap-1.5 mb-1.5">
-                          <span className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-                            c.loanStatus === 'approved' ? 'bg-green-500/15 border-green-500/30 text-green-400' :
-                            c.loanStatus === 'rejected' ? 'bg-orange-500/15 border-orange-500/30 text-orange-400' :
-                            'bg-sky-500/15 border-sky-500/30 text-sky-300'
-                          }`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${
-                              c.loanStatus === 'approved' ? 'bg-green-400' :
-                              c.loanStatus === 'rejected' ? 'bg-orange-400' : 'bg-sky-400'
-                            }`} />
-                            {c.loanBankSubmitted || (c.loanStatus === 'approved' ? 'Approved' : c.loanStatus === 'rejected' ? 'Rejected' : 'Submitted')}
-                          </span>
+                        <div className="flex items-center gap-1 mb-1.5">
+                          <span className={`w-2 h-2 rounded-full ${
+                            c.loanStatus === 'approved' ? 'bg-green-400' :
+                            c.loanStatus === 'rejected' ? 'bg-orange-400' : 'bg-sky-400'
+                          }`} />
                         </div>
                       )}
                       {c.loanApplications?.length ? (() => {
@@ -1282,29 +1275,17 @@ export default function Customers() {
                         const groups = order
                           .map(st => ({ st, banks: c.loanApplications!.filter(a => a.status === st) }))
                           .filter(g => g.banks.length > 0);
+                        const dotCls = (st: string) => st === 'approved' ? 'bg-green-400' : st === 'rejected' ? 'bg-orange-400' : st === 'cancelled' ? 'bg-gray-600' : 'bg-sky-400';
+                        const hasExpiring = c.loanApplications!.some(b => {
+                          const d = b.approvedAt ? 90 - Math.floor((Date.now() - new Date(b.approvedAt).getTime()) / 86400000) : null;
+                          return d !== null && d <= 20;
+                        });
                         return (
-                          <div className="flex flex-wrap gap-1.5 mb-1.5">
-                            {groups.map(({ st, banks }) => {
-                              const hasExpiring = banks.some(b => {
-                                const d = b.approvedAt ? 90 - Math.floor((Date.now() - new Date(b.approvedAt).getTime()) / 86400000) : null;
-                                return d !== null && d <= 20;
-                              });
-                              const label = st === 'approved' ? 'Approved' : st === 'rejected' ? 'Rejected' : st === 'cancelled' ? 'Cancelled' : 'Submitted';
-                              const cls = st === 'approved' ? 'bg-green-500/15 border-green-500/30 text-green-400' :
-                                          st === 'rejected' ? 'bg-orange-500/15 border-orange-500/30 text-orange-400' :
-                                          st === 'cancelled' ? 'bg-obsidian-700/40 border-obsidian-500/30 text-gray-500' :
-                                          'bg-sky-500/15 border-sky-500/30 text-sky-300';
-                              const dotCls = st === 'approved' ? 'bg-green-400' : st === 'rejected' ? 'bg-orange-400' : st === 'cancelled' ? 'bg-gray-600' : 'bg-sky-400';
-                              return (
-                                <span key={st} className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${cls}`}>
-                                  <span className="flex items-center gap-0.5">
-                                    {banks.map(b => <span key={b.bank} className={`w-1.5 h-1.5 rounded-full ${dotCls}`} />)}
-                                  </span>
-                                  {label}
-                                  {hasExpiring && <span className="text-orange-400">⚠</span>}
-                                </span>
-                              );
-                            })}
+                          <div className="flex items-center gap-1.5 mb-1.5">
+                            {groups.map(({ st, banks }) =>
+                              banks.map(b => <span key={b.bank} className={`w-2 h-2 rounded-full ${dotCls(st)}`} />)
+                            )}
+                            {hasExpiring && <span className="text-orange-400 text-[10px]">⚠</span>}
                           </div>
                         );
                       })() : null}
