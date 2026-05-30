@@ -191,6 +191,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     bankProduct: 0, loanAmount: 0, downpayment: 0, bookingFee: 0,
     additionalItems: [] as WorkOrderItem[],
     soldDate: '',
+    refundBank: '', refundAccountName: '', refundAccountNo: '',
   });
   const [savingDeal, setSavingDeal] = useState(false);
 
@@ -208,6 +209,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       bookingFee: dealWo?.bookingFee ?? 0,
       additionalItems: [...(dealWo?.additionalItems ?? [])],
       soldDate: car.finalDeal?.submittedAt?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+      refundBank: (dealWo as any)?.refundBank ?? '',
+      refundAccountName: (dealWo as any)?.refundAccountName ?? '',
+      refundAccountNo: (dealWo as any)?.refundAccountNo ?? '',
     });
     setShowEditDeal(true);
   };
@@ -1218,6 +1222,14 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                       {Math.abs(balance) < 0.01 ? '✓ Balanced' : formatRM(Math.abs(balance))}
                     </span>
                   </div>
+                  {balance < 0 && ((wo as any)?.refundBank || (wo as any)?.refundAccountNo) && (
+                    <div className="mt-3 bg-sky-500/5 border border-sky-500/20 rounded-xl p-3 space-y-1">
+                      <p className="text-xs font-semibold text-sky-400 uppercase tracking-wide mb-2">Refund Bank Details</p>
+                      {(wo as any).refundAccountName && <DRow label="Account Name" value={(wo as any).refundAccountName} border={false} />}
+                      {(wo as any).refundBank && <DRow label="Bank" value={(wo as any).refundBank} border={false} />}
+                      {(wo as any).refundAccountNo && <DRow label="Account No." value={<span className="font-mono">{(wo as any).refundAccountNo}</span>} border={false} />}
+                    </div>
+                  )}
                 </Section>
               )}
 
@@ -2511,14 +2523,33 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 </div>
 
                 {dealIsLoan && (
-                  <div className={`flex justify-between items-center pt-3 mt-1 border-t-2 ${Math.abs(bal) < 0.01 ? 'border-green-500/40' : bal < 0 ? 'border-sky-500/40' : 'border-orange-500/40'}`}>
-                    <span className="text-white font-semibold text-sm">
-                      {Math.abs(bal) < 0.01 ? 'Balance' : bal < 0 ? 'Refund to Customer' : 'Collect from Customer'}
-                    </span>
-                    <span className={`text-base font-bold ${Math.abs(bal) < 0.01 ? 'text-green-400' : bal < 0 ? 'text-sky-300' : 'text-orange-400'}`}>
-                      {Math.abs(bal) < 0.01 ? '✓ Balanced' : formatRM(Math.abs(bal))}
-                    </span>
-                  </div>
+                  <>
+                    <div className={`flex justify-between items-center pt-3 mt-1 border-t-2 ${Math.abs(bal) < 0.01 ? 'border-green-500/40' : bal < 0 ? 'border-sky-500/40' : 'border-orange-500/40'}`}>
+                      <span className="text-white font-semibold text-sm">
+                        {Math.abs(bal) < 0.01 ? 'Balance' : bal < 0 ? 'Refund to Customer' : 'Collect from Customer'}
+                      </span>
+                      <span className={`text-base font-bold ${Math.abs(bal) < 0.01 ? 'text-green-400' : bal < 0 ? 'text-sky-300' : 'text-orange-400'}`}>
+                        {Math.abs(bal) < 0.01 ? '✓ Balanced' : formatRM(Math.abs(bal))}
+                      </span>
+                    </div>
+                    {bal < 0 && (
+                      <div className="mt-3 bg-sky-500/5 border border-sky-500/20 rounded-xl p-4 space-y-0">
+                        <p className="text-xs font-semibold text-sky-400 uppercase tracking-wide mb-3">Refund Bank Details</p>
+                        <div className="flex items-center justify-between py-2 border-b border-obsidian-400/30 gap-4">
+                          <span className="text-gray-500 text-sm shrink-0">Account Name</span>
+                          <input value={editDealForm.refundAccountName} onChange={e => setEditDealForm(f => ({ ...f, refundAccountName: e.target.value }))} placeholder="Full name" className="bg-transparent text-right text-sm text-white w-40 outline-none focus:text-sky-300 placeholder-gray-700" />
+                        </div>
+                        <div className="flex items-center justify-between py-2 border-b border-obsidian-400/30 gap-4">
+                          <span className="text-gray-500 text-sm shrink-0">Bank</span>
+                          <input value={editDealForm.refundBank} onChange={e => setEditDealForm(f => ({ ...f, refundBank: e.target.value }))} placeholder="e.g. Maybank" className="bg-transparent text-right text-sm text-white w-40 outline-none focus:text-sky-300 placeholder-gray-700" />
+                        </div>
+                        <div className="flex items-center justify-between py-2 gap-4">
+                          <span className="text-gray-500 text-sm shrink-0">Account No.</span>
+                          <input value={editDealForm.refundAccountNo} onChange={e => setEditDealForm(f => ({ ...f, refundAccountNo: e.target.value }))} placeholder="Account number" className="bg-transparent text-right text-sm text-white w-40 outline-none focus:text-sky-300 placeholder-gray-700 font-mono" />
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             );
