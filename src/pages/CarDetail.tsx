@@ -1582,6 +1582,34 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             </FormField>
           )}
 
+          {/* Coming Soon Type — shown right after Status when applicable */}
+          {editForm.status === 'coming_soon' && (
+            <div className="col-span-2">
+              <label className="block text-gray-300 text-xs font-medium mb-1.5">Coming Soon Type</label>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  { value: 'trade_in',         label: 'Trade In',          desc: 'Customer changing car' },
+                  { value: 'direct_purchase',  label: 'Direct Purchase',   desc: 'Buying directly, car pending' },
+                  { value: 'pending_shipment', label: 'Pending Shipment',  desc: "West M'sia, not yet shipped" },
+                  { value: 'in_shipment',      label: 'In Shipment',       desc: 'Currently on the way' },
+                ] as const).map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setEditForm(f => ({ ...f, comingSoonType: f.comingSoonType === opt.value ? undefined : opt.value }))}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-left transition-colors ${editForm.comingSoonType === opt.value ? 'bg-purple-500/15 border-purple-500/50 text-purple-300' : 'bg-obsidian-700/40 border-obsidian-400/40 text-gray-500 hover:border-obsidian-400/70'}`}
+                  >
+                    <div className={`w-3 h-3 rounded-full shrink-0 ${editForm.comingSoonType === opt.value ? 'bg-purple-400' : 'bg-obsidian-500'}`} />
+                    <div>
+                      <p className="text-xs font-medium leading-tight">{opt.label}</p>
+                      <p className="text-[10px] opacity-60 leading-tight">{opt.desc}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {isDirector && (() => {
             const investors = users.filter(u => u.role === 'investor');
             if (investors.length === 0) return null;
@@ -1755,34 +1783,6 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           <FormField label="Notes" className="col-span-2">
             <textarea className={`${inputCls()} h-20 resize-none`} value={editForm.notes ?? ''} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
           </FormField>
-
-          {/* Coming Soon Type */}
-          {editForm.status === 'coming_soon' && (
-            <div className="col-span-2">
-              <label className="block text-gray-300 text-xs font-medium mb-1.5">Coming Soon Type</label>
-              <div className="grid grid-cols-2 gap-2">
-                {([
-                  { value: 'trade_in',         label: 'Trade In',          desc: 'Customer changing car' },
-                  { value: 'direct_purchase',  label: 'Direct Purchase',   desc: 'Buying directly, car pending' },
-                  { value: 'pending_shipment', label: 'Pending Shipment',  desc: "West M'sia, not yet shipped" },
-                  { value: 'in_shipment',      label: 'In Shipment',       desc: 'Currently on the way' },
-                ] as const).map(opt => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setEditForm(f => ({ ...f, comingSoonType: f.comingSoonType === opt.value ? undefined : opt.value }))}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-left transition-colors ${editForm.comingSoonType === opt.value ? 'bg-purple-500/15 border-purple-500/50 text-purple-300' : 'bg-obsidian-700/40 border-obsidian-400/40 text-gray-500 hover:border-obsidian-400/70'}`}
-                  >
-                    <div className={`w-3 h-3 rounded-full shrink-0 ${editForm.comingSoonType === opt.value ? 'bg-purple-400' : 'bg-obsidian-500'}`} />
-                    <div>
-                      <p className="text-xs font-medium leading-tight">{opt.label}</p>
-                      <p className="text-[10px] opacity-60 leading-tight">{opt.desc}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Green Card */}
           <div className="col-span-2">
