@@ -2450,88 +2450,68 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       <Modal isOpen={showEditDeal} onClose={() => setShowEditDeal(false)} title="Edit Deal Details" maxWidth="max-w-md">
         <div className="max-h-[70vh] overflow-y-auto -mx-1 px-1">
           {(() => {
-            const ERow = ({ label, children }: { label: string; children: React.ReactNode }) => (
-              <div className="flex items-center justify-between py-2.5 border-b border-obsidian-400/30 gap-4">
-                <span className="text-gray-500 text-sm shrink-0">{label}</span>
-                {children}
-              </div>
-            );
-            const NumInput = ({ field }: { field: keyof typeof editDealForm }) => (
-              <input
-                type="number"
-                min={0}
-                placeholder="0"
-                value={(editDealForm[field] as number) || ''}
-                onChange={e => setEditDealForm(f => ({ ...f, [field]: Number(e.target.value) }))}
-                className="bg-transparent text-right text-sm font-medium text-white w-32 outline-none focus:text-gold-300 placeholder-gray-700"
-              />
-            );
             const { sellingPrice, discount, insurance, bankProduct, loanAmount, additionalItems } = editDealForm;
             const addTotal = additionalItems.reduce((s, x) => s + x.amount, 0);
             const bal = sellingPrice - discount + insurance + bankProduct + addTotal - loanAmount;
+            const rowCls = "flex items-center justify-between py-2.5 border-b border-obsidian-400/30 gap-4";
+            const inputCls = "bg-transparent text-right text-sm font-medium text-white w-32 outline-none focus:text-gold-300 placeholder-gray-700";
             return (
               <div>
-                <ERow label="Date Sold">
-                  <input
-                    type="date"
-                    value={editDealForm.soldDate}
-                    max={new Date().toISOString().slice(0, 10)}
-                    onChange={e => setEditDealForm(f => ({ ...f, soldDate: e.target.value }))}
-                    className="bg-transparent text-right text-sm font-medium text-white outline-none focus:text-gold-300"
-                  />
-                </ERow>
+                <div className={rowCls}>
+                  <span className="text-gray-500 text-sm shrink-0">Date Sold</span>
+                  <input type="date" value={editDealForm.soldDate} max={new Date().toISOString().slice(0, 10)} onChange={e => setEditDealForm(f => ({ ...f, soldDate: e.target.value }))} className="bg-transparent text-right text-sm font-medium text-white outline-none focus:text-gold-300" />
+                </div>
                 {dealIsLoan && (
-                  <ERow label="Bank">
-                    <input
-                      value={editDealForm.bank}
-                      onChange={e => setEditDealForm(f => ({ ...f, bank: e.target.value }))}
-                      placeholder="Bank name"
-                      className="bg-transparent text-right text-sm font-medium text-white w-40 outline-none focus:text-gold-300 placeholder-gray-700"
-                    />
-                  </ERow>
+                  <div className={rowCls}>
+                    <span className="text-gray-500 text-sm shrink-0">Bank</span>
+                    <input value={editDealForm.bank} onChange={e => setEditDealForm(f => ({ ...f, bank: e.target.value }))} placeholder="Bank name" className="bg-transparent text-right text-sm font-medium text-white w-40 outline-none focus:text-gold-300 placeholder-gray-700" />
+                  </div>
                 )}
-                <ERow label="Selling Price"><NumInput field="sellingPrice" /></ERow>
-                <ERow label="Discount"><NumInput field="discount" /></ERow>
-                <ERow label="Insurance"><NumInput field="insurance" /></ERow>
-                <ERow label="Bank Product"><NumInput field="bankProduct" /></ERow>
-                {dealIsLoan
-                  ? <ERow label="Loan Amount"><NumInput field="loanAmount" /></ERow>
-                  : <ERow label="Downpayment"><NumInput field="downpayment" /></ERow>
-                }
-                <ERow label="Deposit / Booking Fee"><NumInput field="bookingFee" /></ERow>
+                <div className={rowCls}>
+                  <span className="text-gray-500 text-sm shrink-0">Selling Price</span>
+                  <input type="number" min={0} placeholder="0" value={editDealForm.sellingPrice || ''} onChange={e => setEditDealForm(f => ({ ...f, sellingPrice: Number(e.target.value) }))} className={inputCls} />
+                </div>
+                <div className={rowCls}>
+                  <span className="text-gray-500 text-sm shrink-0">Discount</span>
+                  <input type="number" min={0} placeholder="0" value={editDealForm.discount || ''} onChange={e => setEditDealForm(f => ({ ...f, discount: Number(e.target.value) }))} className={inputCls} />
+                </div>
+                <div className={rowCls}>
+                  <span className="text-gray-500 text-sm shrink-0">Insurance</span>
+                  <input type="number" min={0} placeholder="0" value={editDealForm.insurance || ''} onChange={e => setEditDealForm(f => ({ ...f, insurance: Number(e.target.value) }))} className={inputCls} />
+                </div>
+                <div className={rowCls}>
+                  <span className="text-gray-500 text-sm shrink-0">Bank Product</span>
+                  <input type="number" min={0} placeholder="0" value={editDealForm.bankProduct || ''} onChange={e => setEditDealForm(f => ({ ...f, bankProduct: Number(e.target.value) }))} className={inputCls} />
+                </div>
+                {dealIsLoan ? (
+                  <div className={rowCls}>
+                    <span className="text-gray-500 text-sm shrink-0">Loan Amount</span>
+                    <input type="number" min={0} placeholder="0" value={editDealForm.loanAmount || ''} onChange={e => setEditDealForm(f => ({ ...f, loanAmount: Number(e.target.value) }))} className={inputCls} />
+                  </div>
+                ) : (
+                  <div className={rowCls}>
+                    <span className="text-gray-500 text-sm shrink-0">Downpayment</span>
+                    <input type="number" min={0} placeholder="0" value={editDealForm.downpayment || ''} onChange={e => setEditDealForm(f => ({ ...f, downpayment: Number(e.target.value) }))} className={inputCls} />
+                  </div>
+                )}
+                <div className={rowCls}>
+                  <span className="text-gray-500 text-sm shrink-0">Deposit / Booking Fee</span>
+                  <input type="number" min={0} placeholder="0" value={editDealForm.bookingFee || ''} onChange={e => setEditDealForm(f => ({ ...f, bookingFee: Number(e.target.value) }))} className={inputCls} />
+                </div>
 
-                {/* Additional items */}
                 {editDealForm.additionalItems.map((item, i) => (
                   <div key={i} className="flex items-center py-2.5 border-b border-obsidian-400/30 gap-2">
-                    <input
-                      className="bg-transparent text-sm text-gray-400 flex-1 outline-none focus:text-white placeholder-gray-700"
-                      value={item.label}
-                      onChange={e => setEditDealForm(f => ({ ...f, additionalItems: f.additionalItems.map((x, j) => j === i ? { ...x, label: e.target.value } : x) }))}
-                      placeholder="Item name"
-                    />
-                    <input
-                      type="number"
-                      className="bg-transparent text-right text-sm font-medium text-white w-24 outline-none focus:text-gold-300 placeholder-gray-700"
-                      value={item.amount || ''}
-                      onChange={e => setEditDealForm(f => ({ ...f, additionalItems: f.additionalItems.map((x, j) => j === i ? { ...x, amount: Number(e.target.value) } : x) }))}
-                      placeholder="0"
-                      min={0}
-                    />
-                    <button onClick={() => setEditDealForm(f => ({ ...f, additionalItems: f.additionalItems.filter((_, j) => j !== i) }))} className="text-gray-600 hover:text-red-400 transition-colors shrink-0">
-                      <X size={13} />
-                    </button>
+                    <input className="bg-transparent text-sm text-gray-400 flex-1 outline-none focus:text-white placeholder-gray-700" value={item.label} onChange={e => setEditDealForm(f => ({ ...f, additionalItems: f.additionalItems.map((x, j) => j === i ? { ...x, label: e.target.value } : x) }))} placeholder="Item name" />
+                    <input type="number" min={0} placeholder="0" className="bg-transparent text-right text-sm font-medium text-white w-24 outline-none focus:text-gold-300 placeholder-gray-700" value={item.amount || ''} onChange={e => setEditDealForm(f => ({ ...f, additionalItems: f.additionalItems.map((x, j) => j === i ? { ...x, amount: Number(e.target.value) } : x) }))} />
+                    <button onClick={() => setEditDealForm(f => ({ ...f, additionalItems: f.additionalItems.filter((_, j) => j !== i) }))} className="text-gray-600 hover:text-red-400 transition-colors shrink-0"><X size={13} /></button>
                   </div>
                 ))}
                 <div className="py-2.5 border-b border-obsidian-400/30">
-                  <button
-                    onClick={() => setEditDealForm(f => ({ ...f, additionalItems: [...f.additionalItems, { label: '', amount: 0 }] }))}
-                    className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-400 transition-colors"
-                  >
+                  <button onClick={() => setEditDealForm(f => ({ ...f, additionalItems: [...f.additionalItems, { label: '', amount: 0 }] }))} className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-400 transition-colors">
                     <Plus size={11} /> Add item
                   </button>
                 </div>
 
-                {/* Balance (loan only) */}
                 {dealIsLoan && (
                   <div className={`flex justify-between items-center pt-3 mt-1 border-t-2 ${Math.abs(bal) < 0.01 ? 'border-green-500/40' : 'border-red-500/40'}`}>
                     <span className="text-white font-semibold text-sm">Balance</span>
