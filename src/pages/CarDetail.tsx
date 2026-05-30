@@ -515,7 +515,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       <nav className="flex items-center gap-1.5 text-xs text-gray-500 mb-4">
         <span
           className="hover:text-gold-400 cursor-pointer transition-colors"
-          onClick={() => navigate(fromHistory ? '/history' : inventoryBackUrl)}
+          onClick={() => navigate(fromHistory ? '/history' : inventoryBackUrl, fromTab ? { state: { inventoryTab: fromTab } } : undefined)}
         >
           {fromHistory ? 'Delivered' : 'Inventory'}
         </span>
@@ -2617,5 +2617,5 @@ export default function CarDetail() {
   const location = useLocation();
   const fromTab = (location.state as any)?.inventoryTab;
   const backUrl = fromTab && fromTab !== 'stock' ? `/inventory?tab=${fromTab}` : '/inventory';
-  return <CarDetailContent id={id!} onBack={() => navigate(backUrl)} />;
+  return <CarDetailContent id={id!} onBack={() => navigate(backUrl, { state: { inventoryTab: fromTab } })} />;
 }

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { thumbUrl } from '../utils/photoUrl';
 import {
   Search,
@@ -173,6 +173,7 @@ export default function Inventory() {
   const updateCustomer = useStore((s) => s.updateCustomer);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
 
   const getLocation = (car: Car): string => {
     if (car.status === 'delivered') return 'Delivered';
@@ -194,9 +195,13 @@ export default function Inventory() {
   }, []);
 
   const tabParam = searchParams.get('tab');
-  const [inventoryTab, setInventoryTab] = useState<'stock' | 'coming_soon' | 'pending_delivery'>(
-    tabParam === 'coming_soon' ? 'coming_soon' : tabParam === 'pending_delivery' ? 'pending_delivery' : 'stock'
-  );
+  const stateTab = (location.state as any)?.inventoryTab as string | undefined;
+  const [inventoryTab, setInventoryTab] = useState<'stock' | 'coming_soon' | 'pending_delivery'>(() => {
+    const t = tabParam || stateTab;
+    if (t === 'coming_soon') return 'coming_soon';
+    if (t === 'pending_delivery') return 'pending_delivery';
+    return 'stock';
+  });
   const [search, setSearch] = useState('');
   const [filterMake, setFilterMake] = useState('All');
   const [filterTransmission, setFilterTransmission] = useState('All');
