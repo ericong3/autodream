@@ -1150,8 +1150,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           const additionalItems = wo?.additionalItems ?? [];
           const additionalTotal = additionalItems.reduce((s, i) => s + i.amount, 0);
           const loanAmount = isLoan ? ((wo as any)?.loanAmount ?? 0) : 0;
-          // Salesman balance: total payable minus loan amount = amount to collect from customer
-          const balance = sellingPrice - discount + insurance + bankProduct + additionalTotal - loanAmount;
+          // Salesman balance: total payable minus loan amount and deposit already collected
+          const bookingFee = wo?.bookingFee ?? 0;
+          const balance = sellingPrice - discount + insurance + bankProduct + additionalTotal - loanAmount - bookingFee;
 
 
           // Director profit
@@ -2450,9 +2451,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       <Modal isOpen={showEditDeal} onClose={() => setShowEditDeal(false)} title="Edit Deal Details" maxWidth="max-w-md">
         <div className="max-h-[70vh] overflow-y-auto -mx-1 px-1">
           {(() => {
-            const { sellingPrice, discount, insurance, bankProduct, loanAmount, additionalItems } = editDealForm;
+            const { sellingPrice, discount, insurance, bankProduct, loanAmount, bookingFee, additionalItems } = editDealForm;
             const addTotal = additionalItems.reduce((s, x) => s + x.amount, 0);
-            const bal = sellingPrice - discount + insurance + bankProduct + addTotal - loanAmount;
+            const bal = sellingPrice - discount + insurance + bankProduct + addTotal - loanAmount - bookingFee;
             const rowCls = "flex items-center justify-between py-2.5 border-b border-obsidian-400/30 gap-4";
             const inputCls = "bg-transparent text-right text-sm font-medium text-white w-32 outline-none focus:text-gold-300 placeholder-gray-700";
             return (
