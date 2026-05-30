@@ -193,6 +193,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     soldDate: '',
   });
   const [savingDeal, setSavingDeal] = useState(false);
+  const [showAdditionalItems, setShowAdditionalItems] = useState(false);
 
   const openEditDeal = () => {
     if (!car) return;
@@ -209,6 +210,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       additionalItems: [...(dealWo?.additionalItems ?? [])],
       soldDate: car.finalDeal?.submittedAt?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
     });
+    setShowAdditionalItems(false);
     setShowEditDeal(true);
   };
 
@@ -2475,66 +2477,73 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             </div>
           )}
 
-          {/* Core financials */}
-          {([
-            { key: 'sellingPrice', label: 'Selling Price' },
-            { key: 'discount', label: 'Discount' },
-            { key: 'insurance', label: 'Insurance' },
-            { key: 'bankProduct', label: 'Bank Product' },
-            ...(dealIsLoan ? [{ key: 'loanAmount', label: 'Loan Amount' }] : [{ key: 'downpayment', label: 'Downpayment' }]),
-            { key: 'bookingFee', label: 'Deposit / Booking Fee' },
-          ] as { key: keyof typeof editDealForm; label: string }[]).map(({ key, label }) => (
-            <div key={key}>
-              <label className="block text-xs text-gray-500 mb-1">{label}</label>
-              <input
-                type="number"
-                className="input w-full"
-                value={(editDealForm[key] as number) || ''}
-                onChange={e => setEditDealForm(f => ({ ...f, [key]: Number(e.target.value) }))}
-                placeholder="0.00"
-                min={0}
-              />
-            </div>
-          ))}
-
-          {/* Additional items */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs text-gray-500">Additional Items</label>
-              <button
-                onClick={() => setEditDealForm(f => ({ ...f, additionalItems: [...f.additionalItems, { label: '', amount: 0 }] }))}
-                className="text-xs text-gold-400 hover:text-gold-300 flex items-center gap-1"
-              >
-                <Plus size={12} /> Add
-              </button>
-            </div>
-            {editDealForm.additionalItems.length === 0 && (
-              <p className="text-xs text-gray-600 italic">No additional items</p>
-            )}
-            {editDealForm.additionalItems.map((item, i) => (
-              <div key={i} className="flex gap-2 mb-2">
-                <input
-                  className="input flex-1 text-sm"
-                  value={item.label}
-                  onChange={e => setEditDealForm(f => ({ ...f, additionalItems: f.additionalItems.map((x, j) => j === i ? { ...x, label: e.target.value } : x) }))}
-                  placeholder="Item name"
-                />
+          {/* Core financials — 2-col grid */}
+          <div className="grid grid-cols-2 gap-3">
+            {([
+              { key: 'sellingPrice', label: 'Selling Price' },
+              { key: 'discount', label: 'Discount' },
+              { key: 'insurance', label: 'Insurance' },
+              { key: 'bankProduct', label: 'Bank Product' },
+              ...(dealIsLoan ? [{ key: 'loanAmount', label: 'Loan Amount' }] : [{ key: 'downpayment', label: 'Downpayment' }]),
+              { key: 'bookingFee', label: 'Deposit / Booking Fee' },
+            ] as { key: keyof typeof editDealForm; label: string }[]).map(({ key, label }) => (
+              <div key={key}>
+                <label className="block text-xs text-gray-500 mb-1">{label}</label>
                 <input
                   type="number"
-                  className="input w-28 text-sm"
-                  value={item.amount || ''}
-                  onChange={e => setEditDealForm(f => ({ ...f, additionalItems: f.additionalItems.map((x, j) => j === i ? { ...x, amount: Number(e.target.value) } : x) }))}
+                  className="input w-full"
+                  value={(editDealForm[key] as number) || ''}
+                  onChange={e => setEditDealForm(f => ({ ...f, [key]: Number(e.target.value) }))}
                   placeholder="0.00"
                   min={0}
                 />
-                <button
-                  onClick={() => setEditDealForm(f => ({ ...f, additionalItems: f.additionalItems.filter((_, j) => j !== i) }))}
-                  className="p-2 text-gray-500 hover:text-red-400 transition-colors"
-                >
-                  <X size={14} />
-                </button>
               </div>
             ))}
+          </div>
+
+          {/* Additional items — collapsed by default */}
+          <div>
+            <button
+              onClick={() => setShowAdditionalItems(v => !v)}
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+            >
+              <Plus size={12} className={`transition-transform ${showAdditionalItems ? 'rotate-45' : ''}`} />
+              {showAdditionalItems ? 'Hide additional items' : `Additional items${editDealForm.additionalItems.length > 0 ? ` (${editDealForm.additionalItems.length})` : ''}`}
+            </button>
+            {showAdditionalItems && (
+              <div className="mt-3 space-y-2">
+                {editDealForm.additionalItems.map((item, i) => (
+                  <div key={i} className="flex gap-2">
+                    <input
+                      className="input flex-1 text-sm"
+                      value={item.label}
+                      onChange={e => setEditDealForm(f => ({ ...f, additionalItems: f.additionalItems.map((x, j) => j === i ? { ...x, label: e.target.value } : x) }))}
+                      placeholder="Item name"
+                    />
+                    <input
+                      type="number"
+                      className="input w-28 text-sm"
+                      value={item.amount || ''}
+                      onChange={e => setEditDealForm(f => ({ ...f, additionalItems: f.additionalItems.map((x, j) => j === i ? { ...x, amount: Number(e.target.value) } : x) }))}
+                      placeholder="0.00"
+                      min={0}
+                    />
+                    <button
+                      onClick={() => setEditDealForm(f => ({ ...f, additionalItems: f.additionalItems.filter((_, j) => j !== i) }))}
+                      className="p-2 text-gray-500 hover:text-red-400 transition-colors"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  onClick={() => setEditDealForm(f => ({ ...f, additionalItems: [...f.additionalItems, { label: '', amount: 0 }] }))}
+                  className="text-xs text-gray-600 hover:text-gray-400 flex items-center gap-1 mt-1"
+                >
+                  <Plus size={11} /> Add item
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Balance preview (loan only) */}
