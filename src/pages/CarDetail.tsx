@@ -1210,16 +1210,13 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                     <DRow key={i} label={`+ ${item.label}`} value={formatRM(item.amount)} valueClass="text-white" />
                   ))}
                   {loanAmount > 0 && <DRow label="− Loan Amount" value={formatRM(loanAmount)} valueClass="text-red-400" />}
-                  <div className={`flex justify-between items-center pt-3 mt-1 border-t-2 ${Math.abs(balance) < 0.01 ? 'border-green-500/40' : 'border-red-500/40'}`}>
-                    <span className="text-white font-semibold text-sm">Balance</span>
-                    <div className="text-right">
-                      <span className={`text-lg font-bold ${Math.abs(balance) < 0.01 ? 'text-green-400' : 'text-red-400'}`}>
-                        {formatRM(balance)}
-                      </span>
-                      <p className={`text-xs mt-0.5 ${Math.abs(balance) < 0.01 ? 'text-green-500' : 'text-red-400'}`}>
-                        {Math.abs(balance) < 0.01 ? '✓ Balanced' : 'Amounts do not balance'}
-                      </p>
-                    </div>
+                  <div className={`flex justify-between items-center pt-3 mt-1 border-t-2 ${Math.abs(balance) < 0.01 ? 'border-green-500/40' : balance < 0 ? 'border-sky-500/40' : 'border-orange-500/40'}`}>
+                    <span className="text-white font-semibold text-sm">
+                      {Math.abs(balance) < 0.01 ? 'Balance' : balance < 0 ? 'Refund to Customer' : 'Collect from Customer'}
+                    </span>
+                    <span className={`text-lg font-bold ${Math.abs(balance) < 0.01 ? 'text-green-400' : balance < 0 ? 'text-sky-300' : 'text-orange-400'}`}>
+                      {Math.abs(balance) < 0.01 ? '✓ Balanced' : formatRM(Math.abs(balance))}
+                    </span>
                   </div>
                 </Section>
               )}
@@ -2514,12 +2511,13 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 </div>
 
                 {dealIsLoan && (
-                  <div className={`flex justify-between items-center pt-3 mt-1 border-t-2 ${Math.abs(bal) < 0.01 ? 'border-green-500/40' : 'border-red-500/40'}`}>
-                    <span className="text-white font-semibold text-sm">Balance</span>
-                    <div className="text-right">
-                      <span className={`text-base font-bold ${Math.abs(bal) < 0.01 ? 'text-green-400' : 'text-red-400'}`}>{formatRM(bal)}</span>
-                      <p className={`text-xs mt-0.5 ${Math.abs(bal) < 0.01 ? 'text-green-600' : 'text-red-400'}`}>{Math.abs(bal) < 0.01 ? '✓ Balanced' : 'Amounts do not balance'}</p>
-                    </div>
+                  <div className={`flex justify-between items-center pt-3 mt-1 border-t-2 ${Math.abs(bal) < 0.01 ? 'border-green-500/40' : bal < 0 ? 'border-sky-500/40' : 'border-orange-500/40'}`}>
+                    <span className="text-white font-semibold text-sm">
+                      {Math.abs(bal) < 0.01 ? 'Balance' : bal < 0 ? 'Refund to Customer' : 'Collect from Customer'}
+                    </span>
+                    <span className={`text-base font-bold ${Math.abs(bal) < 0.01 ? 'text-green-400' : bal < 0 ? 'text-sky-300' : 'text-orange-400'}`}>
+                      {Math.abs(bal) < 0.01 ? '✓ Balanced' : formatRM(Math.abs(bal))}
+                    </span>
                   </div>
                 )}
               </div>
