@@ -1583,7 +1583,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           )}
 
           {/* Coming Soon Type — shown right after Status when applicable */}
-          {editForm.status === 'coming_soon' && (
+          {(editForm.status ?? car.status) === 'coming_soon' && (
             <div className="col-span-2">
               <label className="block text-gray-300 text-xs font-medium mb-1.5">Coming Soon Type</label>
               <div className="grid grid-cols-2 gap-2">
