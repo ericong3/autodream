@@ -193,7 +193,6 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     soldDate: '',
   });
   const [savingDeal, setSavingDeal] = useState(false);
-  const [showAdditionalItems, setShowAdditionalItems] = useState(false);
 
   const openEditDeal = () => {
     if (!car) return;
@@ -210,7 +209,6 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       additionalItems: [...(dealWo?.additionalItems ?? [])],
       soldDate: car.finalDeal?.submittedAt?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
     });
-    setShowAdditionalItems(false);
     setShowEditDeal(true);
   };
 
@@ -2450,118 +2448,99 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
 
       {/* ── Edit Deal Modal ── */}
       <Modal isOpen={showEditDeal} onClose={() => setShowEditDeal(false)} title="Edit Deal Details" maxWidth="max-w-md">
-        <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
-
-          {/* Date sold */}
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Date Sold</label>
-            <input
-              type="date"
-              className="input w-full"
-              value={editDealForm.soldDate}
-              max={new Date().toISOString().slice(0, 10)}
-              onChange={e => setEditDealForm(f => ({ ...f, soldDate: e.target.value }))}
-            />
-          </div>
-
-          {/* Bank (loan only) */}
-          {dealIsLoan && (
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Bank</label>
-              <input
-                className="input w-full"
-                value={editDealForm.bank}
-                onChange={e => setEditDealForm(f => ({ ...f, bank: e.target.value }))}
-                placeholder="Bank name"
-              />
-            </div>
-          )}
-
-          {/* Core financials — 2-col grid */}
-          <div className="grid grid-cols-2 gap-3">
-            {([
-              { key: 'sellingPrice', label: 'Selling Price' },
-              { key: 'discount', label: 'Discount' },
-              { key: 'insurance', label: 'Insurance' },
-              { key: 'bankProduct', label: 'Bank Product' },
-              ...(dealIsLoan ? [{ key: 'loanAmount', label: 'Loan Amount' }] : [{ key: 'downpayment', label: 'Downpayment' }]),
-              { key: 'bookingFee', label: 'Deposit / Booking Fee' },
-            ] as { key: keyof typeof editDealForm; label: string }[]).map(({ key, label }) => (
-              <div key={key}>
-                <label className="block text-xs text-gray-500 mb-1">{label}</label>
-                <input
-                  type="number"
-                  className="input w-full"
-                  value={(editDealForm[key] as number) || ''}
-                  onChange={e => setEditDealForm(f => ({ ...f, [key]: Number(e.target.value) }))}
-                  placeholder="0.00"
-                  min={0}
-                />
+        <div className="max-h-[70vh] overflow-y-auto -mx-1 px-1">
+          {(() => {
+            const ERow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+              <div className="flex items-center justify-between py-2.5 border-b border-obsidian-400/30 gap-4">
+                <span className="text-gray-500 text-sm shrink-0">{label}</span>
+                {children}
               </div>
-            ))}
-          </div>
-
-          {/* Additional items — collapsed by default */}
-          <div>
-            <button
-              onClick={() => setShowAdditionalItems(v => !v)}
-              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
-            >
-              <Plus size={12} className={`transition-transform ${showAdditionalItems ? 'rotate-45' : ''}`} />
-              {showAdditionalItems ? 'Hide additional items' : `Additional items${editDealForm.additionalItems.length > 0 ? ` (${editDealForm.additionalItems.length})` : ''}`}
-            </button>
-            {showAdditionalItems && (
-              <div className="mt-3 space-y-2">
-                {editDealForm.additionalItems.map((item, i) => (
-                  <div key={i} className="flex gap-2">
+            );
+            const NumInput = ({ field }: { field: keyof typeof editDealForm }) => (
+              <input
+                type="number"
+                min={0}
+                placeholder="0"
+                value={(editDealForm[field] as number) || ''}
+                onChange={e => setEditDealForm(f => ({ ...f, [field]: Number(e.target.value) }))}
+                className="bg-transparent text-right text-sm font-medium text-white w-32 outline-none focus:text-gold-300 placeholder-gray-700"
+              />
+            );
+            const { sellingPrice, discount, insurance, bankProduct, loanAmount, additionalItems } = editDealForm;
+            const addTotal = additionalItems.reduce((s, x) => s + x.amount, 0);
+            const bal = sellingPrice - discount + insurance + bankProduct + addTotal - loanAmount;
+            return (
+              <div>
+                <ERow label="Date Sold">
+                  <input
+                    type="date"
+                    value={editDealForm.soldDate}
+                    max={new Date().toISOString().slice(0, 10)}
+                    onChange={e => setEditDealForm(f => ({ ...f, soldDate: e.target.value }))}
+                    className="bg-transparent text-right text-sm font-medium text-white outline-none focus:text-gold-300"
+                  />
+                </ERow>
+                {dealIsLoan && (
+                  <ERow label="Bank">
                     <input
-                      className="input flex-1 text-sm"
+                      value={editDealForm.bank}
+                      onChange={e => setEditDealForm(f => ({ ...f, bank: e.target.value }))}
+                      placeholder="Bank name"
+                      className="bg-transparent text-right text-sm font-medium text-white w-40 outline-none focus:text-gold-300 placeholder-gray-700"
+                    />
+                  </ERow>
+                )}
+                <ERow label="Selling Price"><NumInput field="sellingPrice" /></ERow>
+                <ERow label="Discount"><NumInput field="discount" /></ERow>
+                <ERow label="Insurance"><NumInput field="insurance" /></ERow>
+                <ERow label="Bank Product"><NumInput field="bankProduct" /></ERow>
+                {dealIsLoan
+                  ? <ERow label="Loan Amount"><NumInput field="loanAmount" /></ERow>
+                  : <ERow label="Downpayment"><NumInput field="downpayment" /></ERow>
+                }
+                <ERow label="Deposit / Booking Fee"><NumInput field="bookingFee" /></ERow>
+
+                {/* Additional items */}
+                {editDealForm.additionalItems.map((item, i) => (
+                  <div key={i} className="flex items-center py-2.5 border-b border-obsidian-400/30 gap-2">
+                    <input
+                      className="bg-transparent text-sm text-gray-400 flex-1 outline-none focus:text-white placeholder-gray-700"
                       value={item.label}
                       onChange={e => setEditDealForm(f => ({ ...f, additionalItems: f.additionalItems.map((x, j) => j === i ? { ...x, label: e.target.value } : x) }))}
                       placeholder="Item name"
                     />
                     <input
                       type="number"
-                      className="input w-28 text-sm"
+                      className="bg-transparent text-right text-sm font-medium text-white w-24 outline-none focus:text-gold-300 placeholder-gray-700"
                       value={item.amount || ''}
                       onChange={e => setEditDealForm(f => ({ ...f, additionalItems: f.additionalItems.map((x, j) => j === i ? { ...x, amount: Number(e.target.value) } : x) }))}
-                      placeholder="0.00"
+                      placeholder="0"
                       min={0}
                     />
-                    <button
-                      onClick={() => setEditDealForm(f => ({ ...f, additionalItems: f.additionalItems.filter((_, j) => j !== i) }))}
-                      className="p-2 text-gray-500 hover:text-red-400 transition-colors"
-                    >
-                      <X size={14} />
+                    <button onClick={() => setEditDealForm(f => ({ ...f, additionalItems: f.additionalItems.filter((_, j) => j !== i) }))} className="text-gray-600 hover:text-red-400 transition-colors shrink-0">
+                      <X size={13} />
                     </button>
                   </div>
                 ))}
-                <button
-                  onClick={() => setEditDealForm(f => ({ ...f, additionalItems: [...f.additionalItems, { label: '', amount: 0 }] }))}
-                  className="text-xs text-gray-600 hover:text-gray-400 flex items-center gap-1 mt-1"
-                >
-                  <Plus size={11} /> Add item
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Balance preview (loan only) */}
-          {dealIsLoan && (() => {
-            const { sellingPrice, discount, insurance, bankProduct, loanAmount, additionalItems } = editDealForm;
-            const addTotal = additionalItems.reduce((s, x) => s + x.amount, 0);
-            const bal = sellingPrice - discount + insurance + bankProduct + addTotal - loanAmount;
-            return (
-              <div className={`rounded-lg px-4 py-3 border ${Math.abs(bal) < 0.01 ? 'border-green-500/30 bg-green-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-400">Balance</span>
-                  <span className={`text-sm font-bold ${Math.abs(bal) < 0.01 ? 'text-green-400' : 'text-red-400'}`}>
-                    {formatRM(bal)}
-                  </span>
+                <div className="py-2.5 border-b border-obsidian-400/30">
+                  <button
+                    onClick={() => setEditDealForm(f => ({ ...f, additionalItems: [...f.additionalItems, { label: '', amount: 0 }] }))}
+                    className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-400 transition-colors"
+                  >
+                    <Plus size={11} /> Add item
+                  </button>
                 </div>
-                <p className={`text-xs mt-0.5 ${Math.abs(bal) < 0.01 ? 'text-green-600' : 'text-red-500'}`}>
-                  {Math.abs(bal) < 0.01 ? '✓ Balanced' : 'Amounts do not balance to zero'}
-                </p>
+
+                {/* Balance (loan only) */}
+                {dealIsLoan && (
+                  <div className={`flex justify-between items-center pt-3 mt-1 border-t-2 ${Math.abs(bal) < 0.01 ? 'border-green-500/40' : 'border-red-500/40'}`}>
+                    <span className="text-white font-semibold text-sm">Balance</span>
+                    <div className="text-right">
+                      <span className={`text-base font-bold ${Math.abs(bal) < 0.01 ? 'text-green-400' : 'text-red-400'}`}>{formatRM(bal)}</span>
+                      <p className={`text-xs mt-0.5 ${Math.abs(bal) < 0.01 ? 'text-green-600' : 'text-red-400'}`}>{Math.abs(bal) < 0.01 ? '✓ Balanced' : 'Amounts do not balance'}</p>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })()}
