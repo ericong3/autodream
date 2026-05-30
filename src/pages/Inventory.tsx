@@ -34,7 +34,7 @@ import { Car, Customer, LoanWorkOrder, CashWorkOrder, PostSaleChecklist } from '
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
+  MouseSensor,
   useSensor,
   useSensors,
   closestCenter,
@@ -219,7 +219,7 @@ export default function Inventory() {
   const [pendingOrder, setPendingOrder] = useState<string[]>([]);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
   );
 
   // Swipe to change tab (mobile) — document-level listeners bypass browser scroll interception
