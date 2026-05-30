@@ -206,6 +206,7 @@ export default function Inventory() {
   const [filterMake, setFilterMake] = useState('All');
   const [filterTransmission, setFilterTransmission] = useState('All');
   const [filterStatus, setFilterStatus] = useState('');
+  const [filterComingSoonType, setFilterComingSoonType] = useState<string>('all');
   const [sortBy, setSortBy] = useState('dateAdded-desc');
   const [showModal, setShowModal] = useState(false);
   const [deleteCarId, setDeleteCarId] = useState<string | null>(null);
@@ -412,8 +413,9 @@ export default function Inventory() {
       );
     }
     if (filterMake !== 'All') result = result.filter((c) => c.make === filterMake);
+    if (filterComingSoonType !== 'all') result = result.filter((c) => (c.comingSoonType ?? 'direct_purchase') === filterComingSoonType);
     return result.sort((a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime());
-  }, [cars, search, filterMake]);
+  }, [cars, search, filterMake, filterComingSoonType]);
 
   const consignedOut = useMemo(() =>
     cars.filter((c) => !!c.outgoingConsignment && c.status !== 'delivered'),
@@ -549,7 +551,7 @@ export default function Inventory() {
         {/* Tabs */}
         <div className="flex gap-1 bg-[#0F0E0C] border border-obsidian-400/60 rounded-lg p-1 w-full sm:w-fit">
           <button
-            onClick={() => { setInventoryTab('stock'); setSearchParams({}); }}
+            onClick={() => { setInventoryTab('stock'); setSearchParams({}); setFilterComingSoonType('all'); }}
             className={`flex-1 sm:flex-none min-w-0 px-2 sm:px-4 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${inventoryTab === 'stock' ? 'bg-gold-500 text-white' : 'text-gray-400 hover:text-white'}`}
           >
             Stock
@@ -570,7 +572,7 @@ export default function Inventory() {
             )}
           </button>
           <button
-            onClick={() => { setInventoryTab('pending_delivery'); setSearchParams({ tab: 'pending_delivery' }); }}
+            onClick={() => { setInventoryTab('pending_delivery'); setSearchParams({ tab: 'pending_delivery' }); setFilterComingSoonType('all'); }}
             className={`flex-1 sm:flex-none min-w-0 px-2 sm:px-4 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${inventoryTab === 'pending_delivery' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'}`}
           >
             <span className="hidden sm:inline">Pending Delivery</span>
@@ -599,6 +601,15 @@ export default function Inventory() {
 
           {/* Filters */}
           <Select value={filterMake} onChange={setFilterMake} options={CAR_MAKES} placeholder="Brand" />
+          {inventoryTab === 'coming_soon' && (
+            <Select
+              value={filterComingSoonType}
+              onChange={setFilterComingSoonType}
+              options={['all', 'trade_in', 'direct_purchase', 'pending_shipment', 'in_shipment']}
+              labels={['All Types', 'Trade In', 'Direct Purchase', 'Pending Shipment', 'In Shipment']}
+              placeholder="Type"
+            />
+          )}
           {inventoryTab === 'stock' && (
             <Select
               value={filterTransmission}
