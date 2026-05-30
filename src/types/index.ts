@@ -283,6 +283,7 @@ export interface Car {
   carInDate?: string;            // date director clicked "Car In" — commission counts from this date
   disbursementAmount?: number;   // loan disbursement from bank (RM)
   disbursementDate?: string;     // date bank sent the money
+  comingSoonType?: 'trade_in' | 'direct_purchase' | 'pending_shipment' | 'in_shipment';
 }
 
 export interface MiscCost {

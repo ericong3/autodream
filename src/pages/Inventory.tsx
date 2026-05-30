@@ -944,9 +944,19 @@ export default function Inventory() {
                         ) : (
                           <CarIcon size={40} className="text-gray-700 group-hover:text-gray-600 transition-colors" />
                         )}
-                        <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                          Coming Soon
-                        </span>
+                        <div className="absolute top-2 right-2 flex flex-col items-end gap-1">
+                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/30">Coming Soon</span>
+                          {car.comingSoonType && (
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                              car.comingSoonType === 'trade_in'         ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' :
+                              car.comingSoonType === 'direct_purchase'  ? 'bg-sky-500/15 text-sky-300 border-sky-500/30' :
+                              car.comingSoonType === 'pending_shipment' ? 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30' :
+                                                                          'bg-green-500/15 text-green-300 border-green-500/30'
+                            }`}>
+                              {car.comingSoonType === 'trade_in' ? 'Trade In' : car.comingSoonType === 'direct_purchase' ? 'Direct Purchase' : car.comingSoonType === 'pending_shipment' ? 'Pending Shipment' : 'In Shipment'}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       {/* Info */}
                       <div className="p-4">
@@ -1059,9 +1069,19 @@ export default function Inventory() {
                           <p className="text-gray-600 text-xs">Cost: {formatRM(car.purchasePrice)}</p>
                         )}
                       </div>
-                      <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 whitespace-nowrap">
-                        Coming Soon
-                      </span>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 whitespace-nowrap">Coming Soon</span>
+                        {car.comingSoonType && (
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${
+                            car.comingSoonType === 'trade_in'         ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' :
+                            car.comingSoonType === 'direct_purchase'  ? 'bg-sky-500/15 text-sky-300 border-sky-500/30' :
+                            car.comingSoonType === 'pending_shipment' ? 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30' :
+                                                                        'bg-green-500/15 text-green-300 border-green-500/30'
+                          }`}>
+                            {car.comingSoonType === 'trade_in' ? 'Trade In' : car.comingSoonType === 'direct_purchase' ? 'Direct Purchase' : car.comingSoonType === 'pending_shipment' ? 'Pending Shipment' : 'In Shipment'}
+                          </span>
+                        )}
+                      </div>
                       {isDirector && (
                         <button
                           onClick={(e) => {
@@ -1603,6 +1623,29 @@ export default function Inventory() {
                 <p className="text-xs opacity-60 mt-0.5">Car is confirmed but not yet in the shop</p>
               </div>
             </button>
+            {isComingSoon && (
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {([
+                  { value: 'trade_in',        label: 'Trade In',           desc: 'Customer changing car' },
+                  { value: 'direct_purchase', label: 'Direct Purchase',    desc: 'Buying directly, car pending' },
+                  { value: 'pending_shipment',label: 'Pending Shipment',   desc: 'West M\'sia, not yet shipped' },
+                  { value: 'in_shipment',     label: 'In Shipment',        desc: 'Currently on the way' },
+                ] as const).map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, comingSoonType: f.comingSoonType === opt.value ? undefined : opt.value }))}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-left transition-colors ${form.comingSoonType === opt.value ? 'bg-purple-500/15 border-purple-500/50 text-purple-300' : 'bg-obsidian-700/40 border-obsidian-400/40 text-gray-500 hover:border-obsidian-400/70'}`}
+                  >
+                    <div className={`w-3 h-3 rounded-full shrink-0 ${form.comingSoonType === opt.value ? 'bg-purple-400' : 'bg-obsidian-500'}`} />
+                    <div>
+                      <p className="text-xs font-medium leading-tight">{opt.label}</p>
+                      <p className="text-[10px] opacity-60 leading-tight">{opt.desc}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           {/* Incoming Consignment */}
           <div className="col-span-2">
