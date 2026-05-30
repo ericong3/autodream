@@ -1213,6 +1213,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   {additionalItems.map((item, i) => (
                     <DRow key={i} label={`+ ${item.label}`} value={formatRM(item.amount)} valueClass="text-white" />
                   ))}
+                  {bookingFee > 0 && <DRow label="− Deposit / Booking Fee" value={formatRM(bookingFee)} valueClass="text-red-400" />}
                   {loanAmount > 0 && <DRow label="− Loan Amount" value={formatRM(loanAmount)} valueClass="text-red-400" />}
                   <div className={`flex justify-between items-center pt-3 mt-1 border-t-2 ${Math.abs(balance) < 0.01 ? 'border-green-500/40' : balance < 0 ? 'border-sky-500/40' : 'border-orange-500/40'}`}>
                     <span className="text-white font-semibold text-sm">
