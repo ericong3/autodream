@@ -187,6 +187,7 @@ function rowToCar(r: any): Car {
     carInDate: r.car_in_date ?? undefined,
     disbursementAmount: r.disbursement_amount ?? undefined,
     disbursementDate: r.disbursement_date ?? undefined,
+    comingSoonType: r.coming_soon_type ?? undefined,
   };
 }
 
@@ -286,6 +287,7 @@ function carToRow(c: Partial<Car>) {
   if (c.carInDate !== undefined) row.car_in_date = c.carInDate;
   if (c.disbursementAmount !== undefined) row.disbursement_amount = c.disbursementAmount;
   if (c.disbursementDate !== undefined) row.disbursement_date = c.disbursementDate;
+  if (c.comingSoonType !== undefined) row.coming_soon_type = c.comingSoonType;
   return row;
 }
 
