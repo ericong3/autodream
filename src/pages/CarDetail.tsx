@@ -32,6 +32,7 @@ import {
   Pencil,
   Receipt,
   TrendingUp,
+  CreditCard,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
@@ -39,6 +40,7 @@ import { Car, RepairJob, ChecklistItem, DEFAULT_CHECKLIST_LABELS, WorkOrderItem 
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, formatMileage, generateId, shortName } from '../utils/format';
+import { generateDeliveryPayments, generateRepairPayment, generateMiscCostPayment, generatePanelChargePayment } from '../utils/generatePayments';
 
 
 const STATUS_BADGE: Record<string, string> = {
@@ -129,6 +131,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const deleteRepair = useStore((s) => s.deleteRepair);
   const addMiscCost = useStore((s) => s.addMiscCost);
   const deleteMiscCost = useStore((s) => s.deleteMiscCost);
+  const payments = useStore((s) => s.payments);
+  const addPayment = useStore((s) => s.addPayment);
+  const updatePayment = useStore((s) => s.updatePayment);
 
   const car = cars.find((c) => c.id === id);
   const isDirector = currentUser?.role === 'director';
@@ -170,6 +175,10 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const [miscForm, setMiscForm] = useState({ category: '', merchantName: '', description: '', amount: '', notes: '' });
   const [miscErrors, setMiscErrors] = useState<Record<string, string>>({});
 
+  // ── Panel Dealer Popup ──
+  const [showPanelPopup, setShowPanelPopup] = useState(false);
+  const [panelForm, setPanelForm] = useState({ dealerId: '', chargeAmount: '' });
+
   // ── Repair / Loans tab ──
   const [jobTab, setJobTab] = useState<'repairs' | 'loans' | 'final_deal' | 'misc'>(initialTab ?? 'repairs');
   const [dealView, setDealView] = useState<'salesman' | 'director'>('salesman');
@@ -183,6 +192,20 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const dealCustomer = car ? customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder)) : undefined;
   const dealWo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
   const dealIsLoan = !!dealCustomer?.loanWorkOrder;
+
+  // Customer balance: positive = customer still owes us, negative = we owe customer a refund
+  const customerBalance = (() => {
+    if (!dealCustomer || !car) return 0;
+    const wo = dealCustomer.loanWorkOrder ?? dealCustomer.cashWorkOrder;
+    if (!wo) return 0;
+    const addItems = (wo.additionalItems ?? []).reduce((s: number, i: WorkOrderItem) => s + i.amount, 0);
+    const total = (wo.sellingPrice - (wo.discount ?? 0)) + (wo.insurance ?? 0) + (wo.bankProduct ?? 0) + addItems - (wo.bookingFee ?? 0);
+    if (dealCustomer.loanWorkOrder) {
+      const loanAmt = car.disbursementAmount ?? dealCustomer.loanWorkOrder.loanAmount ?? 0;
+      return total - loanAmt;
+    }
+    return total - ((dealCustomer.cashWorkOrder as any)?.downpayment ?? 0);
+  })();
 
   // ── Edit Deal Modal ──
   const [showEditDeal, setShowEditDeal] = useState(false);
@@ -248,6 +271,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const [showDeliveryModal, setShowDeliveryModal] = useState(false);
   const [deliveryPhoto, setDeliveryPhoto] = useState('');
   const deliveryRef = useRef<HTMLInputElement>(null);
+  const collectionRef = useRef<HTMLInputElement>(null);
 
   // ── Photo Gallery ──
   const [showGallery, setShowGallery] = useState(false);
@@ -461,15 +485,20 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     setShowCompleteModal(true);
   };
 
-  const handleCompleteRepair = () => {
+  const handleCompleteRepair = async () => {
     if (!targetRepair) return;
     setShowCompleteModal(false);
+    const repair = targetRepair;
     setTargetRepair(null);
-    updateRepair(targetRepair.id, {
+    await updateRepair(repair.id, {
       status: 'done',
       actualCost: completeForm.actualCost,
       receiptPhoto: completeForm.receiptPhoto || undefined,
       completedAt: new Date().toISOString(),
+    });
+    generateRepairPayment({
+      repair: { ...repair, actualCost: completeForm.actualCost },
+      payments, workshops, addPayment,
     });
   };
 
@@ -496,13 +525,31 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   };
 
   // ── Delivery ──
-  const handleDeliverySubmit = () => {
+  const handleDeliverySubmit = async () => {
     setShowDeliveryModal(false);
-    updateCar(car.id, {
+    await updateCar(car.id, {
       status: 'delivered',
       deliveryPhoto: deliveryPhoto || undefined,
       deliveryCollected: true,
     });
+    await generateDeliveryPayments({ car, payments, users, externalSalesmen, dealers, customers, addPayment });
+    if (customerBalance < 0 && dealCustomer) {
+      const refundExists = payments.some(p => p.type === 'customer_refund' && p.carId === car.id);
+      if (!refundExists) {
+        await addPayment({
+          id: generateId(),
+          type: 'customer_refund',
+          carId: car.id,
+          recipientType: 'customer',
+          recipientId: dealCustomer.id,
+          recipientName: dealCustomer.name,
+          amount: Math.abs(customerBalance),
+          description: `Refund to ${dealCustomer.name}`,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+        });
+      }
+    }
   };
 
   return (
@@ -993,44 +1040,88 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
 
         {/* ── Misc tab ── */}
         {jobTab === 'misc' && (
-          <div>
-            {(car.miscCosts?.length ?? 0) === 0 ? (
-              <div className="text-center py-10 text-gray-600 text-sm">No misc costs recorded</div>
-            ) : (
-              <div className="divide-y divide-obsidian-400/60/50">
-                {car.miscCosts!.map((m) => (
-                  <div key={m.id} className="flex items-center justify-between px-5 py-3 hover:bg-obsidian-700/20 transition-colors">
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-white text-sm font-medium">{m.description}</p>
-                        {m.category && (
-                          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/20 text-purple-400 border border-purple-500/30">{m.category}</span>
-                        )}
-                        {m.merchant && (
-                          <span className="text-gray-400 text-xs">{m.merchant}</span>
+          <div className="space-y-3">
+            {/* Invoice — panel dealer charge */}
+            <div className="rounded-xl overflow-hidden border border-obsidian-400/70 bg-card-gradient">
+              <div className="flex items-center gap-2 px-4 py-2.5 border-b border-obsidian-400/40 bg-obsidian-800/40">
+                <Receipt size={12} className="text-purple-400" />
+                <span className="text-xs font-semibold text-gray-300">Invoice</span>
+                <span className="ml-auto text-[10px] text-gray-600">{car.panelDealerId ? 1 : 0}</span>
+              </div>
+              {car.panelDealerId ? (() => {
+                const panelDealer = dealers.find(d => d.id === car.panelDealerId);
+                return (
+                  <button
+                    onClick={() => { setPanelForm({ dealerId: car.panelDealerId!, chargeAmount: car.panelChargeAmount ? String(car.panelChargeAmount) : '' }); setShowPanelPopup(true); }}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-obsidian-700/30 transition-colors text-left"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white font-semibold text-sm">{panelDealer?.name ?? 'Unknown Dealer'}</p>
+                      <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                        {panelDealer?.bankName
+                          ? <span className="text-gray-500 text-xs flex items-center gap-1"><CreditCard size={10} className="text-gold-400" />{panelDealer.bankName} · {panelDealer.bankAccountNumber}</span>
+                          : <span className="text-gray-600 text-xs italic">No bank details</span>
+                        }
+                        {car.panelChargeAmount ? <span className="text-purple-400 text-xs font-semibold">{formatRM(car.panelChargeAmount)}</span> : null}
+                      </div>
+                    </div>
+                    <Pencil size={13} className="text-gray-600 shrink-0" />
+                  </button>
+                );
+              })() : (
+                (isAdmin || isDirector) ? (
+                  <button
+                    onClick={() => { setPanelForm({ dealerId: '', chargeAmount: '' }); setShowPanelPopup(true); }}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-4 text-sm text-gray-500 hover:text-gray-300 transition-colors"
+                  >
+                    <Plus size={14} /> Set panel dealer
+                  </button>
+                ) : (
+                  <div className="px-4 py-4 text-center text-gray-600 text-sm italic">No panel dealer set</div>
+                )
+              )}
+            </div>
+
+            {/* Misc costs list */}
+            <div className="rounded-xl overflow-hidden border border-obsidian-400/70 bg-card-gradient">
+              {(car.miscCosts?.length ?? 0) === 0 ? (
+                <div className="text-center py-8 text-gray-600 text-sm">No misc costs recorded</div>
+              ) : (
+                <div className="divide-y divide-obsidian-400/40">
+                  {car.miscCosts!.map((m) => (
+                    <div key={m.id} className="flex items-center justify-between px-5 py-3 hover:bg-obsidian-700/20 transition-colors">
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-white text-sm font-medium">{m.description}</p>
+                          {m.category && (
+                            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/20 text-purple-400 border border-purple-500/30">{m.category}</span>
+                          )}
+                          {m.merchant && (
+                            <span className="text-gray-400 text-xs">{m.merchant}</span>
+                          )}
+                        </div>
+                        <p className="text-gray-500 text-xs mt-0.5">{new Date(m.createdAt).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-purple-400 font-semibold text-sm">{formatRM(m.amount)}</span>
+                        {(isAdmin || isDirector) && (
+                          <button
+                            onClick={() => setDeleteTarget({ label: `misc cost "${m.description}"`, action: () => deleteMiscCost(car.id, m.id) })}
+                            className="text-red-400 hover:text-red-300 transition-colors"
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         )}
                       </div>
-                      <p className="text-gray-500 text-xs mt-0.5">{new Date(m.createdAt).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-purple-400 font-semibold text-sm">{formatRM(m.amount)}</span>
-                      {(isAdmin || isDirector) && (
-                        <button
-                          onClick={() => setDeleteTarget({ label: `misc cost "${m.description}"`, action: () => deleteMiscCost(car.id, m.id) })}
-                          className="text-red-400 hover:text-red-300 transition-colors"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
+              )}
+              <div className="px-5 py-3 border-t border-obsidian-400/60 text-right">
+                <p className="text-sm text-gray-400">
+                  Total Misc Cost: <span className="text-purple-400 font-semibold">{formatRM((car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0))}</span>
+                </p>
               </div>
-            )}
-            <div className="px-5 py-3 border-t border-obsidian-400/60 text-right">
-              <p className="text-sm text-gray-400">
-                Total Misc Cost: <span className="text-purple-400 font-semibold">{formatRM((car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0))}</span>
-              </p>
             </div>
           </div>
         )}
@@ -1444,6 +1535,43 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             {!car.deliveryCollected ? (
               <>
                 <p className="text-gray-400 text-sm">Deal approved. Upload delivery photo and confirm final payment collected.</p>
+
+                {/* Customer Balance */}
+                {dealWo && customerBalance !== 0 && (
+                  <div className={`rounded-lg p-4 border ${customerBalance > 0 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-blue-500/10 border-blue-500/30'}`}>
+                    <p className={`text-sm font-semibold ${customerBalance > 0 ? 'text-amber-400' : 'text-blue-400'}`}>
+                      {customerBalance > 0
+                        ? `Collect RM ${customerBalance.toLocaleString()} from customer`
+                        : `Refund RM ${Math.abs(customerBalance).toLocaleString()} to customer`}
+                    </p>
+                    {customerBalance > 0 ? (
+                      <div className="mt-2 space-y-2">
+                        <p className="text-gray-500 text-xs">Upload receipt after collecting cash from customer</p>
+                        {car.collectionReceiptUrl ? (
+                          <a href={car.collectionReceiptUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-green-400 hover:underline">
+                            <Check size={12} /> Receipt uploaded
+                          </a>
+                        ) : (
+                          <button
+                            onClick={() => collectionRef.current?.click()}
+                            className="flex items-center gap-2 text-xs text-amber-400 hover:text-amber-300 border border-amber-500/30 px-3 py-1.5 rounded-lg transition-colors"
+                          >
+                            <Upload size={12} /> Upload Receipt
+                          </button>
+                        )}
+                        <input ref={collectionRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={async (e) => {
+                          if (e.target.files?.[0]) {
+                            const url = await uploadToStorage(e.target.files[0], 'receipts');
+                            await updateCar(car.id, { collectionReceiptUrl: url });
+                          }
+                        }} />
+                      </div>
+                    ) : (
+                      <p className="text-gray-500 text-xs mt-1">Accounting will be notified to process this refund upon delivery</p>
+                    )}
+                  </div>
+                )}
+
                 {isSalesperson && (
                   <button
                     onClick={() => { setDeliveryPhoto(''); setShowDeliveryModal(true); }}
@@ -1824,6 +1952,63 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
         </div>
       </Modal>
 
+      {/* ── Panel Dealer Popup ── */}
+      <Modal isOpen={showPanelPopup} onClose={() => setShowPanelPopup(false)} title="Panel Dealer">
+        <div className="space-y-4">
+          <FormField label="Dealer">
+            {dealers.length === 0 ? (
+              <p className="text-xs text-gray-500 py-2">No dealers yet — add them in <span className="text-gold-400">Data → Car Dealers</span></p>
+            ) : (
+              <select
+                className={inputCls()}
+                value={panelForm.dealerId}
+                onChange={e => setPanelForm({ ...panelForm, dealerId: e.target.value })}
+              >
+                <option value="">— Select dealer —</option>
+                {dealers.map(d => (
+                  <option key={d.id} value={d.id}>{d.name}{d.bankName ? ` — ${d.bankName}` : ''}</option>
+                ))}
+              </select>
+            )}
+          </FormField>
+          <FormField label="Panel Charge Amount (RM)">
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className={inputCls()}
+              placeholder="0.00"
+              value={panelForm.chargeAmount}
+              onChange={e => setPanelForm({ ...panelForm, chargeAmount: e.target.value })}
+            />
+          </FormField>
+          <div className="flex gap-2 pt-1">
+            {car?.panelDealerId && (
+              <button
+                onClick={async () => { await updateCar(car!.id, { panelDealerId: undefined, panelChargeAmount: undefined }); setShowPanelPopup(false); }}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs text-red-400 border border-red-500/20 rounded-lg hover:bg-red-500/10 transition-colors"
+              >
+                <Trash2 size={12} /> Remove
+              </button>
+            )}
+            <button
+              disabled={!panelForm.dealerId}
+              onClick={async () => {
+                const amt = parseFloat(panelForm.chargeAmount);
+                await updateCar(car!.id, { panelDealerId: panelForm.dealerId, panelChargeAmount: isNaN(amt) ? undefined : amt });
+                if (!isNaN(amt) && amt > 0) {
+                  generatePanelChargePayment({ carId: car!.id, dealerId: panelForm.dealerId, chargeAmount: amt, payments, dealers, addPayment, updatePayment });
+                }
+                setShowPanelPopup(false);
+              }}
+              className="flex-1 btn-gold py-2 rounded-lg text-sm disabled:opacity-40"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       {/* ── Misc Cost Modal ── */}
       <Modal isOpen={showMiscModal} onClose={() => setShowMiscModal(false)} title="Add Misc Cost" maxWidth="max-w-xl">
         <div className="space-y-4">
@@ -1915,7 +2100,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               const amt = parseFloat(miscForm.amount);
               if (!miscForm.amount || isNaN(amt) || amt <= 0) errs.amount = 'Enter a valid amount';
               if (Object.keys(errs).length) { setMiscErrors(errs); return; }
-              await addMiscCost(car!.id, {
+              const miscEntry = {
                 id: generateId(),
                 description: miscForm.description.trim() || miscForm.merchantName || miscForm.category || 'Misc',
                 amount: amt,
@@ -1923,7 +2108,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 merchant: miscForm.merchantName || undefined,
                 createdAt: new Date().toISOString(),
                 createdBy: currentUser?.id,
-              });
+              };
+              await addMiscCost(car!.id, miscEntry);
+              generateMiscCostPayment({ carId: car!.id, misc: miscEntry, payments, merchants, addPayment });
               setShowMiscModal(false);
               setJobTab('misc');
             }}
@@ -2166,6 +2353,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                       approvalStatus: 'approved',
                     },
                   });
+                  await generateDeliveryPayments({ car, payments, users, externalSalesmen, dealers, customers, addPayment });
                   setConsignSoldModal(null);
                 }}
                 disabled={

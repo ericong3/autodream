@@ -18,6 +18,10 @@ export interface User {
   instagram?: string;
   facebook?: string;
   website?: string;
+  // Bank details (for commission transfers)
+  bankName?: string;
+  bankAccountNumber?: string;
+  bankAccountHolder?: string;
 }
 
 export type LoanCaseStatus = 'pending' | 'under_review' | 'approved' | 'rejected' | 'need_more_info' | 'appeal' | 'withdrawn' | 'cancelled';
@@ -194,9 +198,15 @@ export interface FinalDeal {
   rejectionNotes?: string;
 }
 
+export type PaymentTerms = 'per_job' | 'weekly' | 'monthly';
+
 export interface Dealer {
   id: string;
   name: string;
+  phone?: string;
+  bankName?: string;
+  bankAccountNumber?: string;
+  bankAccountHolder?: string;
 }
 
 export interface Workshop {
@@ -204,6 +214,10 @@ export interface Workshop {
   name: string;
   phone?: string;
   speciality?: string;
+  bankName?: string;
+  bankAccountNumber?: string;
+  bankAccountHolder?: string;
+  paymentTerms?: PaymentTerms;
 }
 
 export interface Supplier {
@@ -218,6 +232,10 @@ export interface Merchant {
   name: string;
   phone?: string;
   category?: string;
+  bankName?: string;
+  bankAccountNumber?: string;
+  bankAccountHolder?: string;
+  paymentTerms?: PaymentTerms;
 }
 
 export interface ExternalSalesman {
@@ -284,6 +302,9 @@ export interface Car {
   disbursementAmount?: number;   // loan disbursement from bank (RM)
   disbursementDate?: string;     // date bank sent the money
   comingSoonType?: 'trade_in' | 'direct_purchase' | 'pending_shipment' | 'in_shipment';
+  panelDealerId?: string;        // dealer whose bank panel was used for loan submission
+  panelChargeAmount?: number;    // fee charged by panel dealer (varies by bank)
+  collectionReceiptUrl?: string; // receipt uploaded by salesman when collecting shortfall from customer
 }
 
 export interface MiscCost {
@@ -462,5 +483,54 @@ export interface PersonalReminder {
   title: string;
   dueAt: string;
   isCompleted: boolean;
+  createdAt: string;
+}
+
+export type PaymentType =
+  | 'salesman_commission'
+  | 'intake_bonus'
+  | 'source_commission'
+  | 'repair'
+  | 'misc_cost'
+  | 'consignment_payout'
+  | 'consignment_collection'
+  | 'panel_charge'
+  | 'investor_payout'
+  | 'customer_refund'
+  | 'customer_collection'
+  | 'loan_disbursement';
+
+export type PaymentStatus = 'pending' | 'transferred';
+export type RecipientType = 'user' | 'external_salesman' | 'workshop' | 'dealer' | 'merchant' | 'customer';
+
+export interface Payment {
+  id: string;
+  type: PaymentType;
+  // Source references
+  carId?: string;
+  repairJobId?: string;
+  miscCostId?: string;
+  // Recipient
+  recipientType: RecipientType;
+  recipientId: string;
+  recipientName: string;
+  // Bank details snapshot at creation
+  bankName?: string;
+  accountNumber?: string;
+  accountHolder?: string;
+  // Amount
+  amount: number;
+  description?: string;
+  // Transfer details
+  status: PaymentStatus;
+  transferredAt?: string;
+  transferredBy?: string;
+  referenceNumber?: string;
+  receiptUrl?: string;
+  notes?: string;
+  // Batch info for weekly/monthly grouped payments
+  batchId?: string;
+  periodStart?: string;
+  periodEnd?: string;
   createdAt: string;
 }
