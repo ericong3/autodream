@@ -170,14 +170,15 @@ export default function Sidebar() {
   const [salesOpen, setSalesOpen] = useState(isSalesRouteActive);
   const [collapsed, setCollapsed] = useState(false);
 
-  // Badge count per nav path (normalize query strings)
+  // Badge count per nav path — count distinct entities (referenceId), not raw notifications
   const badgeByPath = React.useMemo(() => {
-    const map: Record<string, number> = {};
+    const map: Record<string, Set<string>> = {};
     notifications.filter(n => !n.isRead).forEach(n => {
       const key = n.url.split('?')[0];
-      map[key] = (map[key] ?? 0) + 1;
+      if (!map[key]) map[key] = new Set();
+      map[key].add(n.referenceId ?? n.id);
     });
-    return map;
+    return Object.fromEntries(Object.entries(map).map(([k, v]) => [k, v.size]));
   }, [notifications]);
 
   const showSalesItems = !collapsed && (salesOpen || isSalesRouteActive);
