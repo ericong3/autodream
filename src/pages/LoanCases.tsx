@@ -79,6 +79,8 @@ export default function LoanCases() {
 
   const navigate = useNavigate();
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
+  const [appealTarget, setAppealTarget] = useState<string | null>(null);
+  const [appealReason, setAppealReason] = useState('');
 
   const myCases = loanCases
     .filter(c => c.salesmanId === currentUser.id)
@@ -112,9 +114,10 @@ export default function LoanCases() {
     toast.info('Case withdrawn');
   }
 
-  async function handleAppeal(caseId: string) {
+  async function handleAppeal(caseId: string, reason: string) {
     const lc = loanCases.find(c => c.id === caseId);
     if (!lc) return;
+    const now = new Date().toISOString();
     await updateLoanCase(caseId, { status: 'appeal' });
     await addLoanCaseActivity({
       id: crypto.randomUUID(),
@@ -126,14 +129,27 @@ export default function LoanCases() {
       content: 'Salesman filed an appeal',
       oldStatus: lc.status,
       newStatus: 'appeal',
-      createdAt: new Date().toISOString(),
+      createdAt: now,
     });
+    if (reason.trim()) {
+      await addLoanCaseActivity({
+        id: crypto.randomUUID(),
+        caseId,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        type: 'remark',
+        content: `Appeal reason: ${reason.trim()}`,
+        createdAt: now,
+      });
+    }
     const customer = customers.find(c => c.id === lc.customerId);
     notifyUsers(
       [lc.bankerId],
       'Appeal Filed',
-      `${customer?.name ?? 'A customer'} filed an appeal for ${lc.bank}`,
+      `${customer?.name ?? 'A customer'} filed an appeal for ${lc.bank}${reason.trim() ? ` — ${reason.trim()}` : ''}`,
       '/banker-dashboard',
+      caseId,
     );
     toast.success('Appeal submitted');
   }
@@ -259,7 +275,7 @@ export default function LoanCases() {
                     </button>
                     {canAppeal && (
                       <button
-                        onClick={() => handleAppeal(lc.id)}
+                        onClick={() => { setAppealTarget(lc.id); setAppealReason(''); }}
                         className="px-3 py-1.5 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 text-xs font-semibold touch-manipulation"
                       >
                         Appeal
@@ -285,8 +301,47 @@ export default function LoanCases() {
       {selectedCase && (
         <LoanCaseDetail
           loanCase={selectedCase}
+          groupCases={loanCases.filter(c => c.customerId === selectedCase.customerId)}
+          initialTab={selectedCase.id}
           onClose={() => setSelectedCaseId(null)}
         />
+      )}
+
+      {/* Appeal Reason Modal */}
+      {appealTarget && (
+        <div className="fixed inset-0 z-[500] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm px-4 sm:p-4" style={{ paddingTop: 'env(safe-area-inset-top, 44px)' }}>
+          <div className="w-full sm:max-w-sm bg-obsidian-800 rounded-2xl shadow-2xl p-5 space-y-4">
+            <div>
+              <p className="text-white font-bold text-base">File an Appeal</p>
+              <p className="text-gray-400 text-xs mt-0.5">Tell the banker why you're appealing this decision.</p>
+            </div>
+            <textarea
+              value={appealReason}
+              onChange={e => setAppealReason(e.target.value)}
+              placeholder="e.g. Customer has additional income not previously declared…"
+              rows={4}
+              autoFocus
+              className="w-full bg-obsidian-700 border border-obsidian-500/50 rounded-xl px-3 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-purple-500/50 resize-none"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => setAppealTarget(null)}
+                className="flex-1 py-2.5 rounded-xl border border-obsidian-400/40 text-gray-400 text-sm font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  await handleAppeal(appealTarget, appealReason);
+                  setAppealTarget(null);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-purple-500/20 border border-purple-500/40 text-purple-300 text-sm font-bold"
+              >
+                Submit Appeal
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -852,7 +852,20 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         .filter(c => !c.isTrashed && !c.isDead && c.followUpDate && new Date(c.followUpDate).toDateString() === today)
         .forEach(c => {
           const ids = [c.assignedSalesId].filter(Boolean);
-          sendPush(ids, '📞 Follow-up reminder', `Call ${c.name} today`, '/customers');
+          sendPush(ids, '📞 Follow-up reminder', `Call ${c.name} today`, '/customers', c.id);
+        });
+
+      // #7a Loan case need_more_info reminder — re-notify salesman after 3+ days of no reply
+      const threeDaysAgo = new Date(Date.now() - 3 * 86400000).toISOString();
+      get().loanCases
+        .filter(lc => lc.status === 'need_more_info' && lc.updatedAt <= threeDaysAgo)
+        .forEach(lc => {
+          const lastSalesActivity = get().loanCaseActivities
+            .filter(a => a.caseId === lc.id && a.userRole !== 'banker')
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+          if (!lastSalesActivity || lastSalesActivity.createdAt <= lc.updatedAt) {
+            sendPush([lc.salesmanId], '⏰ Banker is waiting', `${lc.bank} case needs your reply`, '/loan-cases', lc.id);
+          }
         });
 
       // #7 Test drive tomorrow
@@ -1816,6 +1829,14 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     if (error) {
       if (prev) set((s) => ({ loanCases: s.loanCases.map((c) => c.id === id ? prev : c) }));
       throw new Error(error.message);
+    }
+    // Notify banker when guarantor info is added for the first time
+    if (updates.guarantorInterviewText && !prev?.guarantorInterviewText && prev) {
+      const cust = get().customers.find(c => c.id === prev.customerId);
+      const banker = get().users.find(u => u.id === prev.bankerId);
+      if (banker) {
+        sendPush([banker.id], '👤 Guarantor added', `${prev.bank} · ${cust?.name ?? 'Customer'} – interview notes available`, '/banker-dashboard', id);
+      }
     }
     // Notify on status change
     if (updates.status && prev?.status !== updates.status && prev) {

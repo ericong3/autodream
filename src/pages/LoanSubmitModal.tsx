@@ -23,10 +23,11 @@ interface Props {
   customer: Customer;
   initialCarId?: string;
   initialAmount?: number;
+  initialBanks?: string[];
   onClose: () => void;
 }
 
-export default function LoanSubmitModal({ customer, initialCarId, initialAmount, onClose }: Props) {
+export default function LoanSubmitModal({ customer, initialCarId, initialAmount, initialBanks, onClose }: Props) {
   const currentUser = useStore(s => s.currentUser)!;
   const users = useStore(s => s.users);
   const cars = useStore(s => s.cars);
@@ -47,7 +48,20 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
   const prevApplicantDocs = prevDocs.filter(d => d.type === 'applicant');
   const prevGuarantorDocs = prevDocs.filter(d => d.type === 'guarantor');
 
-  const [bankPicks, setBankPicks] = useState<Record<string, string>>({});
+  const [bankPicks, setBankPicks] = useState<Record<string, string>>(() => {
+    const picks: Record<string, string> = {};
+    BANKS.forEach(bank => {
+      const bankersForBank = users.filter(u => u.role === 'banker' && u.banks?.includes(bank));
+      if (bankersForBank.length === 1) picks[bank] = bankersForBank[0].id;
+    });
+    // Pre-select only specified banks (clear others)
+    if (initialBanks && initialBanks.length > 0) {
+      Object.keys(picks).forEach(bank => {
+        if (!initialBanks.includes(bank)) picks[bank] = '';
+      });
+    }
+    return picks;
+  });
   const [carId, setCarId] = useState(initialCarId ?? '');
   const [loanAmount, setLoanAmount] = useState(initialAmount ? String(initialAmount) : '');
   const [applicantText, setApplicantText] = useState(prevCase?.applicantInterviewText ?? '');

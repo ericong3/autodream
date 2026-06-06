@@ -39,10 +39,11 @@ const BANKER_STATUS_OPTIONS: { value: LoanCaseStatus; label: string }[] = [
 interface Props {
   loanCase: LoanCase;
   groupCases?: LoanCase[];
+  initialTab?: string;
   onClose: () => void;
 }
 
-export default function LoanCaseDetail({ loanCase, groupCases, onClose }: Props) {
+export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClose }: Props) {
   const currentUser = useStore(s => s.currentUser)!;
   const users = useStore(s => s.users);
   const customers = useStore(s => s.customers);
@@ -53,16 +54,18 @@ export default function LoanCaseDetail({ loanCase, groupCases, onClose }: Props)
   const addLoanCaseActivity = useStore(s => s.addLoanCaseActivity);
   const addLoanCaseDocument = useStore(s => s.addLoanCaseDocument);
 
-  // When opened from a grouped card: 'details' tab or a case ID
-  const showTabs = (groupCases?.length ?? 0) > 0;
+  const isBanker   = currentUser.role === 'banker';
+  const isSalesman = currentUser.role === 'salesperson';
+
+  // Banker sees Details + bank tabs; salesman only sees bank tabs (multiple banks only)
+  const showTabs = isBanker
+    ? (groupCases?.length ?? 0) > 0
+    : (groupCases?.length ?? 0) > 1;
   const [activeTab, setActiveTab] = useState<'details' | string>(
-    showTabs ? 'details' : loanCase.id
+    initialTab ?? (isBanker && showTabs ? 'details' : loanCase.id)
   );
   const activeCaseId = activeTab === 'details' ? loanCase.id : activeTab;
   const activeCase = groupCases?.find(c => c.id === activeCaseId) ?? loanCase;
-
-  const isBanker   = currentUser.role === 'banker';
-  const isSalesman = currentUser.role === 'salesperson';
 
   // Aggregate docs across all cases in the group (for Details tab)
   const allGroupCases = groupCases ?? [loanCase];
@@ -104,11 +107,13 @@ export default function LoanCaseDetail({ loanCase, groupCases, onClose }: Props)
           createdAt: new Date().toISOString(),
         });
       }
+      const notifyTarget = isBanker ? activeCase.salesmanId : activeCase.bankerId;
+      const notifyUrl    = isBanker ? '/loan-cases' : '/banker-dashboard';
       notifyUsers(
-        [activeCase.bankerId],
+        [notifyTarget],
         `New document from ${currentUser.name}`,
         `${files.length} additional document${files.length > 1 ? 's' : ''} uploaded for ${customer?.name ?? 'customer'}`,
-        '/banker-dashboard',
+        notifyUrl,
         activeCase.id,
       );
       toast.success('Document uploaded');
@@ -126,7 +131,6 @@ export default function LoanCaseDetail({ loanCase, groupCases, onClose }: Props)
   const car = cars.find(c => c.id === activeCase.carId);
 
   const [newStatus, setNewStatus] = useState<LoanCaseStatus>(activeCase.status as LoanCaseStatus);
-  const [remark, setRemark] = useState('');
   const [instruction, setInstruction] = useState('');
   const [saving, setSaving] = useState(false);
   const [applicantInterviewOpen, setApplicantInterviewOpen] = useState(false);
@@ -135,11 +139,15 @@ export default function LoanCaseDetail({ loanCase, groupCases, onClose }: Props)
   const [replySending, setReplySending] = useState(false);
   const [additionalUploading, setAdditionalUploading] = useState(false);
   const additionalRef = useRef<HTMLInputElement>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [activities.length]);
 
   // Reset form state when switching tabs
   useEffect(() => {
     setNewStatus(activeCase.status as LoanCaseStatus);
-    setRemark('');
     setInstruction('');
     setReply('');
     setApplicantInterviewOpen(false);
@@ -180,21 +188,6 @@ export default function LoanCaseDetail({ loanCase, groupCases, onClose }: Props)
         });
       }
 
-      // Remark
-      if (remark.trim()) {
-        await addLoanCaseActivity({
-          id: crypto.randomUUID(),
-          caseId: activeCase.id,
-          userId: currentUser.id,
-          userName: currentUser.name,
-          userRole: currentUser.role,
-          type: 'remark',
-          content: remark.trim(),
-          createdAt: now,
-        });
-        setRemark('');
-      }
-
       // Instruction
       if (instruction.trim()) {
         await addLoanCaseActivity({
@@ -218,7 +211,7 @@ export default function LoanCaseDetail({ loanCase, groupCases, onClose }: Props)
     }
   }
 
-  async function handleReply() {
+  async function handleSendMessage() {
     if (!reply.trim()) return;
     setReplySending(true);
     try {
@@ -233,13 +226,6 @@ export default function LoanCaseDetail({ loanCase, groupCases, onClose }: Props)
         createdAt: new Date().toISOString(),
       });
       setReply('');
-      notifyUsers(
-        [activeCase.bankerId],
-        `Reply from ${currentUser.name}`,
-        reply.trim(),
-        '/banker-dashboard',
-      );
-      toast.success('Reply sent');
     } catch (err: any) {
       toast.error(err.message ?? 'Failed to send');
     } finally {
@@ -285,27 +271,26 @@ export default function LoanCaseDetail({ loanCase, groupCases, onClose }: Props)
             </button>
           </div>
 
-          {/* Tab bar — Details + bank tabs, only when opened from grouped card */}
+          {/* Tab bar */}
           {showTabs ? (
             <div className="flex items-center gap-0 border-t border-obsidian-400/20 -mx-5 px-5 overflow-x-auto">
-              <button
-                onClick={() => setActiveTab('details')}
-                className={`shrink-0 px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors ${
-                  activeTab === 'details'
-                    ? 'border-gold-400 text-gold-300'
-                    : 'border-transparent text-gray-500 hover:text-gray-300'
-                }`}
-              >
-                Details
-              </button>
+              {/* Banker gets a Details tab; salesman only sees bank tabs */}
+              {isBanker && (
+                <button
+                  onClick={() => setActiveTab('details')}
+                  className={`shrink-0 px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors ${
+                    activeTab === 'details' ? 'border-gold-400 text-gold-300' : 'border-transparent text-gray-500 hover:text-gray-300'
+                  }`}
+                >
+                  Details
+                </button>
+              )}
               {(groupCases ?? []).map(lc => (
                 <button
                   key={lc.id}
                   onClick={() => setActiveTab(lc.id)}
                   className={`shrink-0 px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors ${
-                    activeTab === lc.id
-                      ? 'border-gold-400 text-gold-300'
-                      : 'border-transparent text-gray-500 hover:text-gray-300'
+                    activeTab === lc.id ? 'border-gold-400 text-gold-300' : 'border-transparent text-gray-500 hover:text-gray-300'
                   }`}
                 >
                   {lc.bank}
@@ -320,8 +305,10 @@ export default function LoanCaseDetail({ loanCase, groupCases, onClose }: Props)
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
 
-          {/* Details tab — customer, car, loan overview */}
-          {activeTab === 'details' && (
+
+
+          {/* Details tab — banker view */}
+          {activeTab === 'details' && isBanker && (
             <>
               {/* Customer */}
               <section className="rounded-2xl border border-obsidian-400/30 overflow-hidden">
@@ -514,6 +501,7 @@ export default function LoanCaseDetail({ loanCase, groupCases, onClose }: Props)
             </section>
           )}
 
+
           {/* Additional Documents */}
           {activeTab !== 'details' && (
             <section className="rounded-2xl border border-amber-500/40 overflow-hidden">
@@ -544,7 +532,7 @@ export default function LoanCaseDetail({ loanCase, groupCases, onClose }: Props)
                     <Download size={12} className="text-gray-500 shrink-0" />
                   </button>
                 ))}
-                {isSalesman && !['withdrawn', 'cancelled', 'approved'].includes(activeCase.status) && (
+                {(isSalesman || isBanker) && !['withdrawn', 'cancelled', 'approved'].includes(activeCase.status) && (
                   <>
                     <button
                       onClick={() => additionalRef.current?.click()}
@@ -568,132 +556,119 @@ export default function LoanCaseDetail({ loanCase, groupCases, onClose }: Props)
             </section>
           )}
 
-          {/* Activity Timeline */}
-          {activeTab !== 'details' && activities.length > 0 && (
-            <section className="space-y-2">
-              <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide">Activity</p>
-              <div className="space-y-2">
-                {activities.map(act => {
-                  const isBankerAct = act.userRole === 'banker';
-                  const dotColor =
-                    act.type === 'status_change' ? 'bg-gold-400' :
-                    act.type === 'instruction'   ? 'bg-orange-400' :
-                    isBankerAct                  ? 'bg-blue-400' : 'bg-emerald-400';
-                  const labelColor =
-                    act.type === 'status_change' ? 'text-gold-400' :
-                    act.type === 'instruction'   ? 'text-orange-400' :
-                    isBankerAct                  ? 'text-blue-400' : 'text-emerald-400';
-                  const label =
-                    act.type === 'status_change' ? 'Status' :
-                    act.type === 'instruction'   ? 'Instruction' :
-                    isBankerAct                  ? 'Remark' : 'Reply';
-                  return (
-                    <div key={act.id} className="flex gap-3">
-                      <div className="flex flex-col items-center shrink-0">
-                        <div className={`w-2 h-2 rounded-full mt-1.5 ${dotColor}`} />
-                        <div className="w-px flex-1 bg-obsidian-400/20 mt-1" />
-                      </div>
-                      <div className="pb-3 flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[11px] font-medium text-white">{act.userName}</span>
-                          <span className="text-[10px] text-gray-500">·</span>
-                          <span className={`text-[10px] font-semibold uppercase tracking-wide ${labelColor}`}>
-                            {label}
-                          </span>
-                          <span className="text-[10px] text-gray-500 ml-auto">
-                            {new Date(act.createdAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        </div>
-                        {act.content && (
-                          <p className="text-xs text-gray-300 mt-0.5 leading-relaxed">{act.content}</p>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          )}
-
-          {/* Banker Actions */}
+          {/* Banker formal update — status + instruction only */}
           {activeTab !== 'details' && isBanker && !['withdrawn', 'cancelled'].includes(activeCase.status) && (
-            <section className="space-y-3 border-t border-obsidian-400/20 pt-4">
-              <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide">Update Case</p>
+            <section className="space-y-3 border border-obsidian-400/30 rounded-2xl p-4">
+              <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide">
+                {activeCase.status === 'appeal' ? 'Respond to Appeal' : 'Update Case'}
+              </p>
 
-              {/* Status */}
-              <div className="space-y-1.5">
-                <label className="text-xs text-gray-500">Status</label>
-                <div className="relative">
-                  <select
-                    value={newStatus}
-                    onChange={e => setNewStatus(e.target.value as LoanCaseStatus)}
-                    className="w-full bg-obsidian-700 border border-obsidian-500/50 rounded-xl px-3 py-2.5 text-white text-sm appearance-none pr-8 focus:outline-none focus:border-gold-500/50"
-                  >
-                    {BANKER_STATUS_OPTIONS.map(o => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              {activeCase.status === 'appeal' && (
+                <div className="rounded-2xl border border-purple-500/30 bg-purple-500/5 p-3 space-y-2">
+                  <p className="text-[11px] text-purple-300 font-semibold">Salesman filed an appeal. Choose your response:</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button onClick={() => setNewStatus('approved')} className={`py-2 rounded-xl text-xs font-semibold border transition-colors ${newStatus === 'approved' ? 'bg-green-500/20 border-green-500/50 text-green-300' : 'border-obsidian-400/30 text-gray-400 hover:border-green-500/30 hover:text-green-300'}`}>Accept</button>
+                    <button onClick={() => setNewStatus('need_more_info')} className={`py-2 rounded-xl text-xs font-semibold border transition-colors ${newStatus === 'need_more_info' ? 'bg-orange-500/20 border-orange-500/50 text-orange-300' : 'border-obsidian-400/30 text-gray-400 hover:border-orange-500/30 hover:text-orange-300'}`}>Negotiate</button>
+                    <button onClick={() => setNewStatus('rejected')} className={`py-2 rounded-xl text-xs font-semibold border transition-colors ${newStatus === 'rejected' ? 'bg-red-500/20 border-red-500/50 text-red-300' : 'border-obsidian-400/30 text-gray-400 hover:border-red-500/30 hover:text-red-300'}`}>Reject</button>
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {/* Remark */}
+              {activeCase.status !== 'appeal' && (
+                <div className="space-y-1.5">
+                  <label className="text-xs text-gray-500">Status</label>
+                  <div className="relative">
+                    <select value={newStatus} onChange={e => setNewStatus(e.target.value as LoanCaseStatus)} className="w-full bg-obsidian-700 border border-obsidian-500/50 rounded-xl px-3 py-2.5 text-white text-sm appearance-none pr-8 focus:outline-none focus:border-gold-500/50">
+                      {BANKER_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-1.5">
-                <label className="text-xs text-gray-500">Remarks (reason / decision)</label>
-                <textarea
-                  value={remark}
-                  onChange={e => setRemark(e.target.value)}
-                  placeholder="Enter remarks…"
-                  rows={3}
-                  className="w-full bg-obsidian-700 border border-obsidian-500/50 rounded-xl px-3 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-gold-500/50 resize-none"
-                />
+                <label className="text-xs text-gray-500">Formal instruction (optional)</label>
+                <textarea value={instruction} onChange={e => setInstruction(e.target.value)} placeholder="e.g. Please provide 3 months payslip…" rows={2} className="w-full bg-obsidian-700 border border-obsidian-500/50 rounded-xl px-3 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-gold-500/50 resize-none" />
               </div>
 
-              {/* Instruction */}
-              <div className="space-y-1.5">
-                <label className="text-xs text-gray-500">Instructions (request remaining documents)</label>
-                <textarea
-                  value={instruction}
-                  onChange={e => setInstruction(e.target.value)}
-                  placeholder="e.g. Please provide 3 months payslip…"
-                  rows={3}
-                  className="w-full bg-obsidian-700 border border-obsidian-500/50 rounded-xl px-3 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-gold-500/50 resize-none"
-                />
-              </div>
-
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gold-gradient text-obsidian-950 font-bold text-sm disabled:opacity-50 active:opacity-80 transition-opacity shadow-gold-sm"
-              >
+              <button onClick={handleSave} disabled={saving} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gold-gradient text-obsidian-950 font-bold text-sm disabled:opacity-50 active:opacity-80 transition-opacity shadow-gold-sm">
                 {saving ? <Loader2 size={15} className="animate-spin" /> : null}
                 {saving ? 'Saving…' : 'Save Update'}
               </button>
             </section>
           )}
 
-          {/* Salesman reply */}
-          {activeTab !== 'details' && isSalesman && !['withdrawn', 'cancelled'].includes(activeCase.status) && (
-            <section className="space-y-3 border-t border-obsidian-400/20 pt-4">
-              <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide">Reply to Banker</p>
-              <textarea
-                value={reply}
-                onChange={e => setReply(e.target.value)}
-                placeholder="Type your message…"
-                rows={3}
-                className="w-full bg-obsidian-700 border border-obsidian-500/50 rounded-xl px-3 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-gold-500/50 resize-none"
-              />
-              <button
-                onClick={handleReply}
-                disabled={replySending || !reply.trim()}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gold-gradient text-obsidian-950 font-bold text-sm disabled:opacity-50 active:opacity-80 transition-opacity shadow-gold-sm"
-              >
-                {replySending ? <Loader2 size={15} className="animate-spin" /> : <Send size={14} />}
-                {replySending ? 'Sending…' : 'Send Reply'}
-              </button>
+          {/* Chat thread */}
+          {activeTab !== 'details' && (
+            <section className="space-y-2 pb-2">
+              <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide">Messages</p>
+              {activities.length === 0 && (
+                <p className="text-xs text-gray-600 text-center py-6">No messages yet. Start the conversation below.</p>
+              )}
+              {activities.map(act => {
+                const isOwn = act.userId === currentUser.id;
+                const time = new Date(act.createdAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+                if (act.type === 'status_change') {
+                  return (
+                    <div key={act.id} className="flex justify-center py-1">
+                      <span className="text-[10px] text-gray-500 bg-obsidian-700/50 px-3 py-1 rounded-full border border-obsidian-500/20">
+                        {act.content} · {time}
+                      </span>
+                    </div>
+                  );
+                }
+
+                if (act.type === 'instruction') {
+                  return (
+                    <div key={act.id} className="flex justify-center py-1">
+                      <div className="max-w-[85%] bg-orange-500/10 border border-orange-500/20 rounded-2xl px-3 py-2 text-center">
+                        <p className="text-[10px] text-orange-400 font-semibold uppercase tracking-wide mb-0.5">Instruction from {act.userName}</p>
+                        <p className="text-xs text-gray-200">{act.content}</p>
+                        <p className="text-[10px] text-gray-500 mt-0.5">{time}</p>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={act.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[75%] rounded-2xl px-3 py-2 ${isOwn ? 'bg-gold-500/15 border border-gold-500/20 rounded-br-sm' : act.userRole === 'banker' ? 'bg-blue-500/10 border border-blue-500/15 rounded-bl-sm' : 'bg-obsidian-700/60 border border-obsidian-500/30 rounded-bl-sm'}`}>
+                      {!isOwn && <p className="text-[10px] font-semibold text-gray-400 mb-0.5">{act.userName}</p>}
+                      <p className="text-xs text-gray-100 leading-relaxed">{act.content}</p>
+                      <p className={`text-[10px] mt-1 ${isOwn ? 'text-right text-gold-400/50' : 'text-gray-600'}`}>{time}</p>
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={chatEndRef} />
             </section>
           )}
         </div>
+
+        {/* Pinned chat input */}
+        {activeTab !== 'details' && !['withdrawn', 'cancelled'].includes(activeCase.status) && (
+          <div className="shrink-0 px-4 py-3 border-t border-obsidian-400/20 bg-obsidian-900/80" style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}>
+            <div className="flex gap-2 items-end">
+              <textarea
+                value={reply}
+                onChange={e => setReply(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
+                placeholder={isBanker ? 'Message salesman…' : 'Message banker…'}
+                rows={1}
+                className="flex-1 bg-obsidian-700 border border-obsidian-500/50 rounded-2xl px-4 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-gold-500/50 resize-none leading-relaxed"
+                style={{ maxHeight: '100px' }}
+              />
+              <button
+                onClick={handleSendMessage}
+                disabled={replySending || !reply.trim()}
+                className="p-2.5 rounded-2xl bg-gold-500 text-obsidian-950 disabled:opacity-30 active:opacity-70 transition-opacity shrink-0 touch-manipulation"
+              >
+                {replySending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

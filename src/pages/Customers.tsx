@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
-import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList, Truck, Upload, Lock, Skull, Clock, RotateCcw, MoreVertical } from 'lucide-react';
+import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList, Truck, Upload, Lock, Skull, Clock, RotateCcw, MoreVertical, FileText, Download } from 'lucide-react';
 import { useStore } from '../store';
 import { Customer, CashWorkOrder, LoanWorkOrder, WorkOrderItem, BANKS } from '../types';
 import LoanSubmitModal from './LoanSubmitModal';
@@ -65,7 +65,10 @@ export default function Customers() {
   const users = useStore((s) => s.users);
   const currentUser = useStore((s) => s.currentUser);
   const loanCases = useStore((s) => s.loanCases);
+  const loanCaseDocuments = useStore((s) => s.loanCaseDocuments);
   const loanCaseActivities = useStore((s) => s.loanCaseActivities);
+  const updateLoanCase = useStore((s) => s.updateLoanCase);
+  const addLoanCaseDocument = useStore((s) => s.addLoanCaseDocument);
   const addCustomer = useStore((s) => s.addCustomer);
   const updateCustomer = useStore((s) => s.updateCustomer);
   const deleteCustomer = useStore((s) => s.deleteCustomer);
@@ -174,8 +177,12 @@ export default function Customers() {
   const deliveryPhotoRef = useRef<HTMLInputElement>(null);
   // Banker portal submission modal
   const [loanSubmitCustomer, setLoanSubmitCustomer] = useState<Customer | null>(null);
-  const [loanSubmitInitial, setLoanSubmitInitial] = useState<{ carId?: string; amount?: number }>({});
+  const [loanSubmitInitial, setLoanSubmitInitial] = useState<{ carId?: string; amount?: number; banks?: string[] }>({});
   const [selectedLoanCaseId, setSelectedLoanCaseId] = useState<string | null>(null);
+  const [showAddGuarantor, setShowAddGuarantor] = useState(false);
+  const [guarantorText, setGuarantorText] = useState('');
+  const [guarantorUploading, setGuarantorUploading] = useState(false);
+  const guarantorFileRef = useRef<HTMLInputElement>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   useBodyScrollLock(!!detailLead || !!workOrderCustomer);
 
@@ -219,12 +226,6 @@ export default function Customers() {
     [customers, isDirectorLevel, isShareHolder, currentUser, directorView, notifications]
   );
 
-  const todayTestDrives = useMemo(() =>
-    testDrives.filter(td =>
-      td.scheduledAt.startsWith(todayStr) &&
-      td.status === 'scheduled' &&
-      (isDirector || td.salesId === currentUser?.id)
-    ), [testDrives, todayStr, isDirector, currentUser]);
 
   const getCarGroup = (carId?: string): 'in_stock' | 'incoming' | 'pending_delivery' | 'sold' | 'none' => {
     if (!carId) return 'none';
@@ -753,37 +754,47 @@ export default function Customers() {
     setWorkOrderCustomer(null);
   };
 
+  const unreadCustomerIds = useMemo(() =>
+    new Set(notifications.filter(n => !n.isRead && n.referenceId).map(n => n.referenceId!)),
+    [notifications]
+  );
+  const leadsUnreadCount    = useMemo(() => myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus !== 'loan_submitted' && !c.isDead && !c.isTrashed && c.dealType !== 'cash' && unreadCustomerIds.has(c.id)).length, [myCustomers, unreadCustomerIds]);
+  const cashUnreadCount     = useMemo(() => myCustomers.filter(c => c.dealType === 'cash' && !c.cashWorkOrder && !c.isDead && !c.isTrashed && unreadCustomerIds.has(c.id)).length, [myCustomers, unreadCustomerIds]);
+  const loanUnreadCount     = useMemo(() => myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus === 'loan_submitted' && !c.isTrashed && unreadCustomerIds.has(c.id)).length, [myCustomers, unreadCustomerIds]);
+  const confirmedUnreadCount = useMemo(() => myCustomers.filter(c => !c.isTrashed && !!(c.cashWorkOrder || c.loanWorkOrder) && unreadCustomerIds.has(c.id)).length, [myCustomers, unreadCustomerIds]);
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1 bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-1">
           <button
             onClick={() => { setTab('leads'); setStatusFilter('all'); setCarGroupFilter('all'); setCarIdFilter('all'); setSearch(''); }}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'leads' ? 'bg-gold-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${tab === 'leads' ? 'bg-gold-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
             Leads
-            <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'leads' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus !== 'loan_submitted' && !c.isDead && !c.isTrashed && c.dealType !== 'cash').length}</span>
-            {myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus !== 'loan_submitted' && !c.isTrashed && isStale(c) && c.dealType !== 'cash').length > 0 && (
-              <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-400">{myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus !== 'loan_submitted' && !c.isTrashed && isStale(c) && c.dealType !== 'cash').length} stale</span>
-            )}
+            <span className={`text-xs px-1.5 py-0.5 rounded-full ${tab === 'leads' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus !== 'loan_submitted' && !c.isDead && !c.isTrashed && c.dealType !== 'cash').length}</span>
+            {leadsUnreadCount > 0 && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
           </button>
           <button
             onClick={() => { setTab('cash'); setStatusFilter('all'); setSearch(''); }}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'cash' ? 'bg-green-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${tab === 'cash' ? 'bg-green-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
-            Cash <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'cash' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => c.dealType === 'cash' && !c.cashWorkOrder && !c.isDead && !c.isTrashed).length}</span>
+            Cash <span className={`text-xs px-1.5 py-0.5 rounded-full ${tab === 'cash' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => c.dealType === 'cash' && !c.cashWorkOrder && !c.isDead && !c.isTrashed).length}</span>
+            {cashUnreadCount > 0 && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
           </button>
           <button
             onClick={() => { setTab('loan'); setStatusFilter('all'); setCarGroupFilter('all'); setCarIdFilter('all'); setLoanBankFilter('all'); setSearch(''); }}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'loan' ? 'bg-purple-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${tab === 'loan' ? 'bg-purple-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
-            Loan <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'loan' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus === 'loan_submitted' && !c.isTrashed).length}</span>
+            Loan <span className={`text-xs px-1.5 py-0.5 rounded-full ${tab === 'loan' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus === 'loan_submitted' && !c.isTrashed).length}</span>
+            {loanUnreadCount > 0 && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
           </button>
           <button
             onClick={() => { setTab('confirmed'); setStatusFilter('all'); setSearch(''); }}
-            className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'confirmed' ? 'bg-violet-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+            className={`px-5 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${tab === 'confirmed' ? 'bg-violet-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
-            Confirmed <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === 'confirmed' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !c.isTrashed && !!(c.cashWorkOrder || c.loanWorkOrder)).length}</span>
+            Confirmed <span className={`text-xs px-1.5 py-0.5 rounded-full ${tab === 'confirmed' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !c.isTrashed && !!(c.cashWorkOrder || c.loanWorkOrder)).length}</span>
+            {confirmedUnreadCount > 0 && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
           </button>
           <button
             onClick={() => { setTab('bin'); setStatusFilter('all'); setSearch(''); }}
@@ -843,18 +854,6 @@ export default function Customers() {
         </div>
       )}
 
-      {/* Today's Agenda Banner */}
-      {todayTestDrives.length > 0 && (
-        <div className="flex items-center gap-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl px-4 py-3">
-          <div className="w-8 h-8 rounded-lg bg-yellow-500/20 flex items-center justify-center shrink-0">
-            <Car size={16} className="text-yellow-400" />
-          </div>
-          <div>
-            <p className="text-yellow-400 text-sm font-semibold">{todayTestDrives.length} Test Drive{todayTestDrives.length > 1 ? 's' : ''} Today</p>
-            <p className="text-yellow-400/60 text-xs">scheduled for today</p>
-          </div>
-        </div>
-      )}
 
       {tab === 'leads' && (<>
         {/* Status filter pills */}
@@ -1118,9 +1117,12 @@ export default function Customers() {
                 {cashLeads.map(c => {
                   const car = getCar(c.interestedCarId);
                   const stale = isStale(c);
+                  const unreadNotifs = notifications.filter(n => n.referenceId === c.id && !n.isRead);
+                  const hasUnread = unreadNotifs.length > 0;
+                  const latestUnread = unreadNotifs[0] ?? null;
                   return (
-                    <div key={c.id} className={`px-4 py-4 hover:bg-obsidian-700/30 transition-colors cursor-pointer relative ${stale ? 'border-l-[3px] border-l-red-500/60 bg-red-500/[0.03]' : ''}`}
-                      onClick={() => { setDetailLead(c); setDetailTab('details'); }}>
+                    <div key={c.id} className={`px-4 py-4 hover:bg-obsidian-700/30 transition-colors cursor-pointer relative ${stale ? 'border-l-[3px] border-l-red-500/60 bg-red-500/[0.03]' : hasUnread ? 'border-l-[3px] border-l-red-500 bg-red-500/[0.03]' : ''}`}
+                      onClick={() => { setDetailLead(c); setDetailTab('details'); markNotificationsReadByRef(c.id); }}>
                       <div className="flex items-start justify-between gap-2 mb-1.5">
                         <span className="text-white text-sm font-semibold">{c.name}</span>
                         <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full border shrink-0 bg-green-500/10 border-green-500/30 text-green-400">Cash Buyer</span>
@@ -1173,6 +1175,13 @@ export default function Customers() {
                           <button onClick={() => { updateCustomer(c.id, { dealType: undefined }); setOpenMenuId(null); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-orange-400 bg-orange-500/10 border border-orange-500/20 rounded-lg touch-manipulation"><RotateCcw size={12} />Remove Cash Tag</button>
                           <button onClick={() => { openEdit(c); setOpenMenuId(null); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-300 bg-obsidian-700/60 border border-obsidian-500/30 rounded-lg touch-manipulation"><Edit2 size={12} />Edit</button>
                           <button onClick={() => { updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() }); setOpenMenuId(null); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg touch-manipulation"><Trash2 size={12} />Bin</button>
+                        </div>
+                      )}
+                      {latestUnread && (
+                        <div className="flex items-center gap-2 mt-2 pt-2 border-t border-red-500/20">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                          <span className="text-red-300 text-xs truncate">{latestUnread.title}{latestUnread.body ? ` — ${latestUnread.body}` : ''}</span>
+                          {unreadNotifs.length > 1 && <span className="ml-auto shrink-0 text-red-400 text-[10px] font-bold">+{unreadNotifs.length - 1}</span>}
                         </div>
                       )}
                     </div>
@@ -1240,8 +1249,11 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                 ? 90 - Math.floor((Date.now() - new Date(expiringApp.approvedAt).getTime()) / 86400000)
                 : null;
 
+              const unreadNotifs = notifications.filter(n => n.referenceId === c.id && !n.isRead);
+              const hasUnread = unreadNotifs.length > 0;
+              const latestUnread = unreadNotifs[0] ?? null;
               return (
-                <div key={c.id}>
+                <div key={c.id} className={hasUnread ? 'border-l-[3px] border-l-red-500 bg-red-500/[0.03]' : ''}>
                   {/* Expiry warning banner */}
                   {expiringApp && expiringDays !== null && (
                     <div className="flex items-center gap-2 px-4 py-2.5 bg-orange-500/10 border-b border-orange-500/20">
@@ -1253,7 +1265,7 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                   )}
 
                   {/* Main row */}
-                  <div className="flex items-start gap-3 px-4 py-4 hover:bg-obsidian-700/30 transition-colors cursor-pointer" onClick={() => setDetailLead(c)}>
+                  <div className="flex items-start gap-3 px-4 py-4 hover:bg-obsidian-700/30 transition-colors cursor-pointer" onClick={() => { setDetailLead(c); markNotificationsReadByRef(c.id); }}>
                     <div className="flex-1 min-w-0">
                       {/* Name + phone */}
                       <div className="flex items-center gap-2 mb-1.5">
@@ -1362,6 +1374,13 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                           </button>
                         )}
                       </div>
+                    </div>
+                  )}
+                  {latestUnread && (
+                    <div className="flex items-center gap-2 mx-4 mb-3 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                      <span className="text-red-300 text-xs truncate">{latestUnread.title}{latestUnread.body ? ` — ${latestUnread.body}` : ''}</span>
+                      {unreadNotifs.length > 1 && <span className="ml-auto shrink-0 text-red-400 text-[10px] font-bold">+{unreadNotifs.length - 1}</span>}
                     </div>
                   )}
                 </div>
@@ -1543,40 +1562,52 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                     const car = getCar(c.interestedCarId);
                     const isLoan = !!c.loanWorkOrder;
                     const wo = c.loanWorkOrder ?? c.cashWorkOrder;
+                    const unreadNotifs = notifications.filter(n => n.referenceId === c.id && !n.isRead);
+                    const hasUnread = unreadNotifs.length > 0;
+                    const latestUnread = unreadNotifs[0] ?? null;
                     return (
-                      <div key={c.id} className="flex items-center gap-3 px-4 py-3 hover:bg-obsidian-700/50 transition-colors cursor-pointer" onClick={() => { setDetailLead(c); setDetailTab('details'); }}>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-white text-sm font-medium">{c.name}</span>
-                            <span className="text-gray-500 text-xs">{c.phone}</span>
-                            {isDirectorLevel && <span className="text-gray-600 text-xs">{getSalesName(c.assignedSalesId)}</span>}
+                      <div key={c.id} className={`flex flex-col hover:bg-obsidian-700/50 transition-colors cursor-pointer ${hasUnread ? 'border-l-[3px] border-l-red-500 bg-red-500/[0.03]' : ''}`} onClick={() => { setDetailLead(c); setDetailTab('details'); markNotificationsReadByRef(c.id); }}>
+                        <div className="flex items-center gap-3 px-4 py-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-white text-sm font-medium">{c.name}</span>
+                              <span className="text-gray-500 text-xs">{c.phone}</span>
+                              {isDirectorLevel && <span className="text-gray-600 text-xs">{getSalesName(c.assignedSalesId)}</span>}
+                            </div>
+                            <div className="flex items-center gap-3 mt-1 flex-wrap">
+                              {car && <span className="text-gray-400 text-xs">{car.year} {car.make} {car.model}</span>}
+                              {wo?.sellingPrice ? <span className="text-gold-400 text-xs font-semibold">{formatRM(wo.sellingPrice)}</span> : null}
+                              {c.delivered && c.deliveredAt && (
+                                <span className="text-gray-600 text-xs">Delivered {new Date(c.deliveredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}</span>
+                              )}
+                            </div>
                           </div>
-                          <div className="flex items-center gap-3 mt-1 flex-wrap">
-                            {car && <span className="text-gray-400 text-xs">{car.year} {car.make} {car.model}</span>}
-                            {wo?.sellingPrice ? <span className="text-gold-400 text-xs font-semibold">{formatRM(wo.sellingPrice)}</span> : null}
-                            {c.delivered && c.deliveredAt && (
-                              <span className="text-gray-600 text-xs">Delivered {new Date(c.deliveredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}</span>
+                          <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+                            <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${isLoan ? 'bg-blue-500/10 border-blue-500/30 text-blue-400' : 'bg-green-500/10 border-green-500/30 text-green-400'}`}>
+                              {isLoan ? `Loan · ${c.loanWorkOrder?.bank}` : 'Cash'}
+                            </span>
+                            {c.delivered
+                              ? <span className="text-xs font-medium px-2.5 py-1 rounded-full border bg-green-500/10 border-green-500/30 text-green-400 flex items-center gap-1"><Truck size={10} />Delivered</span>
+                              : <span className="text-xs font-medium px-2.5 py-1 rounded-full border bg-violet-500/10 border-violet-500/30 text-violet-400">Confirmed</span>
+                            }
+                            {!isShareHolder && (
+                              <button
+                                onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })}
+                                className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                                title="Move to bin"
+                              >
+                                <Trash2 size={14} />
+                              </button>
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
-                          <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${isLoan ? 'bg-blue-500/10 border-blue-500/30 text-blue-400' : 'bg-green-500/10 border-green-500/30 text-green-400'}`}>
-                            {isLoan ? `Loan · ${c.loanWorkOrder?.bank}` : 'Cash'}
-                          </span>
-                          {c.delivered
-                            ? <span className="text-xs font-medium px-2.5 py-1 rounded-full border bg-green-500/10 border-green-500/30 text-green-400 flex items-center gap-1"><Truck size={10} />Delivered</span>
-                            : <span className="text-xs font-medium px-2.5 py-1 rounded-full border bg-violet-500/10 border-violet-500/30 text-violet-400">Confirmed</span>
-                          }
-                          {!isShareHolder && (
-                            <button
-                              onClick={() => updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() })}
-                              className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                              title="Move to bin"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          )}
-                        </div>
+                        {latestUnread && (
+                          <div className="flex items-center gap-2 mx-4 mb-3 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                            <span className="text-red-300 text-xs truncate">{latestUnread.title}{latestUnread.body ? ` — ${latestUnread.body}` : ''}</span>
+                            {unreadNotifs.length > 1 && <span className="ml-auto shrink-0 text-red-400 text-[10px] font-bold">+{unreadNotifs.length - 1}</span>}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -1757,7 +1788,7 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                   <div className="flex border-b border-obsidian-400/60 shrink-0">
                     <button onClick={() => setDetailTab('details')} className={`flex-1 py-3.5 text-xs font-semibold transition-colors touch-manipulation ${detailTab === 'details' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}>Details</button>
                     {hasWorkOrder && <button onClick={() => setDetailTab('calculation')} className={`flex-1 py-3.5 text-xs font-semibold transition-colors touch-manipulation ${detailTab === 'calculation' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}>Deal</button>}
-                    <button onClick={() => setDetailTab('timeline')} className={`flex-1 py-3.5 text-xs font-semibold transition-colors touch-manipulation ${detailTab === 'timeline' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}>Timeline</button>
+                    <button onClick={() => setDetailTab('timeline')} className={`flex-1 py-3.5 text-xs font-semibold transition-colors touch-manipulation ${detailTab === 'timeline' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}>Loans</button>
                   </div>
 
                   {/* Calculation Tab */}
@@ -1865,73 +1896,123 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                   })()}
 
                   {/* Scrollable content — Details tab */}
-                  {(!hasWorkOrder || detailTab === 'details') && <div className="flex-1 overflow-y-auto p-5 space-y-5 min-h-0 pb-20">
+                  {detailTab === 'details' && <div className="flex-1 overflow-y-auto p-5 space-y-5 min-h-0 pb-20">
 
-                {/* Portal Loan Cases for this customer */}
+                {/* Loan Documents */}
                 {(() => {
-                  const portalCases = loanCases.filter(c => c.customerId === detailLead.id);
-                  const STATUS_COLORS: Record<string, string> = {
-                    pending: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30',
-                    under_review: 'bg-blue-500/15 text-blue-300 border-blue-500/30',
-                    approved: 'bg-green-500/15 text-green-300 border-green-500/30',
-                    rejected: 'bg-red-500/15 text-red-300 border-red-500/30',
-                    need_more_info: 'bg-orange-500/15 text-orange-300 border-orange-500/30',
-                    appeal: 'bg-purple-500/15 text-purple-300 border-purple-500/30',
-                    withdrawn: 'bg-gray-500/15 text-gray-400 border-gray-500/30',
-                    cancelled: 'bg-gray-500/15 text-gray-400 border-gray-500/30',
+                  const primaryCase = loanCases
+                    .filter(c => c.customerId === detailLead.id)
+                    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+                  if (!primaryCase) return null;
+                  const applicantDocs = loanCaseDocuments.filter(d => d.caseId === primaryCase.id && d.type === 'applicant');
+                  const guarantorDocs = loanCaseDocuments.filter(d => d.caseId === primaryCase.id && d.type === 'guarantor');
+                  const hasGuarantor = !!primaryCase.guarantorInterviewText || guarantorDocs.length > 0;
+
+                  const DocRow = ({ doc, onDownload }: { doc: typeof applicantDocs[0]; onDownload: () => void }) => (
+                    <div className="flex items-center gap-2.5 px-4 py-2.5">
+                      <FileText size={13} className="text-gold-400 shrink-0" />
+                      <span className="text-xs text-gray-200 truncate flex-1">{doc.fileName}</span>
+                      <button onClick={onDownload} className="text-gray-500 hover:text-white touch-manipulation shrink-0"><Download size={13} /></button>
+                    </div>
+                  );
+
+                  const makeDownload = (doc: typeof applicantDocs[0]) => async () => {
+                    const { supabase } = await import('../lib/supabase');
+                    const { data } = await supabase.storage.from('loan-documents').createSignedUrl(doc.filePath, 60);
+                    if (data) { const a = document.createElement('a'); a.href = data.signedUrl; a.download = doc.fileName; a.target = '_blank'; a.click(); }
                   };
-                  const STATUS_LABELS: Record<string, string> = {
-                    pending: 'Pending', under_review: 'Under Review', approved: 'Approved',
-                    rejected: 'Rejected', need_more_info: 'More Info Needed', appeal: 'Appeal',
-                    withdrawn: 'Withdrawn', cancelled: 'Cancelled',
-                  };
+
                   return (
-                    <div className="space-y-2">
-                      <p className="text-gray-500 text-xs font-medium uppercase tracking-wide">Banker Portal Cases</p>
-                      <div className="space-y-2">
-                        {portalCases.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(lc => {
-                          const banker = users.find(u => u.id === lc.bankerId);
-                          const car = cars.find(c => c.id === lc.carId);
-                          const lastActivity = loanCaseActivities.filter(a => a.caseId === lc.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-                          return (
-                            <button
-                              key={lc.id}
-                              onClick={() => setSelectedLoanCaseId(lc.id)}
-                              className="w-full text-left rounded-xl border border-obsidian-400/40 bg-obsidian-700/30 p-3 space-y-1.5 hover:border-gold-500/30 active:scale-[0.99] transition-all touch-manipulation"
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="text-white text-sm font-medium">{lc.bank}</span>
-                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${STATUS_COLORS[lc.status] ?? ''}`}>
-                                    {STATUS_LABELS[lc.status] ?? lc.status}
-                                  </span>
-                                </div>
-                                <span className="text-[10px] text-gray-500 shrink-0">{new Date(lc.createdAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}</span>
-                              </div>
-                              <p className="text-xs text-gray-400">RM {lc.loanAmount.toLocaleString()} · {banker?.name ?? 'Unknown banker'}{car ? ` · ${car.year} ${car.make} ${car.model}` : ''}</p>
-                              {lastActivity && lastActivity.type !== 'status_change' && (
-                                <p className="text-xs text-gray-500 italic line-clamp-1">{lastActivity.content}</p>
-                              )}
-                              {lc.status === 'approved' && !detailLead.loanWorkOrder && !isShareHolder && (
-                                <div
-                                  onClick={e => { e.stopPropagation(); openFinalDeal(detailLead, lc.bank, lc.loanAmount, lc.carId); }}
-                                  className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-green-500/15 border border-green-500/30 text-green-300 text-xs font-semibold hover:bg-green-500/20 transition-colors"
-                                >
-                                  <CheckCircle size={12} />Confirm Deal
-                                </div>
-                              )}
-                            </button>
-                          );
-                        })}
-                        {!isShareHolder && (
-                          <button
-                            onClick={() => { setLoanSubmitInitial({ carId: detailLead.interestedCarId || undefined, amount: detailLead.dealPrice || undefined }); setLoanSubmitCustomer(detailLead); }}
-                            className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-dashed border-sky-500/30 text-xs text-sky-400 hover:text-sky-300 hover:border-sky-500/50 transition-colors touch-manipulation"
-                          >
-                            <Plus size={12} />Submit to Banker Portal
-                          </button>
+                    <div className="space-y-3">
+                      {/* Applicant — blue */}
+                      <section className="rounded-2xl border border-blue-500/40 overflow-hidden">
+                        <div className="flex items-center gap-2 px-4 py-3 bg-blue-500/10 border-b border-blue-500/20">
+                          <div className="p-1 rounded-lg bg-blue-500/15">
+                            <FileText size={13} className="text-blue-300" />
+                          </div>
+                          <span className="text-sm font-semibold text-white">Applicant</span>
+                          <span className="ml-auto text-[11px] text-gray-500">{applicantDocs.length} doc{applicantDocs.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div className="divide-y divide-blue-500/10">
+                          {primaryCase.applicantInterviewText && (
+                            <details>
+                              <summary className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-blue-500/5 transition-colors list-none">
+                                <span className="text-xs text-blue-300/80 font-medium">Interview Form</span>
+                                <ChevronRight size={13} className="text-blue-400/50 rotate-90" />
+                              </summary>
+                              <pre className="text-xs text-gray-300 whitespace-pre-wrap font-sans leading-relaxed px-4 pb-4 max-h-48 overflow-y-auto">{primaryCase.applicantInterviewText}</pre>
+                            </details>
+                          )}
+                          {applicantDocs.length > 0
+                            ? applicantDocs.map(doc => <DocRow key={doc.id} doc={doc} onDownload={makeDownload(doc)} />)
+                            : !primaryCase.applicantInterviewText && <p className="px-4 py-3 text-xs text-gray-600">No documents uploaded</p>
+                          }
+                        </div>
+                      </section>
+
+                      {/* Guarantor — purple */}
+                      <section className="rounded-2xl border border-purple-500/40 overflow-hidden">
+                        <div className="flex items-center gap-2 px-4 py-3 bg-purple-500/10 border-b border-purple-500/20">
+                          <div className="p-1 rounded-lg bg-purple-500/15">
+                            <FileText size={13} className="text-purple-300" />
+                          </div>
+                          <span className="text-sm font-semibold text-white">Guarantor</span>
+                          {!hasGuarantor && !showAddGuarantor && (
+                            <button onClick={() => setShowAddGuarantor(true)} className="ml-auto text-xs text-gold-400 hover:text-gold-300 font-medium touch-manipulation">+ Add</button>
+                          )}
+                          {hasGuarantor && <span className="ml-auto text-[11px] text-gray-500">{guarantorDocs.length} doc{guarantorDocs.length !== 1 ? 's' : ''}</span>}
+                        </div>
+
+                        {showAddGuarantor && (
+                          <div className="px-4 py-4 space-y-3 border-b border-purple-500/15">
+                            <textarea
+                              className="w-full bg-obsidian-600/60 border border-obsidian-400/50 rounded-xl p-3 text-white text-sm outline-none focus:border-purple-500/50 resize-none"
+                              rows={3}
+                              placeholder="Guarantor interview notes..."
+                              value={guarantorText}
+                              onChange={e => setGuarantorText(e.target.value)}
+                            />
+                            <input ref={guarantorFileRef} type="file" className="hidden" multiple
+                              onChange={async e => {
+                                const files = Array.from(e.target.files ?? []);
+                                if (!files.length) return;
+                                setGuarantorUploading(true);
+                                try {
+                                  const { supabase } = await import('../lib/supabase');
+                                  for (const file of files) {
+                                    const path = `${primaryCase.id}/guarantor/${Date.now()}_${file.name}`;
+                                    await supabase.storage.from('loan-documents').upload(path, file);
+                                    addLoanCaseDocument({ id: crypto.randomUUID(), caseId: primaryCase.id, type: 'guarantor', fileName: file.name, filePath: path, uploadedAt: new Date().toISOString() });
+                                  }
+                                } finally { setGuarantorUploading(false); if (guarantorFileRef.current) guarantorFileRef.current.value = ''; }
+                              }}
+                            />
+                            <div className="flex gap-2">
+                              <button onClick={() => guarantorFileRef.current?.click()} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-obsidian-600/60 border border-obsidian-400/50 text-gray-300 text-xs font-medium touch-manipulation">
+                                <Upload size={12} />{guarantorUploading ? 'Uploading...' : 'Upload'}
+                              </button>
+                              <button onClick={async () => { if (guarantorText.trim()) await updateLoanCase(primaryCase.id, { guarantorInterviewText: guarantorText.trim() }); setShowAddGuarantor(false); setGuarantorText(''); }} className="flex-1 py-2 rounded-xl bg-purple-500/20 border border-purple-500/30 text-purple-300 text-xs font-semibold touch-manipulation">Save</button>
+                              <button onClick={() => { setShowAddGuarantor(false); setGuarantorText(''); }} className="px-3 py-2 rounded-xl bg-obsidian-600/60 border border-obsidian-400/50 text-gray-500 text-xs touch-manipulation">Cancel</button>
+                            </div>
+                          </div>
                         )}
-                      </div>
+
+                        <div className="divide-y divide-purple-500/10">
+                          {primaryCase.guarantorInterviewText && (
+                            <details>
+                              <summary className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-purple-500/5 transition-colors list-none">
+                                <span className="text-xs text-purple-300/80 font-medium">Interview Form</span>
+                                <ChevronRight size={13} className="text-purple-400/50 rotate-90" />
+                              </summary>
+                              <pre className="text-xs text-gray-300 whitespace-pre-wrap font-sans leading-relaxed px-4 pb-4 max-h-48 overflow-y-auto">{primaryCase.guarantorInterviewText}</pre>
+                            </details>
+                          )}
+                          {guarantorDocs.length > 0
+                            ? guarantorDocs.map(doc => <DocRow key={doc.id} doc={doc} onDownload={makeDownload(doc)} />)
+                            : !hasGuarantor && !showAddGuarantor && <p className="px-4 py-3 text-xs text-gray-600">No guarantor added</p>
+                          }
+                        </div>
+                      </section>
                     </div>
                   );
                 })()}
@@ -2127,59 +2208,125 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                 )}
               </div>}
 
-              {/* Timeline tab */}
+              {/* Loans tab */}
               {detailTab === 'timeline' && (() => {
-                const tlWo = detailLead.loanWorkOrder ?? detailLead.cashWorkOrder;
-                const tlTd = testDrives.filter(t => t.customerId === detailLead.id).sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt));
-                const events: { date: string; label: string; sub?: string; color: string; dot: string }[] = [];
-
-                if (detailLead.deliveredAt) {
-                  events.push({ date: detailLead.deliveredAt, label: 'Car Delivered', sub: new Date(detailLead.deliveredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }), color: 'text-green-400', dot: 'bg-green-400' });
-                }
-                if (tlWo?.createdAt) {
-                  events.push({ date: tlWo.createdAt, label: detailLead.loanWorkOrder ? `Loan Work Order · ${detailLead.loanWorkOrder.bank ?? ''}` : 'Cash Work Order', sub: formatRM(tlWo.sellingPrice), color: 'text-violet-400', dot: 'bg-violet-400' });
-                }
-                (detailLead.loanApplications ?? []).forEach(app => {
-                  const statusLabel = app.status === 'approved' ? 'Loan Approved' : app.status === 'rejected' ? 'Loan Rejected' : app.status === 'cancelled' ? 'Loan Cancelled' : 'Loan Submitted';
-                  const dotColor = app.status === 'approved' ? 'bg-green-400' : app.status === 'rejected' ? 'bg-red-400' : app.status === 'cancelled' ? 'bg-gray-500' : 'bg-blue-400';
-                  const textColor = app.status === 'approved' ? 'text-green-400' : app.status === 'rejected' ? 'text-red-400' : app.status === 'cancelled' ? 'text-gray-500' : 'text-blue-400';
-                  events.push({ date: detailLead.createdAt, label: `${statusLabel} · ${app.bank}`, color: textColor, dot: dotColor });
-                });
-                tlTd.forEach(td => {
-                  const tdStatus = td.status === 'completed' ? 'Test Drive Done' : td.status === 'cancelled' ? 'Test Drive Cancelled' : 'Test Drive Scheduled';
-                  const tdCar = cars.find(c => c.id === td.carId);
-                  events.push({ date: td.scheduledAt, label: tdStatus, sub: tdCar ? `${tdCar.year} ${tdCar.make} ${tdCar.model}` : undefined, color: 'text-yellow-400', dot: 'bg-yellow-400' });
-                });
-                if (detailLead.lastActionAt && detailLead.lastActionAt !== detailLead.createdAt) {
-                  events.push({ date: detailLead.lastActionAt, label: 'Last Activity', color: 'text-gray-400', dot: 'bg-gray-500' });
-                }
-                if (detailLead.followUpDate) {
-                  const isPast = detailLead.followUpDate < new Date().toISOString().slice(0, 10);
-                  events.push({ date: detailLead.followUpDate + 'T00:00:00', label: isPast ? 'Follow-up (overdue)' : 'Follow-up Scheduled', sub: detailLead.followUpRemark || undefined, color: isPast ? 'text-red-400' : 'text-gold-400', dot: isPast ? 'bg-red-400' : 'bg-gold-400' });
-                }
-                events.push({ date: detailLead.createdAt, label: 'Lead Created', sub: SOURCE_LABELS[detailLead.source], color: 'text-gray-400', dot: 'bg-gray-600' });
-
-                events.sort((a, b) => b.date.localeCompare(a.date));
-
+                const portalCases = loanCases
+                  .filter(c => c.customerId === detailLead.id)
+                  .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                const LC_STATUS_COLORS: Record<string, string> = {
+                  pending: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30',
+                  under_review: 'bg-blue-500/15 text-blue-300 border-blue-500/30',
+                  approved: 'bg-green-500/15 text-green-300 border-green-500/30',
+                  rejected: 'bg-red-500/15 text-red-300 border-red-500/30',
+                  need_more_info: 'bg-orange-500/15 text-orange-300 border-orange-500/30',
+                  appeal: 'bg-purple-500/15 text-purple-300 border-purple-500/30',
+                  withdrawn: 'bg-gray-500/15 text-gray-400 border-gray-500/30',
+                  cancelled: 'bg-gray-500/15 text-gray-400 border-gray-500/30',
+                };
+                const LC_STATUS_LABELS: Record<string, string> = {
+                  pending: 'Pending', under_review: 'Submitted', approved: 'Approved',
+                  rejected: 'Rejected', need_more_info: 'More Info Needed', appeal: 'Appeal',
+                  withdrawn: 'Withdrawn', cancelled: 'Cancelled',
+                };
+                // Old-system submissions not yet in the portal
+                const oldApps = (detailLead.loanApplications ?? []).filter(
+                  app => !portalCases.some(pc => pc.bank === app.bank)
+                );
+                const OLD_APP_COLORS: Record<string, string> = {
+                  submitted: 'bg-blue-500/15 text-blue-300 border-blue-500/30',
+                  approved: 'bg-green-500/15 text-green-300 border-green-500/30',
+                  rejected: 'bg-red-500/15 text-red-300 border-red-500/30',
+                  cancelled: 'bg-gray-500/15 text-gray-400 border-gray-500/30',
+                };
                 return (
-                  <div className="flex-1 overflow-y-auto min-h-0 p-5 pb-20">
-                    <div className="relative">
-                      <div className="absolute left-3 top-2 bottom-2 w-px bg-obsidian-400/40" />
-                      <div className="space-y-5">
-                        {events.map((ev, i) => (
-                          <div key={i} className="flex gap-3 relative">
-                            <span className={`w-6 h-6 rounded-full ${ev.dot} flex-shrink-0 flex items-center justify-center z-10 mt-0.5`}>
-                              <span className="w-2 h-2 rounded-full bg-white/30" />
+                  <div className="flex-1 overflow-y-auto min-h-0 p-5 pb-20 space-y-3">
+                    {portalCases.length === 0 && oldApps.length === 0 && (
+                      <p className="text-center text-gray-500 text-sm pt-10">No bank submissions yet.</p>
+                    )}
+                    {/* Old loanApplications (no portal case) */}
+                    {oldApps.map(app => (
+                      <div key={app.bank} className="rounded-2xl border border-obsidian-400/40 bg-obsidian-700/20 p-4 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-white text-sm font-semibold">{app.bank}</span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${OLD_APP_COLORS[app.status] ?? ''}`}>
+                              {app.status.charAt(0).toUpperCase() + app.status.slice(1)}
                             </span>
-                            <div className="min-w-0">
-                              <p className={`text-sm font-semibold ${ev.color}`}>{ev.label}</p>
-                              {ev.sub && <p className="text-gray-400 text-xs mt-0.5">{ev.sub}</p>}
-                              <p className="text-gray-600 text-xs mt-0.5">{new Date(ev.date).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
-                            </div>
                           </div>
-                        ))}
+                          <span className="text-[10px] text-gray-500 bg-obsidian-600/40 px-2 py-0.5 rounded-full border border-obsidian-400/30">Not in portal</span>
+                        </div>
+                        {app.approvedAmount && <p className="text-xs text-green-300">Approved: RM {app.approvedAmount.toLocaleString()}</p>}
+                        {app.rejectionReason && <p className="text-xs text-gray-500 italic">{app.rejectionReason}</p>}
+                        {app.status === 'approved' && !detailLead.loanWorkOrder && !isShareHolder && (
+                          <button
+                            onClick={() => openFinalDeal(detailLead, app.bank, app.approvedAmount)}
+                            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-green-500/15 border border-green-500/30 text-green-300 text-xs font-semibold touch-manipulation"
+                          >
+                            <CheckCircle size={12} />Confirm Deal
+                          </button>
+                        )}
+                        {!isShareHolder && app.status !== 'approved' && app.status !== 'cancelled' && (
+                          <button
+                            onClick={() => {
+                              setLoanSubmitInitial({ carId: detailLead.interestedCarId || undefined, amount: detailLead.dealPrice || undefined, banks: [app.bank] });
+                              setLoanSubmitCustomer(detailLead);
+                            }}
+                            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-dashed border-sky-500/30 text-xs text-sky-400 hover:border-sky-500/60 hover:text-sky-300 transition-colors touch-manipulation"
+                          >
+                            <ArrowRight size={12} />Send to Banker Portal
+                          </button>
+                        )}
                       </div>
-                    </div>
+                    ))}
+                    {portalCases.map(lc => {
+                      const lcBanker = users.find(u => u.id === lc.bankerId);
+                      const lcCar = cars.find(c => c.id === lc.carId);
+                      const lastActivity = loanCaseActivities
+                        .filter(a => a.caseId === lc.id)
+                        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+                      return (
+                        <button
+                          key={lc.id}
+                          onClick={() => setSelectedLoanCaseId(lc.id)}
+                          className="w-full text-left rounded-2xl border border-obsidian-400/40 bg-obsidian-700/30 p-4 space-y-2 hover:border-gold-500/30 active:scale-[0.99] transition-all touch-manipulation"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-white text-sm font-semibold">{lc.bank}</span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${LC_STATUS_COLORS[lc.status] ?? ''}`}>
+                                {LC_STATUS_LABELS[lc.status] ?? lc.status}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-gray-500 shrink-0">
+                              {new Date(lc.createdAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-400">
+                            RM {lc.loanAmount.toLocaleString()} · {lcBanker?.name ?? 'Unknown banker'}
+                            {lcCar ? ` · ${lcCar.year} ${lcCar.make} ${lcCar.model}` : ''}
+                          </p>
+                          {lastActivity && lastActivity.type !== 'status_change' && (
+                            <p className="text-xs text-gray-500 italic line-clamp-2">{lastActivity.content}</p>
+                          )}
+                          {lc.status === 'approved' && !detailLead.loanWorkOrder && !isShareHolder && (
+                            <div
+                              onClick={e => { e.stopPropagation(); openFinalDeal(detailLead, lc.bank, lc.loanAmount, lc.carId); }}
+                              className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-green-500/15 border border-green-500/30 text-green-300 text-xs font-semibold"
+                            >
+                              <CheckCircle size={12} />Confirm Deal
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                    {!isShareHolder && (
+                      <button
+                        onClick={() => { setLoanSubmitInitial({ carId: detailLead.interestedCarId || undefined, amount: detailLead.dealPrice || undefined }); setLoanSubmitCustomer(detailLead); }}
+                        className="w-full flex items-center justify-center gap-1.5 py-3 rounded-2xl border border-dashed border-sky-500/30 text-xs text-sky-400 hover:text-sky-300 hover:border-sky-500/50 transition-colors touch-manipulation"
+                      >
+                        <Plus size={12} />Submit to Banker Portal
+                      </button>
+                    )}
                   </div>
                 );
               })()}
@@ -2982,6 +3129,7 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
           customer={loanSubmitCustomer}
           initialCarId={loanSubmitInitial.carId}
           initialAmount={loanSubmitInitial.amount}
+          initialBanks={loanSubmitInitial.banks}
           onClose={() => setLoanSubmitCustomer(null)}
         />
       )}
@@ -2989,8 +3137,9 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
       {selectedLoanCaseId && (() => {
         const lc = loanCases.find(c => c.id === selectedLoanCaseId);
         if (!lc) return null;
+        const allForCustomer = loanCases.filter(c => c.customerId === lc.customerId);
         return createPortal(
-          <LoanCaseDetail loanCase={lc} onClose={() => setSelectedLoanCaseId(null)} />,
+          <LoanCaseDetail loanCase={lc} groupCases={allForCustomer} initialTab={lc.id} onClose={() => setSelectedLoanCaseId(null)} />,
           document.body
         );
       })()}
