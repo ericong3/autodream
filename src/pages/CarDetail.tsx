@@ -134,6 +134,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const payments = useStore((s) => s.payments);
   const addPayment = useStore((s) => s.addPayment);
   const updatePayment = useStore((s) => s.updatePayment);
+  const markNotificationsReadByRef = useStore((s) => s.markNotificationsReadByRef);
 
   const car = cars.find((c) => c.id === id);
   const isDirector = currentUser?.role === 'director';
@@ -145,6 +146,11 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const salespeople = users.filter((u) => u.role === 'salesperson');
   const carRepairs = repairs.filter((r) => r.carId === id);
   const totalRepairCost = carRepairs.filter(r => r.status === 'done').reduce((sum, r) => sum + (r.actualCost ?? r.totalCost), 0);
+
+  useEffect(() => {
+    markNotificationsReadByRef(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   // ── Edit Car Modal ──
   const [showEditModal, setShowEditModal] = useState(false);

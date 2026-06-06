@@ -69,6 +69,8 @@ export default function Customers() {
   const addCustomer = useStore((s) => s.addCustomer);
   const updateCustomer = useStore((s) => s.updateCustomer);
   const deleteCustomer = useStore((s) => s.deleteCustomer);
+  const notifications = useStore((s) => s.notifications);
+  const markNotificationsReadByRef = useStore((s) => s.markNotificationsReadByRef);
 
   const addTestDrive = useStore((s) => s.addTestDrive);
   const testDrives = useStore((s) => s.testDrives);
@@ -942,11 +944,12 @@ export default function Customers() {
                 return { label: `Follow up in ${diff}d`, urgent: false };
               })();
 
+              const hasUnread = notifications.some(n => n.referenceId === c.id && !n.isRead);
               return (
                 <div
                   key={c.id}
-                  className={`px-4 py-4 hover:bg-obsidian-700/30 transition-colors cursor-pointer relative ${stale ? 'border-l-[3px] border-l-red-500/60 bg-red-500/[0.03]' : ''}`}
-                  onClick={() => setDetailLead(c)}
+                  className={`px-4 py-4 hover:bg-obsidian-700/30 transition-colors cursor-pointer relative ${stale ? 'border-l-[3px] border-l-red-500/60 bg-red-500/[0.03]' : ''}${hasUnread ? ' notify-glow' : ''}`}
+                  onClick={() => { setDetailLead(c); markNotificationsReadByRef(c.id); }}
                 >
                   {/* Row 1: Name + status pill */}
                   <div className="flex items-start justify-between gap-2 mb-1.5">

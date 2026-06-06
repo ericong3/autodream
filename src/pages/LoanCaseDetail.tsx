@@ -109,6 +109,7 @@ export default function LoanCaseDetail({ loanCase, groupCases, onClose }: Props)
         `New document from ${currentUser.name}`,
         `${files.length} additional document${files.length > 1 ? 's' : ''} uploaded for ${customer?.name ?? 'customer'}`,
         '/banker-dashboard',
+        activeCase.id,
       );
       toast.success('Document uploaded');
     } catch (err: any) {

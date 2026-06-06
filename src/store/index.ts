@@ -1,12 +1,13 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
-import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, MiscCost, ExternalSalesman, Banker, LoanCase, LoanCaseDocument, LoanCaseActivity } from '../types';
+import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, MiscCost, ExternalSalesman, Banker, LoanCase, LoanCaseDocument, LoanCaseActivity, Payment, AppNotification } from '../types';
 import { sendPush } from '../utils/sendPush';
 
 // ── Notification helpers ─────────────────────────────────────────────────────
-const dirIds  = (users: User[]) => users.filter(u => u.role === 'director').map(u => u.id);
-const mechIds = (users: User[]) => users.filter(u => u.role === 'mechanic').map(u => u.id);
+const dirIds      = (users: User[]) => users.filter(u => u.role === 'director').map(u => u.id);
+const mechIds     = (users: User[]) => users.filter(u => u.role === 'mechanic').map(u => u.id);
+const mgmtIds     = (users: User[]) => users.filter(u => u.role === 'director' || u.role === 'shareholder' || u.role === 'admin').map(u => u.id);
 function instrRecipients(i: Instruction, users: User[]): string[] {
   if (i.toType === 'all') return users.filter(u => u.id !== i.fromId).map(u => u.id);
   if (i.toType === 'department') {
@@ -43,6 +44,7 @@ interface StoreState {
   loanCaseDocuments: LoanCaseDocument[];
   loanCaseActivities: LoanCaseActivity[];
   viewPreference: Record<string, 'grid' | 'list' | 'board'>;
+  notifications: AppNotification[];
   loaded: boolean;
   lastFetched: number | null;
 
@@ -95,10 +97,12 @@ interface StoreState {
 
   // Dealers
   addDealer: (dealer: Dealer) => Promise<void>;
+  updateDealer: (id: string, updates: Partial<Dealer>) => Promise<void>;
   deleteDealer: (id: string) => Promise<void>;
 
   // Workshops
   addWorkshop: (workshop: Workshop) => Promise<void>;
+  updateWorkshop: (id: string, updates: Partial<Workshop>) => Promise<void>;
   deleteWorkshop: (id: string) => Promise<void>;
 
   // Suppliers
@@ -107,7 +111,15 @@ interface StoreState {
 
   // Merchants
   addMerchant: (merchant: Merchant) => Promise<void>;
+  updateMerchant: (id: string, updates: Partial<Merchant>) => Promise<void>;
   deleteMerchant: (id: string) => Promise<void>;
+
+  // Payments
+  payments: Payment[];
+  addPayment: (payment: Payment) => Promise<void>;
+  batchAddPayments: (payments: Payment[]) => Promise<void>;
+  updatePayment: (id: string, updates: Partial<Payment>) => Promise<void>;
+  deletePayment: (id: string) => Promise<void>;
 
   // External Salesmen
   addExternalSalesman: (s: ExternalSalesman) => Promise<void>;
@@ -132,6 +144,9 @@ interface StoreState {
 
   // View preference
   setViewPreference: (userId: string, page: string, view: 'grid' | 'list' | 'board') => void;
+
+  // Notifications
+  markNotificationsReadByRef: (referenceId: string) => Promise<void>;
 }
 
 // Supabase realtime can send JSONB columns as serialized strings instead of parsed objects.
@@ -188,6 +203,8 @@ function rowToCar(r: any): Car {
     disbursementAmount: r.disbursement_amount ?? undefined,
     disbursementDate: r.disbursement_date ?? undefined,
     comingSoonType: r.coming_soon_type ?? undefined,
+    panelDealerId: r.panel_dealer_id ?? undefined,
+    panelChargeAmount: r.panel_charge_amount ?? undefined,
   };
 }
 
@@ -288,6 +305,8 @@ function carToRow(c: Partial<Car>) {
   if (c.disbursementAmount !== undefined) row.disbursement_amount = c.disbursementAmount;
   if (c.disbursementDate !== undefined) row.disbursement_date = c.disbursementDate;
   if (c.comingSoonType !== undefined) row.coming_soon_type = c.comingSoonType;
+  if (c.panelDealerId !== undefined) row.panel_dealer_id = c.panelDealerId;
+  if (c.panelChargeAmount !== undefined) row.panel_charge_amount = c.panelChargeAmount;
   return row;
 }
 
@@ -525,6 +544,9 @@ function rowToUser(r: any): User {
     instagram: r.instagram ?? undefined,
     facebook: r.facebook ?? undefined,
     website: r.website ?? undefined,
+    bankName: r.bank_name ?? undefined,
+    bankAccountNumber: r.bank_account_number ?? undefined,
+    bankAccountHolder: r.bank_account_holder ?? undefined,
   };
 }
 
@@ -548,6 +570,9 @@ function userToRow(u: Partial<User>) {
   if (u.instagram !== undefined) row.instagram = u.instagram;
   if (u.facebook !== undefined) row.facebook = u.facebook;
   if (u.website !== undefined) row.website = u.website;
+  if (u.bankName !== undefined) row.bank_name = u.bankName;
+  if (u.bankAccountNumber !== undefined) row.bank_account_number = u.bankAccountNumber;
+  if (u.bankAccountHolder !== undefined) row.bank_account_holder = u.bankAccountHolder;
   return row;
 }
 
@@ -565,6 +590,19 @@ function rowToLoanCase(r: any): LoanCase {
     status: r.status,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+  };
+}
+
+function rowToNotification(r: any): AppNotification {
+  return {
+    id: r.id,
+    userId: r.user_id,
+    title: r.title,
+    body: r.body ?? undefined,
+    url: r.url ?? '/',
+    referenceId: r.reference_id ?? undefined,
+    isRead: r.is_read ?? false,
+    createdAt: r.created_at,
   };
 }
 
@@ -616,6 +654,62 @@ function reminderToRow(r: Partial<PersonalReminder>) {
   return row;
 }
 
+function rowToPayment(r: any): Payment {
+  return {
+    id: r.id,
+    type: r.type,
+    carId: r.car_id ?? undefined,
+    repairJobId: r.repair_job_id ?? undefined,
+    miscCostId: r.misc_cost_id ?? undefined,
+    recipientType: r.recipient_type,
+    recipientId: r.recipient_id,
+    recipientName: r.recipient_name,
+    bankName: r.bank_name ?? undefined,
+    accountNumber: r.account_number ?? undefined,
+    accountHolder: r.account_holder ?? undefined,
+    amount: r.amount,
+    description: r.description ?? undefined,
+    status: r.status,
+    transferredAt: r.transferred_at ?? undefined,
+    transferredBy: r.transferred_by ?? undefined,
+    referenceNumber: r.reference_number ?? undefined,
+    receiptUrl: r.receipt_url ?? undefined,
+    notes: r.notes ?? undefined,
+    batchId: r.batch_id ?? undefined,
+    periodStart: r.period_start ?? undefined,
+    periodEnd: r.period_end ?? undefined,
+    createdAt: r.created_at,
+  };
+}
+
+function paymentToRow(p: Partial<Payment>) {
+  const row: any = {};
+  if (p.id !== undefined) row.id = p.id;
+  if (p.type !== undefined) row.type = p.type;
+  if (p.carId !== undefined) row.car_id = p.carId;
+  if (p.repairJobId !== undefined) row.repair_job_id = p.repairJobId;
+  if (p.miscCostId !== undefined) row.misc_cost_id = p.miscCostId;
+  if (p.recipientType !== undefined) row.recipient_type = p.recipientType;
+  if (p.recipientId !== undefined) row.recipient_id = p.recipientId;
+  if (p.recipientName !== undefined) row.recipient_name = p.recipientName;
+  if (p.bankName !== undefined) row.bank_name = p.bankName;
+  if (p.accountNumber !== undefined) row.account_number = p.accountNumber;
+  if (p.accountHolder !== undefined) row.account_holder = p.accountHolder;
+  if (p.amount !== undefined) row.amount = p.amount;
+  if (p.description !== undefined) row.description = p.description;
+  if (p.status !== undefined) row.status = p.status;
+  if (p.transferredAt !== undefined) row.transferred_at = p.transferredAt;
+  if (p.transferredBy !== undefined) row.transferred_by = p.transferredBy;
+  if (p.referenceNumber !== undefined) row.reference_number = p.referenceNumber;
+  if (p.receiptUrl !== undefined) row.receipt_url = p.receiptUrl;
+  if (p.notes !== undefined) row.notes = p.notes;
+  if (p.batchId !== undefined) row.batch_id = p.batchId;
+  if (p.periodStart !== undefined) row.period_start = p.periodStart;
+  if (p.periodEnd !== undefined) row.period_end = p.periodEnd;
+  if (p.createdAt !== undefined) row.created_at = p.createdAt;
+  return row;
+}
+
 // Guard: realtime channels are set up only once per session, regardless of how many
 // times loadAll is called (e.g. pull-to-refresh creates duplicate channels otherwise).
 let realtimeSubscribed = false;
@@ -639,6 +733,8 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   loanCases: [],
   loanCaseDocuments: [],
   loanCaseActivities: [],
+  payments: [],
+  notifications: [],
   viewPreference: {},
   loaded: false,
   lastFetched: null,
@@ -664,7 +760,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         supabase.from('merchants').select('*'),
       ]);
 
-    // Load external salesmen, bankers, and loan cases separately so a missing table doesn't block the main load
+    // Load external salesmen, bankers, loan cases, and payments separately
     const externalSalesmenResult = await supabase.from('external_salesmen').select('*');
     const externalSalesmenRows = externalSalesmenResult.data ?? [];
     const bankersResult = await supabase.from('bankers').select('*');
@@ -672,6 +768,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     const loanCasesResult = await supabase.from('loan_cases').select('*');
     const loanCaseDocsResult = await supabase.from('loan_case_documents').select('*');
     const loanCaseActivitiesResult = await supabase.from('loan_case_activity').select('*');
+    const paymentsResult = await supabase.from('payments').select('*').order('created_at', { ascending: false });
 
     const allCars = (cars.data ?? []).map(rowToCar);
     const allCustomers = (customers.data ?? []).map(rowToCustomer);
@@ -727,9 +824,23 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       loanCases:           loanCasesResult.data           ? loanCasesResult.data.map(rowToLoanCase)                           : s.loanCases,
       loanCaseDocuments:   loanCaseDocsResult.data        ? loanCaseDocsResult.data.map(rowToLoanCaseDocument)                : s.loanCaseDocuments,
       loanCaseActivities:  loanCaseActivitiesResult.data  ? loanCaseActivitiesResult.data.map(rowToLoanCaseActivity)          : s.loanCaseActivities,
+      payments:            paymentsResult.data            ? paymentsResult.data.map(rowToPayment)                             : s.payments,
       loaded: true,
       lastFetched: Date.now(),
     }));
+
+    // Load unread notifications for persisted session (app reload without login)
+    const currentUser = get().currentUser;
+    if (currentUser) {
+      const { data: notifs } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .eq('is_read', false)
+        .order('created_at', { ascending: false })
+        .limit(200);
+      if (notifs) set({ notifications: notifs.map(rowToNotification) });
+    }
 
     // ── Scheduled notifications (once per day) ──────────────────────────────
     if (scheduledNotifAllowed()) {
@@ -766,6 +877,20 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     // multiple joins for the same topic, which can wipe all in-memory data.
     if (realtimeSubscribed) return;
     realtimeSubscribed = true;
+
+    // Set up notifications realtime for persisted sessions (login sets it up on first login)
+    const persistedUser = get().currentUser;
+    if (persistedUser) {
+      supabase.channel(`notifs-${persistedUser.id}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${persistedUser.id}` }, (p) => {
+          set((s) => ({ notifications: [rowToNotification(p.new), ...s.notifications] }));
+        })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${persistedUser.id}` }, (p) => {
+          const updated = rowToNotification(p.new);
+          set((s) => ({ notifications: s.notifications.map(n => n.id === updated.id ? updated : n).filter(n => !n.isRead) }));
+        })
+        .subscribe();
+    }
 
     supabase.channel('realtime-cars')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cars' }, (payload) => {
@@ -1061,7 +1186,27 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       .eq('password', password)
       .single();
     if (data) {
-      set({ currentUser: rowToUser(data) });
+      const user = rowToUser(data);
+      set({ currentUser: user });
+      // Load unread notifications for this user
+      const { data: notifs } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('is_read', false)
+        .order('created_at', { ascending: false })
+        .limit(200);
+      if (notifs) set({ notifications: notifs.map(rowToNotification) });
+      // Realtime: listen for new notifications for this user
+      supabase.channel(`notifs-${user.id}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, (p) => {
+          set((s) => ({ notifications: [rowToNotification(p.new), ...s.notifications] }));
+        })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, (p) => {
+          const updated = rowToNotification(p.new);
+          set((s) => ({ notifications: s.notifications.map(n => n.id === updated.id ? updated : n).filter(n => !n.isRead) }));
+        })
+        .subscribe();
       return true;
     }
     return false;
@@ -1078,7 +1223,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       throw new Error(error.message);
     }
     // #20 New car added
-    sendPush(dirIds(get().users), '🚘 New car added', `${car.year} ${car.make} ${car.model} added to inventory`, '/inventory');
+    sendPush(dirIds(get().users), '🚘 New car added', `${car.year} ${car.make} ${car.model} added to inventory`, '/inventory', car.id);
   },
   updateCar: async (id, car) => {
     const prev = get().cars.find(c => c.id === id);
@@ -1103,46 +1248,46 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     // #14 Disbursement received
     if (car.disbursementDate && !prev?.disbursementDate) {
       const ids = [...new Set([...dirs, ...(prev?.assignedSalesperson ? [prev.assignedSalesperson] : [])])];
-      sendPush(ids, '💰 Disbursement received', `${carName} – RM ${(car.disbursementAmount ?? 0).toLocaleString()}`, '/inventory');
+      sendPush(ids, '💰 Disbursement received', `${carName} – RM ${(car.disbursementAmount ?? 0).toLocaleString()}`, '/inventory', id);
     }
     // #15 New deal submitted
     if (car.finalDeal && !prev?.finalDeal) {
-      sendPush(dirs, '📋 New deal submitted', `${carName} – submitted by ${car.finalDeal.submittedBy}`, '/inventory?tab=pending_delivery');
+      sendPush(dirs, '📋 New deal submitted', `${carName} – submitted by ${car.finalDeal.submittedBy}`, '/inventory?tab=pending_delivery', id);
     }
     // #15b Deal edited — needs re-approval
     if (car.finalDeal?.approvalStatus === 'pending' && prev?.finalDeal?.approvalStatus !== 'pending') {
-      sendPush(dirs, '⚠️ Deal needs approval', `${carName} – ${car.finalDeal.submittedBy} updated the deal`, '/inventory?tab=pending_delivery');
+      sendPush(dirs, '⚠️ Deal needs approval', `${carName} – ${car.finalDeal.submittedBy} updated the deal`, '/inventory?tab=pending_delivery', id);
     }
     // #16 Deal approved
     if (car.finalDeal?.approvalStatus === 'approved' && prev?.finalDeal?.approvalStatus !== 'approved') {
       const submitter = get().users.find(u => u.name === car.finalDeal?.submittedBy);
-      if (submitter) sendPush([submitter.id], '✅ Deal approved!', `Your deal for ${carName} was approved`, '/inventory');
+      if (submitter) sendPush([submitter.id], '✅ Deal approved!', `Your deal for ${carName} was approved`, '/inventory', id);
     }
     // #17 Deal rejected
     if (car.finalDeal?.approvalStatus === 'rejected' && prev?.finalDeal?.approvalStatus !== 'rejected') {
       const submitter = get().users.find(u => u.name === car.finalDeal?.submittedBy);
-      if (submitter) sendPush([submitter.id], '❌ Deal rejected', `Your deal for ${carName} was rejected`, '/inventory');
+      if (submitter) sendPush([submitter.id], '❌ Deal rejected', `Your deal for ${carName} was rejected`, '/inventory', id);
     }
     // #18 Car ready for delivery
     if (car.status === 'deal_pending' && prev?.status !== 'deal_pending') {
       const ids = [...new Set([...dirs, ...(prev?.assignedSalesperson ? [prev.assignedSalesperson] : [])])];
-      sendPush(ids, '🎉 Car ready for delivery', `${carName} is pending delivery`, '/inventory?tab=pending_delivery');
+      sendPush(ids, '🎉 Car ready for delivery', `${carName} is pending delivery`, '/inventory?tab=pending_delivery', id);
     }
     // #19 Car delivered
     if (car.status === 'delivered' && prev?.status !== 'delivered') {
-      sendPush(dirs, '🏁 Car delivered', `${carName} has been delivered`, '/inventory');
+      sendPush(dirs, '🏁 Car delivered', `${carName} has been delivered`, '/inventory', id);
     }
     // #21 Car status changed to Ready
     if (car.status === 'ready' && prev?.status !== 'ready') {
-      sendPush(dirs, '✅ Car is ready', `${carName} is ready for sale`, '/inventory');
+      sendPush(dirs, '✅ Car is ready', `${carName} is ready for sale`, '/inventory', id);
     }
     // #22 Car moved to workshop
     if (car.status === 'in_workshop' && prev?.status !== 'in_workshop') {
-      sendPush(dirs, '🔧 Car in workshop', `${carName} moved to workshop`, '/inventory');
+      sendPush(dirs, '🔧 Car in workshop', `${carName} moved to workshop`, '/inventory', id);
     }
     // #23 Car photos uploaded
     if (car.photos && prev?.photos && car.photos.length > prev.photos.length) {
-      sendPush(dirs, '📸 Photos uploaded', `New photos added for ${carName}`, '/inventory');
+      sendPush(dirs, '📸 Photos uploaded', `New photos added for ${carName}`, '/inventory', id);
     }
   },
   deleteCar: async (id) => {
@@ -1180,10 +1325,10 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     // #25 New repair job assigned to workshop
     const mechs = mechIds(get().users);
     const carName = `${car?.year ?? ''} ${car?.make ?? ''} ${car?.model ?? ''}`.trim();
-    sendPush(mechs, '🔧 New repair job', `${repair.typeOfRepair} for ${carName}`, '/inventory');
+    sendPush(mechs, '🔧 New repair job', `${repair.typeOfRepair} for ${carName}`, '/inventory', repair.carId);
     // #22 Car moved to workshop (notify directors)
     if (repair.location && repair.status !== 'queued' && !protectedStatus) {
-      sendPush(dirIds(get().users), '🔧 Car in workshop', `${carName} moved to workshop`, '/inventory');
+      sendPush(dirIds(get().users), '🔧 Car in workshop', `${carName} moved to workshop`, '/inventory', repair.carId);
     }
   },
   updateRepair: async (id, repair) => {
@@ -1194,7 +1339,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     if (repair.status === 'done' && existing?.status !== 'done') {
       const car = get().cars.find(c => c.id === existing?.carId);
       const carName = `${car?.year ?? ''} ${car?.make ?? ''} ${car?.model ?? ''}`.trim();
-      sendPush(dirIds(get().users), '✅ Repair completed', `${existing?.typeOfRepair} done for ${carName}`, '/inventory');
+      sendPush(dirIds(get().users), '✅ Repair completed', `${existing?.typeOfRepair} done for ${carName}`, '/inventory', existing?.carId);
     }
     set((s) => {
       const updatedRepairs = s.repairs.map((r) => (r.id === id ? { ...r, ...repair } : r));
@@ -1251,10 +1396,10 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     if (instruction.type === 'instruction') {
       // #1 New instruction from director
       const recipients = instrRecipients(instruction, users);
-      sendPush(recipients, '📋 New instruction', instruction.title, '/reminders');
+      sendPush(recipients, '📋 New instruction', instruction.title, '/reminders', instruction.id);
     } else {
       // Request submitted → notify directors
-      sendPush(dirIds(users), '📩 New request', `${instruction.title} from ${users.find(u => u.id === instruction.fromId)?.name ?? 'staff'}`, '/reminders');
+      sendPush(dirIds(users), '📩 New request', `${instruction.title} from ${users.find(u => u.id === instruction.fromId)?.name ?? 'staff'}`, '/reminders', instruction.id);
     }
   },
   updateInstruction: async (id, instruction) => {
@@ -1264,15 +1409,15 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     if (!existing) return;
     // #2 Request approved
     if (instruction.status === 'completed' && existing.type === 'request') {
-      sendPush([existing.fromId], '✅ Request approved', existing.title, '/reminders');
+      sendPush([existing.fromId], '✅ Request approved', existing.title, '/reminders', id);
     }
     // #3 Request rejected
     if (instruction.status === 'rejected' && existing.type === 'request') {
-      sendPush([existing.fromId], '❌ Request rejected', existing.title, '/reminders');
+      sendPush([existing.fromId], '❌ Request rejected', existing.title, '/reminders', id);
     }
     // #4 Instruction completed by staff
     if (instruction.status === 'completed' && existing.type === 'instruction') {
-      sendPush(dirIds(get().users), '✅ Task completed', `${existing.title} marked done`, '/reminders');
+      sendPush(dirIds(get().users), '✅ Task completed', `${existing.title} marked done`, '/reminders', id);
     }
   },
   deleteInstruction: async (id) => {
@@ -1308,7 +1453,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     if (error) console.error('addCustomer failed:', error.message);
     // #5 New lead assigned
     if (customer.assignedSalesId) {
-      sendPush([customer.assignedSalesId], '👤 New lead assigned', `${customer.name} has been assigned to you`, '/customers');
+      sendPush([customer.assignedSalesId], '👤 New lead assigned', `${customer.name} has been assigned to you`, '/customers', customer.id);
     }
   },
   updateCustomer: async (id, customer) => {
@@ -1373,7 +1518,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     // #9 Loan submitted by salesman
     if (customer.loanApplications && customer.loanApplications.length > (prev.loanApplications?.length ?? 0)) {
       const latest = customer.loanApplications[customer.loanApplications.length - 1];
-      sendPush(dirs, '🏦 Loan submitted', `${prev.name} – ${latest.bank}`, '/customers');
+      sendPush(dirs, '🏦 Loan submitted', `${prev.name} – ${latest.bank}`, '/customers', id);
     }
     // #10 Loan approved / #11 Loan rejected
     if (customer.loanApplications) {
@@ -1381,24 +1526,24 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       customer.loanApplications.forEach((app, i) => {
         const prevApp = prevApps[i];
         if (app.status === 'approved' && prevApp?.status !== 'approved') {
-          sendPush([prev.assignedSalesId], '✅ Loan approved!', `${prev.name} – ${app.bank}`, '/customers');
+          sendPush([prev.assignedSalesId], '✅ Loan approved!', `${prev.name} – ${app.bank}`, '/customers', id);
         }
         if (app.status === 'rejected' && prevApp?.status !== 'rejected') {
-          sendPush([prev.assignedSalesId], '❌ Loan rejected', `${prev.name} – ${app.bank}`, '/customers');
+          sendPush([prev.assignedSalesId], '❌ Loan rejected', `${prev.name} – ${app.bank}`, '/customers', id);
         }
       });
     }
     // #12 New loan work order
     if (customer.loanWorkOrder && !prev.loanWorkOrder) {
-      sendPush(dirs, '📄 Loan work order', `New loan work order for ${prev.name}`, '/customers');
+      sendPush(dirs, '📄 Loan work order', `New loan work order for ${prev.name}`, '/customers', id);
     }
     // #13 New cash work order
     if (customer.cashWorkOrder && !prev.cashWorkOrder) {
-      sendPush(dirs, '💵 Cash work order', `New cash work order for ${prev.name}`, '/customers');
+      sendPush(dirs, '💵 Cash work order', `New cash work order for ${prev.name}`, '/customers', id);
     }
     // #26 Commission calculated
     if (customer.commission && !prev.commission) {
-      sendPush([prev.assignedSalesId], '💰 Commission calculated', `Your commission for ${prev.name} is RM ${customer.commission.toLocaleString()}`, '/customers');
+      sendPush([prev.assignedSalesId], '💰 Commission calculated', `Your commission for ${prev.name} is RM ${customer.commission.toLocaleString()}`, '/customers', id);
     }
   },
   deleteCustomer: async (id) => {
@@ -1457,6 +1602,21 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     await supabase.from('personal_reminders').delete().eq('id', id);
   },
 
+  markNotificationsReadByRef: async (referenceId) => {
+    const userId = get().currentUser?.id;
+    if (!userId) return;
+    set((s) => ({
+      notifications: s.notifications.map(n =>
+        n.referenceId === referenceId ? { ...n, isRead: true } : n
+      ).filter(n => !n.isRead),
+    }));
+    await supabase.from('notifications')
+      .update({ is_read: true })
+      .eq('reference_id', referenceId)
+      .eq('user_id', userId)
+      .eq('is_read', false);
+  },
+
   setViewPreference: (userId, page, view) =>
     set((s) => ({
       viewPreference: {
@@ -1473,6 +1633,10 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       throw new Error(error.message);
     }
   },
+  updateDealer: async (id, updates) => {
+    set((s) => ({ dealers: s.dealers.map((d) => d.id === id ? { ...d, ...updates } : d) }));
+    await supabase.from('dealers').update(updates).eq('id', id);
+  },
   deleteDealer: async (id) => {
     set((s) => ({ dealers: s.dealers.filter((d) => d.id !== id) }));
     await supabase.from('dealers').delete().eq('id', id);
@@ -1485,6 +1649,10 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       set((s) => ({ workshops: s.workshops.filter((w) => w.id !== workshop.id) }));
       throw new Error(error.message);
     }
+  },
+  updateWorkshop: async (id, updates) => {
+    set((s) => ({ workshops: s.workshops.map((w) => w.id === id ? { ...w, ...updates } : w) }));
+    await supabase.from('workshops').update(updates).eq('id', id);
   },
   deleteWorkshop: async (id) => {
     set((s) => ({ workshops: s.workshops.filter((w) => w.id !== id) }));
@@ -1509,10 +1677,48 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     const { error } = await supabase.from('merchants').insert(merchant);
     if (error) console.error('addMerchant failed:', error.message);
   },
-
+  updateMerchant: async (id, updates) => {
+    set((s) => ({ merchants: s.merchants.map((m) => m.id === id ? { ...m, ...updates } : m) }));
+    await supabase.from('merchants').update(updates).eq('id', id);
+  },
   deleteMerchant: async (id) => {
     set((s) => ({ merchants: s.merchants.filter((m) => m.id !== id) }));
     await supabase.from('merchants').delete().eq('id', id);
+  },
+
+  addPayment: async (payment) => {
+    set((s) => ({ payments: [payment, ...s.payments] }));
+    const { error } = await supabase.from('payments').insert(paymentToRow(payment));
+    if (error) {
+      set((s) => ({ payments: s.payments.filter((p) => p.id !== payment.id) }));
+      throw new Error(error.message);
+    }
+    const PAYMENT_TYPE_LABELS: Record<string, string> = {
+      salesman_commission: 'Commission', intake_bonus: 'Intake Bonus',
+      source_commission: 'Source Comm.', repair: 'Workshop', misc_cost: 'Misc Cost',
+      consignment_payout: 'Consignment', panel_charge: 'Panel Charge',
+    };
+    const label = PAYMENT_TYPE_LABELS[payment.type] ?? payment.type;
+    const amtStr = `RM ${payment.amount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    sendPush(
+      mgmtIds(get().users),
+      `💳 New payment pending`,
+      `${payment.recipientName} · ${amtStr} · ${label}`,
+      '/finance',
+    );
+  },
+  batchAddPayments: async (newPayments) => {
+    if (!newPayments.length) return;
+    set((s) => ({ payments: [...newPayments, ...s.payments] }));
+    await supabase.from('payments').insert(newPayments.map(paymentToRow));
+  },
+  updatePayment: async (id, updates) => {
+    set((s) => ({ payments: s.payments.map((p) => p.id === id ? { ...p, ...updates } : p) }));
+    await supabase.from('payments').update(paymentToRow(updates)).eq('id', id);
+  },
+  deletePayment: async (id) => {
+    set((s) => ({ payments: s.payments.filter((p) => p.id !== id) }));
+    await supabase.from('payments').delete().eq('id', id);
   },
 
   addExternalSalesman: async (s) => {
@@ -1587,7 +1793,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     const salesman = get().users.find(u => u.id === loanCase.salesmanId);
     const customer = get().customers.find(c => c.id === loanCase.customerId);
     if (banker) {
-      sendPush([banker.id], '📋 New case submitted', `${salesman?.name ?? 'Salesman'} – ${customer?.name ?? 'Customer'} · RM ${loanCase.loanAmount.toLocaleString()}`, '/banker-dashboard');
+      sendPush([banker.id], '📋 New case submitted', `${salesman?.name ?? 'Salesman'} – ${customer?.name ?? 'Customer'} · RM ${loanCase.loanAmount.toLocaleString()}`, '/banker-dashboard', loanCase.id);
     }
   },
   updateLoanCase: async (id, updates) => {
@@ -1616,19 +1822,19 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       };
       const salesLabel = toSalesmanLabels[updates.status];
       if (salesLabel) {
-        sendPush([prev.salesmanId], `📋 Case ${salesLabel}`, `${prev.bank} · ${custName}`, '/loan-cases');
+        sendPush([prev.salesmanId], `📋 Case ${salesLabel}`, `${prev.bank} · ${custName}`, '/loan-cases', id);
       }
       // Salesman → banker updates
       if (updates.status === 'appeal') {
         const banker = get().users.find(u => u.id === prev.bankerId);
         if (banker) {
-          sendPush([banker.id], '🔁 Appeal filed', `${custName} · ${prev.bank} case appealed`, '/banker-dashboard');
+          sendPush([banker.id], '🔁 Appeal filed', `${custName} · ${prev.bank} case appealed`, '/banker-dashboard', id);
         }
       }
       if (updates.status === 'withdrawn') {
         const banker = get().users.find(u => u.id === prev.bankerId);
         if (banker) {
-          sendPush([banker.id], '↩️ Case withdrawn', `${custName} · ${prev.bank} case withdrawn`, '/banker-dashboard');
+          sendPush([banker.id], '↩️ Case withdrawn', `${custName} · ${prev.bank} case withdrawn`, '/banker-dashboard', id);
         }
       }
     }
@@ -1653,7 +1859,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       if (lc) {
         const cust = get().customers.find(c => c.id === lc.customerId);
         const label = activity.type === 'instruction' ? 'Instruction' : 'Remark';
-        sendPush([lc.salesmanId], `💬 Banker ${label}`, `${lc.bank} · ${cust?.name ?? 'Customer'}: ${activity.content ?? ''}`.slice(0, 100), '/loan-cases');
+        sendPush([lc.salesmanId], `💬 Banker ${label}`, `${lc.bank} · ${cust?.name ?? 'Customer'}: ${activity.content ?? ''}`.slice(0, 100), '/loan-cases', lc.id);
       }
     }
     // Salesman adds remark → notify banker
@@ -1663,7 +1869,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         const cust = get().customers.find(c => c.id === lc.customerId);
         const banker = get().users.find(u => u.id === lc.bankerId);
         if (banker) {
-          sendPush([banker.id], '💬 Salesman Remark', `${lc.bank} · ${cust?.name ?? 'Customer'}: ${activity.content ?? ''}`.slice(0, 100), '/banker-dashboard');
+          sendPush([banker.id], '💬 Salesman Remark', `${lc.bank} · ${cust?.name ?? 'Customer'}: ${activity.content ?? ''}`.slice(0, 100), '/banker-dashboard', lc.id);
         }
       }
     }
@@ -1688,7 +1894,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       const banker = get().users.find(u => u.id === lc.bankerId);
       const cust = get().customers.find(c => c.id === lc.customerId);
       if (banker) {
-        sendPush([banker.id], '📎 Document uploaded', `${lc.bank} · ${cust?.name ?? 'Customer'} – ${doc.fileName}`, '/banker-dashboard');
+        sendPush([banker.id], '📎 Document uploaded', `${lc.bank} · ${cust?.name ?? 'Customer'} – ${doc.fileName}`, '/banker-dashboard', lc.id);
       }
     }
   },

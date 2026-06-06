@@ -5,6 +5,7 @@ export async function sendPush(
   title: string,
   body: string,
   url = '/',
+  referenceId?: string,
 ) {
   if (!userIds.length) return;
   try {
@@ -12,6 +13,19 @@ export async function sendPush(
       body: { userIds, title, body, url },
     });
   } catch {
-    // Silently fail — notifications are best-effort
+    // Silently fail — push is best-effort
+  }
+  try {
+    const rows = userIds.map(userId => ({
+      user_id: userId,
+      title,
+      body: body ?? null,
+      url: url ?? '/',
+      reference_id: referenceId ?? null,
+      is_read: false,
+    }));
+    await supabase.from('notifications').insert(rows);
+  } catch {
+    // Silently fail
   }
 }

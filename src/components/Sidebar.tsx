@@ -105,7 +105,7 @@ function SidebarLabel({ children, collapsed }: { children: React.ReactNode; coll
   );
 }
 
-function NavItemLink({ item, indent = false, collapsed = false }: { item: NavItem; indent?: boolean; collapsed?: boolean }) {
+function NavItemLink({ item, indent = false, collapsed = false, badge = 0 }: { item: NavItem; indent?: boolean; collapsed?: boolean; badge?: number }) {
   return (
     <NavLink
       to={item.to}
@@ -128,15 +128,27 @@ function NavItemLink({ item, indent = false, collapsed = false }: { item: NavIte
     >
       {({ isActive }) => (
         <>
-          <item.icon
-            size={indent && !collapsed ? 15 : 18}
-            className={
-              isActive
-                ? 'text-gold-300 drop-shadow-[0_0_6px_rgba(234,184,32,0.6)] shrink-0'
-                : 'text-gray-400 group-hover:text-white/80 transition-colors shrink-0'
-            }
-          />
+          <div className="relative shrink-0">
+            <item.icon
+              size={indent && !collapsed ? 15 : 18}
+              className={
+                isActive
+                  ? 'text-gold-300 drop-shadow-[0_0_6px_rgba(234,184,32,0.6)]'
+                  : 'text-gray-400 group-hover:text-white/80 transition-colors'
+              }
+            />
+            {badge > 0 && collapsed && (
+              <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[8px] font-bold rounded-full min-w-[14px] h-3.5 flex items-center justify-center px-0.5 leading-none">
+                {badge > 99 ? '99+' : badge}
+              </span>
+            )}
+          </div>
           {!collapsed && <span className={isActive ? 'font-semibold' : ''}>{item.label}</span>}
+          {badge > 0 && !collapsed && (
+            <span className="ml-auto bg-red-500 text-white text-[9px] font-bold rounded-full min-w-[18px] h-4 flex items-center justify-center px-1">
+              {badge > 99 ? '99+' : badge}
+            </span>
+          )}
         </>
       )}
     </NavLink>
@@ -145,6 +157,7 @@ function NavItemLink({ item, indent = false, collapsed = false }: { item: NavIte
 
 export default function Sidebar() {
   const currentUser = useStore((s) => s.currentUser);
+  const notifications = useStore((s) => s.notifications);
   const location = useLocation();
   const isDirector = currentUser?.role === 'director';
   const isShareHolder = currentUser?.role === 'shareholder';
@@ -156,6 +169,16 @@ export default function Sidebar() {
   const isSalesRouteActive = SALES_ROUTES.some(r => location.pathname === r);
   const [salesOpen, setSalesOpen] = useState(isSalesRouteActive);
   const [collapsed, setCollapsed] = useState(false);
+
+  // Badge count per nav path (normalize query strings)
+  const badgeByPath = React.useMemo(() => {
+    const map: Record<string, number> = {};
+    notifications.filter(n => !n.isRead).forEach(n => {
+      const key = n.url.split('?')[0];
+      map[key] = (map[key] ?? 0) + 1;
+    });
+    return map;
+  }, [notifications]);
 
   const showSalesItems = !collapsed && (salesOpen || isSalesRouteActive);
 
@@ -202,20 +225,20 @@ export default function Sidebar() {
         <SidebarLogo collapsed={collapsed} onToggle={() => setCollapsed(v => !v)} />
         <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto overflow-x-hidden">
           <SidebarLabel collapsed={collapsed}>Overview</SidebarLabel>
-          {adminItems.map(item => <NavItemLink key={item.to} item={item} collapsed={collapsed} />)}
+          {adminItems.map(item => <NavItemLink key={item.to} item={item} collapsed={collapsed} badge={badgeByPath[item.to] ?? 0} />)}
 
           <SidebarLabel collapsed={collapsed}>Sales</SidebarLabel>
           <div>
             {salesAccordionButton}
             {showSalesItems && (
               <div className="mt-1 space-y-0.5 border-l border-obsidian-400/60 ml-5">
-                {salesGroupItems.map(item => <NavItemLink key={item.to} item={item} indent collapsed={collapsed} />)}
+                {salesGroupItems.map(item => <NavItemLink key={item.to} item={item} indent collapsed={collapsed} badge={badgeByPath[item.to] ?? 0} />)}
               </div>
             )}
           </div>
 
           <SidebarLabel collapsed={collapsed}>Management</SidebarLabel>
-          {adminBottomItems.map(item => <NavItemLink key={item.to} item={item} collapsed={collapsed} />)}
+          {adminBottomItems.map(item => <NavItemLink key={item.to} item={item} collapsed={collapsed} badge={badgeByPath[item.to] ?? 0} />)}
         </nav>
         <SidebarFooter collapsed={collapsed} />
       </aside>
@@ -228,20 +251,20 @@ export default function Sidebar() {
         <SidebarLogo collapsed={collapsed} onToggle={() => setCollapsed(v => !v)} />
         <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto overflow-x-hidden">
           <SidebarLabel collapsed={collapsed}>Overview</SidebarLabel>
-          {directorItems.map(item => <NavItemLink key={item.to} item={item} collapsed={collapsed} />)}
+          {directorItems.map(item => <NavItemLink key={item.to} item={item} collapsed={collapsed} badge={badgeByPath[item.to] ?? 0} />)}
 
           <SidebarLabel collapsed={collapsed}>Sales</SidebarLabel>
           <div>
             {salesAccordionButton}
             {showSalesItems && (
               <div className="mt-1 space-y-0.5 border-l border-obsidian-400/60 ml-5">
-                {salesGroupItems.map(item => <NavItemLink key={item.to} item={item} indent collapsed={collapsed} />)}
+                {salesGroupItems.map(item => <NavItemLink key={item.to} item={item} indent collapsed={collapsed} badge={badgeByPath[item.to] ?? 0} />)}
               </div>
             )}
           </div>
 
           <SidebarLabel collapsed={collapsed}>Management</SidebarLabel>
-          {directorBottomItems.map(item => <NavItemLink key={item.to} item={item} collapsed={collapsed} />)}
+          {directorBottomItems.map(item => <NavItemLink key={item.to} item={item} collapsed={collapsed} badge={badgeByPath[item.to] ?? 0} />)}
         </nav>
         <SidebarFooter collapsed={collapsed} />
       </aside>
@@ -265,7 +288,7 @@ export default function Sidebar() {
       <aside className={asideClass}>
         <SidebarLogo collapsed={collapsed} onToggle={() => setCollapsed(v => !v)} />
         <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto overflow-x-hidden">
-          {bankerItems.map(item => <NavItemLink key={item.to} item={item} collapsed={collapsed} />)}
+          {bankerItems.map(item => <NavItemLink key={item.to} item={item} collapsed={collapsed} badge={badgeByPath[item.to] ?? 0} />)}
         </nav>
         <SidebarFooter collapsed={collapsed} />
       </aside>
@@ -278,7 +301,7 @@ export default function Sidebar() {
     <aside className={asideClass}>
       <SidebarLogo collapsed={collapsed} onToggle={() => setCollapsed(v => !v)} />
       <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto overflow-x-hidden">
-        {flatItems.map(item => <NavItemLink key={item.to} item={item} collapsed={collapsed} />)}
+        {flatItems.map(item => <NavItemLink key={item.to} item={item} collapsed={collapsed} badge={badgeByPath[item.to] ?? 0} />)}
       </nav>
       <SidebarFooter collapsed={collapsed} />
     </aside>

@@ -6,6 +6,20 @@
 
 * { box-sizing: border-box; }
 
+@keyframes breathe-gold {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(234,184,32,0), 0 0 0 0 rgba(234,184,32,0);
+    border-color: rgba(234,184,32,0.35);
+  }
+  50% {
+    box-shadow: 0 0 14px 3px rgba(234,184,32,0.22), 0 0 0 2px rgba(234,184,32,0.18);
+    border-color: rgba(234,184,32,0.75);
+  }
+}
+.notify-glow {
+  animation: breathe-gold 2.4s ease-in-out infinite;
+}
+
 body {
   background: #050504;
   color: white;

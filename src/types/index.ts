@@ -503,6 +503,17 @@ export type PaymentType =
 export type PaymentStatus = 'pending' | 'transferred';
 export type RecipientType = 'user' | 'external_salesman' | 'workshop' | 'dealer' | 'merchant' | 'customer';
 
+export interface AppNotification {
+  id: string;
+  userId: string;
+  title: string;
+  body?: string;
+  url: string;
+  referenceId?: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
 export interface Payment {
   id: string;
   type: PaymentType;

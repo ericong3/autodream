@@ -74,6 +74,8 @@ export default function LoanCases() {
   const loanCaseActivities = useStore(s => s.loanCaseActivities);
   const addLoanCaseActivity = useStore(s => s.addLoanCaseActivity);
   const updateLoanCase = useStore(s => s.updateLoanCase);
+  const notifications = useStore(s => s.notifications);
+  const markNotificationsReadByRef = useStore(s => s.markNotificationsReadByRef);
 
   const navigate = useNavigate();
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
@@ -166,11 +168,12 @@ export default function LoanCases() {
 
             const guidance = STATUS_GUIDANCE[lc.status];
             const cardBorder = CARD_ACCENT[lc.status] ?? 'border-obsidian-400/20';
+            const hasUnread = notifications.some(n => n.referenceId === lc.id && !n.isRead);
 
             return (
               <div
                 key={lc.id}
-                className={`card-glass rounded-2xl border ${cardBorder} p-4 space-y-3`}
+                className={`card-glass rounded-2xl border ${cardBorder} p-4 space-y-3${hasUnread ? ' notify-glow' : ''}`}
               >
                 {/* Top row */}
                 <div className="flex items-start justify-between gap-2">
@@ -212,7 +215,7 @@ export default function LoanCases() {
                 {/* Action buttons */}
                 {needsReply ? (
                   <button
-                    onClick={() => setSelectedCaseId(lc.id)}
+                    onClick={() => { setSelectedCaseId(lc.id); markNotificationsReadByRef(lc.id); }}
                     className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-orange-500/15 border border-orange-500/30 text-orange-300 text-xs font-semibold hover:bg-orange-500/20 transition-colors touch-manipulation"
                   >
                     <MessageSquare size={12} />Open Case — Upload Docs / Reply
@@ -226,7 +229,7 @@ export default function LoanCases() {
                       <CheckCircle size={14} />Confirm Deal — Go to Customer
                     </button>
                     <button
-                      onClick={() => setSelectedCaseId(lc.id)}
+                      onClick={() => { setSelectedCaseId(lc.id); markNotificationsReadByRef(lc.id); }}
                       className="w-full py-1.5 rounded-xl border border-obsidian-400/30 text-gray-400 text-xs font-medium hover:text-gray-200 transition-colors touch-manipulation"
                     >
                       View Case Details
@@ -235,7 +238,7 @@ export default function LoanCases() {
                 ) : (
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => setSelectedCaseId(lc.id)}
+                      onClick={() => { setSelectedCaseId(lc.id); markNotificationsReadByRef(lc.id); }}
                       className="flex-1 py-1.5 rounded-xl border border-obsidian-400/40 text-gray-300 text-xs font-medium hover:border-gold-500/40 hover:text-gold-300 transition-colors touch-manipulation"
                     >
                       View Details
