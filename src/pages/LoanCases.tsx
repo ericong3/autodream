@@ -173,8 +173,9 @@ export default function LoanCases() {
             return (
               <div
                 key={lc.id}
-                className={`card-glass rounded-2xl border ${cardBorder} p-4 space-y-3${hasUnread ? ' notify-glow' : ''}`}
+                className={`card-glass rounded-2xl border ${cardBorder} p-4 space-y-3 relative`}
               >
+                {hasUnread && <span className="absolute top-3 right-3 w-2.5 h-2.5 bg-red-500 rounded-full z-10 pointer-events-none" />}
                 {/* Top row */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="space-y-0.5">

@@ -171,6 +171,7 @@ export default function Inventory() {
   const viewPreference = useStore((s) => s.viewPreference);
   const setViewPreference = useStore((s) => s.setViewPreference);
   const updateCustomer = useStore((s) => s.updateCustomer);
+  const notifications = useStore((s) => s.notifications);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
@@ -544,10 +545,10 @@ export default function Inventory() {
   };
 
   return (
-    <div className="space-y-4">
+    <div>
 
       {/* Sticky header: tabs + search/filter row */}
-      <div className="sticky top-0 z-10 bg-obsidian-950/95 backdrop-blur-sm -mx-4 px-4 md:-mx-6 md:px-6 pt-3 pb-3 border-b border-obsidian-400/20 space-y-3">
+      <div className="sticky -top-4 md:-top-6 z-10 bg-obsidian-950/95 backdrop-blur-sm -mx-4 px-4 md:-mx-6 md:px-6 pt-3 pb-3 border-b border-obsidian-400/20 space-y-3">
         {/* Tabs */}
         <div className="flex gap-1 bg-[#0F0E0C] border border-obsidian-400/60 rounded-lg p-1 w-full sm:w-fit">
           <button
@@ -666,6 +667,8 @@ export default function Inventory() {
 
       </div>
 
+      <div className="space-y-4 pt-4">
+
       {/* Count */}
       <p className="text-gray-500 text-sm">
         {inventoryTab === 'coming_soon'
@@ -715,8 +718,11 @@ export default function Inventory() {
                       ? Math.floor((Date.now() - new Date(car.finalDeal.submittedAt).getTime()) / 86400000)
                       : null;
                     const needsApproval = car.finalDeal?.approvalStatus === 'pending';
+                    const hasUnread = notifications.some(n => n.referenceId === car.id && !n.isRead);
                     return (
                       <SortableCarItem key={car.id} id={car.id}>
+                        <div className="relative">
+                          {hasUnread && <span className="absolute top-2 left-2 w-2.5 h-2.5 bg-red-500 rounded-full z-20 pointer-events-none" />}
                         <div
                           onClick={() => navigate(`/inventory/${car.id}`, { state: { inventoryTab } })}
                           className="bg-card-gradient border border-green-500/30 hover:border-green-400/60 rounded-xl shadow-card overflow-hidden cursor-pointer hover:shadow-xl transition-all group"
@@ -788,6 +794,7 @@ export default function Inventory() {
                         </div>
                       </div>
                         </div>
+                        </div>
                       </SortableCarItem>
                     );
                   })}
@@ -824,12 +831,14 @@ export default function Inventory() {
                     ? Math.floor((Date.now() - new Date(car.finalDeal.submittedAt).getTime()) / 86400000)
                     : null;
                   const needsApproval = car.finalDeal?.approvalStatus === 'pending';
+                  const hasUnread = notifications.some(n => n.referenceId === car.id && !n.isRead);
                   return (
                     <SortableCarItem key={car.id} id={car.id}>
                     <div
                       onClick={() => navigate(`/inventory/${car.id}`, { state: { inventoryTab } })}
-                      className="flex gap-4 p-4 rounded-2xl bg-obsidian-800/60 border border-obsidian-400/40 cursor-pointer hover:border-green-500/40 transition-colors group"
+                      className="flex gap-4 p-4 rounded-2xl bg-obsidian-800/60 border border-obsidian-400/40 cursor-pointer hover:border-green-500/40 transition-colors group relative"
                     >
+                      {hasUnread && <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full z-10 pointer-events-none" />}
                       {/* Car photo */}
                       {car.photo ? (
                         <img src={car.photo} alt="" className="w-20 h-14 rounded-xl object-cover shrink-0" />
@@ -933,9 +942,11 @@ export default function Inventory() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {comingSoonOrdered.map((car) => {
                     const inv = car.investorId ? users.find(u => u.id === car.investorId) : null;
+                    const hasUnread = notifications.some(n => n.referenceId === car.id && !n.isRead);
                     return (
                       <SortableCarItem key={car.id} id={car.id}>
                         <div className="relative group/card">
+                    {hasUnread && <span className="absolute top-2 left-2 w-2.5 h-2.5 bg-red-500 rounded-full z-20 pointer-events-none" />}
                     {isDirector && (
                       <button
                         onClick={(e) => { e.stopPropagation(); setDeleteCarId(car.id); }}
@@ -1044,12 +1055,14 @@ export default function Inventory() {
             <div className="bg-card-gradient border border-purple-500/20 rounded-xl shadow-card divide-y divide-obsidian-400/60">
               {comingSoonOrdered.map((car) => {
                 const inv = car.investorId ? users.find(u => u.id === car.investorId) : null;
+                const hasUnread = notifications.some(n => n.referenceId === car.id && !n.isRead);
                 return (
                   <SortableCarItem key={car.id} id={car.id}>
                   <div
                     onClick={() => navigate(`/inventory/${car.id}`, { state: { inventoryTab } })}
-                    className="flex items-center gap-4 px-4 py-3 hover:bg-obsidian-700/40 transition-colors cursor-pointer"
+                    className="flex items-center gap-4 px-4 py-3 hover:bg-obsidian-700/40 transition-colors cursor-pointer relative"
                   >
+                    {hasUnread && <span className="absolute top-2 right-3 w-2.5 h-2.5 bg-red-500 rounded-full z-10 pointer-events-none" />}
                     {/* Thumbnail */}
                     <div className="w-16 h-11 bg-obsidian-700/60 rounded-lg flex-shrink-0 flex items-center justify-center">
                       {car.photo
@@ -1185,9 +1198,12 @@ export default function Inventory() {
         >
           <SortableContext items={filteredOrdered.map(c => c.id)} strategy={rectSortingStrategy}>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {filteredOrdered.map((car, idx) => (
+              {filteredOrdered.map((car, idx) => {
+                const hasUnread = notifications.some(n => n.referenceId === car.id && !n.isRead);
+                return (
                 <SortableCarItem key={car.id} id={car.id}>
                   <div className={`relative group/card stagger-enter stagger-${Math.min(idx + 1, 12)}`}>
+              {hasUnread && <span className="absolute top-2 left-2 w-2.5 h-2.5 bg-red-500 rounded-full z-20 pointer-events-none" />}
               {isDirector && (
                 <button
                   onClick={(e) => { e.stopPropagation(); setDeleteCarId(car.id); }}
@@ -1342,7 +1358,7 @@ export default function Inventory() {
             </div>
                   </div>
                 </SortableCarItem>
-              ))}
+              );})}
             </div>
           </SortableContext>
           <DragOverlay dropAnimation={{ duration: 150, easing: 'ease' }}>
@@ -1380,6 +1396,7 @@ export default function Inventory() {
             const deal = car.finalDeal;
             const price = confirmedDealPrice[car.id] ?? car.sellingPrice;
             const profit = carProfitMap[car.id] ?? 0;
+            const hasUnread = notifications.some(n => n.referenceId === car.id && !n.isRead);
 
             return (
               <SortableCarItem key={car.id} id={car.id}>
@@ -1387,6 +1404,7 @@ export default function Inventory() {
                 onClick={() => navigate(`/inventory/${car.id}`, { state: { inventoryTab } })}
                 className={`row-item bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card cursor-pointer hover:border-gold-500/40 hover:bg-obsidian-700/30 transition-all flex items-center gap-4 px-4 py-3 relative stagger-enter stagger-${Math.min(idx + 1, 12)}${car.status === 'delivered' ? ' opacity-60' : ''}`}
               >
+                {hasUnread && <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full z-10 pointer-events-none" />}
                 {/* Thumbnail */}
                 <div className="w-24 h-16 bg-obsidian-700/60 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center relative">
                   {car.photo
@@ -1512,6 +1530,8 @@ export default function Inventory() {
       )}
 
       </>}
+
+      </div>
 
       <DeleteConfirmModal
         isOpen={!!deleteCarId}

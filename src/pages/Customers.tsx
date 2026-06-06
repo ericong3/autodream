@@ -948,9 +948,10 @@ export default function Customers() {
               return (
                 <div
                   key={c.id}
-                  className={`px-4 py-4 hover:bg-obsidian-700/30 transition-colors cursor-pointer relative ${stale ? 'border-l-[3px] border-l-red-500/60 bg-red-500/[0.03]' : ''}${hasUnread ? ' notify-glow' : ''}`}
+                  className={`px-4 py-4 hover:bg-obsidian-700/30 transition-colors cursor-pointer relative ${stale ? 'border-l-[3px] border-l-red-500/60 bg-red-500/[0.03]' : ''}`}
                   onClick={() => { setDetailLead(c); markNotificationsReadByRef(c.id); }}
                 >
+                  {hasUnread && <span className="absolute top-3 right-3 w-2.5 h-2.5 bg-red-500 rounded-full z-10 pointer-events-none" />}
                   {/* Row 1: Name + status pill */}
                   <div className="flex items-start justify-between gap-2 mb-1.5">
                     <div className="flex items-center gap-2 min-w-0 flex-wrap">
