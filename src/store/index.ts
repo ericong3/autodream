@@ -1569,7 +1569,12 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     }
     set((s) => ({ customers: s.customers.filter((c) => c.id !== id) }));
     const { error } = await supabase.from('customers').delete().eq('id', id);
-    if (error) console.error('deleteCustomer failed:', error.message);
+    if (error) {
+      console.error('deleteCustomer failed:', error.message);
+    } else {
+      supabase.from('notifications').update({ is_read: true }).eq('reference_id', id).then(() => {});
+      set(s => ({ notifications: s.notifications.filter(n => n.referenceId !== id) }));
+    }
     // Always re-sync after delete — prevents cases where other leads temporarily vanish
     const { data } = await supabase.from('customers').select('*');
     if (data) set({ customers: data.map(rowToCustomer) });
