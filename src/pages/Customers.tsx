@@ -210,8 +210,13 @@ export default function Customers() {
         if (directorView === 'own') return c.assignedSalesId === currentUser?.id;
         return c.assignedSalesId === directorView;
       })
-      .map(c => STAGE_ORDER.includes(c.leadStatus) ? c : { ...c, leadStatus: 'contacted' as Customer['leadStatus'] }),
-    [customers, isDirectorLevel, isShareHolder, currentUser, directorView]
+      .map(c => STAGE_ORDER.includes(c.leadStatus) ? c : { ...c, leadStatus: 'contacted' as Customer['leadStatus'] })
+      .sort((a, b) => {
+        const aUnread = notifications.some(n => n.referenceId === a.id && !n.isRead) ? 0 : 1;
+        const bUnread = notifications.some(n => n.referenceId === b.id && !n.isRead) ? 0 : 1;
+        return aUnread - bUnread;
+      }),
+    [customers, isDirectorLevel, isShareHolder, currentUser, directorView, notifications]
   );
 
   const todayTestDrives = useMemo(() =>

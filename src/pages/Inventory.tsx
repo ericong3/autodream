@@ -500,9 +500,19 @@ export default function Inventory() {
   }, [pendingDelivery]);
 
   // Ordered views: use manual drag order, mapping back to car objects
-  const filteredOrdered   = useMemo(() => stockOrder.map(id => filtered.find(c => c.id === id)).filter(Boolean) as Car[], [filtered, stockOrder]);
-  const comingSoonOrdered = useMemo(() => comingSoonOrder.map(id => comingSoonFiltered.find(c => c.id === id)).filter(Boolean) as Car[], [comingSoonFiltered, comingSoonOrder]);
-  const pendingOrdered    = useMemo(() => pendingOrder.map(id => pendingDelivery.find(c => c.id === id)).filter(Boolean) as Car[], [pendingDelivery, pendingOrder]);
+  const unreadCarIds = useMemo(() => new Set(notifications.filter(n => !n.isRead).map(n => n.referenceId).filter(Boolean)), [notifications]);
+  const filteredOrdered   = useMemo(() => {
+    const ordered = stockOrder.map(id => filtered.find(c => c.id === id)).filter(Boolean) as Car[];
+    return [...ordered].sort((a, b) => (unreadCarIds.has(a.id) ? 0 : 1) - (unreadCarIds.has(b.id) ? 0 : 1));
+  }, [filtered, stockOrder, unreadCarIds]);
+  const comingSoonOrdered = useMemo(() => {
+    const ordered = comingSoonOrder.map(id => comingSoonFiltered.find(c => c.id === id)).filter(Boolean) as Car[];
+    return [...ordered].sort((a, b) => (unreadCarIds.has(a.id) ? 0 : 1) - (unreadCarIds.has(b.id) ? 0 : 1));
+  }, [comingSoonFiltered, comingSoonOrder, unreadCarIds]);
+  const pendingOrdered    = useMemo(() => {
+    const ordered = pendingOrder.map(id => pendingDelivery.find(c => c.id === id)).filter(Boolean) as Car[];
+    return [...ordered].sort((a, b) => (unreadCarIds.has(a.id) ? 0 : 1) - (unreadCarIds.has(b.id) ? 0 : 1));
+  }, [pendingDelivery, pendingOrder, unreadCarIds]);
 
   const isComingSoon = form.status === 'coming_soon';
 

@@ -83,6 +83,9 @@ export default function LoanCases() {
   const myCases = loanCases
     .filter(c => c.salesmanId === currentUser.id)
     .sort((a, b) => {
+      const aUnread = notifications.some(n => n.referenceId === a.id && !n.isRead) ? 0 : 1;
+      const bUnread = notifications.some(n => n.referenceId === b.id && !n.isRead) ? 0 : 1;
+      if (aUnread !== bUnread) return aUnread - bUnread;
       const statusDiff = (STATUS_SORT[a.status] ?? 9) - (STATUS_SORT[b.status] ?? 9);
       if (statusDiff !== 0) return statusDiff;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
