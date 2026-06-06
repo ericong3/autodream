@@ -168,14 +168,15 @@ export default function LoanCases() {
 
             const guidance = STATUS_GUIDANCE[lc.status];
             const cardBorder = CARD_ACCENT[lc.status] ?? 'border-obsidian-400/20';
-            const hasUnread = notifications.some(n => n.referenceId === lc.id && !n.isRead);
+            const unreadNotifs = notifications.filter(n => n.referenceId === lc.id && !n.isRead);
+            const hasUnread = unreadNotifs.length > 0;
+            const latestUnread = unreadNotifs[0] ?? null;
 
             return (
               <div
                 key={lc.id}
-                className={`card-glass rounded-2xl border ${cardBorder} p-4 space-y-3 relative`}
+                className={`card-glass rounded-2xl border p-4 space-y-3 ${hasUnread ? 'border-red-500/50 ring-1 ring-red-500/20' : cardBorder}`}
               >
-                {hasUnread && <span className="absolute top-3 right-3 w-2.5 h-2.5 bg-red-500 rounded-full z-10 pointer-events-none" />}
                 {/* Top row */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="space-y-0.5">
@@ -210,6 +211,15 @@ export default function LoanCases() {
                   <div className={`rounded-xl px-3 py-2 border flex items-start gap-2 ${guidance.cls}`}>
                     <span className="text-sm shrink-0 mt-0.5">{guidance.icon}</span>
                     <p className="text-xs leading-relaxed">{guidance.text}</p>
+                  </div>
+                )}
+
+                {/* Unread notification strip */}
+                {latestUnread && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                    <span className="text-red-300 text-xs truncate">{latestUnread.title}{latestUnread.body ? ` — ${latestUnread.body}` : ''}</span>
+                    {unreadNotifs.length > 1 && <span className="ml-auto shrink-0 text-red-400 text-[10px] font-bold">+{unreadNotifs.length - 1}</span>}
                   </div>
                 )}
 

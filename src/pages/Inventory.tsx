@@ -172,6 +172,7 @@ export default function Inventory() {
   const setViewPreference = useStore((s) => s.setViewPreference);
   const updateCustomer = useStore((s) => s.updateCustomer);
   const notifications = useStore((s) => s.notifications);
+  const carNotifs = (carId: string) => notifications.filter(n => n.referenceId === carId && !n.isRead);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
@@ -718,14 +719,15 @@ export default function Inventory() {
                       ? Math.floor((Date.now() - new Date(car.finalDeal.submittedAt).getTime()) / 86400000)
                       : null;
                     const needsApproval = car.finalDeal?.approvalStatus === 'pending';
-                    const hasUnread = notifications.some(n => n.referenceId === car.id && !n.isRead);
+                    const unreadNotifs = carNotifs(car.id);
+                    const hasUnread = unreadNotifs.length > 0;
+                    const latestUnread = unreadNotifs[0] ?? null;
                     return (
                       <SortableCarItem key={car.id} id={car.id}>
                         <div className="relative">
-                          {hasUnread && <span className="absolute top-2 left-2 w-2.5 h-2.5 bg-red-500 rounded-full z-20 pointer-events-none" />}
                         <div
                           onClick={() => navigate(`/inventory/${car.id}`, { state: { inventoryTab } })}
-                          className="bg-card-gradient border border-green-500/30 hover:border-green-400/60 rounded-xl shadow-card overflow-hidden cursor-pointer hover:shadow-xl transition-all group"
+                          className={`bg-card-gradient rounded-xl shadow-card overflow-hidden cursor-pointer hover:shadow-xl transition-all group ${hasUnread ? 'border border-red-500/50 ring-1 ring-red-500/20' : 'border border-green-500/30 hover:border-green-400/60'}`}
                         >
                       {/* Photo */}
                       <div className="h-36 bg-obsidian-700/60 flex items-center justify-center relative">
@@ -791,6 +793,13 @@ export default function Inventory() {
                               Final Deal
                             </button>
                           )}
+                        {latestUnread && (
+                          <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-red-500/20">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                            <span className="text-red-300 text-[11px] truncate">{latestUnread.title}</span>
+                            {unreadNotifs.length > 1 && <span className="ml-auto shrink-0 text-red-400 text-[10px] font-bold">+{unreadNotifs.length - 1}</span>}
+                          </div>
+                        )}
                         </div>
                       </div>
                         </div>
@@ -831,14 +840,16 @@ export default function Inventory() {
                     ? Math.floor((Date.now() - new Date(car.finalDeal.submittedAt).getTime()) / 86400000)
                     : null;
                   const needsApproval = car.finalDeal?.approvalStatus === 'pending';
-                  const hasUnread = notifications.some(n => n.referenceId === car.id && !n.isRead);
+                  const unreadNotifs = carNotifs(car.id);
+                  const hasUnread = unreadNotifs.length > 0;
+                  const latestUnread = unreadNotifs[0] ?? null;
                   return (
                     <SortableCarItem key={car.id} id={car.id}>
                     <div
                       onClick={() => navigate(`/inventory/${car.id}`, { state: { inventoryTab } })}
-                      className="flex gap-4 p-4 rounded-2xl bg-obsidian-800/60 border border-obsidian-400/40 cursor-pointer hover:border-green-500/40 transition-colors group relative"
+                      className={`flex flex-col gap-0 rounded-2xl bg-obsidian-800/60 cursor-pointer transition-colors group ${hasUnread ? 'border border-red-500/50 ring-1 ring-red-500/20' : 'border border-obsidian-400/40 hover:border-green-500/40'}`}
                     >
-                      {hasUnread && <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full z-10 pointer-events-none" />}
+                    <div className="flex gap-4 p-4">
                       {/* Car photo */}
                       {car.photo ? (
                         <img src={car.photo} alt="" className="w-20 h-14 rounded-xl object-cover shrink-0" />
@@ -901,6 +912,14 @@ export default function Inventory() {
                         )}
                       </div>
                     </div>
+                    {latestUnread && (
+                      <div className="flex items-center gap-2 px-4 py-2 border-t border-red-500/20 bg-red-500/5 rounded-b-2xl">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                        <span className="text-red-300 text-xs truncate">{latestUnread.title}{latestUnread.body ? ` — ${latestUnread.body}` : ''}</span>
+                        {unreadNotifs.length > 1 && <span className="ml-auto shrink-0 text-red-400 text-[10px] font-bold">+{unreadNotifs.length - 1}</span>}
+                      </div>
+                    )}
+                    </div>
                     </SortableCarItem>
                   );
                 })}
@@ -942,11 +961,12 @@ export default function Inventory() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {comingSoonOrdered.map((car) => {
                     const inv = car.investorId ? users.find(u => u.id === car.investorId) : null;
-                    const hasUnread = notifications.some(n => n.referenceId === car.id && !n.isRead);
+                    const unreadNotifs = carNotifs(car.id);
+                    const hasUnread = unreadNotifs.length > 0;
+                    const latestUnread = unreadNotifs[0] ?? null;
                     return (
                       <SortableCarItem key={car.id} id={car.id}>
                         <div className="relative group/card">
-                    {hasUnread && <span className="absolute top-2 left-2 w-2.5 h-2.5 bg-red-500 rounded-full z-20 pointer-events-none" />}
                     {isDirector && (
                       <button
                         onClick={(e) => { e.stopPropagation(); setDeleteCarId(car.id); }}
@@ -957,7 +977,7 @@ export default function Inventory() {
                     )}
                     <div
                       onClick={() => navigate(`/inventory/${car.id}`, { state: { inventoryTab } })}
-                      className="bg-card-gradient border border-purple-500/30 hover:border-purple-400/60 rounded-xl shadow-card overflow-hidden cursor-pointer hover:shadow-xl transition-all group"
+                      className={`bg-card-gradient rounded-xl shadow-card overflow-hidden cursor-pointer hover:shadow-xl transition-all group ${hasUnread ? 'border border-red-500/50 ring-1 ring-red-500/20' : 'border border-purple-500/30 hover:border-purple-400/60'}`}
                     >
                       {/* Photo */}
                       <div className="h-36 bg-obsidian-700/60 flex items-center justify-center relative">
@@ -1021,6 +1041,13 @@ export default function Inventory() {
                               Car In ✓
                             </button>
                           )}
+                        {latestUnread && (
+                          <div className="flex items-center gap-1.5 pt-2 mt-2 border-t border-red-500/20">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                            <span className="text-red-300 text-[11px] truncate">{latestUnread.title}</span>
+                            {unreadNotifs.length > 1 && <span className="ml-auto shrink-0 text-red-400 text-[10px] font-bold">+{unreadNotifs.length - 1}</span>}
+                          </div>
+                        )}
                         </div>
                       </div>
                     </div>
@@ -1055,14 +1082,16 @@ export default function Inventory() {
             <div className="bg-card-gradient border border-purple-500/20 rounded-xl shadow-card divide-y divide-obsidian-400/60">
               {comingSoonOrdered.map((car) => {
                 const inv = car.investorId ? users.find(u => u.id === car.investorId) : null;
-                const hasUnread = notifications.some(n => n.referenceId === car.id && !n.isRead);
+                const unreadNotifs = carNotifs(car.id);
+                const hasUnread = unreadNotifs.length > 0;
+                const latestUnread = unreadNotifs[0] ?? null;
                 return (
                   <SortableCarItem key={car.id} id={car.id}>
                   <div
                     onClick={() => navigate(`/inventory/${car.id}`, { state: { inventoryTab } })}
-                    className="flex items-center gap-4 px-4 py-3 hover:bg-obsidian-700/40 transition-colors cursor-pointer relative"
+                    className={`flex flex-col cursor-pointer transition-colors ${hasUnread ? 'bg-red-500/5' : 'hover:bg-obsidian-700/40'}`}
                   >
-                    {hasUnread && <span className="absolute top-2 right-3 w-2.5 h-2.5 bg-red-500 rounded-full z-10 pointer-events-none" />}
+                  <div className="flex items-center gap-4 px-4 py-3">
                     {/* Thumbnail */}
                     <div className="w-16 h-11 bg-obsidian-700/60 rounded-lg flex-shrink-0 flex items-center justify-center">
                       {car.photo
@@ -1135,6 +1164,14 @@ export default function Inventory() {
                       )}
                     </div>
                   </div>
+                  {latestUnread && (
+                    <div className="flex items-center gap-2 px-4 py-2 border-t border-red-500/20">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                      <span className="text-red-300 text-xs truncate">{latestUnread.title}{latestUnread.body ? ` — ${latestUnread.body}` : ''}</span>
+                      {unreadNotifs.length > 1 && <span className="ml-auto shrink-0 text-red-400 text-[10px] font-bold">+{unreadNotifs.length - 1}</span>}
+                    </div>
+                  )}
+                  </div>
                   </SortableCarItem>
                 );
               })}
@@ -1199,11 +1236,12 @@ export default function Inventory() {
           <SortableContext items={filteredOrdered.map(c => c.id)} strategy={rectSortingStrategy}>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredOrdered.map((car, idx) => {
-                const hasUnread = notifications.some(n => n.referenceId === car.id && !n.isRead);
+                const unreadNotifs = carNotifs(car.id);
+                const hasUnread = unreadNotifs.length > 0;
+                const latestUnread = unreadNotifs[0] ?? null;
                 return (
                 <SortableCarItem key={car.id} id={car.id}>
                   <div className={`relative group/card stagger-enter stagger-${Math.min(idx + 1, 12)}`}>
-              {hasUnread && <span className="absolute top-2 left-2 w-2.5 h-2.5 bg-red-500 rounded-full z-20 pointer-events-none" />}
               {isDirector && (
                 <button
                   onClick={(e) => { e.stopPropagation(); setDeleteCarId(car.id); }}
@@ -1215,7 +1253,7 @@ export default function Inventory() {
               )}
             <div
               onClick={() => navigate(`/inventory/${car.id}`, { state: { inventoryTab } })}
-              className="relative bg-obsidian-900 rounded-xl overflow-hidden cursor-pointer aspect-[4/3] shadow-card border border-obsidian-400/50 hover:border-gold-500/30 transition-colors duration-300 group card-lift card-streak"
+              className={`relative bg-obsidian-900 rounded-xl overflow-hidden cursor-pointer aspect-[4/3] shadow-card transition-colors duration-300 group card-lift card-streak ${hasUnread ? 'border border-red-500/60 ring-1 ring-red-500/20' : 'border border-obsidian-400/50 hover:border-gold-500/30'}`}
             >
               {/* Full-bleed photo */}
               <div className="absolute inset-0">
@@ -1346,6 +1384,13 @@ export default function Inventory() {
                     </div>
                   );
                 })()}
+                {latestUnread && (
+                  <div className="flex items-center gap-1.5 mt-1.5 pt-1.5 border-t border-red-500/30">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                    <span className="text-red-300 text-[10px] truncate leading-tight">{latestUnread.title}</span>
+                    {unreadNotifs.length > 1 && <span className="ml-auto shrink-0 text-red-300 text-[9px]">+{unreadNotifs.length - 1}</span>}
+                  </div>
+                )}
               </div>
 
               {/* Light streak on hover */}
@@ -1396,15 +1441,17 @@ export default function Inventory() {
             const deal = car.finalDeal;
             const price = confirmedDealPrice[car.id] ?? car.sellingPrice;
             const profit = carProfitMap[car.id] ?? 0;
-            const hasUnread = notifications.some(n => n.referenceId === car.id && !n.isRead);
+            const unreadNotifs = carNotifs(car.id);
+            const hasUnread = unreadNotifs.length > 0;
+            const latestUnread = unreadNotifs[0] ?? null;
 
             return (
               <SortableCarItem key={car.id} id={car.id}>
               <div
                 onClick={() => navigate(`/inventory/${car.id}`, { state: { inventoryTab } })}
-                className={`row-item bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card cursor-pointer hover:border-gold-500/40 hover:bg-obsidian-700/30 transition-all flex items-center gap-4 px-4 py-3 relative stagger-enter stagger-${Math.min(idx + 1, 12)}${car.status === 'delivered' ? ' opacity-60' : ''}`}
+                className={`row-item bg-card-gradient rounded-xl shadow-card cursor-pointer hover:bg-obsidian-700/30 transition-all flex flex-col px-4 py-3 relative stagger-enter stagger-${Math.min(idx + 1, 12)}${car.status === 'delivered' ? ' opacity-60' : ''} ${hasUnread ? 'border border-red-500/50 ring-1 ring-red-500/20' : 'border border-obsidian-400/70 hover:border-gold-500/40'}`}
               >
-                {hasUnread && <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full z-10 pointer-events-none" />}
+              <div className="flex items-center gap-4">
                 {/* Thumbnail */}
                 <div className="w-24 h-16 bg-obsidian-700/60 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center relative">
                   {car.photo
@@ -1484,6 +1531,14 @@ export default function Inventory() {
                     <Trash2 size={14} />
                   </button>
                 )}
+              </div>
+              {latestUnread && (
+                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-red-500/20">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                  <span className="text-red-300 text-xs truncate">{latestUnread.title}{latestUnread.body ? ` — ${latestUnread.body}` : ''}</span>
+                  {unreadNotifs.length > 1 && <span className="ml-auto shrink-0 text-red-400 text-[10px] font-bold">+{unreadNotifs.length - 1}</span>}
+                </div>
+              )}
               </div>
               </SortableCarItem>
             );

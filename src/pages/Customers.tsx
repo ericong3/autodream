@@ -944,14 +944,15 @@ export default function Customers() {
                 return { label: `Follow up in ${diff}d`, urgent: false };
               })();
 
-              const hasUnread = notifications.some(n => n.referenceId === c.id && !n.isRead);
+              const unreadNotifs = notifications.filter(n => n.referenceId === c.id && !n.isRead);
+              const hasUnread = unreadNotifs.length > 0;
+              const latestUnread = unreadNotifs[0] ?? null;
               return (
                 <div
                   key={c.id}
-                  className={`px-4 py-4 hover:bg-obsidian-700/30 transition-colors cursor-pointer relative ${stale ? 'border-l-[3px] border-l-red-500/60 bg-red-500/[0.03]' : ''}`}
+                  className={`px-4 py-4 hover:bg-obsidian-700/30 transition-colors cursor-pointer ${stale ? 'border-l-[3px] border-l-red-500/60 bg-red-500/[0.03]' : hasUnread ? 'border-l-[3px] border-l-red-500 bg-red-500/[0.03]' : ''}`}
                   onClick={() => { setDetailLead(c); markNotificationsReadByRef(c.id); }}
                 >
-                  {hasUnread && <span className="absolute top-3 right-3 w-2.5 h-2.5 bg-red-500 rounded-full z-10 pointer-events-none" />}
                   {/* Row 1: Name + status pill */}
                   <div className="flex items-start justify-between gap-2 mb-1.5">
                     <div className="flex items-center gap-2 min-w-0 flex-wrap">
@@ -1047,6 +1048,13 @@ export default function Customers() {
                       <button onClick={() => { updateCustomer(c.id, { isTrashed: true, trashedAt: new Date().toISOString() }); setOpenMenuId(null); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg transition-colors touch-manipulation">
                         <Trash2 size={12} />Bin
                       </button>
+                    </div>
+                  )}
+                  {latestUnread && (
+                    <div className="flex items-center gap-2 mt-2 pt-2 border-t border-red-500/20">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                      <span className="text-red-300 text-xs truncate">{latestUnread.title}{latestUnread.body ? ` — ${latestUnread.body}` : ''}</span>
+                      {unreadNotifs.length > 1 && <span className="ml-auto shrink-0 text-red-400 text-[10px] font-bold">+{unreadNotifs.length - 1}</span>}
                     </div>
                   )}
                 </div>
