@@ -1299,8 +1299,11 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       // Restore state on failure — only if re-fetch has data
       const { data } = await supabase.from('cars').select('*');
       if (data && data.length > 0) set({ cars: data.map(rowToCar) });
+    } else {
+      // Clear orphaned notifications so badge count stays accurate
+      supabase.from('notifications').update({ is_read: true }).eq('reference_id', id).then(() => {});
+      set(s => ({ notifications: s.notifications.filter(n => n.referenceId !== id) }));
     }
-    // Success: realtime DELETE event will fire later and try to filter the same id — already gone, no-op.
   },
 
   // Repairs
