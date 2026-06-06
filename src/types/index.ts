@@ -44,7 +44,7 @@ export interface LoanCase {
 export interface LoanCaseDocument {
   id: string;
   caseId: string;
-  type: 'applicant' | 'guarantor';
+  type: 'applicant' | 'guarantor' | 'additional';
   fileName: string;
   filePath: string;
   uploadedAt: string;

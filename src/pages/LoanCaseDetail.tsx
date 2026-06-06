@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { X, FileText, Download, ChevronDown, Loader2, User, Car as CarIcon, CreditCard, Send } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { X, FileText, Download, ChevronDown, Loader2, User, Car as CarIcon, CreditCard, Send, Upload, Paperclip } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
 import { LoanCase, LoanCaseStatus } from '../types';
@@ -51,6 +51,7 @@ export default function LoanCaseDetail({ loanCase, groupCases, onClose }: Props)
   const loanCaseActivities = useStore(s => s.loanCaseActivities);
   const updateLoanCase = useStore(s => s.updateLoanCase);
   const addLoanCaseActivity = useStore(s => s.addLoanCaseActivity);
+  const addLoanCaseDocument = useStore(s => s.addLoanCaseDocument);
 
   // When opened from a grouped card: 'details' tab or a case ID
   const showTabs = (groupCases?.length ?? 0) > 0;
@@ -73,6 +74,51 @@ export default function LoanCaseDetail({ loanCase, groupCases, onClose }: Props)
     .filter(a => a.caseId === activeCase.id)
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
+  const additionalDocs = loanCaseDocuments.filter(d => d.caseId === activeCase.id && d.type === 'additional');
+
+  async function handleAdditionalUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    setAdditionalUploading(true);
+    try {
+      for (const file of files) {
+        const path = `${activeCase.id}/additional/${Date.now()}-${file.name}`;
+        const { error } = await supabase.storage.from('loan-documents').upload(path, file);
+        if (error) throw error;
+        await addLoanCaseDocument({
+          id: crypto.randomUUID(),
+          caseId: activeCase.id,
+          type: 'additional',
+          fileName: file.name,
+          filePath: path,
+          uploadedAt: new Date().toISOString(),
+        });
+        await addLoanCaseActivity({
+          id: crypto.randomUUID(),
+          caseId: activeCase.id,
+          userId: currentUser.id,
+          userName: currentUser.name,
+          userRole: currentUser.role,
+          type: 'remark',
+          content: `Uploaded additional document: ${file.name}`,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      notifyUsers(
+        [activeCase.bankerId],
+        `New document from ${currentUser.name}`,
+        `${files.length} additional document${files.length > 1 ? 's' : ''} uploaded for ${customer?.name ?? 'customer'}`,
+        '/banker-dashboard',
+      );
+      toast.success('Document uploaded');
+    } catch (err: any) {
+      toast.error(err.message ?? 'Upload failed');
+    } finally {
+      setAdditionalUploading(false);
+      if (additionalRef.current) additionalRef.current.value = '';
+    }
+  }
+
   const salesman = users.find(u => u.id === activeCase.salesmanId);
   const banker = users.find(u => u.id === activeCase.bankerId);
   const customer = customers.find(c => c.id === activeCase.customerId);
@@ -86,6 +132,8 @@ export default function LoanCaseDetail({ loanCase, groupCases, onClose }: Props)
   const [guarantorInterviewOpen, setGuarantorInterviewOpen] = useState(false);
   const [reply, setReply] = useState('');
   const [replySending, setReplySending] = useState(false);
+  const [additionalUploading, setAdditionalUploading] = useState(false);
+  const additionalRef = useRef<HTMLInputElement>(null);
 
   // Reset form state when switching tabs
   useEffect(() => {
@@ -461,6 +509,60 @@ export default function LoanCaseDetail({ loanCase, groupCases, onClose }: Props)
                   {activeCase.status === 'withdrawn'      && 'This case has been withdrawn.'}
                   {activeCase.status === 'cancelled'      && 'This case has been cancelled.'}
                 </p>
+              </div>
+            </section>
+          )}
+
+          {/* Additional Documents */}
+          {activeTab !== 'details' && (
+            <section className="rounded-2xl border border-amber-500/40 overflow-hidden">
+              <div className="flex items-center gap-2 px-4 py-3 bg-amber-500/10 border-b border-amber-500/20">
+                <div className="p-1 rounded-lg bg-amber-500/15">
+                  <Paperclip size={13} className="text-amber-300" />
+                </div>
+                <span className="text-sm font-semibold text-white">Additional Documents</span>
+                {additionalDocs.length > 0 && (
+                  <span className="ml-auto text-[11px] text-gray-500">{additionalDocs.length} doc{additionalDocs.length !== 1 ? 's' : ''}</span>
+                )}
+              </div>
+              <div className="px-4 py-3 space-y-2">
+                {additionalDocs.length === 0 && !isSalesman && (
+                  <p className="text-xs text-gray-500 text-center py-2">No additional documents yet</p>
+                )}
+                {additionalDocs.map(doc => (
+                  <button
+                    key={doc.id}
+                    onClick={() => downloadDoc(doc.filePath, doc.fileName)}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl bg-obsidian-700/40 border border-obsidian-400/20 hover:border-amber-500/30 transition-colors text-left"
+                  >
+                    <FileText size={13} className="text-amber-400 shrink-0" />
+                    <span className="text-xs text-gray-200 truncate flex-1">{doc.fileName}</span>
+                    <span className="text-[10px] text-gray-500 shrink-0">
+                      {new Date(doc.uploadedAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}
+                    </span>
+                    <Download size={12} className="text-gray-500 shrink-0" />
+                  </button>
+                ))}
+                {isSalesman && !['withdrawn', 'cancelled', 'approved'].includes(activeCase.status) && (
+                  <>
+                    <button
+                      onClick={() => additionalRef.current?.click()}
+                      disabled={additionalUploading}
+                      className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-amber-500/30 hover:border-amber-500/60 rounded-xl py-3 text-amber-400 text-xs font-medium transition-colors disabled:opacity-50"
+                    >
+                      {additionalUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                      {additionalUploading ? 'Uploading…' : 'Upload Document'}
+                    </button>
+                    <input
+                      ref={additionalRef}
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      multiple
+                      className="hidden"
+                      onChange={handleAdditionalUpload}
+                    />
+                  </>
+                )}
               </div>
             </section>
           )}
