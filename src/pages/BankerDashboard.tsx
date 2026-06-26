@@ -43,6 +43,14 @@ export default function BankerDashboard() {
   const loanCaseDocuments = useStore(s => s.loanCaseDocuments);
   const loanCaseActivities = useStore(s => s.loanCaseActivities);
 
+  const bankers = useStore(s => s.bankers);
+  const bankerOpenCaseId = useStore(s => s.bankerOpenCaseId);
+  const setBankerOpenCaseId = useStore(s => s.setBankerOpenCaseId);
+
+  // Resolve my cases: support old format (bankerId = User.id) and new format (bankerId = Banker.id linked via userId)
+  const myBankerProfile = bankers.find(b => b.userId === currentUser.id);
+
+
   const VALID_FILTERS = ['new', 'submitted', 'approved', 'rejected', 'appeal', 'cancelled'] as const;
   const [filter, setFilter] = useState<typeof VALID_FILTERS[number]>(() => {
     const saved = localStorage.getItem('banker_filter');
@@ -51,11 +59,18 @@ export default function BankerDashboard() {
   useEffect(() => { localStorage.setItem('banker_filter', filter); }, [filter]);
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
 
+  // Open a case when triggered from the notification panel
+  useEffect(() => {
+    if (!bankerOpenCaseId) return;
+    setSelectedCaseId(bankerOpenCaseId);
+    setBankerOpenCaseId(null);
+  }, [bankerOpenCaseId]);
+
   const myCases = useMemo(() =>
     loanCases
-      .filter(c => c.bankerId === currentUser.id)
+      .filter(c => c.bankerId === currentUser.id || (myBankerProfile && c.bankerId === myBankerProfile.id))
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
-    [loanCases, currentUser.id]
+    [loanCases, currentUser.id, myBankerProfile]
   );
 
   const filteredCases = useMemo(() => myCases.filter(c => {

@@ -184,11 +184,17 @@ export default function Customers() {
   const [guarantorUploading, setGuarantorUploading] = useState(false);
   const guarantorFileRef = useRef<HTMLInputElement>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [oldAppUpdateBank, setOldAppUpdateBank] = useState<string | null>(null);
+  const [oldAppNewStatus, setOldAppNewStatus] = useState<'approved' | 'rejected'>('approved');
+  const [oldAppAmount, setOldAppAmount] = useState('');
+  const [oldAppRate, setOldAppRate] = useState('');
+  const [oldAppReason, setOldAppReason] = useState('');
   useBodyScrollLock(!!detailLead || !!workOrderCustomer);
 
   useEffect(() => {
     if (!detailLead) return;
     setShowInlineFollowup(false);
+    setOldAppUpdateBank(null);
   }, [detailLead?.id]);
 
   // Open customer detail from URL param (e.g. navigated from LoanCases "Confirm Deal")
@@ -400,7 +406,7 @@ export default function Customers() {
     // Commission auto-calc: profit = selling - purchase - repairs; RM 2k if > 12k else RM 1k
     const wo = c.loanWorkOrder ?? c.cashWorkOrder;
     const dealPrice = wo ? (wo.sellingPrice - (wo.discount ?? 0)) : (car?.sellingPrice ?? 0);
-    const commission = (car?.priceFloor != null && dealPrice < car.priceFloor) ? 1000 : 1500;
+    const commission = car?.isStaffSale ? 0 : (car?.priceFloor != null && dealPrice < car.priceFloor) ? 1000 : 1500;
 
     updateCustomer(c.id, {
       delivered: true,
@@ -627,30 +633,31 @@ export default function Customers() {
       : c.loanApplications?.find(a => a.status === 'approved');
     const car = getCar(c.interestedCarId);
     const prev = c.loanWorkOrder ?? c.cashWorkOrder;
+    const lo = c.loanOrder; // pre-fill from Loan Order if available
     setWoForm({
       ...emptyWorkOrder,
-      sellingPrice: prev?.sellingPrice ?? car?.sellingPrice ?? 0,
-      insurance: prev?.insurance ?? 0,
-      bankProduct: prev?.bankProduct ?? 0,
-      additionalItems: prev?.additionalItems ?? [],
-      discount: prev?.discount ?? 0,
+      sellingPrice: prev?.sellingPrice ?? lo?.sellingPrice ?? car?.sellingPrice ?? 0,
+      insurance: prev?.insurance ?? lo?.insurance ?? 0,
+      bankProduct: prev?.bankProduct ?? lo?.bankProduct ?? 0,
+      additionalItems: prev?.additionalItems ?? lo?.additionalItems ?? [],
+      discount: prev?.discount ?? lo?.discount ?? 0,
       bookingFee: c.bookingFee ?? prev?.bookingFee ?? 0,
       approvedBank: approvedApp?.bank ?? bankName ?? (c.loanWorkOrder?.bank ?? ''),
-      loanAmount: bankAmount ?? approvedApp?.approvedAmount ?? c.loanWorkOrder?.loanAmount ?? 0,
+      loanAmount: bankAmount ?? approvedApp?.approvedAmount ?? c.loanWorkOrder?.loanAmount ?? lo?.requestedLoanAmount ?? 0,
       customerName: prev?.customerName ?? c.name,
       customerIc: prev?.customerIc ?? c.ic ?? '',
       customerPhone: prev?.customerPhone ?? c.phone,
       customerEmail: prev?.customerEmail ?? c.email ?? '',
       customerAddress: prev?.customerAddress ?? '',
-      hasTradeIn: prev?.hasTradeIn ?? false,
+      hasTradeIn: prev?.hasTradeIn ?? lo?.hasTradeIn ?? false,
       tradeInPhotos: prev?.tradeInPhotos ?? [],
       greenCardPhoto: prev?.greenCardPhoto ?? '',
-      tradeInPlate: prev?.tradeInPlate ?? '',
-      tradeInMake: prev?.tradeInMake ?? '',
-      tradeInModel: prev?.tradeInModel ?? '',
-      tradeInVariant: prev?.tradeInVariant ?? '',
-      tradeInPrice: prev?.tradeInPrice ?? 0,
-      settlementFigure: prev?.settlementFigure ?? 0,
+      tradeInPlate: prev?.tradeInPlate ?? lo?.tradeInPlate ?? '',
+      tradeInMake: prev?.tradeInMake ?? lo?.tradeInMake ?? '',
+      tradeInModel: prev?.tradeInModel ?? lo?.tradeInModel ?? '',
+      tradeInVariant: prev?.tradeInVariant ?? lo?.tradeInVariant ?? '',
+      tradeInPrice: prev?.tradeInPrice ?? lo?.tradeInPrice ?? 0,
+      settlementFigure: prev?.settlementFigure ?? lo?.settlementFigure ?? 0,
     });
     setWorkOrderCarId(carIdOverride ?? c.interestedCarId ?? '');
     setWorkOrderCustomer(c);
@@ -2244,7 +2251,9 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                       <p className="text-center text-gray-500 text-sm pt-10">No bank submissions yet.</p>
                     )}
                     {/* Old loanApplications (no portal case) */}
-                    {oldApps.map(app => (
+                    {oldApps.map(app => {
+                      const isUpdating = oldAppUpdateBank === app.bank;
+                      return (
                       <div key={app.bank} className="rounded-2xl border border-obsidian-400/40 bg-obsidian-700/20 p-4 space-y-2">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
@@ -2256,6 +2265,7 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                           <span className="text-[10px] text-gray-500 bg-obsidian-600/40 px-2 py-0.5 rounded-full border border-obsidian-400/30">Not in portal</span>
                         </div>
                         {app.approvedAmount && <p className="text-xs text-green-300">Approved: RM {app.approvedAmount.toLocaleString()}</p>}
+                        {app.interestRate && <p className="text-xs text-green-300/70">Interest: {app.interestRate}%</p>}
                         {app.rejectionReason && <p className="text-xs text-gray-500 italic">{app.rejectionReason}</p>}
                         {app.status === 'approved' && !detailLead.loanWorkOrder && !isShareHolder && (
                           <button
@@ -2265,7 +2275,94 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                             <CheckCircle size={12} />Confirm Deal
                           </button>
                         )}
-                        {!isShareHolder && app.status !== 'approved' && app.status !== 'cancelled' && (
+                        {/* Salesman self-update: status buttons for submitted loans */}
+                        {!isShareHolder && app.status === 'submitted' && !isUpdating && (
+                          <div className="flex gap-2 pt-1">
+                            <button
+                              onClick={() => { setOldAppUpdateBank(app.bank); setOldAppNewStatus('approved'); setOldAppAmount(''); setOldAppRate(''); setOldAppReason(''); }}
+                              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-green-500/10 border border-green-500/30 text-green-300 text-xs font-semibold touch-manipulation active:scale-[0.97]"
+                            >
+                              <CheckCircle size={12} />Approved
+                            </button>
+                            <button
+                              onClick={() => { setOldAppUpdateBank(app.bank); setOldAppNewStatus('rejected'); setOldAppAmount(''); setOldAppRate(''); setOldAppReason(''); }}
+                              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-semibold touch-manipulation active:scale-[0.97]"
+                            >
+                              <XCircle size={12} />Rejected
+                            </button>
+                          </div>
+                        )}
+                        {/* Expanded update form */}
+                        {isUpdating && (
+                          <div className="space-y-2 pt-1 border-t border-obsidian-400/30 mt-2">
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => { setOldAppNewStatus('approved'); }}
+                                className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-colors ${oldAppNewStatus === 'approved' ? 'bg-green-500/20 border-green-500/50 text-green-300' : 'border-obsidian-400/30 text-gray-400'}`}
+                              >Approved</button>
+                              <button
+                                onClick={() => { setOldAppNewStatus('rejected'); }}
+                                className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-colors ${oldAppNewStatus === 'rejected' ? 'bg-red-500/20 border-red-500/50 text-red-300' : 'border-obsidian-400/30 text-gray-400'}`}
+                              >Rejected</button>
+                            </div>
+                            {oldAppNewStatus === 'approved' && (
+                              <>
+                                <input
+                                  type="number"
+                                  value={oldAppAmount}
+                                  onChange={e => setOldAppAmount(e.target.value)}
+                                  placeholder="Approved amount (RM)"
+                                  className="w-full bg-obsidian-700 border border-obsidian-500/50 rounded-xl px-3 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500/40"
+                                />
+                                <input
+                                  type="number"
+                                  value={oldAppRate}
+                                  onChange={e => setOldAppRate(e.target.value)}
+                                  placeholder="Interest rate % (optional)"
+                                  className="w-full bg-obsidian-700 border border-obsidian-500/50 rounded-xl px-3 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500/40"
+                                  step="0.01"
+                                />
+                              </>
+                            )}
+                            {oldAppNewStatus === 'rejected' && (
+                              <input
+                                value={oldAppReason}
+                                onChange={e => setOldAppReason(e.target.value)}
+                                placeholder="Rejection reason (optional)"
+                                className="w-full bg-obsidian-700 border border-obsidian-500/50 rounded-xl px-3 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-red-500/40"
+                              />
+                            )}
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => setOldAppUpdateBank(null)}
+                                className="flex-1 py-2 rounded-xl border border-obsidian-400/30 text-gray-400 text-xs font-semibold touch-manipulation"
+                              >Cancel</button>
+                              <button
+                                onClick={() => {
+                                  const updatedApps = (detailLead.loanApplications ?? []).map(a =>
+                                    a.bank === app.bank
+                                      ? {
+                                          ...a,
+                                          status: oldAppNewStatus as 'approved' | 'rejected',
+                                          ...(oldAppNewStatus === 'approved' ? {
+                                            approvedAmount: oldAppAmount ? Number(oldAppAmount) : undefined,
+                                            interestRate: oldAppRate ? Number(oldAppRate) : undefined,
+                                            approvedAt: new Date().toISOString(),
+                                          } : {
+                                            rejectionReason: oldAppReason || undefined,
+                                          }),
+                                        }
+                                      : a
+                                  );
+                                  updateCustomer(detailLead.id, { loanApplications: updatedApps });
+                                  setOldAppUpdateBank(null);
+                                }}
+                                className={`flex-1 py-2 rounded-xl text-white text-xs font-bold touch-manipulation ${oldAppNewStatus === 'approved' ? 'bg-green-600 active:bg-green-500' : 'bg-red-600 active:bg-red-500'}`}
+                              >Confirm {oldAppNewStatus === 'approved' ? 'Approved' : 'Rejected'}</button>
+                            </div>
+                          </div>
+                        )}
+                        {!isShareHolder && app.status !== 'approved' && app.status !== 'cancelled' && !isUpdating && (
                           <button
                             onClick={() => {
                               setLoanSubmitInitial({ carId: detailLead.interestedCarId || undefined, amount: detailLead.dealPrice || undefined, banks: [app.bank] });
@@ -2277,7 +2374,8 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                           </button>
                         )}
                       </div>
-                    ))}
+                      );
+                    })}
                     {portalCases.map(lc => {
                       const lcBanker = users.find(u => u.id === lc.bankerId);
                       const lcCar = cars.find(c => c.id === lc.carId);

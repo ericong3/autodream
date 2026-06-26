@@ -31,7 +31,8 @@ export interface LoanCase {
   customerId: string;
   carId?: string;
   salesmanId: string;
-  bankerId: string;
+  bankerId: string;   // Banker.id (new) or User.id for legacy cases
+  bankerName?: string; // display name for bankers without app accounts
   bank: string;
   loanAmount: number;
   applicantInterviewText?: string;
@@ -39,6 +40,25 @@ export interface LoanCase {
   status: LoanCaseStatus;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface LoanOrder {
+  carId: string;
+  sellingPrice: number;
+  insurance: number;
+  bankProduct: number;
+  additionalItems: WorkOrderItem[];
+  discount: number;
+  requestedLoanAmount: number;
+  hasTradeIn: boolean;
+  tradeInPlate?: string;
+  tradeInMake?: string;
+  tradeInModel?: string;
+  tradeInVariant?: string;
+  tradeInPrice?: number;
+  settlementFigure?: number;
+  submittedBy: string;
+  createdAt: string;
 }
 
 export interface LoanCaseDocument {
@@ -56,7 +76,7 @@ export interface LoanCaseActivity {
   userId: string;
   userName: string;
   userRole: string;
-  type: 'status_change' | 'remark' | 'instruction';
+  type: 'status_change' | 'remark' | 'instruction' | 'whatsapp_response';
   content?: string;
   oldStatus?: string;
   newStatus?: string;
@@ -78,6 +98,7 @@ export interface Banker {
   phone?: string;
   email?: string;
   notes?: string;
+  userId?: string;    // linked User account (if they use the app); absent = no account
   createdAt: string;
 }
 
@@ -305,6 +326,7 @@ export interface Car {
   panelDealerId?: string;        // dealer whose bank panel was used for loan submission
   panelChargeAmount?: number;    // fee charged by panel dealer (varies by bank)
   collectionReceiptUrl?: string; // receipt uploaded by salesman when collecting shortfall from customer
+  isStaffSale?: boolean;
 }
 
 export interface MiscCost {
@@ -451,6 +473,7 @@ export interface Customer {
   tradeIn?: TradeIn;
   cashWorkOrder?: CashWorkOrder;
   loanWorkOrder?: LoanWorkOrder;
+  loanOrder?: LoanOrder;
   delivered?: boolean;
   deliveredAt?: string;
   deliveryPhoto?: string;
@@ -502,6 +525,24 @@ export type PaymentType =
 
 export type PaymentStatus = 'pending' | 'transferred';
 export type RecipientType = 'user' | 'external_salesman' | 'workshop' | 'dealer' | 'merchant' | 'customer';
+
+export type InvestorTxnType = 'buy_in' | 'top_up' | 'withdrawal';
+export type InvestorTxnStatus = 'completed' | 'pending' | 'approved' | 'rejected' | 'transferred';
+
+export interface InvestorTransaction {
+  id: string;
+  investorId: string;
+  type: InvestorTxnType;
+  amount: number;
+  status: InvestorTxnStatus;
+  createdAt: string;
+  approvedAt?: string;
+  dueDate?: string;
+  waitingMonths?: number;
+  approvedBy?: string;
+  rejectedBy?: string;
+  rejectedAt?: string;
+}
 
 export interface AppNotification {
   id: string;

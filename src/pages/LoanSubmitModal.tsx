@@ -1,12 +1,11 @@
 import { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Upload, Trash2, FileText, Loader2, RefreshCw } from 'lucide-react';
+import { X, Upload, Trash2, FileText, Loader2, RefreshCw, Plus } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
-import { Customer, LoanCase, LoanCaseDocument, LoanCaseActivity, BANKS } from '../types';
+import { Customer, LoanCase, LoanCaseDocument, LoanOrder, WorkOrderItem, BANKS } from '../types';
 import { PDFDocument } from 'pdf-lib';
 import { toast } from '../utils/toast';
-import { notifyUsers } from '../utils/notify';
 
 async function compressPdf(file: File): Promise<File> {
   try {
@@ -15,22 +14,22 @@ async function compressPdf(file: File): Promise<File> {
     const out = await pdf.save({ useObjectStreams: true, addDefaultPage: false });
     return new File([out.buffer as ArrayBuffer], file.name, { type: 'application/pdf' });
   } catch {
-    return file; // if compression fails, use original
+    return file;
   }
 }
 
 interface Props {
   customer: Customer;
   initialCarId?: string;
-  initialAmount?: number;
+  initialAmount?: number; // kept for backwards compat but no longer used (derived from loan order)
   initialBanks?: string[];
   onClose: () => void;
 }
 
-export default function LoanSubmitModal({ customer, initialCarId, initialAmount, initialBanks, onClose }: Props) {
+export default function LoanSubmitModal({ customer, initialCarId, initialBanks, onClose }: Props) {
   const currentUser = useStore(s => s.currentUser)!;
-  const users = useStore(s => s.users);
   const cars = useStore(s => s.cars);
+  const bankers = useStore(s => s.bankers);
   const loanCases = useStore(s => s.loanCases);
   const loanCaseDocuments = useStore(s => s.loanCaseDocuments);
   const addLoanCase = useStore(s => s.addLoanCase);
@@ -38,32 +37,51 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
   const addLoanCaseActivity = useStore(s => s.addLoanCaseActivity);
   const updateCustomer = useStore(s => s.updateCustomer);
 
-  // Find most recent previous case for this customer (by this salesman) that has docs
+  // Prefill from existing loan order on customer
+  const existingOrder = customer.loanOrder;
+
+  // Find most recent previous case with docs for reuse
   const prevCase = [...loanCases]
     .filter(c => c.customerId === customer.id && c.salesmanId === currentUser.id)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .find(c => loanCaseDocuments.some(d => d.caseId === c.id));
-
   const prevDocs = prevCase ? loanCaseDocuments.filter(d => d.caseId === prevCase.id) : [];
   const prevApplicantDocs = prevDocs.filter(d => d.type === 'applicant');
   const prevGuarantorDocs = prevDocs.filter(d => d.type === 'guarantor');
 
+  // ── Loan Order fields ──────────────────────────────────────────
+  const car = cars.find(c => c.id === (initialCarId ?? existingOrder?.carId ?? customer.interestedCarId));
+  const [carId, setCarId] = useState(initialCarId ?? existingOrder?.carId ?? customer.interestedCarId ?? '');
+  const [sellingPrice, setSellingPrice] = useState(existingOrder?.sellingPrice ?? car?.sellingPrice ?? 0);
+  const [insurance, setInsurance] = useState(existingOrder?.insurance ?? 0);
+  const [bankProduct, setBankProduct] = useState(existingOrder?.bankProduct ?? 0);
+  const [additionalItems, setAdditionalItems] = useState<WorkOrderItem[]>(existingOrder?.additionalItems ?? []);
+  const [discount, setDiscount] = useState(existingOrder?.discount ?? 0);
+  const [hasTradeIn, setHasTradeIn] = useState(existingOrder?.hasTradeIn ?? false);
+  const [tradeInPlate, setTradeInPlate] = useState(existingOrder?.tradeInPlate ?? '');
+  const [tradeInMake, setTradeInMake] = useState(existingOrder?.tradeInMake ?? '');
+  const [tradeInModel, setTradeInModel] = useState(existingOrder?.tradeInModel ?? '');
+  const [tradeInVariant, setTradeInVariant] = useState(existingOrder?.tradeInVariant ?? '');
+  const [tradeInPrice, setTradeInPrice] = useState(existingOrder?.tradeInPrice ?? 0);
+  const [settlementFigure, setSettlementFigure] = useState(existingOrder?.settlementFigure ?? 0);
+
+  const additionalTotal = additionalItems.reduce((s, i) => s + (i.amount || 0), 0);
+  const totalLoan = sellingPrice + insurance + bankProduct + additionalTotal - discount;
+
+  // ── Bank & banker selection ────────────────────────────────────
+  // bankPicks: bank → bankerId (Banker.id or '' for none)
   const [bankPicks, setBankPicks] = useState<Record<string, string>>(() => {
     const picks: Record<string, string> = {};
-    BANKS.forEach(bank => {
-      const bankersForBank = users.filter(u => u.role === 'banker' && u.banks?.includes(bank));
-      if (bankersForBank.length === 1) picks[bank] = bankersForBank[0].id;
-    });
-    // Pre-select only specified banks (clear others)
     if (initialBanks && initialBanks.length > 0) {
-      Object.keys(picks).forEach(bank => {
-        if (!initialBanks.includes(bank)) picks[bank] = '';
+      initialBanks.forEach(bank => {
+        const first = bankers.filter(b => b.bank === bank)[0];
+        if (first) picks[bank] = first.id;
       });
     }
     return picks;
   });
-  const [carId, setCarId] = useState(initialCarId ?? '');
-  const [loanAmount, setLoanAmount] = useState(initialAmount ? String(initialAmount) : '');
+
+  // ── Documents ─────────────────────────────────────────────────
   const [applicantText, setApplicantText] = useState(prevCase?.applicantInterviewText ?? '');
   const [guarantorText, setGuarantorText] = useState(prevCase?.guarantorInterviewText ?? '');
   const [applicantFiles, setApplicantFiles] = useState<File[]>([]);
@@ -77,29 +95,70 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
   const availableCars = cars.filter(c =>
     ['available', 'ready', 'photo_complete', 'coming_soon'].includes(c.status) || c.id === initialCarId
   );
-
   const selectedBanks = Object.keys(bankPicks).filter(b => bankPicks[b] !== '');
   const hasApplicantDocs = reuseDocs ? prevApplicantDocs.length > 0 : applicantFiles.length > 0;
 
+  function addAdditionalItem() {
+    setAdditionalItems(prev => [...prev, { label: '', amount: 0 }]);
+  }
+  function updateAdditionalItem(i: number, field: 'label' | 'amount', val: string | number) {
+    setAdditionalItems(prev => prev.map((x, idx) => idx === i ? { ...x, [field]: val } : x));
+  }
+  function removeAdditionalItem(i: number) {
+    setAdditionalItems(prev => prev.filter((_, idx) => idx !== i));
+  }
+
   async function handleSubmit() {
     if (selectedBanks.length === 0) { toast.error('Select at least one bank'); return; }
-    if (!loanAmount) { toast.error('Please enter loan amount'); return; }
     if (!hasApplicantDocs) { toast.error('Please upload at least one applicant document'); return; }
+    if (totalLoan <= 0) { toast.error('Loan amount must be greater than zero'); return; }
 
     setSubmitting(true);
     try {
       const now = new Date().toISOString();
 
+      // Save loan order to customer
+      const loanOrder: LoanOrder = {
+        carId: carId || undefined as any,
+        sellingPrice,
+        insurance,
+        bankProduct,
+        additionalItems,
+        discount,
+        requestedLoanAmount: totalLoan,
+        hasTradeIn,
+        ...(hasTradeIn ? { tradeInPlate, tradeInMake, tradeInModel, tradeInVariant, tradeInPrice, settlementFigure } : {}),
+        submittedBy: currentUser.name,
+        createdAt: now,
+      };
+      updateCustomer(customer.id, {
+        loanOrder,
+        leadStatus: 'loan_submitted',
+        loanStatus: 'submitted',
+        ...(carId && !customer.interestedCarId ? { interestedCarId: carId } : {}),
+        lastActionAt: now,
+      });
+      await supabase.from('customers').update({
+        loan_order: loanOrder,
+        lead_status: 'loan_submitted',
+        loan_status: 'submitted',
+        ...(carId && !customer.interestedCarId ? { interested_car_id: carId } : {}),
+        last_action_at: now,
+      }).eq('id', customer.id);
+
       for (const bank of selectedBanks) {
+        const bankerId = bankPicks[bank];
+        const bankerProfile = bankers.find(b => b.id === bankerId);
         const caseId = crypto.randomUUID();
         const newCase: LoanCase = {
           id: caseId,
           customerId: customer.id,
           carId: carId || undefined,
           salesmanId: currentUser.id,
-          bankerId: bankPicks[bank],
+          bankerId,
+          bankerName: bankerProfile?.name,
           bank,
-          loanAmount: parseFloat(loanAmount),
+          loanAmount: totalLoan,
           applicantInterviewText: applicantText || undefined,
           guarantorInterviewText: guarantorText || undefined,
           status: 'pending',
@@ -107,15 +166,8 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
           updatedAt: now,
         };
         await addLoanCase(newCase);
-        notifyUsers(
-          [bankPicks[bank]],
-          'New Case Submitted',
-          `${customer.name} — ${bank} · RM ${parseFloat(loanAmount).toLocaleString()}`,
-          '/banker-dashboard',
-        );
 
         if (reuseDocs && prevApplicantDocs.length > 0) {
-          // Copy document references from the previous case — no re-upload needed
           for (const doc of prevDocs) {
             const newDoc: LoanCaseDocument = {
               id: crypto.randomUUID(),
@@ -132,15 +184,14 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
             const path = `${caseId}/${type}/${Date.now()}_${file.name}`;
             const { error } = await supabase.storage.from('loan-documents').upload(path, file);
             if (error) throw error;
-            const doc: LoanCaseDocument = {
+            await addLoanCaseDocument({
               id: crypto.randomUUID(),
               caseId,
               type,
               fileName: file.name,
               filePath: path,
               uploadedAt: new Date().toISOString(),
-            };
-            await addLoanCaseDocument(doc);
+            });
           };
           await Promise.all([
             ...applicantFiles.map(f => uploadFile(f, 'applicant')),
@@ -148,7 +199,7 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
           ]);
         }
 
-        const activity: LoanCaseActivity = {
+        await addLoanCaseActivity({
           id: crypto.randomUUID(),
           caseId,
           userId: currentUser.id,
@@ -158,21 +209,10 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
           content: 'Case submitted',
           newStatus: 'pending',
           createdAt: now,
-        };
-        await addLoanCaseActivity(activity);
-      }
-
-      if (customer.leadStatus !== 'loan_submitted') {
-        updateCustomer(customer.id, {
-          leadStatus: 'loan_submitted',
-          loanStatus: 'submitted',
-          ...(carId && !customer.interestedCarId ? { interestedCarId: carId } : {}),
-          lastActionAt: now,
         });
       }
 
-      const bankList = selectedBanks.join(', ');
-      toast.success(`Submitted to ${selectedBanks.length} bank${selectedBanks.length > 1 ? 's' : ''}: ${bankList}`);
+      toast.success(`Loan order saved · submitted to ${selectedBanks.length} bank${selectedBanks.length > 1 ? 's' : ''}: ${selectedBanks.join(', ')}`);
       onClose();
     } catch (err: any) {
       toast.error(err.message ?? 'Failed to submit');
@@ -188,7 +228,7 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
       onClick={onClose}
     >
       <div
-        className="w-full sm:max-w-md bg-obsidian-800 sm:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col overflow-hidden"
+        className="w-full sm:max-w-lg bg-obsidian-800 sm:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col overflow-hidden"
         style={{ maxHeight: 'calc(95vh - env(safe-area-inset-top, 44px))' }}
         onClick={e => e.stopPropagation()}
       >
@@ -200,20 +240,146 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
         {/* Header */}
         <div className="px-5 pt-4 pb-3 flex items-start justify-between shrink-0 border-b border-obsidian-400/20">
           <div>
-            <p className="text-white font-bold text-base">Submit to Banker</p>
+            <p className="text-white font-bold text-base">Loan Order & Submission</p>
             <p className="text-gray-400 text-xs mt-0.5">{customer.name}</p>
           </div>
           <button onClick={onClose} className="text-gray-500 hover:text-white mt-0.5"><X size={18} /></button>
         </div>
 
         {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5 min-h-0">
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6 min-h-0">
 
-          {/* Bank + Banker selection */}
-          <div className="space-y-2">
-            <p className="text-xs text-gray-400 font-medium">Bank(s) &amp; Banker</p>
+          {/* ── Section 1: Loan Order ─────────────────────────── */}
+          <div className="space-y-4">
+            <p className="text-xs text-gold-400 font-semibold uppercase tracking-wide">Loan Order</p>
+
+            {/* Car */}
+            <div className="space-y-1.5">
+              <label className="text-xs text-gray-400 font-medium">Car</label>
+              <select
+                value={carId}
+                onChange={e => {
+                  setCarId(e.target.value);
+                  const selected = cars.find(c => c.id === e.target.value);
+                  if (selected && !existingOrder) setSellingPrice(selected.sellingPrice);
+                }}
+                className="w-full bg-obsidian-700 border border-obsidian-500/50 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-gold-500/50"
+              >
+                <option value="">Select car…</option>
+                {availableCars.map(c => (
+                  <option key={c.id} value={c.id}>{c.year} {c.make} {c.model}{c.carPlate ? ` — ${c.carPlate}` : ''}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Price breakdown */}
+            <div className="rounded-xl border border-obsidian-400/30 overflow-hidden">
+              <div className="bg-obsidian-700/40 px-4 py-2.5 text-xs text-gray-400 font-medium border-b border-obsidian-400/20">Deal Breakdown</div>
+              <div className="px-4 py-3 space-y-3">
+                {[
+                  { label: 'Selling Price (RM)', value: sellingPrice, setter: setSellingPrice },
+                  { label: 'Insurance (RM)', value: insurance, setter: setInsurance },
+                  { label: 'Bank Product (RM)', value: bankProduct, setter: setBankProduct },
+                  { label: 'Discount (RM)', value: discount, setter: setDiscount },
+                ].map(f => (
+                  <div key={f.label} className="flex items-center gap-3">
+                    <span className="text-xs text-gray-400 w-36 shrink-0">{f.label}</span>
+                    <input
+                      type="number"
+                      value={f.value || ''}
+                      onChange={e => f.setter(parseFloat(e.target.value) || 0)}
+                      className="flex-1 bg-obsidian-700 border border-obsidian-500/40 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-gold-500/50 text-right"
+                    />
+                  </div>
+                ))}
+
+                {/* Additional items */}
+                {additionalItems.map((item, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={item.label}
+                      onChange={e => updateAdditionalItem(i, 'label', e.target.value)}
+                      placeholder="Item description"
+                      className="flex-1 bg-obsidian-700 border border-obsidian-500/40 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-gold-500/50"
+                    />
+                    <input
+                      type="number"
+                      value={item.amount || ''}
+                      onChange={e => updateAdditionalItem(i, 'amount', parseFloat(e.target.value) || 0)}
+                      placeholder="RM"
+                      className="w-24 bg-obsidian-700 border border-obsidian-500/40 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-gold-500/50 text-right"
+                    />
+                    <button onClick={() => removeAdditionalItem(i)} className="text-red-400 hover:text-red-300 shrink-0">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={addAdditionalItem}
+                  className="flex items-center gap-1.5 text-xs text-gold-400 hover:text-gold-300 transition-colors"
+                >
+                  <Plus size={12} /> Add item
+                </button>
+              </div>
+
+              {/* Total */}
+              <div className="flex items-center justify-between px-4 py-3 bg-gold-500/8 border-t border-gold-500/20">
+                <span className="text-sm font-semibold text-gold-300">Total Loan Amount</span>
+                <span className="text-lg font-bold text-gold-400">RM {totalLoan.toLocaleString()}</span>
+              </div>
+            </div>
+
+            {/* Trade-in */}
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={hasTradeIn} onChange={e => setHasTradeIn(e.target.checked)} className="accent-gold-500" />
+                <span className="text-xs text-gray-400 font-medium">Has Trade-In</span>
+              </label>
+              {hasTradeIn && (
+                <div className="rounded-xl border border-obsidian-400/30 p-3 space-y-2.5">
+                  {[
+                    { label: 'Plate', value: tradeInPlate, setter: setTradeInPlate, type: 'text' },
+                    { label: 'Make', value: tradeInMake, setter: setTradeInMake, type: 'text' },
+                    { label: 'Model', value: tradeInModel, setter: setTradeInModel, type: 'text' },
+                    { label: 'Variant', value: tradeInVariant, setter: setTradeInVariant, type: 'text' },
+                  ].map(f => (
+                    <div key={f.label} className="flex items-center gap-3">
+                      <span className="text-xs text-gray-500 w-16 shrink-0">{f.label}</span>
+                      <input
+                        type={f.type}
+                        value={f.value}
+                        onChange={e => (f.setter as any)(e.target.value)}
+                        className="flex-1 bg-obsidian-700 border border-obsidian-500/40 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-gold-500/50"
+                      />
+                    </div>
+                  ))}
+                  {[
+                    { label: 'Trade-in Price (RM)', value: tradeInPrice, setter: setTradeInPrice },
+                    { label: 'Settlement (RM)', value: settlementFigure, setter: setSettlementFigure },
+                  ].map(f => (
+                    <div key={f.label} className="flex items-center gap-3">
+                      <span className="text-xs text-gray-500 w-32 shrink-0">{f.label}</span>
+                      <input
+                        type="number"
+                        value={f.value || ''}
+                        onChange={e => f.setter(parseFloat(e.target.value) || 0)}
+                        className="flex-1 bg-obsidian-700 border border-obsidian-500/40 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-gold-500/50 text-right"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Section 2: Banks & Bankers ───────────────────── */}
+          <div className="space-y-3">
+            <p className="text-xs text-gold-400 font-semibold uppercase tracking-wide">Banks &amp; Bankers</p>
+            <p className="text-[11px] text-gray-500">Select at least one bank. Choose the banker you're dealing with (or leave blank).</p>
             {BANKS.map(bank => {
-              const bankersForBank = users.filter(u => u.role === 'banker' && u.banks?.includes(bank));
+              const bankersForBank = bankers.filter(b => b.bank === bank);
               const selectedBankerId = bankPicks[bank] ?? '';
               const isSelected = selectedBankerId !== '';
               return (
@@ -236,50 +402,27 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
                   <select
                     value={selectedBankerId}
                     onChange={e => setBankPicks({ ...bankPicks, [bank]: e.target.value })}
-                    disabled={bankersForBank.length === 0}
-                    className="bg-obsidian-700 border border-obsidian-500/40 rounded-xl px-2 py-1.5 text-white text-xs focus:outline-none focus:border-gold-500/50 disabled:opacity-30 min-w-[110px]"
+                    className="bg-obsidian-700 border border-obsidian-500/40 rounded-xl px-2 py-1.5 text-white text-xs focus:outline-none focus:border-gold-500/50 min-w-[130px]"
                   >
                     <option value="">— none —</option>
                     {bankersForBank.map(b => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
+                      <option key={b.id} value={b.id}>
+                        {b.name}{b.userId ? ' ✓' : ''}
+                      </option>
                     ))}
                   </select>
                 </div>
               );
             })}
+            {bankers.length === 0 && (
+              <p className="text-xs text-gray-600 text-center py-2">No banker profiles yet. Add bankers in the Data page.</p>
+            )}
           </div>
 
-          {/* Car */}
-          <div className="space-y-1.5">
-            <label className="text-xs text-gray-400 font-medium">Car (optional)</label>
-            <select
-              value={carId}
-              onChange={e => setCarId(e.target.value)}
-              className="w-full bg-obsidian-700 border border-obsidian-500/50 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-gold-500/50"
-            >
-              <option value="">Select car…</option>
-              {availableCars.map(c => (
-                <option key={c.id} value={c.id}>{c.year} {c.make} {c.model}{c.carPlate ? ` — ${c.carPlate}` : ''}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Loan Amount */}
-          <div className="space-y-1.5">
-            <label className="text-xs text-gray-400 font-medium">Loan Amount (RM)</label>
-            <input
-              type="number"
-              value={loanAmount}
-              onChange={e => setLoanAmount(e.target.value)}
-              placeholder="e.g. 80000"
-              className="w-full bg-obsidian-700 border border-obsidian-500/50 rounded-xl px-3 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-gold-500/50"
-            />
-          </div>
-
-          {/* Documents */}
+          {/* ── Section 3: Documents ─────────────────────────── */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-gray-400 font-medium">Documents</p>
+              <p className="text-xs text-gold-400 font-semibold uppercase tracking-wide">Documents</p>
               {prevApplicantDocs.length > 0 && (
                 <button
                   type="button"
@@ -316,7 +459,6 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
               </div>
             ) : (
               <>
-                {/* Applicant Documents */}
                 <div className="space-y-1.5">
                   <label className="text-xs text-gray-500">Applicant Documents (PDF) *</label>
                   <input ref={applicantRef} type="file" accept="application/pdf" multiple className="hidden" onChange={async e => {
@@ -339,14 +481,11 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
                     <div key={i} className="flex items-center gap-2 text-xs text-gray-300 px-2">
                       <FileText size={12} className="text-gold-400 shrink-0" />
                       <span className="truncate flex-1">{f.name}</span>
-                      <button type="button" onClick={() => setApplicantFiles(prev => prev.filter((_, j) => j !== i))} className="text-red-400">
-                        <Trash2 size={11} />
-                      </button>
+                      <button type="button" onClick={() => setApplicantFiles(prev => prev.filter((_, j) => j !== i))} className="text-red-400"><Trash2 size={11} /></button>
                     </div>
                   ))}
                 </div>
 
-                {/* Guarantor Documents */}
                 <div className="space-y-1.5">
                   <label className="text-xs text-gray-500">Guarantor Documents (optional)</label>
                   <input ref={guarantorRef} type="file" accept="application/pdf" multiple className="hidden" onChange={async e => {
@@ -369,9 +508,7 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
                     <div key={i} className="flex items-center gap-2 text-xs text-gray-300 px-2">
                       <FileText size={12} className="text-gold-400 shrink-0" />
                       <span className="truncate flex-1">{f.name}</span>
-                      <button type="button" onClick={() => setGuarantorFiles(prev => prev.filter((_, j) => j !== i))} className="text-red-400">
-                        <Trash2 size={11} />
-                      </button>
+                      <button type="button" onClick={() => setGuarantorFiles(prev => prev.filter((_, j) => j !== i))} className="text-red-400"><Trash2 size={11} /></button>
                     </div>
                   ))}
                 </div>
@@ -379,38 +516,45 @@ export default function LoanSubmitModal({ customer, initialCarId, initialAmount,
             )}
           </div>
 
-          {/* Applicant Interview */}
-          <div className="space-y-1.5">
-            <label className="text-xs text-gray-400 font-medium">Applicant Interview Form</label>
-            <textarea
-              value={applicantText}
-              onChange={e => setApplicantText(e.target.value)}
-              placeholder="Paste interview form here…"
-              rows={4}
-              className="w-full bg-obsidian-700 border border-obsidian-500/50 rounded-xl px-3 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-gold-500/50 resize-none"
-            />
-          </div>
-
-          {/* Guarantor Interview */}
-          {(!reuseDocs ? guarantorFiles.length > 0 : prevGuarantorDocs.length > 0) && (
+          {/* ── Section 4: Interview text ─────────────────────── */}
+          <div className="space-y-3">
+            <p className="text-xs text-gold-400 font-semibold uppercase tracking-wide">Interview Forms</p>
             <div className="space-y-1.5">
-              <label className="text-xs text-gray-400 font-medium">Guarantor Interview Form</label>
+              <label className="text-xs text-gray-400 font-medium">Applicant Interview Form</label>
               <textarea
-                value={guarantorText}
-                onChange={e => setGuarantorText(e.target.value)}
-                placeholder="Paste guarantor interview form here…"
-                rows={3}
+                value={applicantText}
+                onChange={e => setApplicantText(e.target.value)}
+                placeholder="Paste interview form here…"
+                rows={4}
                 className="w-full bg-obsidian-700 border border-obsidian-500/50 rounded-xl px-3 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-gold-500/50 resize-none"
               />
             </div>
-          )}
+            {(!reuseDocs ? guarantorFiles.length > 0 : prevGuarantorDocs.length > 0) && (
+              <div className="space-y-1.5">
+                <label className="text-xs text-gray-400 font-medium">Guarantor Interview Form</label>
+                <textarea
+                  value={guarantorText}
+                  onChange={e => setGuarantorText(e.target.value)}
+                  placeholder="Paste guarantor interview form here…"
+                  rows={3}
+                  className="w-full bg-obsidian-700 border border-obsidian-500/50 rounded-xl px-3 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-gold-500/50 resize-none"
+                />
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Footer */}
         <div className="px-5 pt-3 shrink-0 border-t border-obsidian-400/20" style={{ paddingBottom: 'calc(1.25rem + env(safe-area-inset-bottom, 0px))' }}>
+          {totalLoan > 0 && (
+            <p className="text-center text-xs text-gray-500 mb-2">
+              Total loan: <span className="text-gold-400 font-semibold">RM {totalLoan.toLocaleString()}</span>
+              {selectedBanks.length > 0 && <> · {selectedBanks.length} bank{selectedBanks.length > 1 ? 's' : ''}</>}
+            </p>
+          )}
           <button
             onClick={handleSubmit}
-            disabled={submitting || compressing || selectedBanks.length === 0 || !loanAmount || !hasApplicantDocs}
+            disabled={submitting || compressing || selectedBanks.length === 0 || !hasApplicantDocs || totalLoan <= 0}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gold-gradient text-obsidian-950 font-bold text-sm disabled:opacity-40 active:opacity-80 transition-opacity shadow-gold-sm"
           >
             {submitting && <Loader2 size={15} className="animate-spin" />}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, FileText, Download, ChevronDown, Loader2, User, Car as CarIcon, CreditCard, Send, Upload, Paperclip } from 'lucide-react';
+import { X, FileText, Download, ChevronDown, Loader2, User, Car as CarIcon, CreditCard, Send, Upload, Paperclip, MessageCircle } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
 import { LoanCase, LoanCaseStatus } from '../types';
@@ -46,6 +46,7 @@ interface Props {
 export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClose }: Props) {
   const currentUser = useStore(s => s.currentUser)!;
   const users = useStore(s => s.users);
+  const bankers = useStore(s => s.bankers);
   const customers = useStore(s => s.customers);
   const cars = useStore(s => s.cars);
   const loanCaseDocuments = useStore(s => s.loanCaseDocuments);
@@ -66,6 +67,9 @@ export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClo
   );
   const activeCaseId = activeTab === 'details' ? loanCase.id : activeTab;
   const activeCase = groupCases?.find(c => c.id === activeCaseId) ?? loanCase;
+
+  const isOwnerSalesman = isSalesman && activeCase.salesmanId === currentUser.id;
+  const canUpdateCase = isBanker || isOwnerSalesman;
 
   // Aggregate docs across all cases in the group (for Details tab)
   const allGroupCases = groupCases ?? [loanCase];
@@ -107,7 +111,7 @@ export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClo
           createdAt: new Date().toISOString(),
         });
       }
-      const notifyTarget = isBanker ? activeCase.salesmanId : activeCase.bankerId;
+      const notifyTarget = isBanker ? activeCase.salesmanId : (bankerUser?.id ?? '');
       const notifyUrl    = isBanker ? '/loan-cases' : '/banker-dashboard';
       notifyUsers(
         [notifyTarget],
@@ -126,7 +130,10 @@ export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClo
   }
 
   const salesman = users.find(u => u.id === activeCase.salesmanId);
-  const banker = users.find(u => u.id === activeCase.bankerId);
+  // Resolve banker: support User.id (legacy) or Banker.id (new)
+  const bankerUser = users.find(u => u.id === activeCase.bankerId);
+  const bankerProfile = bankers.find(b => b.id === activeCase.bankerId);
+  const bankerDisplayName = activeCase.bankerName ?? bankerUser?.name ?? bankerProfile?.name ?? '—';
   const customer = customers.find(c => c.id === activeCase.customerId);
   const car = cars.find(c => c.id === activeCase.carId);
 
@@ -165,7 +172,7 @@ export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClo
   }
 
   async function handleSave() {
-    if (!isBanker) return;
+    if (!canUpdateCase) return;
     setSaving(true);
     try {
       const now = new Date().toISOString();
@@ -233,6 +240,7 @@ export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClo
     }
   }
 
+
   return (
     <div
       className="fixed inset-0 z-[500] flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm"
@@ -260,7 +268,8 @@ export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClo
                 {car ? `${car.year} ${car.make} ${car.model}` : ''}
               </p>
               <p className="text-xs text-gray-500 mt-0.5">
-                RM {activeCase.loanAmount.toLocaleString()} · {salesman?.name} → {banker?.name}
+                RM {activeCase.loanAmount.toLocaleString()} · {salesman?.name} → {bankerDisplayName}
+                {bankerProfile && !bankerProfile.userId && <span className="ml-1 text-[10px] text-gray-600">(no app)</span>}
               </p>
               <p className="text-[10px] text-gray-500 mt-0.5">
                 {new Date(activeCase.createdAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -502,6 +511,7 @@ export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClo
           )}
 
 
+
           {/* Additional Documents */}
           {activeTab !== 'details' && (
             <section className="rounded-2xl border border-amber-500/40 overflow-hidden">
@@ -556,11 +566,11 @@ export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClo
             </section>
           )}
 
-          {/* Banker formal update — status + instruction only */}
-          {activeTab !== 'details' && isBanker && !['withdrawn', 'cancelled'].includes(activeCase.status) && (
+          {/* Update case — banker or salesman who owns the case */}
+          {activeTab !== 'details' && canUpdateCase && !['withdrawn', 'cancelled'].includes(activeCase.status) && (
             <section className="space-y-3 border border-obsidian-400/30 rounded-2xl p-4">
               <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide">
-                {activeCase.status === 'appeal' ? 'Respond to Appeal' : 'Update Case'}
+                {activeCase.status === 'appeal' ? 'Respond to Appeal' : isBanker ? 'Update Case' : 'Record Update'}
               </p>
 
               {activeCase.status === 'appeal' && (
@@ -626,6 +636,23 @@ export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClo
                         <p className="text-[10px] text-orange-400 font-semibold uppercase tracking-wide mb-0.5">Instruction from {act.userName}</p>
                         <p className="text-xs text-gray-200">{act.content}</p>
                         <p className="text-[10px] text-gray-500 mt-0.5">{time}</p>
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (act.type === 'whatsapp_response') {
+                  return (
+                    <div key={act.id} className="flex justify-center py-1">
+                      <div className="max-w-[90%] bg-green-500/8 border border-green-500/25 rounded-2xl px-3 py-2.5 text-center space-y-0.5">
+                        <div className="flex items-center justify-center gap-1.5 mb-1">
+                          <MessageCircle size={11} className="text-green-400" />
+                          <p className="text-[10px] text-green-400 font-semibold uppercase tracking-wide">
+                            {STATUS_LABELS[act.newStatus ?? ''] ?? act.newStatus} · via WhatsApp
+                          </p>
+                        </div>
+                        {act.content && <p className="text-xs text-gray-200">"{act.content}"</p>}
+                        <p className="text-[10px] text-gray-500">Recorded by {act.userName} · {time}</p>
                       </div>
                     </div>
                   );

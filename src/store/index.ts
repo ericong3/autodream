@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
-import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, MiscCost, ExternalSalesman, Banker, LoanCase, LoanCaseDocument, LoanCaseActivity, Payment, AppNotification } from '../types';
+import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, MiscCost, ExternalSalesman, Banker, LoanCase, LoanCaseDocument, LoanCaseActivity, Payment, AppNotification, InvestorTransaction } from '../types';
 import { sendPush } from '../utils/sendPush';
 
 // ── Notification helpers ─────────────────────────────────────────────────────
@@ -45,6 +45,7 @@ interface StoreState {
   loanCaseActivities: LoanCaseActivity[];
   viewPreference: Record<string, 'grid' | 'list' | 'board'>;
   notifications: AppNotification[];
+  bankerOpenCaseId: string | null;
   loaded: boolean;
   lastFetched: number | null;
 
@@ -145,8 +146,17 @@ interface StoreState {
   // View preference
   setViewPreference: (userId: string, page: string, view: 'grid' | 'list' | 'board') => void;
 
+  // Investor Transactions
+  investorTransactions: InvestorTransaction[];
+  addInvestorTransaction: (txn: InvestorTransaction) => Promise<void>;
+  updateInvestorTransaction: (id: string, updates: Partial<InvestorTransaction>) => Promise<void>;
+
   // Notifications
   markNotificationsReadByRef: (referenceId: string) => Promise<void>;
+  markNotificationReadById: (id: string) => Promise<void>;
+  setBankerOpenCaseId: (id: string | null) => void;
+  toastQueue: AppNotification[];
+  drainToastQueue: () => void;
 }
 
 // Supabase realtime can send JSONB columns as serialized strings instead of parsed objects.
@@ -244,6 +254,7 @@ function rowToBanker(r: any): Banker {
     phone: r.phone ?? undefined,
     email: r.email ?? undefined,
     notes: r.notes ?? undefined,
+    userId: r.user_id ?? undefined,
     createdAt: r.created_at,
   };
 }
@@ -256,6 +267,7 @@ function bankerToRow(b: Partial<Banker>) {
   if (b.phone !== undefined) row.phone = b.phone;
   if (b.email !== undefined) row.email = b.email;
   if (b.notes !== undefined) row.notes = b.notes;
+  if (b.userId !== undefined) row.user_id = b.userId;
   if (b.createdAt !== undefined) row.created_at = b.createdAt;
   return row;
 }
@@ -443,6 +455,7 @@ function rowToCustomer(r: any): Customer {
     tradeIn: r.trade_in ?? undefined,
     cashWorkOrder: r.cash_work_order ?? undefined,
     loanWorkOrder: r.loan_work_order ?? undefined,
+    loanOrder: parseJsonField(r.loan_order),
     delivered: r.delivered ?? false,
     deliveredAt: r.delivered_at ?? undefined,
     deliveryPhoto: r.delivery_photo_customer ?? undefined,
@@ -482,6 +495,7 @@ function customerToRow(c: Partial<Customer>) {
   if (c.tradeIn !== undefined) row.trade_in = c.tradeIn;
   if (c.cashWorkOrder !== undefined) row.cash_work_order = c.cashWorkOrder;
   if (c.loanWorkOrder !== undefined) row.loan_work_order = c.loanWorkOrder;
+  if (c.loanOrder !== undefined) row.loan_order = c.loanOrder;
   if (c.delivered !== undefined) row.delivered = c.delivered;
   if (c.deliveredAt !== undefined) row.delivered_at = c.deliveredAt;
   if (c.deliveryPhoto !== undefined) row.delivery_photo_customer = c.deliveryPhoto;
@@ -583,6 +597,7 @@ function rowToLoanCase(r: any): LoanCase {
     carId: r.car_id ?? undefined,
     salesmanId: r.salesman_id,
     bankerId: r.banker_id,
+    bankerName: r.banker_name ?? undefined,
     bank: r.bank,
     loanAmount: r.loan_amount,
     applicantInterviewText: r.applicant_interview_text ?? undefined,
@@ -710,6 +725,40 @@ function paymentToRow(p: Partial<Payment>) {
   return row;
 }
 
+function rowToInvestorTxn(r: any): InvestorTransaction {
+  return {
+    id: r.id,
+    investorId: r.investor_id,
+    type: r.type,
+    amount: r.amount,
+    status: r.status,
+    createdAt: r.created_at,
+    approvedAt: r.approved_at ?? undefined,
+    dueDate: r.due_date ?? undefined,
+    waitingMonths: r.waiting_months ?? undefined,
+    approvedBy: r.approved_by ?? undefined,
+    rejectedBy: r.rejected_by ?? undefined,
+    rejectedAt: r.rejected_at ?? undefined,
+  };
+}
+
+function investorTxnToRow(t: Partial<InvestorTransaction>) {
+  const row: any = {};
+  if (t.id !== undefined) row.id = t.id;
+  if (t.investorId !== undefined) row.investor_id = t.investorId;
+  if (t.type !== undefined) row.type = t.type;
+  if (t.amount !== undefined) row.amount = t.amount;
+  if (t.status !== undefined) row.status = t.status;
+  if (t.createdAt !== undefined) row.created_at = t.createdAt;
+  if (t.approvedAt !== undefined) row.approved_at = t.approvedAt;
+  if (t.dueDate !== undefined) row.due_date = t.dueDate;
+  if (t.waitingMonths !== undefined) row.waiting_months = t.waitingMonths;
+  if (t.approvedBy !== undefined) row.approved_by = t.approvedBy;
+  if (t.rejectedBy !== undefined) row.rejected_by = t.rejectedBy;
+  if (t.rejectedAt !== undefined) row.rejected_at = t.rejectedAt;
+  return row;
+}
+
 // Guard: realtime channels are set up only once per session, regardless of how many
 // times loadAll is called (e.g. pull-to-refresh creates duplicate channels otherwise).
 let realtimeSubscribed = false;
@@ -734,7 +783,10 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   loanCaseDocuments: [],
   loanCaseActivities: [],
   payments: [],
+  investorTransactions: [],
   notifications: [],
+  toastQueue: [],
+  bankerOpenCaseId: null,
   viewPreference: {},
   loaded: false,
   lastFetched: null,
@@ -769,6 +821,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     const loanCaseDocsResult = await supabase.from('loan_case_documents').select('*');
     const loanCaseActivitiesResult = await supabase.from('loan_case_activity').select('*');
     const paymentsResult = await supabase.from('payments').select('*').order('created_at', { ascending: false });
+    const investorTxnsResult = await supabase.from('investor_transactions').select('*').order('created_at', { ascending: true });
 
     const allCars = (cars.data ?? []).map(rowToCar);
     const allCustomers = (customers.data ?? []).map(rowToCustomer);
@@ -825,6 +878,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       loanCaseDocuments:   loanCaseDocsResult.data        ? loanCaseDocsResult.data.map(rowToLoanCaseDocument)                : s.loanCaseDocuments,
       loanCaseActivities:  loanCaseActivitiesResult.data  ? loanCaseActivitiesResult.data.map(rowToLoanCaseActivity)          : s.loanCaseActivities,
       payments:            paymentsResult.data            ? paymentsResult.data.map(rowToPayment)                             : s.payments,
+      investorTransactions: investorTxnsResult.data        ? investorTxnsResult.data.map(rowToInvestorTxn)                     : s.investorTransactions,
       loaded: true,
       lastFetched: Date.now(),
     }));
@@ -896,7 +950,8 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     if (persistedUser) {
       supabase.channel(`notifs-${persistedUser.id}`)
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${persistedUser.id}` }, (p) => {
-          set((s) => ({ notifications: [rowToNotification(p.new), ...s.notifications] }));
+          const n = rowToNotification(p.new);
+          set((s) => ({ notifications: [n, ...s.notifications], toastQueue: [...s.toastQueue, n] }));
         })
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${persistedUser.id}` }, (p) => {
           const updated = rowToNotification(p.new);
@@ -1189,6 +1244,26 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         }
       })
       .subscribe();
+
+    supabase.channel('realtime-investor-transactions')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'investor_transactions' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          set((s) => ({
+            investorTransactions: s.investorTransactions.some((t) => t.id === (payload.new as any).id)
+              ? s.investorTransactions
+              : [...s.investorTransactions, rowToInvestorTxn(payload.new)],
+          }));
+        } else if (payload.eventType === 'UPDATE') {
+          set((s) => ({
+            investorTransactions: s.investorTransactions.map((t) => t.id === (payload.new as any).id ? rowToInvestorTxn(payload.new) : t),
+          }));
+        } else if (payload.eventType === 'DELETE') {
+          set((s) => ({
+            investorTransactions: s.investorTransactions.filter((t) => t.id !== (payload.old as any)?.id),
+          }));
+        }
+      })
+      .subscribe();
   },
 
   login: async (username, password) => {
@@ -1213,7 +1288,8 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       // Realtime: listen for new notifications for this user
       supabase.channel(`notifs-${user.id}`)
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, (p) => {
-          set((s) => ({ notifications: [rowToNotification(p.new), ...s.notifications] }));
+          const n = rowToNotification(p.new);
+          set((s) => ({ notifications: [n, ...s.notifications], toastQueue: [...s.toastQueue, n] }));
         })
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, (p) => {
           const updated = rowToNotification(p.new);
@@ -1638,6 +1714,17 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       .eq('is_read', false);
   },
 
+  drainToastQueue: () => set({ toastQueue: [] }),
+
+  markNotificationReadById: async (id) => {
+    const userId = get().currentUser?.id;
+    if (!userId) return;
+    set((s) => ({ notifications: s.notifications.filter(n => n.id !== id) }));
+    await supabase.from('notifications').update({ is_read: true }).eq('id', id).eq('user_id', userId);
+  },
+
+  setBankerOpenCaseId: (id) => set({ bankerOpenCaseId: id }),
+
   setViewPreference: (userId, page, view) =>
     set((s) => ({
       viewPreference: {
@@ -1797,6 +1884,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       car_id: loanCase.carId ?? null,
       salesman_id: loanCase.salesmanId,
       banker_id: loanCase.bankerId,
+      banker_name: loanCase.bankerName ?? null,
       bank: loanCase.bank,
       loan_amount: loanCase.loanAmount,
       applicant_interview_text: loanCase.applicantInterviewText ?? null,
@@ -1809,12 +1897,16 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       set((s) => ({ loanCases: s.loanCases.filter((c) => c.id !== loanCase.id) }));
       throw new Error(error.message);
     }
-    // Notify the banker
-    const banker = get().users.find(u => u.id === loanCase.bankerId);
+    // Notify the banker (support both User.id and Banker.id formats)
     const salesman = get().users.find(u => u.id === loanCase.salesmanId);
     const customer = get().customers.find(c => c.id === loanCase.customerId);
-    if (banker) {
-      sendPush([banker.id], '📋 New case submitted', `${salesman?.name ?? 'Salesman'} – ${customer?.name ?? 'Customer'} · RM ${loanCase.loanAmount.toLocaleString()}`, '/banker-dashboard', loanCase.id);
+    const bankerUser = get().users.find(u => u.id === loanCase.bankerId)
+      ?? (() => {
+        const profile = get().bankers.find(b => b.id === loanCase.bankerId);
+        return profile?.userId ? get().users.find(u => u.id === profile.userId) : undefined;
+      })();
+    if (bankerUser) {
+      sendPush([bankerUser.id], '📋 New case submitted', `${salesman?.name ?? 'Salesman'} – ${customer?.name ?? 'Customer'} · RM ${loanCase.loanAmount.toLocaleString()}`, '/banker-dashboard', loanCase.id);
     }
   },
   updateLoanCase: async (id, updates) => {
@@ -1825,17 +1917,26 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     if (updates.status !== undefined) dbRow.status = updates.status;
     if (updates.applicantInterviewText !== undefined) dbRow.applicant_interview_text = updates.applicantInterviewText;
     if (updates.guarantorInterviewText !== undefined) dbRow.guarantor_interview_text = updates.guarantorInterviewText;
+    if (updates.bankerName !== undefined) dbRow.banker_name = updates.bankerName;
     const { error } = await supabase.from('loan_cases').update(dbRow).eq('id', id);
     if (error) {
       if (prev) set((s) => ({ loanCases: s.loanCases.map((c) => c.id === id ? prev : c) }));
       throw new Error(error.message);
     }
+    // Resolve banker User account from either User.id or Banker.id
+    const resolveBankerUser = (bankerId: string) =>
+      get().users.find(u => u.id === bankerId) ??
+      (() => {
+        const profile = get().bankers.find(b => b.id === bankerId);
+        return profile?.userId ? get().users.find(u => u.id === profile.userId) : undefined;
+      })();
+
     // Notify banker when guarantor info is added for the first time
     if (updates.guarantorInterviewText && !prev?.guarantorInterviewText && prev) {
       const cust = get().customers.find(c => c.id === prev.customerId);
-      const banker = get().users.find(u => u.id === prev.bankerId);
-      if (banker) {
-        sendPush([banker.id], '👤 Guarantor added', `${prev.bank} · ${cust?.name ?? 'Customer'} – interview notes available`, '/banker-dashboard', id);
+      const bankerUser = resolveBankerUser(prev.bankerId);
+      if (bankerUser) {
+        sendPush([bankerUser.id], '👤 Guarantor added', `${prev.bank} · ${cust?.name ?? 'Customer'} – interview notes available`, '/banker-dashboard', id);
       }
     }
     // Notify on status change
@@ -1855,15 +1956,15 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       }
       // Salesman → banker updates
       if (updates.status === 'appeal') {
-        const banker = get().users.find(u => u.id === prev.bankerId);
-        if (banker) {
-          sendPush([banker.id], '🔁 Appeal filed', `${custName} · ${prev.bank} case appealed`, '/banker-dashboard', id);
+        const bankerUser = resolveBankerUser(prev.bankerId);
+        if (bankerUser) {
+          sendPush([bankerUser.id], '🔁 Appeal filed', `${custName} · ${prev.bank} case appealed`, '/banker-dashboard', id);
         }
       }
       if (updates.status === 'withdrawn') {
-        const banker = get().users.find(u => u.id === prev.bankerId);
-        if (banker) {
-          sendPush([banker.id], '↩️ Case withdrawn', `${custName} · ${prev.bank} case withdrawn`, '/banker-dashboard', id);
+        const bankerUser = resolveBankerUser(prev.bankerId);
+        if (bankerUser) {
+          sendPush([bankerUser.id], '↩️ Case withdrawn', `${custName} · ${prev.bank} case withdrawn`, '/banker-dashboard', id);
         }
       }
     }
@@ -1882,6 +1983,12 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       new_status: activity.newStatus ?? null,
       created_at: activity.createdAt,
     });
+    const resolveBankerUser = (bankerId: string) =>
+      get().users.find(u => u.id === bankerId) ??
+      (() => {
+        const profile = get().bankers.find(b => b.id === bankerId);
+        return profile?.userId ? get().users.find(u => u.id === profile.userId) : undefined;
+      })();
     // Banker adds remark/instruction → notify salesman
     if ((activity.type === 'remark' || activity.type === 'instruction') && activity.userRole === 'banker') {
       const lc = get().loanCases.find(c => c.id === activity.caseId);
@@ -1896,9 +2003,9 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       const lc = get().loanCases.find(c => c.id === activity.caseId);
       if (lc) {
         const cust = get().customers.find(c => c.id === lc.customerId);
-        const banker = get().users.find(u => u.id === lc.bankerId);
-        if (banker) {
-          sendPush([banker.id], '💬 Salesman Remark', `${lc.bank} · ${cust?.name ?? 'Customer'}: ${activity.content ?? ''}`.slice(0, 100), '/banker-dashboard', lc.id);
+        const bankerUser = resolveBankerUser(lc.bankerId);
+        if (bankerUser) {
+          sendPush([bankerUser.id], '💬 Salesman Remark', `${lc.bank} · ${cust?.name ?? 'Customer'}: ${activity.content ?? ''}`.slice(0, 100), '/banker-dashboard', lc.id);
         }
       }
     }
@@ -1932,6 +2039,47 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     set((s) => ({ loanCaseDocuments: s.loanCaseDocuments.filter((d) => d.id !== id) }));
     if (doc) await supabase.storage.from('loan-documents').remove([doc.filePath]);
     await supabase.from('loan_case_documents').delete().eq('id', id);
+  },
+
+  // Investor Transactions
+  addInvestorTransaction: async (txn) => {
+    set((s) => ({ investorTransactions: [...s.investorTransactions, txn] }));
+    const { error } = await supabase.from('investor_transactions').insert(investorTxnToRow(txn));
+    if (error) {
+      set((s) => ({ investorTransactions: s.investorTransactions.filter((t) => t.id !== txn.id) }));
+      throw new Error(error.message);
+    }
+    // Notifications
+    if (txn.type === 'withdrawal' && txn.status === 'pending') {
+      const investor = get().users.find(u => u.id === txn.investorId);
+      const amtStr = `RM ${txn.amount.toLocaleString()}`;
+      sendPush(dirIds(get().users), '💸 Withdrawal request', `${investor?.name ?? 'Investor'} requests ${amtStr}`, '/investors', txn.id);
+    }
+    if (txn.type === 'top_up') {
+      const amtStr = `RM ${txn.amount.toLocaleString()}`;
+      sendPush([txn.investorId], '💰 Capital top-up', `${amtStr} has been added to your account`, '/investor-portal', txn.id);
+    }
+  },
+  updateInvestorTransaction: async (id, updates) => {
+    const prev = get().investorTransactions.find(t => t.id === id);
+    set((s) => ({ investorTransactions: s.investorTransactions.map((t) => t.id === id ? { ...t, ...updates } : t) }));
+    const { error } = await supabase.from('investor_transactions').update(investorTxnToRow(updates)).eq('id', id);
+    if (error) {
+      if (prev) set((s) => ({ investorTransactions: s.investorTransactions.map((t) => t.id === id ? prev : t) }));
+      throw new Error(error.message);
+    }
+    if (!prev) return;
+    // Notify investor on approval / rejection / transfer
+    if (updates.status === 'approved' && prev.status !== 'approved') {
+      const months = updates.waitingMonths ?? prev.waitingMonths ?? 3;
+      sendPush([prev.investorId], '✅ Withdrawal approved', `RM ${prev.amount.toLocaleString()} – ${months} months waiting period`, '/investor-portal', id);
+    }
+    if (updates.status === 'rejected' && prev.status !== 'rejected') {
+      sendPush([prev.investorId], '❌ Withdrawal rejected', `RM ${prev.amount.toLocaleString()} request was rejected`, '/investor-portal', id);
+    }
+    if (updates.status === 'transferred' && prev.status !== 'transferred') {
+      sendPush([prev.investorId], '💸 Withdrawal transferred', `RM ${prev.amount.toLocaleString()} has been transferred`, '/investor-portal', id);
+    }
   },
 
   addMiscCost: async (carId, misc) => {
