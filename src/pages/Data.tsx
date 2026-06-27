@@ -524,22 +524,48 @@ export default function Data() {
           )}
 
           {/* Legacy accounts not linked to any profile */}
-          {bankerUsers.filter(u => !bankers.some(b => b.userId === u.id)).length > 0 && (
-            <div className="card-surface rounded-xl overflow-hidden opacity-60">
-              <div className="px-4 py-3 border-b border-obsidian-400/40">
-                <span className="text-gray-400 font-semibold text-xs uppercase tracking-wide">Legacy App Accounts</span>
-              </div>
-              {bankerUsers.filter(u => !bankers.some(b => b.userId === u.id)).map(u => (
-                <div key={u.id} className="px-4 py-3 flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-gray-300 text-sm">{u.name}</p>
-                    <p className="text-gray-500 text-xs">@{u.username} · {(u.banks ?? []).join(', ')}</p>
-                  </div>
-                  <button onClick={() => setAccountDeleteTarget({ id: u.id, name: u.name })} className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"><Trash2 size={13} /></button>
+          {(() => {
+            const legacyUsers = bankerUsers.filter(u => !bankers.some(b => b.userId === u.id));
+            if (legacyUsers.length === 0) return null;
+            return (
+              <div className="card-surface rounded-xl overflow-hidden">
+                <div className="px-4 py-3 border-b border-obsidian-400/40 flex items-center justify-between gap-3">
+                  <span className="text-gray-400 font-semibold text-xs uppercase tracking-wide">Legacy App Accounts</span>
+                  <button
+                    onClick={() => handleAdd(async () => {
+                      for (const u of legacyUsers) {
+                        const banks = u.banks ?? [];
+                        for (const bank of banks) {
+                          await addBanker({
+                            id: generateId(),
+                            name: u.name,
+                            bank,
+                            phone: u.phone || undefined,
+                            email: u.email || undefined,
+                            notes: u.bio || undefined,
+                            userId: u.id,
+                            createdAt: new Date().toISOString(),
+                          });
+                        }
+                      }
+                    })}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-sky-500/15 text-sky-300 border border-sky-500/30 hover:bg-sky-500/25 transition-colors font-medium"
+                  >
+                    Migrate All to Profiles
+                  </button>
                 </div>
-              ))}
-            </div>
-          )}
+                {legacyUsers.map(u => (
+                  <div key={u.id} className="px-4 py-3 flex items-center justify-between gap-3 opacity-60">
+                    <div>
+                      <p className="text-gray-300 text-sm">{u.name}</p>
+                      <p className="text-gray-500 text-xs">@{u.username} · {(u.banks ?? []).join(', ')}</p>
+                    </div>
+                    <button onClick={() => setAccountDeleteTarget({ id: u.id, name: u.name })} className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"><Trash2 size={13} /></button>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       )}
 
