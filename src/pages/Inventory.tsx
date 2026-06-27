@@ -419,9 +419,6 @@ export default function Inventory() {
     return result.sort((a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime());
   }, [cars, search, filterMake, filterComingSoonType]);
 
-  const consignedOut = useMemo(() =>
-    cars.filter((c) => !!c.outgoingConsignment && c.status !== 'delivered'),
-  [cars]);
 
   const pendingDelivery = useMemo(() =>
     cars.filter((c) => c.status === 'deal_pending'),
@@ -693,7 +690,7 @@ export default function Inventory() {
           ? <>Showing <span className="text-white font-medium">{comingSoonFiltered.length}</span> coming soon</>
           : inventoryTab === 'pending_delivery'
           ? <><span className="text-green-400 font-medium">{pendingDelivery.length}</span> car{pendingDelivery.length !== 1 ? 's' : ''} sold, awaiting delivery</>
-          : <>Showing <span className="text-white font-medium">{filtered.length}</span> of {cars.filter(c => c.status !== 'delivered' && c.status !== 'coming_soon' && c.status !== 'deal_pending' && !c.outgoingConsignment).length} active stock{consignedOut.length > 0 && <> · <span className="text-orange-400 font-medium">{consignedOut.length} consigned out</span></>}</>
+          : <>Showing <span className="text-white font-medium">{filtered.length}</span> of {cars.filter(c => c.status !== 'delivered' && c.status !== 'coming_soon' && c.status !== 'deal_pending' && !c.outgoingConsignment).length} active stock</>
         }
       </p>
 
@@ -1565,41 +1562,6 @@ export default function Inventory() {
         </DndContext>
       )}
 
-      {/* ── Consigned Out section ── */}
-      {consignedOut.length > 0 && (
-        <div className="mt-8">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="h-px flex-1 bg-orange-500/20" />
-            <span className="text-orange-400 text-xs font-semibold uppercase tracking-widest px-2">Consigned Out ({consignedOut.length})</span>
-            <div className="h-px flex-1 bg-orange-500/20" />
-          </div>
-          <div className="space-y-2">
-            {consignedOut.map((car) => (
-              <div
-                key={car.id}
-                onClick={() => navigate(`/inventory/${car.id}`, { state: { inventoryTab } })}
-                className="flex items-center gap-3 px-4 py-3 rounded-xl bg-obsidian-800/60 border border-orange-500/20 cursor-pointer hover:border-orange-500/40 transition-colors"
-              >
-                {car.photo ? (
-                  <img src={car.photo} alt="" className="w-12 h-9 rounded-lg object-cover shrink-0 opacity-80" />
-                ) : (
-                  <div className="w-12 h-9 rounded-lg bg-obsidian-700/60 flex items-center justify-center shrink-0">
-                    <CarIcon size={14} className="text-gray-600" />
-                  </div>
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="text-white text-sm font-medium truncate">{car.year} {car.make} {car.model}</p>
-                  <p className="text-gray-500 text-xs truncate">{car.carPlate ?? '—'} · {car.colour}</p>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="text-orange-400 text-xs font-semibold">{car.outgoingConsignment!.dealer}</p>
-                  <p className="text-gray-600 text-xs">{car.outgoingConsignment!.terms === 'fixed_amount' ? `RM ${(car.outgoingConsignment!.fixedAmount ?? 0).toLocaleString()}` : `${car.outgoingConsignment!.splitPercent ?? 50}% split`}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       </>}
 
