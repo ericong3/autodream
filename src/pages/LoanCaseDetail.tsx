@@ -69,8 +69,7 @@ export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClo
   const activeCaseId = activeTab === 'details' ? loanCase.id : activeTab;
   const activeCase = groupCases?.find(c => c.id === activeCaseId) ?? loanCase;
 
-  const isOwnerSalesman = isSalesman && activeCase.salesmanId === currentUser.id;
-  const canUpdateCase = isBanker || isOwnerSalesman || isAdmin;
+  const canUpdateCase = isBanker || isSalesman || isAdmin;
 
   // Aggregate docs across all cases in the group (for Details tab)
   const allGroupCases = groupCases ?? [loanCase];
@@ -571,7 +570,7 @@ export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClo
           {activeTab !== 'details' && canUpdateCase && !['withdrawn', 'cancelled'].includes(activeCase.status) && (
             <section className="space-y-3 border border-obsidian-400/30 rounded-2xl p-4">
               <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide">
-                {activeCase.status === 'appeal' ? 'Respond to Appeal' : (isBanker || isAdmin) ? 'Update Case' : 'Record Update'}
+                {activeCase.status === 'appeal' ? 'Respond to Appeal' : isSalesman ? 'Record Update' : 'Update Case'}
               </p>
 
               {activeCase.status === 'appeal' && (
