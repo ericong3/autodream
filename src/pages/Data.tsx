@@ -61,6 +61,7 @@ export default function Data() {
   // Banker profile form state
   const emptyBankerForm = { name: '', bank: '', phone: '', email: '', notes: '', hasAccount: false, username: '', password: '' };
   const [bankerForm, setBankerForm] = useState(emptyBankerForm);
+  const [showAddBanker, setShowAddBanker] = useState(false);
   const [bankerGroupEditKey, setBankerGroupEditKey] = useState<string | null>(null);
   const [expandedBankerKey, setExpandedBankerKey] = useState<string | null>(null);
   const [bankerEditForm, setBankerEditForm] = useState({ name: '', banks: [] as string[], phone: '', email: '', notes: '', hasAccount: false, username: '', password: '', changePassword: false, removeAccount: false });
@@ -241,107 +242,113 @@ export default function Data() {
       {/* Bankers */}
       {activeTab === 'bankers' && (
         <div className="space-y-4">
-          {/* ── Add Banker Profile ── */}
-          <div className="card-surface rounded-xl p-4 space-y-3">
-            <p className="text-white font-semibold text-sm flex items-center gap-2">
-              <Landmark size={15} className="text-sky-400" />
-              Add Banker Profile
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-gray-400 text-xs mb-1">Full Name *</label>
-                <input className={inputCls()} placeholder="e.g. Ahmad bin Ali" value={bankerForm.name} onChange={e => setBankerForm({ ...bankerForm, name: e.target.value })} />
-              </div>
-              <div>
-                <label className="block text-gray-400 text-xs mb-1">Bank *</label>
-                <select className={inputCls()} value={bankerForm.bank} onChange={e => setBankerForm({ ...bankerForm, bank: e.target.value })}>
-                  <option value="">Select bank…</option>
-                  {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-gray-400 text-xs mb-1">Phone</label>
-                <input className={inputCls()} placeholder="e.g. 012-3456789" value={bankerForm.phone} onChange={e => setBankerForm({ ...bankerForm, phone: e.target.value })} />
-              </div>
-              <div>
-                <label className="block text-gray-400 text-xs mb-1">Email</label>
-                <input className={inputCls()} type="email" placeholder="e.g. ahmad@bank.com" value={bankerForm.email} onChange={e => setBankerForm({ ...bankerForm, email: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
-              </div>
-              <div className="col-span-2">
-                <label className="block text-gray-400 text-xs mb-1">Notes</label>
-                <input className={inputCls()} placeholder="e.g. Fast approval, HP loans" value={bankerForm.notes} onChange={e => setBankerForm({ ...bankerForm, notes: e.target.value })} />
-              </div>
-            </div>
-
-            {/* Has App Account toggle */}
-            <div className="border-t border-obsidian-400/30 pt-3 space-y-3">
-              <button
-                type="button"
-                onClick={() => setBankerForm({ ...bankerForm, hasAccount: !bankerForm.hasAccount, username: '', password: '' })}
-                className="flex items-center gap-3"
-              >
-                <div className={`w-9 h-5 rounded-full relative transition-colors ${bankerForm.hasAccount ? 'bg-sky-500' : 'bg-obsidian-500'}`}>
-                  <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all" style={{ left: bankerForm.hasAccount ? '18px' : '2px' }} />
-                </div>
-                <span className="text-sm text-gray-300">Has App Account</span>
-              </button>
-
-              {bankerForm.hasAccount && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-gray-400 text-xs mb-1">Username *</label>
-                    <input className={inputCls()} placeholder="e.g. ahmad.affin" value={bankerForm.username} onChange={e => setBankerForm({ ...bankerForm, username: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
-                  </div>
-                  <div>
-                    <label className="block text-gray-400 text-xs mb-1">Password *</label>
-                    <div className="relative">
-                      <input className={inputCls()} type={showBankerPw ? 'text' : 'password'} placeholder="Set password" value={bankerForm.password} onChange={e => setBankerForm({ ...bankerForm, password: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
-                      <button type="button" onClick={() => setShowBankerPw(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
-                        {showBankerPw ? <EyeOff size={13} /> : <Eye size={13} />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <button
-              disabled={!bankerForm.name.trim() || !bankerForm.bank || (bankerForm.hasAccount && (!bankerForm.username.trim() || !bankerForm.password.trim()))}
-              onClick={() => handleAdd(async () => {
-                const bankerId = generateId();
-                let userId: string | undefined;
-                if (bankerForm.hasAccount) {
-                  userId = generateId();
-                  await addUser({
-                    id: userId,
-                    name: bankerForm.name.trim(),
-                    username: bankerForm.username.trim(),
-                    password: bankerForm.password,
-                    role: 'banker',
-                    phone: bankerForm.phone || '',
-                    banks: [bankerForm.bank],
-                    email: bankerForm.email || undefined,
-                    monthlyTarget: 0,
-                    carsInMonth: 0,
-                  });
-                }
-                await addBanker({
-                  id: bankerId,
-                  name: bankerForm.name.trim(),
-                  bank: bankerForm.bank,
-                  phone: bankerForm.phone || undefined,
-                  email: bankerForm.email || undefined,
-                  notes: bankerForm.notes || undefined,
-                  userId,
-                  createdAt: new Date().toISOString(),
-                });
-                setBankerForm(emptyBankerForm);
-              })}
-              className="btn-gold px-4 py-2 rounded-lg text-sm disabled:opacity-40"
-            >
-              Add Banker
+          {/* ── Add Banker button ── */}
+          <div className="flex justify-end">
+            <button onClick={() => { setBankerForm(emptyBankerForm); setShowBankerPw(false); setShowAddBanker(true); }} className="btn-gold px-4 py-2 rounded-xl text-sm flex items-center gap-2">
+              <Plus size={14} /> Add Banker
             </button>
           </div>
+
+          {/* ── Add Banker Modal ── */}
+          <Modal isOpen={showAddBanker} onClose={() => setShowAddBanker(false)} title="Add Banker Profile" maxWidth="max-w-md">
+            <div className="space-y-3 p-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-gray-400 text-xs mb-1">Full Name *</label>
+                  <input className={inputCls()} placeholder="e.g. Ahmad bin Ali" value={bankerForm.name} onChange={e => setBankerForm({ ...bankerForm, name: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-gray-400 text-xs mb-1">Bank *</label>
+                  <select className={inputCls()} value={bankerForm.bank} onChange={e => setBankerForm({ ...bankerForm, bank: e.target.value })}>
+                    <option value="">Select bank…</option>
+                    {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-gray-400 text-xs mb-1">Phone</label>
+                  <input className={inputCls()} placeholder="e.g. 012-3456789" value={bankerForm.phone} onChange={e => setBankerForm({ ...bankerForm, phone: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-gray-400 text-xs mb-1">Email</label>
+                  <input className={inputCls()} type="email" placeholder="e.g. ahmad@bank.com" value={bankerForm.email} onChange={e => setBankerForm({ ...bankerForm, email: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-gray-400 text-xs mb-1">Notes</label>
+                  <input className={inputCls()} placeholder="e.g. Fast approval, HP loans" value={bankerForm.notes} onChange={e => setBankerForm({ ...bankerForm, notes: e.target.value })} />
+                </div>
+              </div>
+
+              <div className="border-t border-obsidian-400/30 pt-3 space-y-3">
+                <button
+                  type="button"
+                  onClick={() => setBankerForm({ ...bankerForm, hasAccount: !bankerForm.hasAccount, username: '', password: '' })}
+                  className="flex items-center gap-3"
+                >
+                  <div className={`w-9 h-5 rounded-full relative transition-colors ${bankerForm.hasAccount ? 'bg-sky-500' : 'bg-obsidian-500'}`}>
+                    <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all" style={{ left: bankerForm.hasAccount ? '18px' : '2px' }} />
+                  </div>
+                  <span className="text-sm text-gray-300">Has App Account</span>
+                </button>
+
+                {bankerForm.hasAccount && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-gray-400 text-xs mb-1">Username *</label>
+                      <input className={inputCls()} placeholder="e.g. ahmad.affin" value={bankerForm.username} onChange={e => setBankerForm({ ...bankerForm, username: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+                    </div>
+                    <div>
+                      <label className="block text-gray-400 text-xs mb-1">Password *</label>
+                      <div className="relative">
+                        <input className={inputCls()} type={showBankerPw ? 'text' : 'password'} placeholder="Set password" value={bankerForm.password} onChange={e => setBankerForm({ ...bankerForm, password: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+                        <button type="button" onClick={() => setShowBankerPw(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
+                          {showBankerPw ? <EyeOff size={13} /> : <Eye size={13} />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => setShowAddBanker(false)} className="flex-1 btn-ghost py-2 rounded-xl text-sm">Cancel</button>
+                <button
+                  disabled={!bankerForm.name.trim() || !bankerForm.bank || (bankerForm.hasAccount && (!bankerForm.username.trim() || !bankerForm.password.trim()))}
+                  onClick={() => handleAdd(async () => {
+                    const bankerId = generateId();
+                    let userId: string | undefined;
+                    if (bankerForm.hasAccount) {
+                      userId = generateId();
+                      await addUser({
+                        id: userId,
+                        name: bankerForm.name.trim(),
+                        username: bankerForm.username.trim(),
+                        password: bankerForm.password,
+                        role: 'banker',
+                        phone: bankerForm.phone || '',
+                        banks: [bankerForm.bank],
+                        email: bankerForm.email || undefined,
+                        monthlyTarget: 0,
+                        carsInMonth: 0,
+                      });
+                    }
+                    await addBanker({
+                      id: bankerId,
+                      name: bankerForm.name.trim(),
+                      bank: bankerForm.bank,
+                      phone: bankerForm.phone || undefined,
+                      email: bankerForm.email || undefined,
+                      notes: bankerForm.notes || undefined,
+                      userId,
+                      createdAt: new Date().toISOString(),
+                    });
+                    setBankerForm(emptyBankerForm);
+                    setShowAddBanker(false);
+                  })}
+                  className="flex-1 btn-gold py-2 rounded-xl text-sm disabled:opacity-40"
+                >Add Banker</button>
+              </div>
+            </div>
+          </Modal>
 
           {/* ── Profiles list grouped by person ── */}
           {(() => {
