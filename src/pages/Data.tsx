@@ -62,7 +62,7 @@ export default function Data() {
   const emptyBankerForm = { name: '', bank: '', phone: '', email: '', notes: '', hasAccount: false, username: '', password: '' };
   const [bankerForm, setBankerForm] = useState(emptyBankerForm);
   const [bankerEditTarget, setBankerEditTarget] = useState<Banker | null>(null);
-  const [bankerEditForm, setBankerEditForm] = useState({ ...emptyBankerForm, changePassword: false });
+  const [bankerEditForm, setBankerEditForm] = useState({ ...emptyBankerForm, changePassword: false, removeAccount: false });
   const [showBankerPw, setShowBankerPw] = useState(false);
   const [showBankerEditPw, setShowBankerEditPw] = useState(false);
   const [bankerDeleteTarget, setBankerDeleteTarget] = useState<{ id: string; name: string } | null>(null);
@@ -384,14 +384,28 @@ export default function Data() {
                             </div>
                           </div>
 
-                          {/* Account section in edit mode */}
+                          {/* Account section in edit mode — unified toggle */}
                           <div className="border-t border-obsidian-400/30 pt-3 space-y-2">
-                            {linkedUser ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (linkedUser) {
+                                  setBankerEditForm({ ...bankerEditForm, removeAccount: !bankerEditForm.removeAccount, changePassword: false, password: '' });
+                                } else {
+                                  setBankerEditForm({ ...bankerEditForm, hasAccount: !bankerEditForm.hasAccount, username: '', password: '' });
+                                }
+                              }}
+                              className="flex items-center gap-3"
+                            >
+                              <div className={`w-9 h-5 rounded-full relative transition-colors ${(linkedUser && !bankerEditForm.removeAccount) || (!linkedUser && bankerEditForm.hasAccount) ? 'bg-sky-500' : 'bg-obsidian-500'}`}>
+                                <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${(linkedUser && !bankerEditForm.removeAccount) || (!linkedUser && bankerEditForm.hasAccount) ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                              </div>
+                              <span className="text-sm text-gray-300">Has App Account</span>
+                            </button>
+
+                            {linkedUser && !bankerEditForm.removeAccount && (
                               <>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30">App Account</span>
-                                  <span className="text-gray-400 text-xs">@{linkedUser.username}</span>
-                                </div>
+                                <p className="text-xs text-gray-500">@{linkedUser.username}</p>
                                 <label className="flex items-center gap-2 cursor-pointer select-none">
                                   <input type="checkbox" checked={bankerEditForm.changePassword} onChange={e => setBankerEditForm({ ...bankerEditForm, changePassword: e.target.checked, password: '' })} className="accent-sky-400" />
                                   <span className="text-xs text-gray-400">Change password</span>
@@ -405,36 +419,26 @@ export default function Data() {
                                   </div>
                                 )}
                               </>
-                            ) : (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => setBankerEditForm({ ...bankerEditForm, hasAccount: !bankerEditForm.hasAccount, username: '', password: '' })}
-                                  className="flex items-center gap-3"
-                                >
-                                  <div className={`w-9 h-5 rounded-full relative transition-colors ${bankerEditForm.hasAccount ? 'bg-sky-500' : 'bg-obsidian-500'}`}>
-                                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${bankerEditForm.hasAccount ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                            )}
+                            {linkedUser && bankerEditForm.removeAccount && (
+                              <p className="text-xs text-red-400">Account <span className="font-medium">@{linkedUser.username}</span> will be removed on save.</p>
+                            )}
+                            {!linkedUser && bankerEditForm.hasAccount && (
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-gray-400 text-xs mb-1">Username *</label>
+                                  <input className={inputCls()} value={bankerEditForm.username} onChange={e => setBankerEditForm({ ...bankerEditForm, username: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+                                </div>
+                                <div>
+                                  <label className="block text-gray-400 text-xs mb-1">Password *</label>
+                                  <div className="relative">
+                                    <input className={inputCls()} type={showBankerEditPw ? 'text' : 'password'} placeholder="Set password" value={bankerEditForm.password} onChange={e => setBankerEditForm({ ...bankerEditForm, password: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+                                    <button type="button" onClick={() => setShowBankerEditPw(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
+                                      {showBankerEditPw ? <EyeOff size={13} /> : <Eye size={13} />}
+                                    </button>
                                   </div>
-                                  <span className="text-sm text-gray-300">Give App Access</span>
-                                </button>
-                                {bankerEditForm.hasAccount && (
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <div>
-                                      <label className="block text-gray-400 text-xs mb-1">Username *</label>
-                                      <input className={inputCls()} value={bankerEditForm.username} onChange={e => setBankerEditForm({ ...bankerEditForm, username: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
-                                    </div>
-                                    <div>
-                                      <label className="block text-gray-400 text-xs mb-1">Password *</label>
-                                      <div className="relative">
-                                        <input className={inputCls()} type={showBankerEditPw ? 'text' : 'password'} placeholder="Set password" value={bankerEditForm.password} onChange={e => setBankerEditForm({ ...bankerEditForm, password: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
-                                        <button type="button" onClick={() => setShowBankerEditPw(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
-                                          {showBankerEditPw ? <EyeOff size={13} /> : <Eye size={13} />}
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                )}
-                              </>
+                                </div>
+                              </div>
                             )}
                           </div>
 
@@ -449,7 +453,10 @@ export default function Data() {
                                   email: bankerEditForm.email || undefined,
                                   notes: bankerEditForm.notes || undefined,
                                 });
-                                if (linkedUser) {
+                                if (linkedUser && bankerEditForm.removeAccount) {
+                                  await deleteUser(linkedUser.id);
+                                  await updateBanker(banker.id, { userId: undefined });
+                                } else if (linkedUser) {
                                   await updateUser(linkedUser.id, {
                                     name: bankerEditForm.name.trim(),
                                     banks: [bankerEditForm.bank],
@@ -497,7 +504,7 @@ export default function Data() {
                             <button
                               onClick={() => {
                                 setBankerEditTarget(banker);
-                                setBankerEditForm({ name: banker.name, bank: banker.bank, phone: banker.phone ?? '', email: banker.email ?? '', notes: banker.notes ?? '', hasAccount: false, username: '', password: '', changePassword: false });
+                                setBankerEditForm({ name: banker.name, bank: banker.bank, phone: banker.phone ?? '', email: banker.email ?? '', notes: banker.notes ?? '', hasAccount: false, username: '', password: '', changePassword: false, removeAccount: false });
                                 setShowBankerEditPw(false);
                               }}
                               className="p-1.5 text-gray-600 hover:text-sky-400 hover:bg-sky-500/10 rounded-lg transition-colors"
