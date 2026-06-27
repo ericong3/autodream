@@ -2794,8 +2794,9 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
       {/* ── Work Order Overlay (Cash & Loan) ─────────── */}
       {workOrderCustomer && (() => {
         const car = getCar(workOrderCarId);
+        const bpLiveTotal = woForm.bankProductItems.reduce((s, x) => s + (x.amount || 0), 0);
         const additionalTotal = woForm.additionalItems.reduce((s, x) => s + (x.amount || 0), 0);
-        const totalFinalDeal = woForm.sellingPrice + woForm.insurance + woForm.bankProduct + additionalTotal - woForm.discount;
+        const totalFinalDeal = woForm.sellingPrice + woForm.insurance + bpLiveTotal + additionalTotal - woForm.discount;
         const effectiveBookingFee = woForm.bookingFee
           || workOrderCustomer?.bookingFee
           || workOrderCustomer?.loanWorkOrder?.bookingFee
