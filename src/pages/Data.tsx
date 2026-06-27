@@ -169,27 +169,37 @@ export default function Data() {
           icon={Package}
           iconColor="text-green-400"
           count={suppliers.length}
-          form={
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <input className={inputCls()} placeholder="Supplier name *" value={supplierForm.name} onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })} />
-              <input className={inputCls()} placeholder="Phone (optional)" value={supplierForm.phone} onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })} />
-              <div className="flex gap-2">
-                <input className={inputCls()} placeholder="Category e.g. Tyres" value={supplierForm.category} onChange={(e) => setSupplierForm({ ...supplierForm, category: e.target.value })} />
+          form={(closeModal) => (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-gray-400 text-xs mb-1">Supplier Name *</label>
+                <input className={inputCls()} placeholder="e.g. KL Auto Parts" value={supplierForm.name} onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-gray-400 text-xs mb-1">Phone</label>
+                <input className={inputCls()} placeholder="e.g. 012-3456789" value={supplierForm.phone} onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-gray-400 text-xs mb-1">Category</label>
+                <input className={inputCls()} placeholder="e.g. Tyres" value={supplierForm.category} onChange={(e) => setSupplierForm({ ...supplierForm, category: e.target.value })} />
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={closeModal} className="flex-1 btn-ghost py-2 rounded-xl text-sm">Cancel</button>
                 <button
+                  disabled={!supplierForm.name.trim()}
                   onClick={() => {
                     if (!supplierForm.name.trim()) return;
                     handleAdd(async () => {
                       await addSupplier({ id: generateId(), name: supplierForm.name.trim(), phone: supplierForm.phone || undefined, category: supplierForm.category || undefined });
                       setSupplierForm({ name: '', phone: '', category: '' });
                     });
+                    closeModal();
                   }}
-                  className="btn-gold px-4 py-2 rounded-lg text-sm shrink-0"
-                >
-                  <Plus size={15} />
-                </button>
+                  className="flex-1 btn-gold py-2 rounded-xl text-sm disabled:opacity-40"
+                >Add Supplier</button>
               </div>
             </div>
-          }
+          )}
           items={suppliers.map((s) => ({
             id: s.id,
             primary: s.name,
@@ -776,27 +786,50 @@ function ExternalSalesmenTab({
 }) {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
 
+  const [showAdd, setShowAdd] = useState(false);
+
   return (
     <div className="space-y-4">
-      {/* Add form */}
-      <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <div className="w-1 h-4 rounded-full bg-gold-gradient" />
-          <UserCheck size={15} className="text-teal-400" />
-          <h3 className="text-white font-semibold text-sm">Register External Salesman</h3>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          <input className={inputCls()} placeholder="Full Name *" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
-          <input className={inputCls()} placeholder="IC Number" value={form.ic} onChange={e => setForm({ ...form, ic: e.target.value })} autoCapitalize="none" spellCheck={false} />
-          <input className={inputCls()} placeholder="Phone" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
-          <input className={inputCls()} placeholder="Email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
-          <input className={inputCls()} placeholder="Bank" value={form.bank} onChange={e => setForm({ ...form, bank: e.target.value })} />
-          <div className="flex gap-2">
-            <input className={inputCls()} placeholder="Bank Account No." value={form.bankAccount} onChange={e => setForm({ ...form, bankAccount: e.target.value })} />
-            <button onClick={onAdd} className="btn-gold px-4 py-2 rounded-lg text-sm shrink-0"><Plus size={15} /></button>
+      <div className="flex justify-end">
+        <button onClick={() => { setForm(emptyExtSalesman); setShowAdd(true); }} className="btn-gold px-4 py-2 rounded-xl text-sm flex items-center gap-2">
+          <Plus size={14} /> Add Ext. Salesman
+        </button>
+      </div>
+
+      <Modal isOpen={showAdd} onClose={() => setShowAdd(false)} title="Register External Salesman" maxWidth="max-w-md">
+        <div className="space-y-3 p-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="block text-gray-400 text-xs mb-1">Full Name *</label>
+              <input className={inputCls()} placeholder="e.g. Ahmad bin Ali" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-gray-400 text-xs mb-1">IC Number</label>
+              <input className={inputCls()} placeholder="e.g. 900101-01-1234" value={form.ic} onChange={e => setForm({ ...form, ic: e.target.value })} autoCapitalize="none" spellCheck={false} />
+            </div>
+            <div>
+              <label className="block text-gray-400 text-xs mb-1">Phone</label>
+              <input className={inputCls()} placeholder="e.g. 012-3456789" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-gray-400 text-xs mb-1">Email</label>
+              <input className={inputCls()} placeholder="e.g. ahmad@email.com" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+            </div>
+            <div>
+              <label className="block text-gray-400 text-xs mb-1">Bank</label>
+              <input className={inputCls()} placeholder="e.g. Maybank" value={form.bank} onChange={e => setForm({ ...form, bank: e.target.value })} />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-gray-400 text-xs mb-1">Bank Account No.</label>
+              <input className={inputCls()} placeholder="e.g. 1234567890" value={form.bankAccount} onChange={e => setForm({ ...form, bankAccount: e.target.value })} />
+            </div>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button onClick={() => setShowAdd(false)} className="flex-1 btn-ghost py-2 rounded-xl text-sm">Cancel</button>
+            <button onClick={() => { onAdd(); setShowAdd(false); }} disabled={!form.name.trim()} className="flex-1 btn-gold py-2 rounded-xl text-sm disabled:opacity-40">Add</button>
           </div>
         </div>
-      </div>
+      </Modal>
 
       {/* List */}
       <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card">
@@ -963,21 +996,30 @@ function WorkshopsTab({
     setCustomCat('');
   };
 
+  const [showAdd, setShowAdd] = useState(false);
+
   return (
     <div className="space-y-4">
-      {/* Add form */}
-      <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <div className="w-1 h-4 rounded-full bg-gold-gradient" />
-          <Wrench size={15} className="text-orange-400" />
-          <h3 className="text-white font-semibold text-sm">Add Workshop</h3>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <input className={inputCls()} placeholder="Workshop name *" value={workshopForm.name} onChange={(e) => setWorkshopForm({ ...workshopForm, name: e.target.value })} />
-          <input className={inputCls()} placeholder="Phone (optional)" value={workshopForm.phone} onChange={(e) => setWorkshopForm({ ...workshopForm, phone: e.target.value })} />
-          <div className="flex gap-2">
+      <div className="flex justify-end">
+        <button onClick={() => { setWorkshopForm({ name: '', phone: '', speciality: '' }); setCustomMode(false); setCustomCat(''); setShowAdd(true); }} className="btn-gold px-4 py-2 rounded-xl text-sm flex items-center gap-2">
+          <Plus size={14} /> Add Workshop
+        </button>
+      </div>
+
+      <Modal isOpen={showAdd} onClose={() => setShowAdd(false)} title="Add Workshop" maxWidth="max-w-sm">
+        <div className="space-y-3 p-4">
+          <div>
+            <label className="block text-gray-400 text-xs mb-1">Workshop Name *</label>
+            <input className={inputCls()} placeholder="e.g. Speedy Workshop" value={workshopForm.name} onChange={(e) => setWorkshopForm({ ...workshopForm, name: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-gray-400 text-xs mb-1">Phone</label>
+            <input className={inputCls()} placeholder="e.g. 012-3456789" value={workshopForm.phone} onChange={(e) => setWorkshopForm({ ...workshopForm, phone: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-gray-400 text-xs mb-1">Category *</label>
             {customMode ? (
-              <div className="flex gap-2 flex-1">
+              <div className="flex gap-2">
                 <input className={inputCls()} placeholder="New category name *" value={customCat} autoFocus onChange={(e) => setCustomCat(e.target.value)} />
                 <button onClick={() => { setCustomMode(false); setCustomCat(''); setWorkshopForm({ ...workshopForm, speciality: '' }); }} className="px-3 py-2 rounded-lg text-sm text-gray-400 hover:text-white bg-obsidian-700/60 border border-obsidian-400/60 shrink-0"><X size={14} /></button>
               </div>
@@ -988,10 +1030,13 @@ function WorkshopsTab({
                 <option value="__custom__">＋ Add category…</option>
               </select>
             )}
-            <button onClick={handleAdd} className="btn-gold px-4 py-2 rounded-lg text-sm shrink-0"><Plus size={15} /></button>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button onClick={() => setShowAdd(false)} className="flex-1 btn-ghost py-2 rounded-xl text-sm">Cancel</button>
+            <button onClick={() => { handleAdd(); setShowAdd(false); }} disabled={!workshopForm.name.trim() || !(customMode ? customCat.trim() : workshopForm.speciality)} className="flex-1 btn-gold py-2 rounded-xl text-sm disabled:opacity-40">Add Workshop</button>
           </div>
         </div>
-      </div>
+      </Modal>
 
       {/* Grouped by category */}
       {workshops.length === 0 ? (
@@ -1166,21 +1211,30 @@ function MerchantsTab({
 
   const closePopup = () => setPopupMerchant(null);
 
+  const [showAdd, setShowAdd] = useState(false);
+
   return (
     <div className="space-y-4">
-      {/* Add form */}
-      <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <div className="w-1 h-4 rounded-full bg-gold-gradient" />
-          <ShoppingBag size={15} className="text-purple-400" />
-          <h3 className="text-white font-semibold text-sm">Add Merchant</h3>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <input className={inputCls()} placeholder="Merchant name *" value={merchantForm.name} onChange={(e) => setMerchantForm({ ...merchantForm, name: e.target.value })} />
-          <input className={inputCls()} placeholder="Phone (optional)" value={merchantForm.phone} onChange={(e) => setMerchantForm({ ...merchantForm, phone: e.target.value })} />
-          <div className="flex gap-2">
+      <div className="flex justify-end">
+        <button onClick={() => { setMerchantForm({ name: '', phone: '', category: '' }); setCustomMode(false); setCustomCat(''); setShowAdd(true); }} className="btn-gold px-4 py-2 rounded-xl text-sm flex items-center gap-2">
+          <Plus size={14} /> Add Merchant
+        </button>
+      </div>
+
+      <Modal isOpen={showAdd} onClose={() => setShowAdd(false)} title="Add Merchant" maxWidth="max-w-sm">
+        <div className="space-y-3 p-4">
+          <div>
+            <label className="block text-gray-400 text-xs mb-1">Merchant Name *</label>
+            <input className={inputCls()} placeholder="e.g. MyTyre Sdn Bhd" value={merchantForm.name} onChange={(e) => setMerchantForm({ ...merchantForm, name: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-gray-400 text-xs mb-1">Phone</label>
+            <input className={inputCls()} placeholder="e.g. 012-3456789" value={merchantForm.phone} onChange={(e) => setMerchantForm({ ...merchantForm, phone: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-gray-400 text-xs mb-1">Category</label>
             {customMode ? (
-              <div className="flex gap-2 flex-1">
+              <div className="flex gap-2">
                 <input className={inputCls()} placeholder="New category name" value={customCat} autoFocus onChange={(e) => setCustomCat(e.target.value)} />
                 <button onClick={() => { setCustomMode(false); setCustomCat(''); setMerchantForm({ ...merchantForm, category: '' }); }} className="px-3 py-2 rounded-lg text-sm text-gray-400 hover:text-white bg-obsidian-700/60 border border-obsidian-400/60 shrink-0"><X size={14} /></button>
               </div>
@@ -1191,10 +1245,13 @@ function MerchantsTab({
                 <option value="__custom__">＋ Add category…</option>
               </select>
             )}
-            <button onClick={handleAdd} className="btn-gold px-4 py-2 rounded-lg text-sm shrink-0"><Plus size={15} /></button>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button onClick={() => setShowAdd(false)} className="flex-1 btn-ghost py-2 rounded-xl text-sm">Cancel</button>
+            <button onClick={() => { handleAdd(); setShowAdd(false); }} disabled={!merchantForm.name.trim()} className="flex-1 btn-gold py-2 rounded-xl text-sm disabled:opacity-40">Add Merchant</button>
           </div>
         </div>
-      </div>
+      </Modal>
 
       {/* List grouped by category */}
       {merchants.length === 0 ? (
@@ -1311,7 +1368,7 @@ function MerchantsTab({
 }
 
 function DealersTab({
-  dealers, form, setForm, editTarget, editForm, setEditTarget, setEditForm, onAdd, onUpdate, onDelete,
+  dealers, form, setForm, editTarget, editForm, setEditTarget, setEditForm, emptyForm, onAdd, onUpdate, onDelete,
 }: {
   dealers: Dealer[];
   form: { name: string; phone: string; bankName: string; bankAccountNumber: string; bankAccountHolder: string };
@@ -1326,31 +1383,35 @@ function DealersTab({
   onDelete: (id: string) => void;
 }) {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
 
   return (
     <div className="space-y-4">
-      {/* Add form */}
-      <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <div className="w-1 h-4 rounded-full bg-gold-gradient" />
-          <Building2 size={15} className="text-blue-400" />
-          <h3 className="text-white font-semibold text-sm">Add Car Dealer</h3>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-gray-400 text-xs mb-1">Dealer Name *</label>
-            <input className={inputCls()} placeholder="e.g. Pak Long Motors" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-gray-400 text-xs mb-1">Phone</label>
-            <input className={inputCls()} placeholder="e.g. 012-3456789" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
-          </div>
-          <BankFields value={form} onChange={setForm} />
-        </div>
-        <button onClick={onAdd} disabled={!form.name.trim()} className="mt-4 btn-gold px-4 py-2 rounded-lg text-sm disabled:opacity-40 flex items-center gap-2">
-          <Plus size={15} /> Add Dealer
+      <div className="flex justify-end">
+        <button onClick={() => { setForm(emptyForm); setShowAdd(true); }} className="btn-gold px-4 py-2 rounded-xl text-sm flex items-center gap-2">
+          <Plus size={14} /> Add Dealer
         </button>
       </div>
+
+      <Modal isOpen={showAdd} onClose={() => setShowAdd(false)} title="Add Car Dealer" maxWidth="max-w-md">
+        <div className="space-y-3 p-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-gray-400 text-xs mb-1">Dealer Name *</label>
+              <input className={inputCls()} placeholder="e.g. Pak Long Motors" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-gray-400 text-xs mb-1">Phone</label>
+              <input className={inputCls()} placeholder="e.g. 012-3456789" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
+            </div>
+            <BankFields value={form} onChange={setForm} />
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button onClick={() => setShowAdd(false)} className="flex-1 btn-ghost py-2 rounded-xl text-sm">Cancel</button>
+            <button onClick={() => { onAdd(); setShowAdd(false); }} disabled={!form.name.trim()} className="flex-1 btn-gold py-2 rounded-xl text-sm disabled:opacity-40">Add Dealer</button>
+          </div>
+        </div>
+      </Modal>
 
       {/* List */}
       <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card">
@@ -1411,24 +1472,25 @@ function Section({
   icon: React.ElementType;
   iconColor: string;
   count: number;
-  form: React.ReactNode;
+  form: (closeModal: () => void) => React.ReactNode;
   items: { id: string; primary: string; secondary?: string }[];
   onDelete: (id: string) => void;
   emptyText: string;
 }) {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
 
   return (
     <div className="space-y-4">
-      {/* Add form */}
-      <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <div className="w-1 h-4 rounded-full bg-gold-gradient" />
-          <Icon size={15} className={iconColor} />
-          <h3 className="text-white font-semibold text-sm">Add {title}</h3>
-        </div>
-        {form}
+      <div className="flex justify-end">
+        <button onClick={() => setShowAdd(true)} className="btn-gold px-4 py-2 rounded-xl text-sm flex items-center gap-2">
+          <Plus size={14} /> Add {title}
+        </button>
       </div>
+
+      <Modal isOpen={showAdd} onClose={() => setShowAdd(false)} title={`Add ${title}`} maxWidth="max-w-sm">
+        <div className="p-4">{form(() => setShowAdd(false))}</div>
+      </Modal>
 
       {/* List */}
       <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card">
