@@ -26,7 +26,7 @@ export default function Modal({ isOpen, onClose, title, children, footer, maxWid
       <div className="absolute inset-0 flex items-end sm:items-center justify-center sm:p-4 pointer-events-none"
         style={{ paddingTop: 'env(safe-area-inset-top, 44px)' }}>
         <div className={`relative w-full ${maxWidth} flex flex-col glass-panel shadow-card-lg
-          rounded-t-2xl sm:rounded-xl overflow-hidden modal-enter pointer-events-auto`}>
+          rounded-t-2xl sm:rounded-xl overflow-hidden modal-enter pointer-events-auto transition-all duration-200`}>
 
           {/* Gold top accent */}
           <div className="absolute top-0 left-0 right-0 h-[2px] bg-gold-gradient opacity-80" />

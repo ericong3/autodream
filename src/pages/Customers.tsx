@@ -2515,7 +2515,7 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
         isOpen={!!sidebarLead}
         onClose={closeSidebar}
         title={sidebarView === 'car_select' ? 'Select Car' : sidebarView === 'loan' ? 'Loan Submission' : sidebarView === 'cash' ? 'Cash Purchase' : 'Next Step'}
-        maxWidth={sidebarView === 'car_select' ? 'max-w-lg' : 'max-w-sm'}
+        maxWidth="max-w-lg"
       >
         {sidebarLead && (
           <div className="space-y-4">
