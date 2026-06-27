@@ -280,7 +280,7 @@ export default function Data() {
                 className="flex items-center gap-3"
               >
                 <div className={`w-9 h-5 rounded-full relative transition-colors ${bankerForm.hasAccount ? 'bg-sky-500' : 'bg-obsidian-500'}`}>
-                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${bankerForm.hasAccount ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                  <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all" style={{ left: bankerForm.hasAccount ? '18px' : '2px' }} />
                 </div>
                 <span className="text-sm text-gray-300">Has App Account</span>
               </button>
@@ -386,22 +386,27 @@ export default function Data() {
 
                           {/* Account section in edit mode — unified toggle */}
                           <div className="border-t border-obsidian-400/30 pt-3 space-y-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (linkedUser) {
-                                  setBankerEditForm({ ...bankerEditForm, removeAccount: !bankerEditForm.removeAccount, changePassword: false, password: '' });
-                                } else {
-                                  setBankerEditForm({ ...bankerEditForm, hasAccount: !bankerEditForm.hasAccount, username: '', password: '' });
-                                }
-                              }}
-                              className="flex items-center gap-3"
-                            >
-                              <div className={`w-9 h-5 rounded-full relative transition-colors ${(linkedUser && !bankerEditForm.removeAccount) || (!linkedUser && bankerEditForm.hasAccount) ? 'bg-sky-500' : 'bg-obsidian-500'}`}>
-                                <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${(linkedUser && !bankerEditForm.removeAccount) || (!linkedUser && bankerEditForm.hasAccount) ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                              </div>
-                              <span className="text-sm text-gray-300">Has App Account</span>
-                            </button>
+                            {(() => {
+                              const isOn = linkedUser ? !bankerEditForm.removeAccount : bankerEditForm.hasAccount;
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (linkedUser) {
+                                      setBankerEditForm({ ...bankerEditForm, removeAccount: !bankerEditForm.removeAccount, changePassword: false, password: '' });
+                                    } else {
+                                      setBankerEditForm({ ...bankerEditForm, hasAccount: !bankerEditForm.hasAccount, username: '', password: '' });
+                                    }
+                                  }}
+                                  className="flex items-center gap-3"
+                                >
+                                  <div className={`w-9 h-5 rounded-full relative transition-colors ${isOn ? 'bg-sky-500' : 'bg-obsidian-500'}`}>
+                                    <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all" style={{ left: isOn ? '18px' : '2px' }} />
+                                  </div>
+                                  <span className="text-sm text-gray-300">Has App Account</span>
+                                </button>
+                              );
+                            })()}
 
                             {linkedUser && !bankerEditForm.removeAccount && (
                               <>
