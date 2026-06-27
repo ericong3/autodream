@@ -50,9 +50,9 @@ export default function LoanSubmitModal({ customer, initialCarId, initialBanks, 
   const prevGuarantorDocs = prevDocs.filter(d => d.type === 'guarantor');
 
   // ── Loan Order fields ──────────────────────────────────────────
-  const car = cars.find(c => c.id === (initialCarId ?? existingOrder?.carId ?? customer.interestedCarId));
   const [carId, setCarId] = useState(initialCarId ?? existingOrder?.carId ?? customer.interestedCarId ?? '');
-  const [sellingPrice, setSellingPrice] = useState(existingOrder?.sellingPrice ?? car?.sellingPrice ?? 0);
+  const selectedCar = cars.find(c => c.id === carId);
+  const sellingPrice = selectedCar?.sellingPrice ?? 0;
   const [insurance, setInsurance] = useState(existingOrder?.insurance ?? 0);
   const [bankProduct, setBankProduct] = useState(existingOrder?.bankProduct ?? 0);
   const [additionalItems, setAdditionalItems] = useState<WorkOrderItem[]>(existingOrder?.additionalItems ?? []);
@@ -260,8 +260,6 @@ export default function LoanSubmitModal({ customer, initialCarId, initialBanks, 
                 value={carId}
                 onChange={e => {
                   setCarId(e.target.value);
-                  const selected = cars.find(c => c.id === e.target.value);
-                  if (selected && !existingOrder) setSellingPrice(selected.sellingPrice);
                 }}
                 className="w-full bg-obsidian-700 border border-obsidian-500/50 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-gold-500/50"
               >
@@ -276,8 +274,16 @@ export default function LoanSubmitModal({ customer, initialCarId, initialBanks, 
             <div className="rounded-xl border border-obsidian-400/30 overflow-hidden">
               <div className="bg-obsidian-700/40 px-4 py-2.5 text-xs text-gray-400 font-medium border-b border-obsidian-400/20">Deal Breakdown</div>
               <div className="px-4 py-3 space-y-3">
+                {/* Selling price — locked to car price */}
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-gray-400 w-36 shrink-0">Selling Price (RM)</span>
+                  <div className="flex-1 bg-obsidian-800/60 border border-obsidian-500/20 rounded-lg px-3 py-1.5 text-right flex items-center justify-between gap-2">
+                    <span className="text-xs text-gray-500">locked</span>
+                    <span className="text-white text-sm font-medium">{sellingPrice > 0 ? sellingPrice.toLocaleString() : '—'}</span>
+                  </div>
+                </div>
+
                 {[
-                  { label: 'Selling Price (RM)', value: sellingPrice, setter: setSellingPrice },
                   { label: 'Insurance (RM)', value: insurance, setter: setInsurance },
                   { label: 'Bank Product (RM)', value: bankProduct, setter: setBankProduct },
                   { label: 'Discount (RM)', value: discount, setter: setDiscount },
