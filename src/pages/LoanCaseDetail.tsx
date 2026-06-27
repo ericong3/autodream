@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { X, FileText, Download, ChevronDown, Loader2, User, Car as CarIcon, CreditCard, Send, Upload, Paperclip, MessageCircle } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
-import { LoanCase, LoanCaseStatus } from '../types';
+import { LoanCase, LoanCaseStatus, LoanCaseBankProduct } from '../types';
 import { toast } from '../utils/toast';
 import { notifyUsers } from '../utils/notify';
 
@@ -138,6 +138,10 @@ export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClo
   const car = cars.find(c => c.id === activeCase.carId);
 
   const [newStatus, setNewStatus] = useState<LoanCaseStatus>(activeCase.status as LoanCaseStatus);
+  const [approvedAmount, setApprovedAmount] = useState(activeCase.approvedAmount?.toString() ?? '');
+  const [interestRate, setInterestRate] = useState(activeCase.interestRate?.toString() ?? '');
+  const [tenure, setTenure] = useState(activeCase.tenure?.toString() ?? '');
+  const [bankProducts, setBankProducts] = useState<LoanCaseBankProduct[]>(activeCase.bankProducts ?? []);
   const [instruction, setInstruction] = useState('');
   const [saving, setSaving] = useState(false);
   const [applicantInterviewOpen, setApplicantInterviewOpen] = useState(false);
@@ -155,6 +159,10 @@ export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClo
   // Reset form state when switching tabs
   useEffect(() => {
     setNewStatus(activeCase.status as LoanCaseStatus);
+    setApprovedAmount(activeCase.approvedAmount?.toString() ?? '');
+    setInterestRate(activeCase.interestRate?.toString() ?? '');
+    setTenure(activeCase.tenure?.toString() ?? '');
+    setBankProducts(activeCase.bankProducts ?? []);
     setInstruction('');
     setReply('');
     setApplicantInterviewOpen(false);
@@ -178,9 +186,22 @@ export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClo
       const now = new Date().toISOString();
       const prevStatus = activeCase.status;
 
-      // Status change
+      // Status change + approval details
+      const approvalUpdates: Partial<LoanCase> = {};
+      if (newStatus !== prevStatus) approvalUpdates.status = newStatus;
+      if (newStatus === 'approved' || activeCase.status === 'approved') {
+        const amt = parseFloat(approvedAmount);
+        const rate = parseFloat(interestRate);
+        const ten = parseInt(tenure);
+        if (!isNaN(amt)) approvalUpdates.approvedAmount = amt;
+        if (!isNaN(rate)) approvalUpdates.interestRate = rate;
+        if (!isNaN(ten)) approvalUpdates.tenure = ten;
+        approvalUpdates.bankProducts = bankProducts;
+      }
+      if (Object.keys(approvalUpdates).length > 0) {
+        await updateLoanCase(activeCase.id, approvalUpdates);
+      }
       if (newStatus !== prevStatus) {
-        await updateLoanCase(activeCase.id, { status: newStatus });
         await addLoanCaseActivity({
           id: crypto.randomUUID(),
           caseId: activeCase.id,
@@ -495,7 +516,7 @@ export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClo
                   {STATUS_LABELS[activeCase.status] ?? activeCase.status}
                 </span>
               </div>
-              <div className="px-4 py-3">
+              <div className="px-4 py-3 space-y-3">
                 <p className="text-xs text-gray-500">
                   {activeCase.status === 'pending'        && 'Waiting for banker to review and submit to bank.'}
                   {activeCase.status === 'under_review'   && 'Submitted to bank. Awaiting bank decision.'}
@@ -506,6 +527,45 @@ export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClo
                   {activeCase.status === 'withdrawn'      && 'This case has been withdrawn.'}
                   {activeCase.status === 'cancelled'      && 'This case has been cancelled.'}
                 </p>
+                {activeCase.status === 'approved' && (activeCase.approvedAmount || activeCase.interestRate || activeCase.tenure || (activeCase.bankProducts?.length ?? 0) > 0) && (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-3 gap-2">
+                      {activeCase.approvedAmount && (
+                        <div className="bg-green-500/10 border border-green-500/20 rounded-xl px-3 py-2">
+                          <p className="text-[10px] text-gray-500 mb-0.5">Approved Amount</p>
+                          <p className="text-sm font-semibold text-green-300">RM {activeCase.approvedAmount.toLocaleString()}</p>
+                        </div>
+                      )}
+                      {activeCase.interestRate && (
+                        <div className="bg-obsidian-700/40 border border-obsidian-400/30 rounded-xl px-3 py-2">
+                          <p className="text-[10px] text-gray-500 mb-0.5">Interest Rate</p>
+                          <p className="text-sm font-semibold text-white">{activeCase.interestRate}%</p>
+                        </div>
+                      )}
+                      {activeCase.tenure && (
+                        <div className="bg-obsidian-700/40 border border-obsidian-400/30 rounded-xl px-3 py-2">
+                          <p className="text-[10px] text-gray-500 mb-0.5">Tenure</p>
+                          <p className="text-sm font-semibold text-white">{activeCase.tenure} months</p>
+                        </div>
+                      )}
+                    </div>
+                    {(activeCase.bankProducts?.length ?? 0) > 0 && (
+                      <div className="bg-obsidian-700/30 border border-obsidian-400/20 rounded-xl px-3 py-2 space-y-1">
+                        <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide">Bank Products</p>
+                        {activeCase.bankProducts!.map((bp, i) => (
+                          <div key={i} className="flex justify-between text-xs">
+                            <span className="text-gray-400">{bp.name}</span>
+                            <span className="text-white font-medium">RM {bp.amount.toLocaleString()}</span>
+                          </div>
+                        ))}
+                        <div className="flex justify-between text-xs border-t border-obsidian-400/20 pt-1 mt-1">
+                          <span className="text-gray-500">Total</span>
+                          <span className="text-white font-semibold">RM {activeCase.bankProducts!.reduce((s, b) => s + b.amount, 0).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </section>
           )}
@@ -592,6 +652,59 @@ export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClo
                       {BANKER_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                     <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  </div>
+                </div>
+              )}
+
+              {/* Approval details — shown when status is or becomes approved */}
+              {(newStatus === 'approved' || activeCase.status === 'approved') && (
+                <div className="border border-green-500/20 bg-green-500/5 rounded-2xl p-3 space-y-3">
+                  <p className="text-xs text-green-400 font-semibold uppercase tracking-wide">Approval Details</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="text-xs text-gray-500 block mb-1">Approved Amount (RM)</label>
+                      <input type="number" value={approvedAmount} onChange={e => setApprovedAmount(e.target.value)} placeholder="e.g. 65000" className="w-full bg-obsidian-700 border border-obsidian-500/50 rounded-xl px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500/50" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 block mb-1">Interest Rate (%)</label>
+                      <input type="number" step="0.01" value={interestRate} onChange={e => setInterestRate(e.target.value)} placeholder="e.g. 3.5" className="w-full bg-obsidian-700 border border-obsidian-500/50 rounded-xl px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500/50" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 block mb-1">Tenure (months)</label>
+                      <input type="number" value={tenure} onChange={e => setTenure(e.target.value)} placeholder="e.g. 84" className="w-full bg-obsidian-700 border border-obsidian-500/50 rounded-xl px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500/50" />
+                    </div>
+                  </div>
+
+                  {/* Bank Products */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs text-gray-500">Bank Products / Customer Paid Items</label>
+                      <button type="button" onClick={() => setBankProducts(p => [...p, { name: '', amount: 0 }])} className="text-xs text-green-400 hover:text-green-300 font-medium">+ Add item</button>
+                    </div>
+                    {bankProducts.length === 0 && (
+                      <p className="text-xs text-gray-600 italic">No items added</p>
+                    )}
+                    {bankProducts.map((bp, i) => (
+                      <div key={i} className="flex items-center gap-2 mb-1.5">
+                        <input
+                          value={bp.name}
+                          onChange={e => setBankProducts(p => p.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
+                          placeholder="e.g. Takaful / Processing fee"
+                          className="flex-1 bg-obsidian-700 border border-obsidian-500/50 rounded-xl px-3 py-2 text-white text-xs placeholder-gray-600 focus:outline-none focus:border-green-500/50"
+                        />
+                        <input
+                          type="number"
+                          value={bp.amount || ''}
+                          onChange={e => setBankProducts(p => p.map((x, j) => j === i ? { ...x, amount: parseFloat(e.target.value) || 0 } : x))}
+                          placeholder="RM"
+                          className="w-24 bg-obsidian-700 border border-obsidian-500/50 rounded-xl px-3 py-2 text-white text-xs placeholder-gray-600 focus:outline-none focus:border-green-500/50"
+                        />
+                        <button type="button" onClick={() => setBankProducts(p => p.filter((_, j) => j !== i))} className="text-gray-600 hover:text-red-400 text-xs px-1">✕</button>
+                      </div>
+                    ))}
+                    {bankProducts.length > 0 && (
+                      <p className="text-xs text-gray-500 text-right mt-1">Total: RM {bankProducts.reduce((s, b) => s + b.amount, 0).toLocaleString()}</p>
+                    )}
                   </div>
                 </div>
               )}

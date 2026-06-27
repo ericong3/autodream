@@ -26,6 +26,11 @@ export interface User {
 
 export type LoanCaseStatus = 'pending' | 'under_review' | 'approved' | 'rejected' | 'need_more_info' | 'appeal' | 'withdrawn' | 'cancelled';
 
+export interface LoanCaseBankProduct {
+  name: string;
+  amount: number;
+}
+
 export interface LoanCase {
   id: string;
   customerId: string;
@@ -38,6 +43,11 @@ export interface LoanCase {
   applicantInterviewText?: string;
   guarantorInterviewText?: string;
   status: LoanCaseStatus;
+  // Approval details (filled in when status = approved)
+  approvedAmount?: number;
+  interestRate?: number;
+  tenure?: number; // months
+  bankProducts?: LoanCaseBankProduct[];
   createdAt: string;
   updatedAt: string;
 }

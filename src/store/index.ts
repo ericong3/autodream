@@ -603,6 +603,10 @@ function rowToLoanCase(r: any): LoanCase {
     applicantInterviewText: r.applicant_interview_text ?? undefined,
     guarantorInterviewText: r.guarantor_interview_text ?? undefined,
     status: r.status,
+    approvedAmount: r.approved_amount ?? undefined,
+    interestRate: r.interest_rate ?? undefined,
+    tenure: r.tenure ?? undefined,
+    bankProducts: r.bank_products ?? undefined,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -1918,6 +1922,10 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     if (updates.applicantInterviewText !== undefined) dbRow.applicant_interview_text = updates.applicantInterviewText;
     if (updates.guarantorInterviewText !== undefined) dbRow.guarantor_interview_text = updates.guarantorInterviewText;
     if (updates.bankerName !== undefined) dbRow.banker_name = updates.bankerName;
+    if (updates.approvedAmount !== undefined) dbRow.approved_amount = updates.approvedAmount;
+    if (updates.interestRate !== undefined) dbRow.interest_rate = updates.interestRate;
+    if (updates.tenure !== undefined) dbRow.tenure = updates.tenure;
+    if (updates.bankProducts !== undefined) dbRow.bank_products = updates.bankProducts;
     const { error } = await supabase.from('loan_cases').update(dbRow).eq('id', id);
     if (error) {
       if (prev) set((s) => ({ loanCases: s.loanCases.map((c) => c.id === id ? prev : c) }));
