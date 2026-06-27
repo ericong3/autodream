@@ -57,7 +57,7 @@ export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClo
 
   const isBanker   = currentUser.role === 'banker';
   const isSalesman = currentUser.role === 'salesperson';
-  const isAdmin    = currentUser.role === 'admin';
+  const isAdmin    = currentUser.role === 'admin' || currentUser.role === 'director';
 
   // Banker sees Details + bank tabs; salesman only sees bank tabs (multiple banks only)
   const showTabs = isBanker
