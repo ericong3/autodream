@@ -137,6 +137,7 @@ export interface LoanWorkOrder {
   sellingPrice: number;
   insurance: number;
   bankProduct: number;
+  bankProductItems?: WorkOrderItem[];
   additionalItems: WorkOrderItem[];
   bookingFee: number;
   discount: number;
@@ -167,6 +168,7 @@ export interface CashWorkOrder {
   sellingPrice: number;
   insurance: number;
   bankProduct: number;
+  bankProductItems?: WorkOrderItem[];
   additionalItems: WorkOrderItem[];
   bookingFee: number;
   downpayment: number;

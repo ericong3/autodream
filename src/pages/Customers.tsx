@@ -138,7 +138,7 @@ export default function Customers() {
   const [workOrderCarId, setWorkOrderCarId] = useState('');
   const [workOrderIsEdit, setWorkOrderIsEdit] = useState(false);
   const emptyWorkOrder = {
-    sellingPrice: 0, insurance: 0, bankProduct: 0,
+    sellingPrice: 0, insurance: 0, bankProduct: 0, bankProductItems: [] as WorkOrderItem[],
     additionalItems: [] as WorkOrderItem[],
     bookingFee: 0, downpayment: 0, discount: 0,
     loanAmount: 0, approvedBank: '',
@@ -506,15 +506,17 @@ export default function Customers() {
   const handleWorkOrderSubmit = () => {
     if (!workOrderCustomer) return;
     const car = getCar(workOrderCarId);
+    const bpTotal = woForm.bankProductItems.reduce((s, x) => s + (x.amount || 0), 0);
     const additionalTotal = woForm.additionalItems.reduce((s, x) => s + (x.amount || 0), 0);
-    const totalFinalDeal = woForm.sellingPrice + woForm.insurance + woForm.bankProduct + additionalTotal - woForm.discount;
+    const totalFinalDeal = woForm.sellingPrice + woForm.insurance + bpTotal + additionalTotal - woForm.discount;
     const hasDiscount = car ? woForm.sellingPrice < car.sellingPrice : false;
 
     const workOrder: CashWorkOrder = {
       carId: workOrderCarId,
       sellingPrice: woForm.sellingPrice,
       insurance: woForm.insurance,
-      bankProduct: woForm.bankProduct,
+      bankProduct: bpTotal,
+      bankProductItems: woForm.bankProductItems,
       additionalItems: woForm.additionalItems,
       bookingFee: woForm.bookingFee,
       downpayment: woForm.downpayment,
@@ -599,6 +601,7 @@ export default function Customers() {
       sellingPrice: wo.sellingPrice,
       insurance: wo.insurance,
       bankProduct: wo.bankProduct,
+      bankProductItems: wo.bankProductItems ?? [],
       additionalItems: wo.additionalItems ?? [],
       bookingFee: wo.bookingFee,
       downpayment: (wo as CashWorkOrder).downpayment ?? 0,
@@ -639,6 +642,7 @@ export default function Customers() {
       sellingPrice: prev?.sellingPrice ?? lo?.sellingPrice ?? car?.sellingPrice ?? 0,
       insurance: prev?.insurance ?? lo?.insurance ?? 0,
       bankProduct: prev?.bankProduct ?? lo?.bankProduct ?? 0,
+      bankProductItems: prev?.bankProductItems ?? (() => { const approvedCase = loanCases.find(lc => lc.customerId === c.id && lc.status === 'approved' && (!bankName || lc.bank === bankName)); return approvedCase?.bankProducts?.map(bp => ({ label: bp.name, amount: bp.amount })) ?? []; })(),
       additionalItems: prev?.additionalItems ?? lo?.additionalItems ?? [],
       discount: prev?.discount ?? lo?.discount ?? 0,
       bookingFee: c.bookingFee ?? prev?.bookingFee ?? 0,
@@ -668,8 +672,9 @@ export default function Customers() {
   const handleLoanWoSubmit = () => {
     if (!workOrderCustomer) return;
     const car = getCar(workOrderCarId);
+    const bpTotal = woForm.bankProductItems.reduce((s, x) => s + (x.amount || 0), 0);
     const additionalTotal = woForm.additionalItems.reduce((s, x) => s + (x.amount || 0), 0);
-    const totalFinalDeal = woForm.sellingPrice + woForm.insurance + woForm.bankProduct + additionalTotal - woForm.discount;
+    const totalFinalDeal = woForm.sellingPrice + woForm.insurance + bpTotal + additionalTotal - woForm.discount;
     const hasDiscount = car ? woForm.discount > 0 || woForm.sellingPrice < car.sellingPrice : false;
 
     const loanWorkOrder: LoanWorkOrder = {
@@ -678,7 +683,8 @@ export default function Customers() {
       loanAmount: woForm.loanAmount,
       sellingPrice: woForm.sellingPrice,
       insurance: woForm.insurance,
-      bankProduct: woForm.bankProduct,
+      bankProduct: bpTotal,
+      bankProductItems: woForm.bankProductItems,
       additionalItems: woForm.additionalItems,
       bookingFee: woForm.bookingFee,
       discount: woForm.discount,
@@ -1804,7 +1810,8 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                     const cwo = detailLead.cashWorkOrder;
                     const sellingPrice = wo!.sellingPrice;
                     const insurance = wo!.insurance;
-                    const bankProduct = wo!.bankProduct;
+                    const bankProductItems = wo!.bankProductItems ?? (wo!.bankProduct > 0 ? [{ label: 'Bank Product', amount: wo!.bankProduct }] : []);
+                    const bankProduct = bankProductItems.reduce((s, x) => s + x.amount, 0);
                     const additionalItems = wo!.additionalItems ?? [];
                     const bookingFee = wo!.bookingFee;
                     const discount = wo!.discount;
@@ -1844,7 +1851,7 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                             <p className="text-white text-xs font-bold uppercase tracking-wide">Others</p>
                           </div>
                           {insurance > 0 && <Row label="Insurance" value={formatRM(insurance)} />}
-                          {bankProduct > 0 && <Row label="Bank Product" value={formatRM(bankProduct)} />}
+                          {bankProductItems.map((item, i) => <Row key={i} label={item.label || 'Bank Product'} value={formatRM(item.amount)} />)}
                           {additionalItems.map((item, i) => <Row key={i} label={item.label || 'Item'} value={formatRM(item.amount)} />)}
                         </>)}
 
@@ -2841,25 +2848,55 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                     )}
                   </div>
 
-                  {/* Insurance & Bank Product */}
-                  {[
-                    { label: 'Insurance', key: 'insurance' as const },
-                    { label: 'Bank Product', key: 'bankProduct' as const },
-                  ].map(row => (
-                    <div key={row.key} className="flex items-center gap-3 px-4 py-3 border-b border-obsidian-400/30">
-                      <span className="text-gray-400 text-sm flex-1">{row.label}</span>
-                      <div className="flex items-center gap-1">
-                        <span className="text-gray-600 text-xs">RM</span>
-                        <input
-                          type="number"
-                          value={woForm[row.key] || ''}
-                          onChange={e => setWoForm(f => ({ ...f, [row.key]: Number(e.target.value) }))}
-                          className="w-28 bg-transparent text-white text-sm text-right outline-none border-b border-transparent focus:border-gold-500/60 transition-colors"
-                          placeholder="0"
-                        />
-                      </div>
+                  {/* Insurance */}
+                  <div className="flex items-center gap-3 px-4 py-3 border-b border-obsidian-400/30">
+                    <span className="text-gray-400 text-sm flex-1">Insurance</span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-gray-600 text-xs">RM</span>
+                      <input
+                        type="number"
+                        value={woForm.insurance || ''}
+                        onChange={e => setWoForm(f => ({ ...f, insurance: Number(e.target.value) }))}
+                        className="w-28 bg-transparent text-white text-sm text-right outline-none border-b border-transparent focus:border-gold-500/60 transition-colors"
+                        placeholder="0"
+                      />
                     </div>
-                  ))}
+                  </div>
+
+                  {/* Bank Products — item list */}
+                  <div className="px-4 py-3 border-b border-obsidian-400/30 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-400 text-sm">Bank Products</span>
+                      <button type="button" onClick={() => setWoForm(f => ({ ...f, bankProductItems: [...f.bankProductItems, { label: '', amount: 0 }] }))} className="text-xs text-gold-400 hover:text-gold-300 font-medium">+ Add item</button>
+                    </div>
+                    {woForm.bankProductItems.length === 0 && (
+                      <p className="text-xs text-gray-600 italic">No bank products</p>
+                    )}
+                    {woForm.bankProductItems.map((bp, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <input
+                          value={bp.label}
+                          onChange={e => setWoForm(f => ({ ...f, bankProductItems: f.bankProductItems.map((x, i) => i === idx ? { ...x, label: e.target.value } : x) }))}
+                          placeholder="e.g. Takaful / Processing fee"
+                          className="flex-1 bg-obsidian-700/40 rounded-lg px-2.5 py-1.5 text-white text-xs placeholder-gray-600 outline-none border border-obsidian-400/30 focus:border-gold-500/40"
+                        />
+                        <div className="flex items-center gap-1">
+                          <span className="text-gray-600 text-xs">RM</span>
+                          <input
+                            type="number"
+                            value={bp.amount || ''}
+                            onChange={e => setWoForm(f => ({ ...f, bankProductItems: f.bankProductItems.map((x, i) => i === idx ? { ...x, amount: Number(e.target.value) } : x) }))}
+                            className="w-24 bg-transparent text-white text-xs text-right outline-none border-b border-transparent focus:border-gold-500/60 transition-colors"
+                            placeholder="0"
+                          />
+                        </div>
+                        <button type="button" onClick={() => setWoForm(f => ({ ...f, bankProductItems: f.bankProductItems.filter((_, i) => i !== idx) }))} className="text-gray-600 hover:text-red-400 text-xs">✕</button>
+                      </div>
+                    ))}
+                    {woForm.bankProductItems.length > 0 && (
+                      <div className="flex justify-end text-xs text-gray-500">Total: RM {woForm.bankProductItems.reduce((s, x) => s + (x.amount || 0), 0).toLocaleString()}</div>
+                    )}
+                  </div>
 
                   {/* Additional custom items */}
                   {woForm.additionalItems.map((item, idx) => (
@@ -2963,12 +3000,12 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                           <span className="text-white font-mono">+ {formatRM(woForm.insurance)}</span>
                         </div>
                       )}
-                      {woForm.bankProduct > 0 && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-400">Bank Product</span>
-                          <span className="text-white font-mono">+ {formatRM(woForm.bankProduct)}</span>
+                      {woForm.bankProductItems.filter(x => x.amount > 0).map((x, i) => (
+                        <div key={i} className="flex justify-between text-sm">
+                          <span className="text-gray-400">{x.label || 'Bank Product'}</span>
+                          <span className="text-white font-mono">+ {formatRM(x.amount)}</span>
                         </div>
-                      )}
+                      ))}
                       {woForm.additionalItems.filter(x => x.amount > 0).map((x, i) => (
                         <div key={i} className="flex justify-between text-sm">
                           <span className="text-gray-400">{x.label || 'Item'}</span>
