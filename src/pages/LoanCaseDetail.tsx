@@ -57,6 +57,7 @@ export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClo
 
   const isBanker   = currentUser.role === 'banker';
   const isSalesman = currentUser.role === 'salesperson';
+  const isAdmin    = currentUser.role === 'admin';
 
   // Banker sees Details + bank tabs; salesman only sees bank tabs (multiple banks only)
   const showTabs = isBanker
@@ -69,7 +70,7 @@ export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClo
   const activeCase = groupCases?.find(c => c.id === activeCaseId) ?? loanCase;
 
   const isOwnerSalesman = isSalesman && activeCase.salesmanId === currentUser.id;
-  const canUpdateCase = isBanker || isOwnerSalesman;
+  const canUpdateCase = isBanker || isOwnerSalesman || isAdmin;
 
   // Aggregate docs across all cases in the group (for Details tab)
   const allGroupCases = groupCases ?? [loanCase];
@@ -570,7 +571,7 @@ export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClo
           {activeTab !== 'details' && canUpdateCase && !['withdrawn', 'cancelled'].includes(activeCase.status) && (
             <section className="space-y-3 border border-obsidian-400/30 rounded-2xl p-4">
               <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide">
-                {activeCase.status === 'appeal' ? 'Respond to Appeal' : isBanker ? 'Update Case' : 'Record Update'}
+                {activeCase.status === 'appeal' ? 'Respond to Appeal' : (isBanker || isAdmin) ? 'Update Case' : 'Record Update'}
               </p>
 
               {activeCase.status === 'appeal' && (
