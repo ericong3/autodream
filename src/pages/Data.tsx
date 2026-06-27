@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, X, Building2, Wrench, Package, ShoppingBag, UserCheck, Landmark, Phone, Mail, Pencil, Trash2, Eye, EyeOff, CreditCard } from 'lucide-react';
+import { Plus, X, Building2, Wrench, Package, ShoppingBag, UserCheck, Landmark, Phone, Mail, Pencil, Trash2, Eye, EyeOff, CreditCard, ChevronDown } from 'lucide-react';
 import { useStore } from '../store';
 import { formatRM, generateId } from '../utils/format';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
@@ -62,6 +62,7 @@ export default function Data() {
   const emptyBankerForm = { name: '', bank: '', phone: '', email: '', notes: '', hasAccount: false, username: '', password: '' };
   const [bankerForm, setBankerForm] = useState(emptyBankerForm);
   const [bankerGroupEditKey, setBankerGroupEditKey] = useState<string | null>(null);
+  const [expandedBankerKey, setExpandedBankerKey] = useState<string | null>(null);
   const [bankerEditForm, setBankerEditForm] = useState({ name: '', banks: [] as string[], phone: '', email: '', notes: '', hasAccount: false, username: '', password: '', changePassword: false, removeAccount: false });
   const [showBankerPw, setShowBankerPw] = useState(false);
   const [showBankerEditPw, setShowBankerEditPw] = useState(false);
@@ -491,36 +492,54 @@ export default function Data() {
                       </div>
                     </div>
                   ) : (
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-white font-medium text-sm">{first.name}</p>
-                          {linkedUser && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/20">App ✓</span>}
-                          {profiles.map(p => (
-                            <span key={p.id} className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-obsidian-600 text-gray-300 border border-obsidian-400/40">{p.bank}</span>
-                          ))}
+                    <div>
+                      {/* Clickable header row */}
+                      <button
+                        type="button"
+                        onClick={() => setExpandedBankerKey(expandedBankerKey === key ? null : key)}
+                        className="w-full flex items-center justify-between gap-3 text-left"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-white font-medium text-sm">{first.name}</p>
+                            {linkedUser && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/20">App ✓</span>}
+                            {profiles.map(p => (
+                              <span key={p.id} className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-obsidian-600 text-gray-300 border border-obsidian-400/40">{p.bank}</span>
+                            ))}
+                          </div>
                         </div>
-                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
-                          {linkedUser && <span className="text-gray-500 text-xs">@{linkedUser.username}</span>}
-                          {first.phone && <span className="text-gray-500 text-xs flex items-center gap-1"><Phone size={10} />{first.phone}</span>}
-                          {first.email && <span className="text-gray-500 text-xs flex items-center gap-1"><Mail size={10} />{first.email}</span>}
-                          {first.notes && <span className="text-gray-600 text-xs italic">{first.notes}</span>}
+                        <ChevronDown size={14} className={`text-gray-500 shrink-0 transition-transform ${expandedBankerKey === key ? 'rotate-180' : ''}`} />
+                      </button>
+
+                      {/* Expanded detail */}
+                      {expandedBankerKey === key && (
+                        <div className="mt-3 pt-3 border-t border-obsidian-400/30 space-y-2">
+                          <div className="flex flex-wrap gap-x-4 gap-y-1">
+                            {linkedUser && <span className="text-gray-400 text-xs flex items-center gap-1">@{linkedUser.username}</span>}
+                            {first.phone && <span className="text-gray-400 text-xs flex items-center gap-1"><Phone size={10} />{first.phone}</span>}
+                            {first.email && <span className="text-gray-400 text-xs flex items-center gap-1"><Mail size={10} />{first.email}</span>}
+                            {first.notes && <span className="text-gray-500 text-xs italic">{first.notes}</span>}
+                            {!first.phone && !first.email && !first.notes && !linkedUser && (
+                              <span className="text-gray-600 text-xs">No details added</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 pt-1">
+                            <button
+                              onClick={() => {
+                                setBankerGroupEditKey(key);
+                                setExpandedBankerKey(null);
+                                setBankerEditForm({ name: first.name, banks: profiles.map(p => p.bank), phone: first.phone ?? '', email: first.email ?? '', notes: first.notes ?? '', hasAccount: false, username: '', password: '', changePassword: false, removeAccount: false });
+                                setShowBankerEditPw(false);
+                              }}
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-sky-400 hover:bg-sky-500/10 border border-sky-500/20 rounded-lg transition-colors"
+                            ><Pencil size={11} />Edit</button>
+                            <button
+                              onClick={() => setBankerDeleteTarget({ id: key, name: first.name })}
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 border border-red-500/20 rounded-lg transition-colors"
+                            ><Trash2 size={11} />Delete</button>
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          onClick={() => {
-                            setBankerGroupEditKey(key);
-                            setBankerEditForm({ name: first.name, banks: profiles.map(p => p.bank), phone: first.phone ?? '', email: first.email ?? '', notes: first.notes ?? '', hasAccount: false, username: '', password: '', changePassword: false, removeAccount: false });
-                            setShowBankerEditPw(false);
-                          }}
-                          className="p-1.5 text-gray-600 hover:text-sky-400 hover:bg-sky-500/10 rounded-lg transition-colors"
-                        ><Pencil size={13} /></button>
-                        <button
-                          onClick={() => setBankerDeleteTarget({ id: key, name: first.name })}
-                          className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                        ><Trash2 size={13} /></button>
-                      </div>
+                      )}
                     </div>
                   )}
                 </div>
