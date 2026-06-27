@@ -396,7 +396,7 @@ export default function Inventory() {
       const repairCosts = repairs.filter(r => r.carId === car.id && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
       const miscCosts = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
       const profitBeforeComm = dealPrice - car.purchasePrice - repairCosts - miscCosts - additionalTotal;
-      const commission = car.outgoingConsignment ? 0 : (car.priceFloor != null && dealPrice < car.priceFloor) ? 1000 : 1500;
+      const commission = (car.outgoingConsignment || car.isStaffSale) ? 0 : (car.priceFloor != null && dealPrice < car.priceFloor) ? 1000 : 1500;
       map[car.id] = profitBeforeComm - commission;
     }
     return map;
@@ -514,6 +514,10 @@ export default function Inventory() {
     return [...ordered].sort((a, b) => (unreadCarIds.has(a.id) ? 0 : 1) - (unreadCarIds.has(b.id) ? 0 : 1));
   }, [pendingDelivery, pendingOrder, unreadCarIds]);
 
+  const stockUnreadCount      = useMemo(() => cars.filter(c => c.status !== 'delivered' && c.status !== 'coming_soon' && c.status !== 'deal_pending' && !c.outgoingConsignment && unreadCarIds.has(c.id)).length, [cars, unreadCarIds]);
+  const comingSoonUnreadCount = useMemo(() => cars.filter(c => c.status === 'coming_soon' && unreadCarIds.has(c.id)).length, [cars, unreadCarIds]);
+  const pendingUnreadCount    = useMemo(() => pendingDelivery.filter(c => unreadCarIds.has(c.id)).length, [pendingDelivery, unreadCarIds]);
+
   const isComingSoon = form.status === 'coming_soon';
 
   const handleSubmit = async () => {
@@ -570,6 +574,7 @@ export default function Inventory() {
             <span className={`shrink-0 text-[10px] sm:text-xs px-1.5 py-0.5 rounded-full font-semibold ${inventoryTab === 'stock' ? 'bg-white/20' : 'bg-obsidian-600/60'}`}>
               {cars.filter(c => c.status !== 'delivered' && c.status !== 'coming_soon' && c.status !== 'deal_pending' && !c.outgoingConsignment).length}
             </span>
+            {stockUnreadCount > 0 && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
           </button>
           <button
             onClick={() => { setInventoryTab('coming_soon'); setSearchParams({ tab: 'coming_soon' }); }}
@@ -582,6 +587,7 @@ export default function Inventory() {
                 {cars.filter(c => c.status === 'coming_soon').length}
               </span>
             )}
+            {comingSoonUnreadCount > 0 && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
           </button>
           <button
             onClick={() => { setInventoryTab('pending_delivery'); setSearchParams({ tab: 'pending_delivery' }); setFilterComingSoonType('all'); }}
@@ -594,6 +600,7 @@ export default function Inventory() {
                 {pendingDelivery.length}
               </span>
             )}
+            {pendingUnreadCount > 0 && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
           </button>
         </div>
 
@@ -2299,6 +2306,10 @@ export default function Inventory() {
 
         const handleCancelDeal = async () => {
           const { updateCar } = useStore.getState();
+          // Close overlay first — the optimistic store update below causes a re-render
+          // while the sheet is still open, which crashes because loanWorkOrder becomes undefined.
+          setWoViewCar(null);
+          setWoCancelConfirm(false);
           if (isLoan) {
             updateCustomer(buyer.id, { loanWorkOrder: undefined, dealPrice: 0, loanStatus: 'submitted' });
             await supabase.from('customers').update({ loan_work_order: null, deal_price: 0 }).eq('id', buyer.id);
@@ -2308,15 +2319,13 @@ export default function Inventory() {
           }
           updateCar(car.id, { status: 'available', finalDeal: undefined });
           await supabase.from('cars').update({ status: 'available', final_deal: null }).eq('id', car.id);
-          setWoViewCar(null);
-          setWoCancelConfirm(false);
         };
 
         const handleDelivery = () => {
           const { updateCar } = useStore.getState();
           const wo = buyer.loanWorkOrder ?? buyer.cashWorkOrder;
           const dealPrice = wo ? (wo.sellingPrice - (wo.discount ?? 0)) : (car.sellingPrice ?? 0);
-          const commission = (car.priceFloor != null && dealPrice < car.priceFloor) ? 1000 : 1500;
+          const commission = car.isStaffSale ? 0 : (car.priceFloor != null && dealPrice < car.priceFloor) ? 1000 : 1500;
           updateCustomer(buyer.id, {
             delivered: true,
             deliveredAt: new Date().toISOString(),
