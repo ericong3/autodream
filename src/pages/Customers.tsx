@@ -129,7 +129,7 @@ export default function Customers() {
 
   // Next-step modal (for test_drive leads)
   const [sidebarLead, setSidebarLead] = useState<Customer | null>(null);
-  const [sidebarView, setSidebarView] = useState<'options' | 'car_select' | 'loan' | 'cash'>('options');
+  const [sidebarView, setSidebarView] = useState<'options' | 'car_select' | 'cash'>('options');
   const [sidebarCashFlow, setSidebarCashFlow] = useState(false);
   const [loanForm, setLoanForm] = useState({ dealPrice: '', carId: '' });
 
@@ -2514,7 +2514,7 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
       <Modal
         isOpen={!!sidebarLead}
         onClose={closeSidebar}
-        title={sidebarView === 'car_select' ? 'Select Car' : sidebarView === 'loan' ? 'Loan Submission' : sidebarView === 'cash' ? 'Cash Purchase' : 'Next Step'}
+        title={sidebarView === 'car_select' ? 'Select Car' : sidebarView === 'cash' ? 'Cash Purchase' : 'Next Step'}
         maxWidth="max-w-lg"
       >
         {sidebarLead && (
@@ -2657,7 +2657,7 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                       setWorkOrderType('cash');
                       closeSidebar();
                     } else {
-                      setSidebarView('loan');
+                      handleProceedLoan();
                     }
                   }}
                   disabled={!loanForm.carId}
@@ -2668,51 +2668,6 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
               </>
             )}
 
-            {/* ── Step 3: Loan Form ── */}
-            {sidebarView === 'loan' && (() => {
-              const selectedCar = getCar(loanForm.carId);
-              return (
-                <>
-                  <button
-                    onClick={() => setSidebarView('car_select')}
-                    className="flex items-center gap-1 text-xs text-gray-500 hover:text-white transition-colors"
-                  >
-                    ← Back
-                  </button>
-
-                  {selectedCar && (
-                    <div className="flex items-center gap-3 bg-obsidian-700/60 border border-green-500/20 rounded-xl p-3">
-                      <div className="w-8 h-8 rounded-lg bg-green-500/10 border border-green-500/20 flex items-center justify-center shrink-0">
-                        <Car size={15} className="text-green-400" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-white text-sm font-medium truncate">{selectedCar.year} {selectedCar.make} {selectedCar.model}</p>
-                        <p className="text-gray-500 text-xs">{selectedCar.colour} · {selectedCar.sellingPrice > 0 ? formatRM(selectedCar.sellingPrice) : 'TBD'}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="space-y-3">
-                    <FormField label="Loan Amount (RM)">
-                      <input
-                        type="number"
-                        className={inputCls()}
-                        value={loanForm.dealPrice}
-                        onChange={e => setLoanForm({ ...loanForm, dealPrice: e.target.value })}
-                        placeholder="e.g. 45000"
-                      />
-                    </FormField>
-                  </div>
-
-                  <button
-                    onClick={handleProceedLoan}
-                    className="w-full bg-green-500 hover:bg-green-400 text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
-                  >
-                    Submit Loan & Move to Follow Up
-                  </button>
-                </>
-              );
-            })()}
 
           </div>
         )}
