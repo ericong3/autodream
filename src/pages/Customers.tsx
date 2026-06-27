@@ -2518,7 +2518,7 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
         maxWidth="max-w-lg"
       >
         {sidebarLead && (
-          <div className="space-y-4">
+          <div className="space-y-4 min-h-[360px]">
             {/* Customer info card — always visible */}
             <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl px-3 py-2.5 flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-yellow-500/20 border border-yellow-500/30 flex items-center justify-center text-yellow-400 font-bold text-sm uppercase shrink-0">
