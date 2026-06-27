@@ -277,9 +277,8 @@ export default function LoanSubmitModal({ customer, initialCarId, initialBanks, 
                 {/* Selling price — locked to car price */}
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-gray-400 w-36 shrink-0">Selling Price (RM)</span>
-                  <div className="flex-1 bg-obsidian-800/60 border border-obsidian-500/20 rounded-lg px-3 py-1.5 text-right flex items-center justify-between gap-2">
-                    <span className="text-xs text-gray-500">locked</span>
-                    <span className="text-white text-sm font-medium">{sellingPrice > 0 ? sellingPrice.toLocaleString() : '—'}</span>
+                  <div className="flex-1 bg-obsidian-800/60 border border-obsidian-500/20 rounded-lg px-3 py-1.5 text-right text-white text-sm font-medium">
+                    {sellingPrice > 0 ? sellingPrice.toLocaleString() : '0'}
                   </div>
                 </div>
 
