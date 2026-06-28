@@ -800,38 +800,23 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     const TTL = 5 * 60 * 1000; // 5 minutes
     if (!force && loaded && lastFetched && (Date.now() - lastFetched) < TTL) return;
 
-    const [users, cars, repairs, quotations, instructions, customers, testDrives, reminders, dealers, workshops, suppliers, merchants, externalSalesmenResult, bankersResult, loanCasesResult, loanCaseDocsResult, loanCaseActivitiesResult, paymentsResult, investorTxnsResult] =
+    // ── Phase 1: critical tables needed to render Inventory / Customers / Loan Cases ──
+    const [users, cars, repairs, customers, externalSalesmenResult, bankersResult, loanCasesResult] =
       await Promise.all([
         supabase.from('users').select('*'),
         supabase.from('cars').select('*'),
         supabase.from('repairs').select('*'),
-        supabase.from('quotations').select('*'),
-        supabase.from('instructions').select('*'),
         supabase.from('customers').select('*'),
-        supabase.from('test_drives').select('*'),
-        supabase.from('personal_reminders').select('*'),
-        supabase.from('dealers').select('*'),
-        supabase.from('workshops').select('*'),
-        supabase.from('suppliers').select('*'),
-        supabase.from('merchants').select('*'),
         supabase.from('external_salesmen').select('*'),
         supabase.from('bankers').select('*'),
         supabase.from('loan_cases').select('*'),
-        supabase.from('loan_case_documents').select('*'),
-        supabase.from('loan_case_activity').select('*'),
-        supabase.from('payments').select('*').order('created_at', { ascending: false }),
-        supabase.from('investor_transactions').select('*').order('created_at', { ascending: true }),
       ]);
-
-    const externalSalesmenRows = externalSalesmenResult.data ?? [];
-    const bankersRows = bankersResult.data ?? [];
 
     const allCars = (cars.data ?? []).map(rowToCar);
     const allCustomers = (customers.data ?? []).map(rowToCustomer);
+    const allUsers = (users.data ?? []).map(rowToUser);
 
-    // Auto-reconcile: clear finalDeal ONLY on cars whose status is available/ready/etc
-    // AND have no confirmed customer with a work order.
-    // Never touch deal_pending or delivered cars — their status is sacred.
+    // Auto-reconcile: clear finalDeal on cars with no matching customer work order
     const confirmedCarIds = new Set(
       allCustomers
         .filter(c => c.cashWorkOrder || c.loanWorkOrder)
@@ -855,92 +840,95 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       });
     }
 
-    const allUsers   = (users.data ?? []).map(rowToUser);
-    const allRepairs = (repairs.data ?? []).map(rowToRepair);
-    const allQuotations = (quotations.data ?? []).map(rowToQuotation);
-    const allTestDrives  = (testDrives.data ?? []).map(rowToTestDrive);
-
-    // Preserve existing state for any table whose query returned null (network/RLS error),
-    // so a transient failure never wipes a whole list.
     set((s) => ({
-      users:            users.data        ? allUsers                                    : s.users,
-      cars:             cars.data         ? allCars                                     : s.cars,
-      repairs:          repairs.data      ? allRepairs                                  : s.repairs,
-      quotations:       quotations.data   ? allQuotations                               : s.quotations,
-      instructions:     instructions.data ? instructions.data.map(rowToInstruction)     : s.instructions,
-      customers:        customers.data    ? allCustomers                                : s.customers,
-      testDrives:       testDrives.data   ? allTestDrives                               : s.testDrives,
-      personalReminders:reminders.data    ? reminders.data.map(rowToReminder)           : s.personalReminders,
-      dealers:          dealers.data      ? (dealers.data as Dealer[])                  : s.dealers,
-      workshops:        workshops.data    ? (workshops.data as Workshop[])               : s.workshops,
-      suppliers:        suppliers.data    ? (suppliers.data as Supplier[])               : s.suppliers,
-      merchants:        merchants.data    ? (merchants.data as Merchant[])               : s.merchants,
-      externalSalesmen:    externalSalesmenResult.data    ? externalSalesmenRows.map(rowToExternalSalesman)                  : s.externalSalesmen,
-      bankers:             bankersResult.data             ? bankersRows.map(rowToBanker)                                      : s.bankers,
-      loanCases:           loanCasesResult.data           ? loanCasesResult.data.map(rowToLoanCase)                           : s.loanCases,
-      loanCaseDocuments:   loanCaseDocsResult.data        ? loanCaseDocsResult.data.map(rowToLoanCaseDocument)                : s.loanCaseDocuments,
-      loanCaseActivities:  loanCaseActivitiesResult.data  ? loanCaseActivitiesResult.data.map(rowToLoanCaseActivity)          : s.loanCaseActivities,
-      payments:            paymentsResult.data            ? paymentsResult.data.map(rowToPayment)                             : s.payments,
-      investorTransactions: investorTxnsResult.data        ? investorTxnsResult.data.map(rowToInvestorTxn)                     : s.investorTransactions,
+      users:           users.data              ? allUsers                                                            : s.users,
+      cars:            cars.data               ? allCars                                                             : s.cars,
+      repairs:         repairs.data            ? repairs.data.map(rowToRepair)                                       : s.repairs,
+      customers:       customers.data          ? allCustomers                                                        : s.customers,
+      externalSalesmen:externalSalesmenResult.data ? externalSalesmenResult.data.map(rowToExternalSalesman)          : s.externalSalesmen,
+      bankers:         bankersResult.data      ? bankersResult.data.map(rowToBanker)                                 : s.bankers,
+      loanCases:       loanCasesResult.data    ? loanCasesResult.data.map(rowToLoanCase)                             : s.loanCases,
       loaded: true,
       lastFetched: Date.now(),
     }));
 
-    // Load unread notifications for persisted session (app reload without login)
+    // Load notifications in parallel with phase 2 (non-blocking for the UI)
     const currentUser = get().currentUser;
     if (currentUser) {
-      const { data: notifs } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('user_id', currentUser.id)
-        .eq('is_read', false)
-        .order('created_at', { ascending: false })
-        .limit(200);
-      if (notifs) set({ notifications: notifs.map(rowToNotification) });
-    }
-
-    // ── Scheduled notifications (once per day) ──────────────────────────────
-    if (scheduledNotifAllowed()) {
-      const today = new Date().toDateString();
-      const tomorrow = new Date(Date.now() + 86400000).toDateString();
-
-      // #6 Follow-up reminder today
-      allCustomers
-        .filter(c => !c.isTrashed && !c.isDead && c.followUpDate && new Date(c.followUpDate).toDateString() === today)
-        .forEach(c => {
-          const ids = [c.assignedSalesId].filter(Boolean);
-          sendPush(ids, '📞 Follow-up reminder', `Call ${c.name} today`, '/customers', c.id);
-        });
-
-      // #7a Loan case need_more_info reminder — re-notify salesman after 3+ days of no reply
-      const threeDaysAgo = new Date(Date.now() - 3 * 86400000).toISOString();
-      get().loanCases
-        .filter(lc => lc.status === 'need_more_info' && lc.updatedAt <= threeDaysAgo)
-        .forEach(lc => {
-          const lastSalesActivity = get().loanCaseActivities
-            .filter(a => a.caseId === lc.id && a.userRole !== 'banker')
-            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-          if (!lastSalesActivity || lastSalesActivity.createdAt <= lc.updatedAt) {
-            sendPush([lc.salesmanId], '⏰ Banker is waiting', `${lc.bank} case needs your reply`, '/loan-cases', lc.id);
-          }
-        });
-
-      // #7 Test drive tomorrow
-      allTestDrives
-        .filter(t => t.status === 'scheduled' && new Date(t.scheduledAt).toDateString() === tomorrow)
-        .forEach(t => {
-          const cust = allCustomers.find(c => c.id === t.customerId);
-          sendPush([t.salesId], '🚗 Test drive tomorrow', `${cust?.name ?? 'Customer'} has a test drive scheduled`, '/calendar');
-        });
-
-
-      // #27 Quotation expiring tomorrow
-      allQuotations
-        .filter(q => q.status === 'pending' && new Date(q.expiryDate).toDateString() === tomorrow)
-        .forEach(q => {
-          sendPush(dirIds(allUsers), '⏰ Quotation expiring', `${q.contactName} – ${q.make} ${q.model} expires tomorrow`, '/quotations');
+      supabase.from('notifications').select('*')
+        .eq('user_id', currentUser.id).eq('is_read', false)
+        .order('created_at', { ascending: false }).limit(200)
+        .then(({ data: notifs }) => {
+          if (notifs) set({ notifications: notifs.map(rowToNotification) });
         });
     }
+
+    // ── Phase 2: secondary tables — load in background, don't block the UI ──
+    Promise.all([
+      supabase.from('quotations').select('*'),
+      supabase.from('instructions').select('*'),
+      supabase.from('test_drives').select('*'),
+      supabase.from('personal_reminders').select('*'),
+      supabase.from('dealers').select('*'),
+      supabase.from('workshops').select('*'),
+      supabase.from('suppliers').select('*'),
+      supabase.from('merchants').select('*'),
+      supabase.from('loan_case_documents').select('*'),
+      supabase.from('loan_case_activity').select('*'),
+      supabase.from('payments').select('*').order('created_at', { ascending: false }),
+      supabase.from('investor_transactions').select('*').order('created_at', { ascending: true }),
+    ]).then(([quotations, instructions, testDrives, reminders, dealers, workshops, suppliers, merchants, loanCaseDocsResult, loanCaseActivitiesResult, paymentsResult, investorTxnsResult]) => {
+      const allQuotations  = (quotations.data ?? []).map(rowToQuotation);
+      const allTestDrives  = (testDrives.data ?? []).map(rowToTestDrive);
+
+      set((s) => ({
+        quotations:          quotations.data           ? allQuotations                                                          : s.quotations,
+        instructions:        instructions.data         ? instructions.data.map(rowToInstruction)                                : s.instructions,
+        testDrives:          testDrives.data           ? allTestDrives                                                          : s.testDrives,
+        personalReminders:   reminders.data            ? reminders.data.map(rowToReminder)                                      : s.personalReminders,
+        dealers:             dealers.data              ? (dealers.data as Dealer[])                                             : s.dealers,
+        workshops:           workshops.data            ? (workshops.data as Workshop[])                                         : s.workshops,
+        suppliers:           suppliers.data            ? (suppliers.data as Supplier[])                                         : s.suppliers,
+        merchants:           merchants.data            ? (merchants.data as Merchant[])                                         : s.merchants,
+        loanCaseDocuments:   loanCaseDocsResult.data   ? loanCaseDocsResult.data.map(rowToLoanCaseDocument)                     : s.loanCaseDocuments,
+        loanCaseActivities:  loanCaseActivitiesResult.data ? loanCaseActivitiesResult.data.map(rowToLoanCaseActivity)           : s.loanCaseActivities,
+        payments:            paymentsResult.data       ? paymentsResult.data.map(rowToPayment)                                  : s.payments,
+        investorTransactions:investorTxnsResult.data   ? investorTxnsResult.data.map(rowToInvestorTxn)                          : s.investorTransactions,
+      }));
+
+      // ── Scheduled notifications (once per day, after secondary data is ready) ──
+      if (scheduledNotifAllowed()) {
+        const today    = new Date().toDateString();
+        const tomorrow = new Date(Date.now() + 86400000).toDateString();
+
+        allCustomers
+          .filter(c => !c.isTrashed && !c.isDead && c.followUpDate && new Date(c.followUpDate).toDateString() === today)
+          .forEach(c => sendPush([c.assignedSalesId].filter(Boolean), '📞 Follow-up reminder', `Call ${c.name} today`, '/customers', c.id));
+
+        const threeDaysAgo = new Date(Date.now() - 3 * 86400000).toISOString();
+        get().loanCases
+          .filter(lc => lc.status === 'need_more_info' && lc.updatedAt <= threeDaysAgo)
+          .forEach(lc => {
+            const lastSalesActivity = get().loanCaseActivities
+              .filter(a => a.caseId === lc.id && a.userRole !== 'banker')
+              .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+            if (!lastSalesActivity || lastSalesActivity.createdAt <= lc.updatedAt) {
+              sendPush([lc.salesmanId], '⏰ Banker is waiting', `${lc.bank} case needs your reply`, '/loan-cases', lc.id);
+            }
+          });
+
+        allTestDrives
+          .filter(t => t.status === 'scheduled' && new Date(t.scheduledAt).toDateString() === tomorrow)
+          .forEach(t => {
+            const cust = allCustomers.find(c => c.id === t.customerId);
+            sendPush([t.salesId], '🚗 Test drive tomorrow', `${cust?.name ?? 'Customer'} has a test drive scheduled`, '/calendar');
+          });
+
+        allQuotations
+          .filter(q => q.status === 'pending' && new Date(q.expiryDate).toDateString() === tomorrow)
+          .forEach(q => sendPush(dirIds(allUsers), '⏰ Quotation expiring', `${q.contactName} – ${q.make} ${q.model} expires tomorrow`, '/quotations'));
+      }
+    });
 
     // Real-time subscriptions — set up once only; calling loadAll again (e.g. pull-to-refresh)
     // must not create duplicate channels or the server may reset the socket on seeing
