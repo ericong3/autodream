@@ -297,7 +297,7 @@ function carToRow(c: Partial<Car>) {
   if (c.checklistItems !== undefined) row.checklist_items = c.checklistItems;
   if (c.photoTakenBy !== undefined) row.photo_taken_by = c.photoTakenBy;
   if (c.loanSubmissions !== undefined) row.loan_submissions = c.loanSubmissions;
-  if (c.finalDeal !== undefined) row.final_deal = c.finalDeal;
+  if ('finalDeal' in c) row.final_deal = c.finalDeal ?? null;
   if (c.deliveryPhoto !== undefined) row.delivery_photo = c.deliveryPhoto;
   if (c.deliveryCollected !== undefined) row.delivery_collected = c.deliveryCollected;
   if (c.consignment !== undefined) row.consignment = c.consignment;
@@ -1308,8 +1308,9 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   updateCar: async (id, car) => {
     const prev = get().cars.find(c => c.id === id);
     // deal_pending cars: ONLY 'delivered' can change the status. Everything else is blocked.
-    // Cancellation must go through the dedicated cancel flow, not a status field edit.
-    if ((prev?.status === 'deal_pending' || prev?.finalDeal != null) && car.status && car.status !== 'delivered') {
+    // Exception: explicitly clearing finalDeal (rejection/cancellation) is always allowed.
+    const clearingFinalDeal = 'finalDeal' in car && !car.finalDeal;
+    if (!clearingFinalDeal && (prev?.status === 'deal_pending' || prev?.finalDeal != null) && car.status && car.status !== 'delivered') {
       delete (car as any).status;
     }
     // delivered cars: status is permanently locked — nothing can change it

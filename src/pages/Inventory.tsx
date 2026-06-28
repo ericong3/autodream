@@ -2244,7 +2244,7 @@ export default function Inventory() {
                   </button>
                   <button
                     onClick={() => {
-                      const notes = window.prompt('Reason for rejection (optional):') ?? '';
+                      window.prompt('Reason for rejection (optional):');
                       // Clear the submitting customer's work order so the card snaps back to the right salesman
                       const dealBuyer = customers.find(c => c.interestedCarId === rc.id && (c.loanWorkOrder || c.cashWorkOrder));
                       if (dealBuyer) {
@@ -2256,7 +2256,7 @@ export default function Inventory() {
                           supabase.from('customers').update({ cash_work_order: null, deal_price: 0 }).eq('id', dealBuyer.id);
                         }
                       }
-                      updateCar(rc.id, { status: 'available', finalDeal: { ...deal, approvalStatus: 'rejected', rejectionNotes: notes || undefined } });
+                      updateCar(rc.id, { status: 'available', finalDeal: undefined });
                       setReviewDealCar(null);
                     }}
                     className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/40 text-red-400 font-semibold transition-colors"
@@ -2754,7 +2754,7 @@ export default function Inventory() {
                     </button>
                     <button
                       onClick={() => {
-                        const notes = window.prompt('Reason for rejection (optional):') ?? '';
+                        window.prompt('Reason for rejection (optional):');
                         // Clear buyer's work order so the card snaps back to the right salesman/customer
                         if (buyer) {
                           if (buyer.loanWorkOrder) {
@@ -2765,14 +2765,7 @@ export default function Inventory() {
                             supabase.from('customers').update({ cash_work_order: null, deal_price: 0 }).eq('id', buyer.id);
                           }
                         }
-                        updateCar(car.id, {
-                          status: 'available',
-                          finalDeal: {
-                            ...car.finalDeal!,
-                            approvalStatus: 'rejected',
-                            rejectionNotes: notes || undefined,
-                          },
-                        });
+                        updateCar(car.id, { status: 'available', finalDeal: undefined });
                         setWoViewCar(null);
                       }}
                       className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/40 text-red-400 text-sm font-semibold transition-colors"
