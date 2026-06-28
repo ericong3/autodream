@@ -800,16 +800,18 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     const TTL = 5 * 60 * 1000; // 5 minutes
     if (!force && loaded && lastFetched && (Date.now() - lastFetched) < TTL) return;
 
-    // ── Phase 1: critical tables needed to render Inventory / Customers / Loan Cases ──
+    // ── Phase 1: critical tables, filtered to active records only ──
+    // Delivered cars and closed loan cases are loaded in phase 2 so this stays
+    // fast forever regardless of how much historical data accumulates.
     const [users, cars, repairs, customers, externalSalesmenResult, bankersResult, loanCasesResult] =
       await Promise.all([
         supabase.from('users').select('*'),
-        supabase.from('cars').select('*'),
+        supabase.from('cars').select('*').neq('status', 'delivered'),
         supabase.from('repairs').select('*'),
         supabase.from('customers').select('*'),
         supabase.from('external_salesmen').select('*'),
         supabase.from('bankers').select('*'),
-        supabase.from('loan_cases').select('*'),
+        supabase.from('loan_cases').select('*').not('status', 'in', '(rejected,cancelled,withdrawn)'),
       ]);
 
     const allCars = (cars.data ?? []).map(rowToCar);
@@ -863,8 +865,10 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         });
     }
 
-    // ── Phase 2: secondary tables — load in background, don't block the UI ──
+    // ── Phase 2: historical + secondary tables — load in background ──
     Promise.all([
+      supabase.from('cars').select('*').eq('status', 'delivered'),
+      supabase.from('loan_cases').select('*').in('status', ['rejected', 'cancelled', 'withdrawn']),
       supabase.from('quotations').select('*'),
       supabase.from('instructions').select('*'),
       supabase.from('test_drives').select('*'),
@@ -877,11 +881,21 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       supabase.from('loan_case_activity').select('*'),
       supabase.from('payments').select('*').order('created_at', { ascending: false }),
       supabase.from('investor_transactions').select('*').order('created_at', { ascending: true }),
-    ]).then(([quotations, instructions, testDrives, reminders, dealers, workshops, suppliers, merchants, loanCaseDocsResult, loanCaseActivitiesResult, paymentsResult, investorTxnsResult]) => {
+    ]).then(([deliveredCarsResult, closedCasesResult, quotations, instructions, testDrives, reminders, dealers, workshops, suppliers, merchants, loanCaseDocsResult, loanCaseActivitiesResult, paymentsResult, investorTxnsResult]) => {
       const allQuotations  = (quotations.data ?? []).map(rowToQuotation);
       const allTestDrives  = (testDrives.data ?? []).map(rowToTestDrive);
+      const deliveredCars  = (deliveredCarsResult.data ?? []).map(rowToCar);
+      const closedCases    = (closedCasesResult.data ?? []).map(rowToLoanCase);
 
       set((s) => ({
+        // Merge delivered cars into store — deduplicate by id so force-refresh is safe
+        cars: deliveredCarsResult.data
+          ? [...s.cars.filter(c => c.status !== 'delivered'), ...deliveredCars]
+          : s.cars,
+        // Merge closed loan cases — deduplicate by id
+        loanCases: closedCasesResult.data
+          ? [...s.loanCases.filter(lc => !['rejected','cancelled','withdrawn'].includes(lc.status)), ...closedCases]
+          : s.loanCases,
         quotations:          quotations.data           ? allQuotations                                                          : s.quotations,
         instructions:        instructions.data         ? instructions.data.map(rowToInstruction)                                : s.instructions,
         testDrives:          testDrives.data           ? allTestDrives                                                          : s.testDrives,
