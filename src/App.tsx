@@ -85,7 +85,6 @@ function RequireBanker({ children }: { children: React.ReactNode }) {
 export default function App() {
   const currentUser = useStore((s) => s.currentUser);
   const loadAll = useStore((s) => s.loadAll);
-  const [loading, setLoading] = useState(true);
   const [hydrated, setHydrated] = useState(() => useStore.persist.hasHydrated());
 
   useEffect(() => {
@@ -95,11 +94,11 @@ export default function App() {
     }
   }, []);
 
-  useEffect(() => {
-    loadAll().finally(() => setLoading(false));
-  }, []);
+  // Kick off background refresh — don't block the UI waiting for it
+  useEffect(() => { loadAll(); }, []);
 
-  if (loading || !hydrated) {
+  // Only block on the very first ever load (no persisted cache yet)
+  if (!hydrated) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#0a0a0a', color: '#c9a84c', fontFamily: 'sans-serif', fontSize: 18 }}>
         Loading...

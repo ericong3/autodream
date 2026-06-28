@@ -800,7 +800,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     const TTL = 5 * 60 * 1000; // 5 minutes
     if (!force && loaded && lastFetched && (Date.now() - lastFetched) < TTL) return;
 
-    const [users, cars, repairs, quotations, instructions, customers, testDrives, reminders, dealers, workshops, suppliers, merchants] =
+    const [users, cars, repairs, quotations, instructions, customers, testDrives, reminders, dealers, workshops, suppliers, merchants, externalSalesmenResult, bankersResult, loanCasesResult, loanCaseDocsResult, loanCaseActivitiesResult, paymentsResult, investorTxnsResult] =
       await Promise.all([
         supabase.from('users').select('*'),
         supabase.from('cars').select('*'),
@@ -814,18 +814,17 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         supabase.from('workshops').select('*'),
         supabase.from('suppliers').select('*'),
         supabase.from('merchants').select('*'),
+        supabase.from('external_salesmen').select('*'),
+        supabase.from('bankers').select('*'),
+        supabase.from('loan_cases').select('*'),
+        supabase.from('loan_case_documents').select('*'),
+        supabase.from('loan_case_activity').select('*'),
+        supabase.from('payments').select('*').order('created_at', { ascending: false }),
+        supabase.from('investor_transactions').select('*').order('created_at', { ascending: true }),
       ]);
 
-    // Load external salesmen, bankers, loan cases, and payments separately
-    const externalSalesmenResult = await supabase.from('external_salesmen').select('*');
     const externalSalesmenRows = externalSalesmenResult.data ?? [];
-    const bankersResult = await supabase.from('bankers').select('*');
     const bankersRows = bankersResult.data ?? [];
-    const loanCasesResult = await supabase.from('loan_cases').select('*');
-    const loanCaseDocsResult = await supabase.from('loan_case_documents').select('*');
-    const loanCaseActivitiesResult = await supabase.from('loan_case_activity').select('*');
-    const paymentsResult = await supabase.from('payments').select('*').order('created_at', { ascending: false });
-    const investorTxnsResult = await supabase.from('investor_transactions').select('*').order('created_at', { ascending: true });
 
     const allCars = (cars.data ?? []).map(rowToCar);
     const allCustomers = (customers.data ?? []).map(rowToCustomer);
