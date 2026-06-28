@@ -32,20 +32,38 @@ import LoanCases from './pages/LoanCases';
 import BankerDashboard from './pages/BankerDashboard';
 import Payments from './pages/Payments';
 
-function RequireAuth({ children }: { children: React.ReactNode }) {
-  const currentUser = useStore((s) => s.currentUser);
-  if (!currentUser) return <Navigate to="/login" replace />;
-  if (currentUser.role === 'banker') return <Navigate to="/banker-dashboard" replace />;
-  if (currentUser.role === 'investor') return <Navigate to="/investor-portal" replace />;
-  return <>{children}</>;
-}
-
 function roleHome(role: string) {
   if (role === 'banker') return '/banker-dashboard';
   if (role === 'investor') return '/investor-portal';
   return '/inventory';
 }
 
+// Layout wrapper for regular users — mounts once, stays mounted across navigation
+function AuthedLayout() {
+  const currentUser = useStore((s) => s.currentUser);
+  if (!currentUser) return <Navigate to="/login" replace />;
+  if (currentUser.role === 'banker') return <Navigate to="/banker-dashboard" replace />;
+  if (currentUser.role === 'investor') return <Navigate to="/investor-portal" replace />;
+  return <Layout />;
+}
+
+// Layout wrapper for bankers
+function BankerLayout() {
+  const currentUser = useStore((s) => s.currentUser);
+  if (!currentUser) return <Navigate to="/login" replace />;
+  if (currentUser.role !== 'banker') return <Navigate to={roleHome(currentUser.role)} replace />;
+  return <Layout />;
+}
+
+// Layout wrapper for investors
+function InvestorLayout() {
+  const currentUser = useStore((s) => s.currentUser);
+  if (!currentUser) return <Navigate to="/login" replace />;
+  if (currentUser.role !== 'investor') return <Navigate to="/inventory" replace />;
+  return <Layout />;
+}
+
+// Role guards — wrap page elements only, not Layout
 function RequireDirector({ children }: { children: React.ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
   if (!currentUser) return <Navigate to="/login" replace />;
@@ -67,20 +85,6 @@ function RequireSalesOrDirector({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function RequireInvestor({ children }: { children: React.ReactNode }) {
-  const currentUser = useStore((s) => s.currentUser);
-  if (!currentUser) return <Navigate to="/login" replace />;
-  if (currentUser.role !== 'investor') return <Navigate to="/inventory" replace />;
-  return <>{children}</>;
-}
-
-function RequireBanker({ children }: { children: React.ReactNode }) {
-  const currentUser = useStore((s) => s.currentUser);
-  if (!currentUser) return <Navigate to="/login" replace />;
-  if (currentUser.role !== 'banker') return <Navigate to="/inventory" replace />;
-  return <>{children}</>;
-}
-
 export default function App() {
   const currentUser = useStore((s) => s.currentUser);
   const loadAll = useStore((s) => s.loadAll);
@@ -99,8 +103,6 @@ export default function App() {
     loadAll().finally(() => setFetchDone(true));
   }, []);
 
-  // If we have cached data from a previous session, show immediately and refresh in background.
-  // If no cache (first visit or cleared storage), wait for the first fetch to complete.
   const ready = hydrated && (storeLoaded || fetchDone);
 
   if (!ready) {
@@ -115,242 +117,51 @@ export default function App() {
     <HashRouter>
       <ToastContainer />
       <Routes>
+        {/* Public */}
         <Route
           path="/login"
-          element={currentUser ? <Navigate to={currentUser.role === 'investor' ? '/investor-portal' : currentUser.role === 'banker' ? '/banker-dashboard' : '/inventory'} replace /> : <Login />}
+          element={currentUser ? <Navigate to={roleHome(currentUser.role)} replace /> : <Login />}
         />
         <Route
           path="/"
-          element={<Navigate to={currentUser ? (currentUser.role === 'investor' ? '/investor-portal' : currentUser.role === 'banker' ? '/banker-dashboard' : '/inventory') : '/login'} replace />}
+          element={<Navigate to={currentUser ? roleHome(currentUser.role) : '/login'} replace />}
         />
-        <Route
-          path="/dashboard"
-          element={
-            <RequireDirectorOrAdmin>
-              <Layout>
-                <Dashboard />
-              </Layout>
-            </RequireDirectorOrAdmin>
-          }
-        />
-        <Route
-          path="/inventory"
-          element={
-            <RequireAuth>
-              <Layout>
-                <Inventory />
-              </Layout>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/inventory/:id"
-          element={
-            <RequireAuth>
-              <Layout>
-                <CarDetail />
-              </Layout>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/quotations"
-          element={
-            <RequireAuth>
-              <Layout>
-                <Quotations />
-              </Layout>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/workshop"
-          element={
-            <RequireAuth>
-              <Layout>
-                <Workshop />
-              </Layout>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/finance"
-          element={
-            <RequireDirector>
-              <Layout>
-                <Finance />
-              </Layout>
-            </RequireDirector>
-          }
-        />
-        <Route
-          path="/team"
-          element={
-            <RequireDirector>
-              <Layout>
-                <TeamMembers />
-              </Layout>
-            </RequireDirector>
-          }
-        />
-        <Route
-          path="/reminders"
-          element={
-            <RequireAuth>
-              <Layout>
-                <Reminders />
-              </Layout>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/history"
-          element={
-            <RequireDirectorOrAdmin>
-              <Layout>
-                <History />
-              </Layout>
-            </RequireDirectorOrAdmin>
-          }
-        />
-        <Route
-          path="/history/:id"
-          element={
-            <RequireDirectorOrAdmin>
-              <Layout>
-                <History />
-              </Layout>
-            </RequireDirectorOrAdmin>
-          }
-        />
-        <Route
-          path="/ai-assistant"
-          element={
-            <RequireAuth>
-              <Layout>
-                <AIAssistant />
-              </Layout>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/sales-dashboard"
-          element={
-            <RequireSalesOrDirector>
-              <Layout>
-                <SalesDashboard />
-              </Layout>
-            </RequireSalesOrDirector>
-          }
-        />
-        <Route
-          path="/customers"
-          element={
-            <RequireSalesOrDirector>
-              <Layout>
-                <Customers />
-              </Layout>
-            </RequireSalesOrDirector>
-          }
-        />
-        <Route
-          path="/commission"
-          element={
-            <RequireSalesOrDirector>
-              <Layout>
-                <Commission />
-              </Layout>
-            </RequireSalesOrDirector>
-          }
-        />
-        <Route
-          path="/loan-calculator"
-          element={
-            <RequireSalesOrDirector>
-              <Layout>
-                <LoanCalculator />
-              </Layout>
-            </RequireSalesOrDirector>
-          }
-        />
-        <Route
-          path="/car-compare"
-          element={
-            <RequireSalesOrDirector>
-              <Layout>
-                <CarCompare />
-              </Layout>
-            </RequireSalesOrDirector>
-          }
-        />
-        <Route
-          path="/calendar"
-          element={
-            <RequireSalesOrDirector>
-              <Layout>
-                <Calendar />
-              </Layout>
-            </RequireSalesOrDirector>
-          }
-        />
-        <Route
-          path="/data"
-          element={
-            <RequireDirector>
-              <Layout>
-                <Data />
-              </Layout>
-            </RequireDirector>
-          }
-        />
-        <Route
-          path="/investors"
-          element={
-            <RequireDirector>
-              <Layout>
-                <Investors />
-              </Layout>
-            </RequireDirector>
-          }
-        />
-        <Route
-          path="/investor-portal"
-          element={
-            <RequireInvestor>
-              <Layout>
-                <InvestorPortal />
-              </Layout>
-            </RequireInvestor>
-          }
-        />
-        <Route
-          path="/loan-cases"
-          element={
-            <RequireSalesOrDirector>
-              <Layout>
-                <LoanCases />
-              </Layout>
-            </RequireSalesOrDirector>
-          }
-        />
-        <Route
-          path="/banker-dashboard"
-          element={
-            <RequireBanker>
-              <Layout>
-                <BankerDashboard />
-              </Layout>
-            </RequireBanker>
-          }
-        />
-        <Route
-          path="/payments"
-          element={
-            <RequireAuth>
-              <Layout><Payments /></Layout>
-            </RequireAuth>
-          }
-        />
+
+        {/* Regular users — Layout mounts once, stays alive across all these routes */}
+        <Route element={<AuthedLayout />}>
+          <Route path="/inventory" element={<Inventory />} />
+          <Route path="/inventory/:id" element={<CarDetail />} />
+          <Route path="/workshop" element={<Workshop />} />
+          <Route path="/reminders" element={<Reminders />} />
+          <Route path="/ai-assistant" element={<AIAssistant />} />
+          <Route path="/payments" element={<Payments />} />
+          <Route path="/quotations" element={<RequireSalesOrDirector><Quotations /></RequireSalesOrDirector>} />
+          <Route path="/customers" element={<RequireSalesOrDirector><Customers /></RequireSalesOrDirector>} />
+          <Route path="/commission" element={<RequireSalesOrDirector><Commission /></RequireSalesOrDirector>} />
+          <Route path="/loan-calculator" element={<RequireSalesOrDirector><LoanCalculator /></RequireSalesOrDirector>} />
+          <Route path="/car-compare" element={<RequireSalesOrDirector><CarCompare /></RequireSalesOrDirector>} />
+          <Route path="/calendar" element={<RequireSalesOrDirector><Calendar /></RequireSalesOrDirector>} />
+          <Route path="/sales-dashboard" element={<RequireSalesOrDirector><SalesDashboard /></RequireSalesOrDirector>} />
+          <Route path="/loan-cases" element={<RequireSalesOrDirector><LoanCases /></RequireSalesOrDirector>} />
+          <Route path="/finance" element={<RequireDirector><Finance /></RequireDirector>} />
+          <Route path="/team" element={<RequireDirector><TeamMembers /></RequireDirector>} />
+          <Route path="/data" element={<RequireDirector><Data /></RequireDirector>} />
+          <Route path="/investors" element={<RequireDirector><Investors /></RequireDirector>} />
+          <Route path="/dashboard" element={<RequireDirectorOrAdmin><Dashboard /></RequireDirectorOrAdmin>} />
+          <Route path="/history" element={<RequireDirectorOrAdmin><History /></RequireDirectorOrAdmin>} />
+          <Route path="/history/:id" element={<RequireDirectorOrAdmin><History /></RequireDirectorOrAdmin>} />
+        </Route>
+
+        {/* Banker — own Layout instance */}
+        <Route element={<BankerLayout />}>
+          <Route path="/banker-dashboard" element={<BankerDashboard />} />
+        </Route>
+
+        {/* Investor — own Layout instance */}
+        <Route element={<InvestorLayout />}>
+          <Route path="/investor-portal" element={<InvestorPortal />} />
+        </Route>
+
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </HashRouter>

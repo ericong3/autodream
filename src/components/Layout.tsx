@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import type { AppNotification } from '../types';
+import { createPortal } from 'react-dom';
 import {
   LogOut, Bell, MoreHorizontal, X,
   LayoutDashboard, Car, Users, CalendarDays,
@@ -7,7 +9,7 @@ import {
   History, Banknote, Briefcase, Search,
   Loader2, RefreshCw, Database, FolderOpen,
 } from 'lucide-react';
-import { NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation, Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import ProfileModal from './ProfileModal';
 import CommandPalette from './CommandPalette';
@@ -15,10 +17,6 @@ import QuickActions from './QuickActions';
 import { useStore } from '../store';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 import { usePushNotifications } from '../hooks/usePushNotifications';
-
-interface LayoutProps {
-  children: React.ReactNode;
-}
 
 const SALESPERSON_PRIMARY = [
   { to: '/sales-dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -67,15 +65,25 @@ const MECHANIC_PRIMARY = [
   { to: '/ai-assistant', icon: Bot,           label: 'AI'           },
 ];
 
-export default function Layout({ children }: LayoutProps) {
+export default function Layout() {
   const logout = useStore((s) => s.logout);
   const currentUser = useStore((s) => s.currentUser);
   const instructions = useStore((s) => s.instructions);
+  const notifications = useStore((s) => s.notifications);
+  const markNotificationsReadByRef = useStore((s) => s.markNotificationsReadByRef);
+  const markNotificationReadById = useStore((s) => s.markNotificationReadById);
+  const setBankerOpenCaseId = useStore((s) => s.setBankerOpenCaseId);
+  const toastQueue = useStore((s) => s.toastQueue);
+  const drainToastQueue = useStore((s) => s.drainToastQueue);
   const navigate = useNavigate();
   const location = useLocation();
   const [showMore, setShowMore] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showCmd, setShowCmd] = useState(false);
+  const [showNotifPanel, setShowNotifPanel] = useState(false);
+  const notifBellRef = useRef<HTMLButtonElement>(null);
+  const [notifPanelTop, setNotifPanelTop] = useState(64);
+  const [toasts, setToasts] = useState<AppNotification[]>([]);
   const isDirectorOrAdmin = currentUser?.role === 'director' || currentUser?.role === 'shareholder' || currentUser?.role === 'admin';
 
   useEffect(() => {
@@ -88,6 +96,19 @@ export default function Layout({ children }: LayoutProps) {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
+
+  // Show toast alerts for real-time notification arrivals
+  useEffect(() => {
+    if (!toastQueue.length) return;
+    const incoming = [...toastQueue];
+    drainToastQueue();
+    setToasts(prev => [...prev, ...incoming]);
+    const timers = incoming.map(n =>
+      window.setTimeout(() => setToasts(p => p.filter(t => t.id !== n.id)), 6000)
+    );
+    return () => timers.forEach(clearTimeout);
+  }, [toastQueue]);
+
 
   const pendingCount = instructions.filter((i) => {
     if (currentUser?.role === 'director') return i.type === 'request' && i.status === 'pending';
@@ -115,6 +136,7 @@ export default function Layout({ children }: LayoutProps) {
   const isSalesperson = currentUser?.role === 'salesperson';
   const isInvestor = currentUser?.role === 'investor';
   const isBanker = currentUser?.role === 'banker';
+  const unreadNotifs = notifications.filter(n => !n.isRead);
   const primaryNav = (isDirector || isShareHolder) ? DIRECTOR_PRIMARY : isSalesperson ? SALESPERSON_PRIMARY : isInvestor ? INVESTOR_PRIMARY : isBanker ? BANKER_PRIMARY : MECHANIC_PRIMARY;
   const moreNav = (isDirector || isShareHolder) ? DIRECTOR_MORE : isSalesperson ? SALESPERSON_MORE : [];
 
@@ -179,20 +201,41 @@ export default function Layout({ children }: LayoutProps) {
             >
               <Search size={18} />
             </button>
-            <button
-              onClick={() => navigate('/reminders')}
-              className="relative p-2 rounded-lg text-gold-400 hover:text-gold-300
-                hover:bg-obsidian-600/60 transition-colors"
-            >
-              <Bell size={18} />
-              {pendingCount > 0 && (
-                <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full
-                  text-[9px] text-white flex items-center justify-center font-bold
-                  shadow-[0_0_8px_rgba(239,68,68,0.5)]">
-                  {pendingCount}
-                </span>
-              )}
-            </button>
+            {isBanker ? (
+              <button
+                ref={notifBellRef}
+                onClick={() => {
+                  if (!showNotifPanel && notifBellRef.current) {
+                    const rect = notifBellRef.current.getBoundingClientRect();
+                    setNotifPanelTop(rect.bottom + 8);
+                  }
+                  setShowNotifPanel(v => !v);
+                }}
+                className="relative p-2 rounded-lg text-gold-400 hover:text-gold-300 hover:bg-obsidian-600/60 transition-colors"
+              >
+                <Bell size={18} />
+                {unreadNotifs.length > 0 && (
+                  <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold shadow-[0_0_8px_rgba(239,68,68,0.5)]">
+                    {unreadNotifs.length}
+                  </span>
+                )}
+              </button>
+            ) : (
+              <button
+                onClick={() => navigate('/reminders')}
+                className="relative p-2 rounded-lg text-gold-400 hover:text-gold-300
+                  hover:bg-obsidian-600/60 transition-colors"
+              >
+                <Bell size={18} />
+                {pendingCount > 0 && (
+                  <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full
+                    text-[9px] text-white flex items-center justify-center font-bold
+                    shadow-[0_0_8px_rgba(239,68,68,0.5)]">
+                    {pendingCount}
+                  </span>
+                )}
+              </button>
+            )}
             <button
               onClick={handleLogout}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg
@@ -246,7 +289,7 @@ export default function Layout({ children }: LayoutProps) {
             paddingBottom: 'calc(6rem + env(safe-area-inset-bottom))',
             overscrollBehaviorY: 'none',
           }}
-        >{children}</main>
+        ><Outlet /></main>
       </div>
 
       {/* ── Quick actions sidebar (xl+, director/admin) ──────── */}
@@ -356,6 +399,104 @@ export default function Layout({ children }: LayoutProps) {
       </div>
       <ProfileModal isOpen={showProfile} onClose={() => setShowProfile(false)} />
       <CommandPalette isOpen={showCmd} onClose={() => setShowCmd(false)} />
+
+      {/* Toast alerts for new real-time notifications */}
+      {toasts.length > 0 && createPortal(
+        <div className="fixed bottom-24 md:bottom-6 right-4 flex flex-col gap-2 z-[600] pointer-events-none">
+          {toasts.map(t => (
+            <div
+              key={t.id}
+              className="pointer-events-auto flex w-80 bg-obsidian-800 border border-obsidian-400/30 rounded-2xl shadow-card-xl overflow-hidden animate-toast-in"
+            >
+              <div className="w-1 shrink-0 bg-gold-400" />
+              <div className="flex-1 relative min-w-0">
+                <button
+                  className="w-full text-left px-4 py-3 pr-8 hover:bg-obsidian-700/50 active:bg-obsidian-600 transition-colors"
+                  onClick={() => {
+                    if (isBanker && t.referenceId) {
+                      markNotificationsReadByRef(t.referenceId);
+                      setBankerOpenCaseId(t.referenceId);
+                    } else {
+                      markNotificationReadById(t.id);
+                    }
+                    setToasts(p => p.filter(toast => toast.id !== t.id));
+                  }}
+                >
+                  <p className="text-[10px] font-bold text-gold-400 uppercase tracking-wider mb-0.5">New Notification</p>
+                  <p className="text-sm font-semibold text-white leading-snug">{t.title}</p>
+                  {t.body && <p className="text-xs text-gray-400 mt-1 line-clamp-2">{t.body}</p>}
+                </button>
+                <button
+                  onClick={() => setToasts(p => p.filter(toast => toast.id !== t.id))}
+                  className="absolute top-2.5 right-2.5 p-1 rounded-lg text-gray-500 hover:text-gray-300 hover:bg-obsidian-600 transition-colors"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>,
+        document.body
+      )}
+
+      {/* Banker notification panel */}
+      {isBanker && showNotifPanel && createPortal(
+        <>
+          {/* Backdrop — click anywhere outside panel to close */}
+          <div className="fixed inset-0 z-[498]" onClick={() => setShowNotifPanel(false)} />
+
+          {/* Panel */}
+          <div
+            className="fixed w-80 max-h-96 overflow-y-auto bg-obsidian-800 border border-obsidian-400/30 rounded-2xl shadow-2xl z-[499]"
+            style={{ top: notifPanelTop, right: 16 }}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-obsidian-400/20 sticky top-0 bg-obsidian-800">
+              <h3 className="text-sm font-semibold text-white">Notifications</h3>
+              {unreadNotifs.length > 0 && (
+                <button
+                  onClick={async () => {
+                    await Promise.all(unreadNotifs.map(n =>
+                      n.referenceId ? markNotificationsReadByRef(n.referenceId) : markNotificationReadById(n.id)
+                    ));
+                    setShowNotifPanel(false);
+                  }}
+                  className="text-xs text-gold-400 hover:text-gold-300 transition-colors cursor-pointer"
+                >
+                  Mark all read
+                </button>
+              )}
+            </div>
+            {unreadNotifs.length === 0 ? (
+              <div className="px-4 py-8 text-center text-gray-500 text-sm">All caught up</div>
+            ) : (
+              <div className="divide-y divide-obsidian-400/10">
+                {unreadNotifs.map(n => (
+                  <button
+                    key={n.id}
+                    onClick={() => {
+                      if (n.referenceId) {
+                        markNotificationsReadByRef(n.referenceId);
+                        setBankerOpenCaseId(n.referenceId);
+                      } else {
+                        markNotificationReadById(n.id);
+                      }
+                      setShowNotifPanel(false);
+                    }}
+                    className="w-full text-left px-4 py-3 hover:bg-obsidian-700/50 active:bg-obsidian-600 transition-colors cursor-pointer"
+                  >
+                    <p className="text-sm text-white font-medium leading-snug">{n.title}</p>
+                    {n.body && <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">{n.body}</p>}
+                    <p className="text-[10px] text-gray-600 mt-1.5">
+                      {new Date(n.createdAt).toLocaleString('en-MY', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </>,
+        document.body
+      )}
     </div>
   );
 }
