@@ -85,7 +85,9 @@ function RequireBanker({ children }: { children: React.ReactNode }) {
 export default function App() {
   const currentUser = useStore((s) => s.currentUser);
   const loadAll = useStore((s) => s.loadAll);
+  const storeLoaded = useStore((s) => s.loaded);
   const [hydrated, setHydrated] = useState(() => useStore.persist.hasHydrated());
+  const [fetchDone, setFetchDone] = useState(false);
 
   useEffect(() => {
     if (!hydrated) {
@@ -94,11 +96,15 @@ export default function App() {
     }
   }, []);
 
-  // Kick off background refresh — don't block the UI waiting for it
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => {
+    loadAll().finally(() => setFetchDone(true));
+  }, []);
 
-  // Only block on the very first ever load (no persisted cache yet)
-  if (!hydrated) {
+  // If we have cached data from a previous session, show immediately and refresh in background.
+  // If no cache (first visit or cleared storage), wait for the first fetch to complete.
+  const ready = hydrated && (storeLoaded || fetchDone);
+
+  if (!ready) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#0a0a0a', color: '#c9a84c', fontFamily: 'sans-serif', fontSize: 18 }}>
         Loading...
