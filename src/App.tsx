@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import {
   HashRouter,
   Routes,
@@ -8,28 +8,30 @@ import {
 import { useStore } from './store';
 import Layout from './components/Layout';
 import ToastContainer from './components/Toast';
-import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import Inventory from './pages/Inventory';
-import CarDetail from './pages/CarDetail';
-import Quotations from './pages/Quotations';
-import Workshop from './pages/Workshop';
-import Finance from './pages/Finance';
-import TeamMembers from './pages/TeamMembers';
-import Reminders from './pages/Reminders';
-import History from './pages/History';
-import AIAssistant from './pages/AIAssistant';
-import Customers from './pages/Customers';
-import Commission from './pages/Commission';
-import LoanCalculator from './pages/LoanCalculator';
-import CarCompare from './pages/CarCompare';
-import SalesDashboard from './pages/SalesDashboard';
-import Calendar from './pages/Calendar';
-import Data from './pages/Data';
-import Investors from './pages/Investors';
-import InvestorPortal from './pages/InvestorPortal';
-import LoanCases from './pages/LoanCases';
-import BankerDashboard from './pages/BankerDashboard';
+
+const Login           = React.lazy(() => import('./pages/Login'));
+const Dashboard       = React.lazy(() => import('./pages/Dashboard'));
+const Inventory       = React.lazy(() => import('./pages/Inventory'));
+const CarDetail       = React.lazy(() => import('./pages/CarDetail'));
+const Quotations      = React.lazy(() => import('./pages/Quotations'));
+const Workshop        = React.lazy(() => import('./pages/Workshop'));
+const Finance         = React.lazy(() => import('./pages/Finance'));
+const TeamMembers     = React.lazy(() => import('./pages/TeamMembers'));
+const Reminders       = React.lazy(() => import('./pages/Reminders'));
+const History         = React.lazy(() => import('./pages/History'));
+const AIAssistant     = React.lazy(() => import('./pages/AIAssistant'));
+const Customers       = React.lazy(() => import('./pages/Customers'));
+const Commission      = React.lazy(() => import('./pages/Commission'));
+const LoanCalculator  = React.lazy(() => import('./pages/LoanCalculator'));
+const CarCompare      = React.lazy(() => import('./pages/CarCompare'));
+const SalesDashboard  = React.lazy(() => import('./pages/SalesDashboard'));
+const Calendar        = React.lazy(() => import('./pages/Calendar'));
+const Data            = React.lazy(() => import('./pages/Data'));
+const Investors       = React.lazy(() => import('./pages/Investors'));
+const InvestorPortal  = React.lazy(() => import('./pages/InvestorPortal'));
+const LoanCases       = React.lazy(() => import('./pages/LoanCases'));
+const BankerDashboard = React.lazy(() => import('./pages/BankerDashboard'));
+const Payments        = React.lazy(() => import('./pages/Payments'));
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
@@ -108,6 +110,7 @@ export default function App() {
   return (
     <HashRouter>
       <ToastContainer />
+      <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#0a0a0a', color: '#c9a84c', fontFamily: 'sans-serif', fontSize: 18 }}>Loading...</div>}>
       <Routes>
         <Route
           path="/login"
@@ -337,8 +340,17 @@ export default function App() {
             </RequireBanker>
           }
         />
+        <Route
+          path="/payments"
+          element={
+            <RequireAuth>
+              <Layout><Payments /></Layout>
+            </RequireAuth>
+          }
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
     </HashRouter>
   );
 }
