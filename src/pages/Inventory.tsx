@@ -2245,7 +2245,18 @@ export default function Inventory() {
                   <button
                     onClick={() => {
                       const notes = window.prompt('Reason for rejection (optional):') ?? '';
-                      updateCar(rc.id, { finalDeal: { ...deal, approvalStatus: 'rejected', rejectionNotes: notes || undefined } });
+                      // Clear the submitting customer's work order so the card snaps back to the right salesman
+                      const dealBuyer = customers.find(c => c.interestedCarId === rc.id && (c.loanWorkOrder || c.cashWorkOrder));
+                      if (dealBuyer) {
+                        if (dealBuyer.loanWorkOrder) {
+                          updateCustomer(dealBuyer.id, { loanWorkOrder: undefined, dealPrice: 0, loanStatus: 'submitted' });
+                          supabase.from('customers').update({ loan_work_order: null, deal_price: 0 }).eq('id', dealBuyer.id);
+                        } else {
+                          updateCustomer(dealBuyer.id, { cashWorkOrder: undefined, dealPrice: 0, leadStatus: 'follow_up' });
+                          supabase.from('customers').update({ cash_work_order: null, deal_price: 0 }).eq('id', dealBuyer.id);
+                        }
+                      }
+                      updateCar(rc.id, { status: 'available', finalDeal: { ...deal, approvalStatus: 'rejected', rejectionNotes: notes || undefined } });
                       setReviewDealCar(null);
                     }}
                     className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/40 text-red-400 font-semibold transition-colors"
@@ -2744,13 +2755,25 @@ export default function Inventory() {
                     <button
                       onClick={() => {
                         const notes = window.prompt('Reason for rejection (optional):') ?? '';
+                        // Clear buyer's work order so the card snaps back to the right salesman/customer
+                        if (buyer) {
+                          if (buyer.loanWorkOrder) {
+                            updateCustomer(buyer.id, { loanWorkOrder: undefined, dealPrice: 0, loanStatus: 'submitted' });
+                            supabase.from('customers').update({ loan_work_order: null, deal_price: 0 }).eq('id', buyer.id);
+                          } else {
+                            updateCustomer(buyer.id, { cashWorkOrder: undefined, dealPrice: 0, leadStatus: 'follow_up' });
+                            supabase.from('customers').update({ cash_work_order: null, deal_price: 0 }).eq('id', buyer.id);
+                          }
+                        }
                         updateCar(car.id, {
+                          status: 'available',
                           finalDeal: {
                             ...car.finalDeal!,
                             approvalStatus: 'rejected',
                             rejectionNotes: notes || undefined,
                           },
                         });
+                        setWoViewCar(null);
                       }}
                       className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/40 text-red-400 text-sm font-semibold transition-colors"
                     >
