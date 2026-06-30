@@ -238,6 +238,7 @@ export default function Inventory() {
   const [shipmentModal, setShipmentModal] = useState<{ mode: 'add' | 'edit'; shipment?: Shipment } | null>(null);
   const [shipmentForm, setShipmentForm] = useState({ vesselName: '', shippingLine: '', originPort: 'Port Klang', destinationPort: 'Port Kuching', etd: '', eta: '', freightCost: '', paymentStatus: 'unpaid' as 'unpaid' | 'paid', notes: '' });
   const [assignModal, setAssignModal] = useState<Shipment | null>(null);
+  const [assignSearch, setAssignSearch] = useState('');
   const [deleteShipmentId, setDeleteShipmentId] = useState<string | null>(null);
 
   const sensors = useSensors(
@@ -1288,14 +1289,28 @@ export default function Inventory() {
 
                 {/* Assign cars modal */}
                 {assignModal && createPortal(
-                  <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm" onClick={() => setAssignModal(null)}>
-                    <div className="bg-obsidian-800 border border-obsidian-400/60 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5" onClick={e => e.stopPropagation()}>
+                  <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm" onClick={() => { setAssignModal(null); setAssignSearch(''); }}>
+                    <div className="bg-obsidian-800 border border-obsidian-400/60 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-lg p-5" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-between mb-4">
                         <h3 className="text-white font-semibold">Manage Cars — {assignModal.vesselName}</h3>
-                        <button onClick={() => setAssignModal(null)} className="text-gray-500 hover:text-white"><X size={18} /></button>
+                        <button onClick={() => { setAssignModal(null); setAssignSearch(''); }} className="text-gray-500 hover:text-white"><X size={18} /></button>
                       </div>
-                      <div className="space-y-1.5 max-h-80 overflow-y-auto">
-                        {cars.filter(c => c.status === 'coming_soon').map(car => {
+                      <div className="relative mb-3">
+                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                        <input
+                          type="text"
+                          placeholder="Search by make, model, plate..."
+                          value={assignSearch}
+                          onChange={e => setAssignSearch(e.target.value)}
+                          className="input w-full pl-9 pr-4 py-3 text-sm"
+                          autoFocus
+                        />
+                      </div>
+                      <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                        {cars.filter(c => c.status === 'coming_soon').filter(c => {
+                          const q = assignSearch.toLowerCase();
+                          return !q || `${c.year} ${c.make} ${c.model} ${c.variant ?? ''} ${c.carPlate ?? ''} ${c.colour}`.toLowerCase().includes(q);
+                        }).map(car => {
                           const inThisShip = car.shipmentId === assignModal.id;
                           const inOtherShip = car.shipmentId && car.shipmentId !== assignModal.id;
                           const otherShipName = inOtherShip ? shipments.find(s => s.id === car.shipmentId)?.vesselName : null;
@@ -1314,11 +1329,14 @@ export default function Inventory() {
                             </div>
                           );
                         })}
-                        {cars.filter(c => c.status === 'coming_soon').length === 0 && (
-                          <p className="text-center text-gray-600 text-sm py-6">No coming soon cars</p>
+                        {cars.filter(c => c.status === 'coming_soon').filter(c => {
+                          const q = assignSearch.toLowerCase();
+                          return !q || `${c.year} ${c.make} ${c.model} ${c.variant ?? ''} ${c.carPlate ?? ''} ${c.colour}`.toLowerCase().includes(q);
+                        }).length === 0 && (
+                          <p className="text-center text-gray-600 text-sm py-6">{assignSearch ? 'No cars match your search' : 'No coming soon cars'}</p>
                         )}
                       </div>
-                      <button onClick={() => setAssignModal(null)} className="w-full mt-4 py-2.5 rounded-xl border border-obsidian-400/60 text-gray-400 text-sm">Done</button>
+                      <button onClick={() => { setAssignModal(null); setAssignSearch(''); }} className="w-full mt-4 py-2.5 rounded-xl border border-obsidian-400/60 text-gray-400 text-sm">Done</button>
                     </div>
                   </div>,
                   document.body
