@@ -145,7 +145,7 @@ export default function App() {
           <Route path="/loan-cases" element={<RequireSalesOrDirector><LoanCases /></RequireSalesOrDirector>} />
           <Route path="/finance" element={<RequireDirector><Finance /></RequireDirector>} />
           <Route path="/team" element={<RequireDirector><TeamMembers /></RequireDirector>} />
-          <Route path="/data" element={<RequireDirector><Data /></RequireDirector>} />
+          <Route path="/data" element={<RequireSalesOrDirector><Data /></RequireSalesOrDirector>} />
           <Route path="/investors" element={<RequireDirector><Investors /></RequireDirector>} />
           <Route path="/dashboard" element={<RequireDirectorOrAdmin><Dashboard /></RequireDirectorOrAdmin>} />
           <Route path="/history" element={<RequireDirectorOrAdmin><History /></RequireDirectorOrAdmin>} />

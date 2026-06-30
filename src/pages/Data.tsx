@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, X, Building2, Wrench, Package, ShoppingBag, UserCheck, Landmark, Phone, Mail, Pencil, Trash2, Eye, EyeOff, CreditCard, ChevronDown } from 'lucide-react';
+import { Plus, X, Building2, Wrench, Package, ShoppingBag, UserCheck, Landmark, Phone, Mail, Pencil, Trash2, Eye, EyeOff, CreditCard } from 'lucide-react';
 import { useStore } from '../store';
 import { formatRM, generateId } from '../utils/format';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
@@ -24,7 +24,9 @@ function inputCls() {
 const emptyExtSalesman = { name: '', ic: '', phone: '', email: '', bank: '', bankAccount: '', notes: '' };
 
 export default function Data() {
-  const [activeTab, setActiveTab] = useState<Tab>('dealers');
+  const currentUser = useStore((s) => s.currentUser);
+  const isSalesperson = currentUser?.role === 'salesperson';
+  const [activeTab, setActiveTab] = useState<Tab>(isSalesperson ? 'bankers' : 'dealers');
   const [error, setError] = useState('');
 
   const dealers   = useStore((s) => s.dealers);
@@ -63,7 +65,6 @@ export default function Data() {
   const [bankerForm, setBankerForm] = useState(emptyBankerForm);
   const [showAddBanker, setShowAddBanker] = useState(false);
   const [bankerGroupEditKey, setBankerGroupEditKey] = useState<string | null>(null);
-  const [expandedBankerKey, setExpandedBankerKey] = useState<string | null>(null);
   const [bankerEditForm, setBankerEditForm] = useState({ name: '', banks: [] as string[], phone: '', email: '', notes: '', hasAccount: false, username: '', password: '', changePassword: false, removeAccount: false });
   const [showBankerPw, setShowBankerPw] = useState(false);
   const [showBankerEditPw, setShowBankerEditPw] = useState(false);
@@ -95,23 +96,25 @@ export default function Data() {
           {error}
         </div>
       )}
-      {/* Tabs */}
-      <div className="flex gap-2 border-b border-obsidian-400/60 pb-0">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
-              activeTab === tab.key
-                ? `border-gold-400 ${tab.color}`
-                : 'border-transparent text-gray-500 hover:text-gray-300'
-            }`}
-          >
-            <tab.icon size={15} />
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {/* Tabs — hidden for salesperson (bankers only) */}
+      {!isSalesperson && (
+        <div className="flex gap-2 border-b border-obsidian-400/60 pb-0">
+          {TABS.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+                activeTab === tab.key
+                  ? `border-gold-400 ${tab.color}`
+                  : 'border-transparent text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              <tab.icon size={15} />
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Dealers */}
       {activeTab === 'dealers' && (
@@ -288,36 +291,38 @@ export default function Data() {
                 </div>
               </div>
 
-              <div className="border-t border-obsidian-400/30 pt-3 space-y-3">
-                <button
-                  type="button"
-                  onClick={() => setBankerForm({ ...bankerForm, hasAccount: !bankerForm.hasAccount, username: '', password: '' })}
-                  className="flex items-center gap-3"
-                >
-                  <div className={`w-9 h-5 rounded-full relative transition-colors ${bankerForm.hasAccount ? 'bg-sky-500' : 'bg-obsidian-500'}`}>
-                    <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all" style={{ left: bankerForm.hasAccount ? '18px' : '2px' }} />
-                  </div>
-                  <span className="text-sm text-gray-300">Has App Account</span>
-                </button>
-
-                {bankerForm.hasAccount && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-gray-400 text-xs mb-1">Username *</label>
-                      <input className={inputCls()} placeholder="e.g. ahmad.affin" value={bankerForm.username} onChange={e => setBankerForm({ ...bankerForm, username: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+              {!isSalesperson && (
+                <div className="border-t border-obsidian-400/30 pt-3 space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => setBankerForm({ ...bankerForm, hasAccount: !bankerForm.hasAccount, username: '', password: '' })}
+                    className="flex items-center gap-3"
+                  >
+                    <div className={`w-9 h-5 rounded-full relative transition-colors ${bankerForm.hasAccount ? 'bg-sky-500' : 'bg-obsidian-500'}`}>
+                      <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all" style={{ left: bankerForm.hasAccount ? '18px' : '2px' }} />
                     </div>
-                    <div>
-                      <label className="block text-gray-400 text-xs mb-1">Password *</label>
-                      <div className="relative">
-                        <input className={inputCls()} type={showBankerPw ? 'text' : 'password'} placeholder="Set password" value={bankerForm.password} onChange={e => setBankerForm({ ...bankerForm, password: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
-                        <button type="button" onClick={() => setShowBankerPw(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
-                          {showBankerPw ? <EyeOff size={13} /> : <Eye size={13} />}
-                        </button>
+                    <span className="text-sm text-gray-300">Has App Account</span>
+                  </button>
+
+                  {bankerForm.hasAccount && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-gray-400 text-xs mb-1">Username *</label>
+                        <input className={inputCls()} placeholder="e.g. ahmad.affin" value={bankerForm.username} onChange={e => setBankerForm({ ...bankerForm, username: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+                      </div>
+                      <div>
+                        <label className="block text-gray-400 text-xs mb-1">Password *</label>
+                        <div className="relative">
+                          <input className={inputCls()} type={showBankerPw ? 'text' : 'password'} placeholder="Set password" value={bankerForm.password} onChange={e => setBankerForm({ ...bankerForm, password: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+                          <button type="button" onClick={() => setShowBankerPw(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
+                            {showBankerPw ? <EyeOff size={13} /> : <Eye size={13} />}
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex gap-2 pt-1">
                 <button onClick={() => setShowAddBanker(false)} className="flex-1 btn-ghost py-2 rounded-xl text-sm">Cancel</button>
@@ -360,9 +365,8 @@ export default function Data() {
             </div>
           </Modal>
 
-          {/* ── Profiles list grouped by person ── */}
+          {/* ── Profiles list — grouped by App / No App ── */}
           {(() => {
-            // Deduplicate by userId (same person, multiple banks) or by id
             const seen = new Set<string>();
             const groups: { key: string; profiles: Banker[]; linkedUser: ReturnType<typeof users.find> }[] = [];
             for (const b of bankers) {
@@ -372,196 +376,178 @@ export default function Data() {
               const profiles = bankers.filter(x => (x.userId ?? x.id) === key);
               groups.push({ key, profiles, linkedUser: b.userId ? users.find(u => u.id === b.userId) : undefined });
             }
-            return groups.map(({ key, profiles, linkedUser }) => {
-              const first = profiles[0];
-              const isEditing = bankerGroupEditKey === key;
-              return (
-                <div key={key} className="card-surface rounded-xl p-4">
-                  {isEditing ? (
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="block text-gray-400 text-xs mb-1">Name *</label>
-                          <input className={inputCls()} value={bankerEditForm.name} onChange={e => setBankerEditForm({ ...bankerEditForm, name: e.target.value })} />
-                        </div>
-                        <div>
-                          <label className="block text-gray-400 text-xs mb-1">Phone</label>
-                          <input className={inputCls()} value={bankerEditForm.phone} onChange={e => setBankerEditForm({ ...bankerEditForm, phone: e.target.value })} />
-                        </div>
-                        <div>
-                          <label className="block text-gray-400 text-xs mb-1">Email</label>
-                          <input className={inputCls()} type="email" value={bankerEditForm.email} onChange={e => setBankerEditForm({ ...bankerEditForm, email: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
-                        </div>
-                        <div>
-                          <label className="block text-gray-400 text-xs mb-1">Notes</label>
-                          <input className={inputCls()} value={bankerEditForm.notes} onChange={e => setBankerEditForm({ ...bankerEditForm, notes: e.target.value })} />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-gray-400 text-xs mb-1">Banks *</label>
-                        <div className="flex flex-wrap gap-2 pt-1">
-                          {BANKS.map(b => (
-                            <label key={b} className="flex items-center gap-1.5 cursor-pointer select-none">
-                              <input
-                                type="checkbox"
-                                checked={bankerEditForm.banks.includes(b)}
-                                onChange={e => setBankerEditForm({ ...bankerEditForm, banks: e.target.checked ? [...bankerEditForm.banks, b] : bankerEditForm.banks.filter(x => x !== b) })}
-                                className="accent-sky-400"
-                              />
-                              <span className="text-sm text-gray-300">{b}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
+            if (groups.length === 0) return null;
 
-                      {/* Account toggle */}
-                      <div className="border-t border-obsidian-400/30 pt-3 space-y-2">
-                        {(() => {
-                          const isOn = linkedUser ? !bankerEditForm.removeAccount : bankerEditForm.hasAccount;
-                          return (
-                            <button type="button" onClick={() => {
-                              if (linkedUser) setBankerEditForm({ ...bankerEditForm, removeAccount: !bankerEditForm.removeAccount, changePassword: false, password: '' });
-                              else setBankerEditForm({ ...bankerEditForm, hasAccount: !bankerEditForm.hasAccount, username: '', password: '' });
-                            }} className="flex items-center gap-3">
-                              <div className={`w-9 h-5 rounded-full relative transition-colors ${isOn ? 'bg-sky-500' : 'bg-obsidian-500'}`}>
-                                <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all" style={{ left: isOn ? '18px' : '2px' }} />
-                              </div>
-                              <span className="text-sm text-gray-300">Has App Account</span>
-                            </button>
-                          );
-                        })()}
-                        {linkedUser && !bankerEditForm.removeAccount && (
-                          <>
-                            <p className="text-xs text-gray-500">@{linkedUser.username}</p>
-                            <label className="flex items-center gap-2 cursor-pointer select-none">
-                              <input type="checkbox" checked={bankerEditForm.changePassword} onChange={e => setBankerEditForm({ ...bankerEditForm, changePassword: e.target.checked, password: '' })} className="accent-sky-400" />
-                              <span className="text-xs text-gray-400">Change password</span>
-                            </label>
-                            {bankerEditForm.changePassword && (
-                              <div className="relative">
-                                <input className={inputCls()} type={showBankerEditPw ? 'text' : 'password'} placeholder="New password" value={bankerEditForm.password} onChange={e => setBankerEditForm({ ...bankerEditForm, password: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
-                                <button type="button" onClick={() => setShowBankerEditPw(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
-                                  {showBankerEditPw ? <EyeOff size={13} /> : <Eye size={13} />}
-                                </button>
-                              </div>
-                            )}
-                          </>
-                        )}
-                        {linkedUser && bankerEditForm.removeAccount && (
-                          <p className="text-xs text-red-400">Account <span className="font-medium">@{linkedUser.username}</span> will be removed on save.</p>
-                        )}
-                        {!linkedUser && bankerEditForm.hasAccount && (
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="block text-gray-400 text-xs mb-1">Username *</label>
-                              <input className={inputCls()} value={bankerEditForm.username} onChange={e => setBankerEditForm({ ...bankerEditForm, username: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
-                            </div>
-                            <div>
-                              <label className="block text-gray-400 text-xs mb-1">Password *</label>
-                              <div className="relative">
-                                <input className={inputCls()} type={showBankerEditPw ? 'text' : 'password'} placeholder="Set password" value={bankerEditForm.password} onChange={e => setBankerEditForm({ ...bankerEditForm, password: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
-                                <button type="button" onClick={() => setShowBankerEditPw(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
-                                  {showBankerEditPw ? <EyeOff size={13} /> : <Eye size={13} />}
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+            const withApp = groups.filter(g => !!g.linkedUser);
+            const noApp   = groups.filter(g => !g.linkedUser);
 
-                      <div className="flex gap-2">
-                        <button onClick={() => setBankerGroupEditKey(null)} className="flex-1 btn-ghost py-1.5 rounded-lg text-xs">Cancel</button>
-                        <button
-                          onClick={async () => {
-                            const name = bankerEditForm.name.trim();
-                            const phone = bankerEditForm.phone || undefined;
-                            const email = bankerEditForm.email || undefined;
-                            const notes = bankerEditForm.notes || undefined;
-                            const newBanks = bankerEditForm.banks;
-                            const oldBanks = profiles.map(p => p.bank);
-                            // Add new banks
-                            for (const bank of newBanks.filter(b => !oldBanks.includes(b))) {
-                              await addBanker({ id: generateId(), name, bank, phone, email, notes, userId: linkedUser?.id, createdAt: new Date().toISOString() });
-                            }
-                            // Remove unchecked banks
-                            for (const p of profiles.filter(p => !newBanks.includes(p.bank))) {
-                              await deleteBanker(p.id);
-                            }
-                            // Update remaining banks
-                            for (const p of profiles.filter(p => newBanks.includes(p.bank))) {
-                              await updateBanker(p.id, { name, phone, email, notes });
-                            }
-                            // Handle account
-                            if (linkedUser && bankerEditForm.removeAccount) {
-                              await deleteUser(linkedUser.id);
-                              for (const p of profiles) await updateBanker(p.id, { userId: undefined });
-                            } else if (linkedUser) {
-                              await updateUser(linkedUser.id, { name, banks: newBanks, ...(bankerEditForm.changePassword && bankerEditForm.password ? { password: bankerEditForm.password } : {}) });
-                            } else if (bankerEditForm.hasAccount && bankerEditForm.username.trim() && bankerEditForm.password.trim()) {
-                              const newUserId = generateId();
-                              await addUser({ id: newUserId, name, username: bankerEditForm.username.trim(), password: bankerEditForm.password, role: 'banker', phone: bankerEditForm.phone || '', banks: newBanks, email, monthlyTarget: 0, carsInMonth: 0 });
-                              for (const p of profiles.filter(p => newBanks.includes(p.bank))) await updateBanker(p.id, { userId: newUserId });
-                            }
-                            setBankerGroupEditKey(null);
-                          }}
-                          className="flex-1 btn-gold py-1.5 rounded-lg text-xs"
-                        >Save</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      {/* Clickable header row */}
-                      <button
-                        type="button"
-                        onClick={() => setExpandedBankerKey(expandedBankerKey === key ? null : key)}
-                        className="w-full flex items-center justify-between gap-3 text-left"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="text-white font-medium text-sm">{first.name}</p>
-                            {linkedUser && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/20">App ✓</span>}
-                            {profiles.map(p => (
-                              <span key={p.id} className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-obsidian-600 text-gray-300 border border-obsidian-400/40">{p.bank}</span>
-                            ))}
-                          </div>
+            const renderEditForm = (key: string, profiles: Banker[], linkedUser: ReturnType<typeof users.find>) => (
+              <div key={key} className="p-4 bg-obsidian-700/20 space-y-3 border-b border-obsidian-400/30 last:border-b-0">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-gray-400 text-xs mb-1">Name *</label>
+                    <input className={inputCls()} value={bankerEditForm.name} onChange={e => setBankerEditForm({ ...bankerEditForm, name: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-gray-400 text-xs mb-1">Phone</label>
+                    <input className={inputCls()} value={bankerEditForm.phone} onChange={e => setBankerEditForm({ ...bankerEditForm, phone: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-gray-400 text-xs mb-1">Email</label>
+                    <input className={inputCls()} type="email" value={bankerEditForm.email} onChange={e => setBankerEditForm({ ...bankerEditForm, email: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+                  </div>
+                  <div>
+                    <label className="block text-gray-400 text-xs mb-1">Notes</label>
+                    <input className={inputCls()} value={bankerEditForm.notes} onChange={e => setBankerEditForm({ ...bankerEditForm, notes: e.target.value })} />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-gray-400 text-xs mb-1">Banks *</label>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {BANKS.map(b => (
+                      <label key={b} className="flex items-center gap-1.5 cursor-pointer select-none">
+                        <input type="checkbox" checked={bankerEditForm.banks.includes(b)} onChange={e => setBankerEditForm({ ...bankerEditForm, banks: e.target.checked ? [...bankerEditForm.banks, b] : bankerEditForm.banks.filter(x => x !== b) })} className="accent-sky-400" />
+                        <span className="text-sm text-gray-300">{b}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="border-t border-obsidian-400/30 pt-3 space-y-2">
+                  {(() => {
+                    const isOn = linkedUser ? !bankerEditForm.removeAccount : bankerEditForm.hasAccount;
+                    return (
+                      <button type="button" onClick={() => { if (linkedUser) setBankerEditForm({ ...bankerEditForm, removeAccount: !bankerEditForm.removeAccount, changePassword: false, password: '' }); else setBankerEditForm({ ...bankerEditForm, hasAccount: !bankerEditForm.hasAccount, username: '', password: '' }); }} className="flex items-center gap-3">
+                        <div className={`w-9 h-5 rounded-full relative transition-colors ${isOn ? 'bg-sky-500' : 'bg-obsidian-500'}`}>
+                          <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all" style={{ left: isOn ? '18px' : '2px' }} />
                         </div>
-                        <ChevronDown size={14} className={`text-gray-500 shrink-0 transition-transform ${expandedBankerKey === key ? 'rotate-180' : ''}`} />
+                        <span className="text-sm text-gray-300">Has App Account</span>
                       </button>
-
-                      {/* Expanded detail */}
-                      {expandedBankerKey === key && (
-                        <div className="mt-3 pt-3 border-t border-obsidian-400/30 space-y-2">
-                          <div className="flex flex-wrap gap-x-4 gap-y-1">
-                            {linkedUser && <span className="text-gray-400 text-xs flex items-center gap-1">@{linkedUser.username}</span>}
-                            {first.phone && <span className="text-gray-400 text-xs flex items-center gap-1"><Phone size={10} />{first.phone}</span>}
-                            {first.email && <span className="text-gray-400 text-xs flex items-center gap-1"><Mail size={10} />{first.email}</span>}
-                            {first.notes && <span className="text-gray-500 text-xs italic">{first.notes}</span>}
-                            {!first.phone && !first.email && !first.notes && !linkedUser && (
-                              <span className="text-gray-600 text-xs">No details added</span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 pt-1">
-                            <button
-                              onClick={() => {
-                                setBankerGroupEditKey(key);
-                                setExpandedBankerKey(null);
-                                setBankerEditForm({ name: first.name, banks: profiles.map(p => p.bank), phone: first.phone ?? '', email: first.email ?? '', notes: first.notes ?? '', hasAccount: false, username: '', password: '', changePassword: false, removeAccount: false });
-                                setShowBankerEditPw(false);
-                              }}
-                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-sky-400 hover:bg-sky-500/10 border border-sky-500/20 rounded-lg transition-colors"
-                            ><Pencil size={11} />Edit</button>
-                            <button
-                              onClick={() => setBankerDeleteTarget({ id: key, name: first.name })}
-                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 border border-red-500/20 rounded-lg transition-colors"
-                            ><Trash2 size={11} />Delete</button>
-                          </div>
+                    );
+                  })()}
+                  {linkedUser && !bankerEditForm.removeAccount && (
+                    <>
+                      <p className="text-xs text-gray-500">@{linkedUser.username}</p>
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input type="checkbox" checked={bankerEditForm.changePassword} onChange={e => setBankerEditForm({ ...bankerEditForm, changePassword: e.target.checked, password: '' })} className="accent-sky-400" />
+                        <span className="text-xs text-gray-400">Change password</span>
+                      </label>
+                      {bankerEditForm.changePassword && (
+                        <div className="relative">
+                          <input className={inputCls()} type={showBankerEditPw ? 'text' : 'password'} placeholder="New password" value={bankerEditForm.password} onChange={e => setBankerEditForm({ ...bankerEditForm, password: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+                          <button type="button" onClick={() => setShowBankerEditPw(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">{showBankerEditPw ? <EyeOff size={13} /> : <Eye size={13} />}</button>
                         </div>
                       )}
+                    </>
+                  )}
+                  {linkedUser && bankerEditForm.removeAccount && <p className="text-xs text-red-400">Account <span className="font-medium">@{linkedUser.username}</span> will be removed on save.</p>}
+                  {!linkedUser && bankerEditForm.hasAccount && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-gray-400 text-xs mb-1">Username *</label>
+                        <input className={inputCls()} value={bankerEditForm.username} onChange={e => setBankerEditForm({ ...bankerEditForm, username: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+                      </div>
+                      <div>
+                        <label className="block text-gray-400 text-xs mb-1">Password *</label>
+                        <div className="relative">
+                          <input className={inputCls()} type={showBankerEditPw ? 'text' : 'password'} placeholder="Set password" value={bankerEditForm.password} onChange={e => setBankerEditForm({ ...bankerEditForm, password: e.target.value })} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+                          <button type="button" onClick={() => setShowBankerEditPw(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">{showBankerEditPw ? <EyeOff size={13} /> : <Eye size={13} />}</button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setBankerGroupEditKey(null)} className="flex-1 btn-ghost py-1.5 rounded-lg text-xs">Cancel</button>
+                  <button
+                    onClick={async () => {
+                      const name = bankerEditForm.name.trim();
+                      const phone = bankerEditForm.phone || undefined;
+                      const email = bankerEditForm.email || undefined;
+                      const notes = bankerEditForm.notes || undefined;
+                      const newBanks = bankerEditForm.banks;
+                      const oldBanks = profiles.map(p => p.bank);
+                      for (const bank of newBanks.filter(b => !oldBanks.includes(b))) {
+                        await addBanker({ id: generateId(), name, bank, phone, email, notes, userId: linkedUser?.id, createdAt: new Date().toISOString() });
+                      }
+                      for (const p of profiles.filter(p => !newBanks.includes(p.bank))) {
+                        await deleteBanker(p.id);
+                      }
+                      for (const p of profiles.filter(p => newBanks.includes(p.bank))) {
+                        await updateBanker(p.id, { name, phone, email, notes });
+                      }
+                      if (linkedUser && bankerEditForm.removeAccount) {
+                        await deleteUser(linkedUser.id);
+                        for (const p of profiles) await updateBanker(p.id, { userId: undefined });
+                      } else if (linkedUser) {
+                        await updateUser(linkedUser.id, { name, banks: newBanks, ...(bankerEditForm.changePassword && bankerEditForm.password ? { password: bankerEditForm.password } : {}) });
+                      } else if (bankerEditForm.hasAccount && bankerEditForm.username.trim() && bankerEditForm.password.trim()) {
+                        const newUserId = generateId();
+                        await addUser({ id: newUserId, name, username: bankerEditForm.username.trim(), password: bankerEditForm.password, role: 'banker', phone: bankerEditForm.phone || '', banks: newBanks, email, monthlyTarget: 0, carsInMonth: 0 });
+                        for (const p of profiles.filter(p => newBanks.includes(p.bank))) await updateBanker(p.id, { userId: newUserId });
+                      }
+                      setBankerGroupEditKey(null);
+                    }}
+                    className="flex-1 btn-gold py-1.5 rounded-lg text-xs"
+                  >Save</button>
+                </div>
+              </div>
+            );
+
+            const renderRow = (key: string, profiles: Banker[], _linkedUser: ReturnType<typeof users.find>, isApp: boolean) => {
+              const first = profiles[0];
+              const bankStr = profiles.map(p => p.bank).join(' · ');
+              return (
+                <div key={key} className="flex items-center gap-3 px-4 py-3 hover:bg-white/[0.02] transition-colors border-b border-obsidian-400/25 last:border-b-0">
+                  <div className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm ${isApp ? 'bg-sky-500/20 text-sky-300' : 'bg-obsidian-600/60 text-gray-400'}`}>
+                    {first.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white font-medium text-sm leading-tight">{first.name}</p>
+                    <p className="text-gray-500 text-xs mt-0.5">{bankStr}</p>
+                    {(first.phone || first.email) && (
+                      <div className="flex gap-3 mt-0.5">
+                        {first.phone && <span className="text-gray-600 text-xs flex items-center gap-1"><Phone size={9} />{first.phone}</span>}
+                        {first.email && <span className="text-gray-600 text-xs flex items-center gap-1"><Mail size={9} />{first.email}</span>}
+                      </div>
+                    )}
+                  </div>
+                  {!isSalesperson && (
+                    <div className="flex gap-0.5 shrink-0">
+                      <button
+                        onClick={() => { setBankerGroupEditKey(key); setBankerEditForm({ name: first.name, banks: profiles.map(p => p.bank), phone: first.phone ?? '', email: first.email ?? '', notes: first.notes ?? '', hasAccount: false, username: '', password: '', changePassword: false, removeAccount: false }); setShowBankerEditPw(false); }}
+                        className="p-1.5 text-gray-600 hover:text-sky-400 hover:bg-sky-500/10 rounded-lg transition-colors"
+                      ><Pencil size={13} /></button>
+                      <button onClick={() => setBankerDeleteTarget({ id: key, name: first.name })} className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"><Trash2 size={13} /></button>
                     </div>
                   )}
                 </div>
               );
-            });
+            };
+
+            const Section = ({ title, accent, items }: { title: string; accent: 'sky' | 'gray'; items: typeof groups }) => {
+              if (items.length === 0) return null;
+              return (
+                <div className="rounded-xl overflow-hidden border border-obsidian-400/50">
+                  <div className={`flex items-center gap-2.5 px-4 py-2.5 ${accent === 'sky' ? 'bg-sky-500/10 border-b border-sky-500/20' : 'bg-obsidian-700/40 border-b border-obsidian-400/40'}`}>
+                    <span className={`w-2 h-2 rounded-full ${accent === 'sky' ? 'bg-sky-400' : 'bg-gray-500'}`} />
+                    <span className={`text-xs font-semibold uppercase tracking-widest ${accent === 'sky' ? 'text-sky-400' : 'text-gray-500'}`}>{title}</span>
+                    <span className={`ml-auto text-xs font-bold ${accent === 'sky' ? 'text-sky-500' : 'text-gray-600'}`}>{items.length}</span>
+                  </div>
+                  {items.map(({ key, profiles, linkedUser }) =>
+                    bankerGroupEditKey === key
+                      ? renderEditForm(key, profiles, linkedUser)
+                      : renderRow(key, profiles, linkedUser, accent === 'sky')
+                  )}
+                </div>
+              );
+            };
+
+            return (
+              <>
+                <Section title="With App Account" accent="sky" items={withApp} />
+                <Section title="Profile Only" accent="gray" items={noApp} />
+              </>
+            );
           })()}
 
           {bankers.length === 0 && (
@@ -571,8 +557,8 @@ export default function Data() {
             </div>
           )}
 
-          {/* Legacy accounts not linked to any profile */}
-          {(() => {
+          {/* Legacy accounts not linked to any profile — director only */}
+          {!isSalesperson && (() => {
             const legacyUsers = bankerUsers.filter(u => !bankers.some(b => b.userId === u.id));
             if (legacyUsers.length === 0) return null;
             return (

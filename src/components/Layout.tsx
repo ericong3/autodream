@@ -29,6 +29,7 @@ const SALESPERSON_MORE = [
   { to: '/quotations',      icon: FileText,      label: 'Quotations'      },
   { to: '/loan-calculator', icon: Calculator,    label: 'Loan Calculator' },
   { to: '/car-compare',     icon: GitCompare,    label: 'Car Compare'     },
+  { to: '/data',            icon: Database,      label: 'Bankers'         },
   { to: '/reminders',       icon: ClipboardList, label: 'Instructions'    },
   { to: '/ai-assistant',    icon: Bot,           label: 'AI Assistant'    },
 ];
