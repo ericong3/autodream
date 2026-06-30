@@ -283,6 +283,21 @@ export interface ExternalSalesman {
   createdAt: string;
 }
 
+export interface DealProgress {
+  puspakomBookedDate?: string;
+  puspakomDoneDate?: string;
+  puspakomType?: ('B2' | 'B5' | 'B7')[];
+  ehakRequestedDate?: string;
+  ehakReceivedDate?: string;
+  insuranceCovernoteDone?: boolean;
+  nameChangeDone?: boolean;
+  nameChangeMethod?: 'eauto' | 'jpj';
+  deliveryOrderSigned?: boolean;
+  documentsSubmittedDate?: string;
+  disbursementReceived?: boolean;
+  fullPaymentCollected?: boolean;
+}
+
 export interface Consignment {
   dealer: string;
   terms: 'fixed_amount' | 'profit_split';
@@ -335,10 +350,13 @@ export interface Car {
   disbursementAmount?: number;   // loan disbursement from bank (RM)
   disbursementDate?: string;     // date bank sent the money
   comingSoonType?: 'trade_in' | 'direct_purchase' | 'pending_shipment' | 'in_shipment';
+  shipmentId?: string;
   panelDealerId?: string;        // dealer whose bank panel was used for loan submission
   panelChargeAmount?: number;    // fee charged by panel dealer (varies by bank)
-  collectionReceiptUrl?: string; // receipt uploaded by salesman when collecting shortfall from customer
+  collectionReceiptUrl?: string;
   isStaffSale?: boolean;
+  sellerThumbprintSaved?: boolean;
+  dealProgress?: DealProgress;
 }
 
 export interface MiscCost {
@@ -564,6 +582,20 @@ export interface AppNotification {
   url: string;
   referenceId?: string;
   isRead: boolean;
+  createdAt: string;
+}
+
+export interface Shipment {
+  id: string;
+  vesselName: string;
+  shippingLine?: string;
+  originPort: string;
+  destinationPort: string;
+  etd: string;
+  eta: string;
+  freightCost?: number;
+  paymentStatus: 'unpaid' | 'paid';
+  notes?: string;
   createdAt: string;
 }
 

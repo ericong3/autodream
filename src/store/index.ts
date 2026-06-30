@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
-import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, MiscCost, ExternalSalesman, Banker, LoanCase, LoanCaseDocument, LoanCaseActivity, Payment, AppNotification, InvestorTransaction } from '../types';
+import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, MiscCost, ExternalSalesman, Banker, LoanCase, LoanCaseDocument, LoanCaseActivity, Payment, AppNotification, InvestorTransaction, Shipment } from '../types';
 import { sendPush } from '../utils/sendPush';
 
 // ── Notification helpers ─────────────────────────────────────────────────────
@@ -40,6 +40,7 @@ interface StoreState {
   merchants: Merchant[];
   externalSalesmen: ExternalSalesman[];
   bankers: Banker[];
+  shipments: Shipment[];
   loanCases: LoanCase[];
   loanCaseDocuments: LoanCaseDocument[];
   loanCaseActivities: LoanCaseActivity[];
@@ -132,6 +133,11 @@ interface StoreState {
   updateBanker: (id: string, b: Partial<Banker>) => Promise<void>;
   deleteBanker: (id: string) => Promise<void>;
 
+  // Shipments
+  addShipment: (s: Shipment) => Promise<void>;
+  updateShipment: (id: string, s: Partial<Shipment>) => Promise<void>;
+  deleteShipment: (id: string) => Promise<void>;
+
   // Loan Cases
   addLoanCase: (loanCase: LoanCase) => Promise<void>;
   updateLoanCase: (id: string, updates: Partial<LoanCase>) => Promise<void>;
@@ -213,8 +219,11 @@ function rowToCar(r: any): Car {
     disbursementAmount: r.disbursement_amount ?? undefined,
     disbursementDate: r.disbursement_date ?? undefined,
     comingSoonType: r.coming_soon_type ?? undefined,
+    shipmentId: r.shipment_id ?? undefined,
     panelDealerId: r.panel_dealer_id ?? undefined,
     panelChargeAmount: r.panel_charge_amount ?? undefined,
+    sellerThumbprintSaved: r.seller_thumbprint_saved ?? false,
+    dealProgress: parseJsonField<any>(r.deal_progress) ?? undefined,
   };
 }
 
@@ -272,6 +281,38 @@ function bankerToRow(b: Partial<Banker>) {
   return row;
 }
 
+function rowToShipment(r: any): Shipment {
+  return {
+    id: r.id,
+    vesselName: r.vessel_name,
+    shippingLine: r.shipping_line ?? undefined,
+    originPort: r.origin_port,
+    destinationPort: r.destination_port,
+    etd: r.etd,
+    eta: r.eta,
+    freightCost: r.freight_cost ?? undefined,
+    paymentStatus: r.payment_status,
+    notes: r.notes ?? undefined,
+    createdAt: r.created_at,
+  };
+}
+
+function shipmentToRow(s: Partial<Shipment>) {
+  const row: any = {};
+  if (s.id !== undefined) row.id = s.id;
+  if (s.vesselName !== undefined) row.vessel_name = s.vesselName;
+  if (s.shippingLine !== undefined) row.shipping_line = s.shippingLine;
+  if (s.originPort !== undefined) row.origin_port = s.originPort;
+  if (s.destinationPort !== undefined) row.destination_port = s.destinationPort;
+  if (s.etd !== undefined) row.etd = s.etd;
+  if (s.eta !== undefined) row.eta = s.eta;
+  if (s.freightCost !== undefined) row.freight_cost = s.freightCost;
+  if (s.paymentStatus !== undefined) row.payment_status = s.paymentStatus;
+  if (s.notes !== undefined) row.notes = s.notes;
+  if (s.createdAt !== undefined) row.created_at = s.createdAt;
+  return row;
+}
+
 function carToRow(c: Partial<Car>) {
   const row: any = {};
   if (c.id !== undefined) row.id = c.id;
@@ -317,8 +358,11 @@ function carToRow(c: Partial<Car>) {
   if (c.disbursementAmount !== undefined) row.disbursement_amount = c.disbursementAmount;
   if (c.disbursementDate !== undefined) row.disbursement_date = c.disbursementDate;
   if (c.comingSoonType !== undefined) row.coming_soon_type = c.comingSoonType;
+  if ('shipmentId' in c) row.shipment_id = c.shipmentId ?? null;
   if (c.panelDealerId !== undefined) row.panel_dealer_id = c.panelDealerId;
   if (c.panelChargeAmount !== undefined) row.panel_charge_amount = c.panelChargeAmount;
+  if (c.sellerThumbprintSaved !== undefined) row.seller_thumbprint_saved = c.sellerThumbprintSaved;
+  if ('dealProgress' in c) row.deal_progress = c.dealProgress ?? null;
   return row;
 }
 
@@ -783,6 +827,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   merchants: [],
   externalSalesmen: [],
   bankers: [],
+  shipments: [],
   loanCases: [],
   loanCaseDocuments: [],
   loanCaseActivities: [],
@@ -881,7 +926,8 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       supabase.from('loan_case_activity').select('*'),
       supabase.from('payments').select('*').order('created_at', { ascending: false }),
       supabase.from('investor_transactions').select('*').order('created_at', { ascending: true }),
-    ]).then(([deliveredCarsResult, closedCasesResult, quotations, instructions, testDrives, reminders, dealers, workshops, suppliers, merchants, loanCaseDocsResult, loanCaseActivitiesResult, paymentsResult, investorTxnsResult]) => {
+      supabase.from('shipments').select('*').order('eta', { ascending: true }),
+    ]).then(([deliveredCarsResult, closedCasesResult, quotations, instructions, testDrives, reminders, dealers, workshops, suppliers, merchants, loanCaseDocsResult, loanCaseActivitiesResult, paymentsResult, investorTxnsResult, shipmentsResult]) => {
       const allQuotations  = (quotations.data ?? []).map(rowToQuotation);
       const allTestDrives  = (testDrives.data ?? []).map(rowToTestDrive);
       const deliveredCars  = (deliveredCarsResult.data ?? []).map(rowToCar);
@@ -908,6 +954,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         loanCaseActivities:  loanCaseActivitiesResult.data ? loanCaseActivitiesResult.data.map(rowToLoanCaseActivity)           : s.loanCaseActivities,
         payments:            paymentsResult.data       ? paymentsResult.data.map(rowToPayment)                                  : s.payments,
         investorTransactions:investorTxnsResult.data   ? investorTxnsResult.data.map(rowToInvestorTxn)                          : s.investorTransactions,
+        shipments:           shipmentsResult.data      ? shipmentsResult.data.map(rowToShipment)                                : s.shipments,
       }));
 
       // ── Scheduled notifications (once per day, after secondary data is ready) ──
@@ -1353,10 +1400,12 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     if (car.finalDeal?.approvalStatus === 'pending' && prev?.finalDeal?.approvalStatus !== 'pending') {
       sendPush(dirs, '⚠️ Deal needs approval', `${carName} – ${car.finalDeal.submittedBy} updated the deal`, '/inventory?tab=pending_delivery', id);
     }
-    // #16 Deal approved
+    // #16 Deal approved + Puspakom reminder
     if (car.finalDeal?.approvalStatus === 'approved' && prev?.finalDeal?.approvalStatus !== 'approved') {
       const submitter = get().users.find(u => u.name === car.finalDeal?.submittedBy);
-      if (submitter) sendPush([submitter.id], '✅ Deal approved!', `Your deal for ${carName} was approved`, '/inventory', id);
+      const plate = prev?.carPlate ?? '';
+      const recipients = [...new Set([...dirs, ...(submitter ? [submitter.id] : [])])];
+      sendPush(recipients, '✅ Deal approved!', `${carName} deal confirmed – book Puspakom for ${plate} now`, '/inventory?tab=pending_delivery', id);
     }
     // #17 Deal rejected
     if (car.finalDeal?.approvalStatus === 'rejected' && prev?.finalDeal?.approvalStatus !== 'rejected') {
@@ -1879,6 +1928,28 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   deleteBanker: async (id) => {
     set((st) => ({ bankers: st.bankers.filter((x) => x.id !== id) }));
     await supabase.from('bankers').delete().eq('id', id);
+  },
+
+  // Shipments
+  addShipment: async (s) => {
+    set((st) => ({ shipments: [...st.shipments, s] }));
+    const row = shipmentToRow(s);
+    delete row.id;
+    const { data, error } = await supabase.from('shipments').insert(row).select().single();
+    if (error) {
+      set((st) => ({ shipments: st.shipments.filter((x) => x.id !== s.id) }));
+      throw new Error(error.message);
+    }
+    if (data) set((st) => ({ shipments: st.shipments.map((x) => x.id === s.id ? rowToShipment(data) : x) }));
+  },
+  updateShipment: async (id, s) => {
+    set((st) => ({ shipments: st.shipments.map((x) => x.id === id ? { ...x, ...s } : x) }));
+    const { error } = await supabase.from('shipments').update(shipmentToRow(s)).eq('id', id);
+    if (error) console.error('updateShipment failed:', error.message);
+  },
+  deleteShipment: async (id) => {
+    set((st) => ({ shipments: st.shipments.filter((x) => x.id !== id) }));
+    await supabase.from('shipments').delete().eq('id', id);
   },
 
   // Loan Cases

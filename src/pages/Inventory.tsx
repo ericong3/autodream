@@ -27,10 +27,13 @@ import {
   XCircle,
   RotateCcw,
   Calendar,
+  Ship,
+  Pencil,
+  ChevronRight,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
-import { Car, Customer, LoanWorkOrder, CashWorkOrder, PostSaleChecklist } from '../types';
+import { Car, Customer, LoanWorkOrder, CashWorkOrder, PostSaleChecklist, DealProgress, Shipment } from '../types';
 import {
   DndContext,
   DragOverlay,
@@ -173,6 +176,10 @@ export default function Inventory() {
   const updateCustomer = useStore((s) => s.updateCustomer);
   const notifications = useStore((s) => s.notifications);
   const carNotifs = (carId: string) => notifications.filter(n => n.referenceId === carId && !n.isRead);
+  const shipments = useStore((s) => s.shipments);
+  const addShipment = useStore((s) => s.addShipment);
+  const updateShipment = useStore((s) => s.updateShipment);
+  const deleteShipment = useStore((s) => s.deleteShipment);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
@@ -198,10 +205,11 @@ export default function Inventory() {
 
   const tabParam = searchParams.get('tab');
   const stateTab = (location.state as any)?.inventoryTab as string | undefined;
-  const [inventoryTab, setInventoryTab] = useState<'stock' | 'coming_soon' | 'pending_delivery'>(() => {
+  const [inventoryTab, setInventoryTab] = useState<'stock' | 'coming_soon' | 'pending_delivery' | 'pending_disbursement'>(() => {
     const t = tabParam || stateTab;
     if (t === 'coming_soon') return 'coming_soon';
     if (t === 'pending_delivery') return 'pending_delivery';
+    if (t === 'pending_disbursement') return 'pending_disbursement';
     return 'stock';
   });
   const [search, setSearch] = useState('');
@@ -219,19 +227,25 @@ export default function Inventory() {
   const [woSaving, setWoSaving] = useState(false);
   const [woCancelConfirm, setWoCancelConfirm] = useState(false);
   const [woDeliveryConfirm, setWoDeliveryConfirm] = useState(false);
-  const [woTab, setWoTab] = useState<'deal' | 'postsale'>('deal');
+  const [woTab, setWoTab] = useState<'deal' | 'progress' | 'postsale'>('deal');
   const [form, setForm] = useState(emptyForm);
   const [dragActiveId, setDragActiveId] = useState<string | null>(null);
   const [stockOrder, setStockOrder] = useState<string[]>([]);
   const [comingSoonOrder, setComingSoonOrder] = useState<string[]>([]);
   const [pendingOrder, setPendingOrder] = useState<string[]>([]);
+  const [comingSoonView, setComingSoonView] = useState<'cars' | 'shipments'>('cars');
+  const [expandedShipmentId, setExpandedShipmentId] = useState<string | null>(null);
+  const [shipmentModal, setShipmentModal] = useState<{ mode: 'add' | 'edit'; shipment?: Shipment } | null>(null);
+  const [shipmentForm, setShipmentForm] = useState({ vesselName: '', shippingLine: '', originPort: 'Port Klang', destinationPort: 'Port Kuching', etd: '', eta: '', freightCost: '', paymentStatus: 'unpaid' as 'unpaid' | 'paid', notes: '' });
+  const [assignModal, setAssignModal] = useState<Shipment | null>(null);
+  const [deleteShipmentId, setDeleteShipmentId] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
   );
 
   // Swipe to change tab (mobile) — document-level listeners bypass browser scroll interception
-  const TAB_ORDER = ['stock', 'coming_soon', 'pending_delivery'] as const;
+  const TAB_ORDER = ['stock', 'coming_soon', 'pending_delivery', 'pending_disbursement'] as const;
   const swipeStartX = useRef<number | null>(null);
   const swipeStartY = useRef<number | null>(null);
   const inventoryTabRef = useRef(inventoryTab);
@@ -424,6 +438,17 @@ export default function Inventory() {
     cars.filter((c) => c.status === 'deal_pending'),
   [cars]);
 
+  const pendingDisbursement = useMemo(() =>
+    cars.filter((c) =>
+      c.status === 'delivered' &&
+      c.finalDeal != null &&
+      c.finalDeal.bank &&
+      c.finalDeal.bank.toLowerCase() !== 'cash' &&
+      !c.disbursementDate &&
+      c.dealProgress?.disbursementReceived !== true,
+    ),
+  [cars]);
+
   const filtered = useMemo(() => {
     // Stock tab: exclude delivered, coming_soon, deal_pending, and consigned-out cars
     let result = cars.filter((c) => c.status !== 'delivered' && c.status !== 'coming_soon' && c.status !== 'deal_pending' && !c.outgoingConsignment);
@@ -598,6 +623,18 @@ export default function Inventory() {
               </span>
             )}
             {pendingUnreadCount > 0 && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
+          </button>
+          <button
+            onClick={() => { setInventoryTab('pending_disbursement'); setSearchParams({ tab: 'pending_disbursement' }); }}
+            className={`flex-1 sm:flex-none min-w-0 px-2 sm:px-4 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${inventoryTab === 'pending_disbursement' ? 'bg-amber-600 text-white' : 'text-gray-400 hover:text-white'}`}
+          >
+            <span className="hidden sm:inline">Disbursement</span>
+            <span className="sm:hidden">Disburse</span>
+            {pendingDisbursement.length > 0 && (
+              <span className={`shrink-0 text-[10px] sm:text-xs px-1.5 py-0.5 rounded-full font-semibold ${inventoryTab === 'pending_disbursement' ? 'bg-white/20' : 'bg-amber-500/20 text-amber-400'}`}>
+                {pendingDisbursement.length}
+              </span>
+            )}
           </button>
         </div>
 
@@ -906,6 +943,14 @@ export default function Inventory() {
                               {daysPending === 0 ? 'Today' : `${daysPending}d ago`}
                             </span>
                           )}
+                          {!car.greenCard && (
+                            <span className="flex items-center gap-1 text-orange-400 text-[10px] font-medium">
+                              <AlertCircle size={9} />No GC
+                            </span>
+                          )}
+                          {car.sellerThumbprintSaved && (
+                            <span className="text-emerald-400 text-[10px] font-medium">Thumbprint ✓</span>
+                          )}
                         </div>
                         {isDirector && car.finalDeal && car.finalDeal.approvalStatus !== 'approved' ? (
                           <button
@@ -944,10 +989,361 @@ export default function Inventory() {
         </>
       )}
 
+      {/* ── Pending Disbursement tab ── */}
+      {inventoryTab === 'pending_disbursement' && (
+        <>
+          {pendingDisbursement.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <CarIcon size={40} className="text-gray-600 mb-3" />
+              <p className="text-gray-400 font-medium">No pending disbursements</p>
+              <p className="text-gray-500 text-sm mt-1">Delivered loan cars awaiting bank disbursement appear here</p>
+            </div>
+          ) : (
+            <div className="space-y-3 mt-1">
+              {pendingDisbursement.map((car) => {
+                const buyer = customers.find(c => c.interestedCarId === car.id);
+                const dp = car.dealProgress ?? {};
+                const steps = [
+                  { key: 'puspakomDoneDate', label: 'Puspakom' },
+                  { key: 'ehakReceivedDate', label: 'eHak' },
+                  { key: 'insuranceCovernoteDone', label: 'Insurance' },
+                  { key: 'nameChangeDone', label: 'Name Change' },
+                  { key: 'deliveryOrderSigned', label: 'Delivery Order' },
+                  { key: 'documentsSubmittedDate', label: 'Docs Submitted' },
+                  { key: 'disbursementReceived', label: 'Disbursed' },
+                ] as const;
+                const done = steps.filter(s => !!(dp as any)[s.key]).length;
+                const pct = Math.round((done / steps.length) * 100);
+                const nextStep = steps.find(s => !(dp as any)[s.key]);
+                return (
+                  <div
+                    key={car.id}
+                    className="flex flex-col gap-0 rounded-2xl bg-obsidian-800/60 border border-amber-500/30 cursor-pointer transition-colors hover:border-amber-400/60"
+                    onClick={() => { if (buyer) { setWoViewCar({ car, buyer }); setWoTab('progress'); } }}
+                  >
+                    <div className="flex gap-4 p-4">
+                      {car.photo ? (
+                        <img src={car.photo} alt="" className="w-20 h-14 rounded-xl object-cover shrink-0" />
+                      ) : (
+                        <div className="w-20 h-14 rounded-xl bg-obsidian-700/60 flex items-center justify-center shrink-0">
+                          <CarIcon size={20} className="text-gray-600" />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-white font-semibold text-sm leading-snug">{car.year} {car.make} {car.model}</p>
+                            <p className="text-gray-500 text-xs mt-0.5">{car.carPlate ?? '—'} · {car.colour}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-white font-bold text-sm">{car.finalDeal ? formatRM(car.finalDeal.dealPrice) : '—'}</p>
+                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400">{car.finalDeal?.bank ?? 'Loan'}</span>
+                          </div>
+                        </div>
+                        <div className="mt-2">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-gray-500 text-[10px]">{nextStep ? `Next: ${nextStep.label}` : 'All steps done'}</span>
+                            <span className="text-gray-400 text-[10px] font-semibold">{done}/{steps.length}</span>
+                          </div>
+                          <div className="w-full h-1.5 rounded-full bg-obsidian-600">
+                            <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${pct}%` }} />
+                          </div>
+                        </div>
+                        {buyer && (
+                          <div className="flex items-center gap-1.5 mt-2">
+                            <Users size={11} className="text-gray-500" />
+                            <span className="text-gray-300 text-xs">{buyer.name}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
       {/* ── Coming Soon tab ── */}
       {inventoryTab === 'coming_soon' && (
         <>
-          {comingSoonFiltered.length === 0 ? (
+          {/* Sub-tab toggle: Cars vs Shipments */}
+          <div className="flex items-center gap-2 mb-4">
+            <button
+              onClick={() => setComingSoonView('cars')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${comingSoonView === 'cars' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40' : 'text-gray-500 hover:text-gray-300'}`}
+            >
+              <CarIcon size={14} />
+              Cars
+            </button>
+            <button
+              onClick={() => setComingSoonView('shipments')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${comingSoonView === 'shipments' ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40' : 'text-gray-500 hover:text-gray-300'}`}
+            >
+              <Ship size={14} />
+              Shipments
+              {shipments.length > 0 && <span className="text-[10px] font-bold bg-sky-500/30 text-sky-300 px-1.5 py-0.5 rounded-full">{shipments.length}</span>}
+            </button>
+          </div>
+
+          {/* ── Shipments view ── */}
+          {comingSoonView === 'shipments' && (() => {
+            const openShipmentModal = (mode: 'add' | 'edit', s?: Shipment) => {
+              if (mode === 'add') {
+                setShipmentForm({ vesselName: '', shippingLine: '', originPort: 'Port Klang', destinationPort: 'Port Kuching', etd: '', eta: '', freightCost: '', paymentStatus: 'unpaid', notes: '' });
+              } else if (s) {
+                setShipmentForm({ vesselName: s.vesselName, shippingLine: s.shippingLine ?? '', originPort: s.originPort, destinationPort: s.destinationPort, etd: s.etd, eta: s.eta, freightCost: s.freightCost?.toString() ?? '', paymentStatus: s.paymentStatus, notes: s.notes ?? '' });
+              }
+              setShipmentModal({ mode, shipment: s });
+            };
+
+            const saveShipment = async () => {
+              const f = shipmentForm;
+              if (!f.vesselName.trim() || !f.etd || !f.eta) return;
+              const base = { vesselName: f.vesselName.trim(), shippingLine: f.shippingLine.trim() || undefined, originPort: f.originPort.trim(), destinationPort: f.destinationPort.trim(), etd: f.etd, eta: f.eta, freightCost: f.freightCost ? parseFloat(f.freightCost) : undefined, paymentStatus: f.paymentStatus, notes: f.notes.trim() || undefined };
+              if (shipmentModal?.mode === 'add') {
+                await addShipment({ ...base, id: generateId(), createdAt: new Date().toISOString() });
+              } else if (shipmentModal?.shipment) {
+                await updateShipment(shipmentModal.shipment.id, base);
+              }
+              setShipmentModal(null);
+            };
+
+            return (
+              <div className="space-y-3">
+                {isDirector && (
+                  <div className="flex justify-end">
+                    <button onClick={() => openShipmentModal('add')} className="flex items-center gap-1.5 btn-gold px-4 py-2 rounded-lg text-sm">
+                      <Plus size={15} />New Shipment
+                    </button>
+                  </div>
+                )}
+                {shipments.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-center">
+                    <Ship size={40} className="text-gray-600 mb-3" />
+                    <p className="text-gray-400 font-medium">No shipments yet</p>
+                    <p className="text-gray-500 text-sm mt-1">Create a shipment to track vessels and assign cars</p>
+                  </div>
+                ) : (
+                  shipments.map((ship) => {
+                    const shipCars = cars.filter(c => c.shipmentId === ship.id);
+                    const isExpanded = expandedShipmentId === ship.id;
+                    const etdDate = new Date(ship.etd);
+                    const etaDate = new Date(ship.eta);
+                    const now = new Date();
+                    const isArrived = etaDate < now;
+                    const daysToEta = Math.ceil((etaDate.getTime() - now.getTime()) / 86400000);
+                    return (
+                      <div key={ship.id} className="rounded-xl border border-obsidian-400/50 overflow-hidden">
+                        {/* Card header */}
+                        <div
+                          className="flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-white/[0.02] transition-colors"
+                          onClick={() => setExpandedShipmentId(isExpanded ? null : ship.id)}
+                        >
+                          <div className="shrink-0 w-9 h-9 rounded-full bg-sky-500/15 flex items-center justify-center mt-0.5">
+                            <Ship size={16} className="text-sky-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-white font-semibold text-sm">{ship.vesselName}</p>
+                              {ship.shippingLine && <span className="text-gray-500 text-xs">{ship.shippingLine}</span>}
+                              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${ship.paymentStatus === 'paid' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-amber-500/15 text-amber-400 border-amber-500/30'}`}>
+                                {ship.paymentStatus === 'paid' ? 'Paid' : 'Unpaid'}
+                              </span>
+                              {isArrived ? (
+                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-500/15 text-green-400 border border-green-500/30">Arrived</span>
+                              ) : daysToEta <= 3 ? (
+                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30">{daysToEta}d to arrival</span>
+                              ) : null}
+                            </div>
+                            <p className="text-gray-500 text-xs mt-0.5">{ship.originPort} → {ship.destinationPort}</p>
+                            <div className="flex items-center gap-4 mt-1 text-xs text-gray-600">
+                              <span>ETD {etdDate.toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}</span>
+                              <span>ETA {etaDate.toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}</span>
+                              <span className="text-sky-500">{shipCars.length} car{shipCars.length !== 1 ? 's' : ''}</span>
+                              {isDirectorView && ship.freightCost && <span className="text-amber-500/80">{formatRM(ship.freightCost)}</span>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                            {isDirector && (
+                              <>
+                                <button onClick={() => openShipmentModal('edit', ship)} className="p-1.5 text-gray-600 hover:text-sky-400 hover:bg-sky-500/10 rounded-lg transition-colors"><Pencil size={13} /></button>
+                                <button onClick={() => setDeleteShipmentId(ship.id)} className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"><Trash2 size={13} /></button>
+                              </>
+                            )}
+                            <ChevronRight size={15} className={`text-gray-600 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                          </div>
+                        </div>
+
+                        {/* Expanded: cars + assign */}
+                        {isExpanded && (
+                          <div className="border-t border-obsidian-400/30">
+                            {isDirector && (
+                              <div className="px-4 py-2 flex justify-end border-b border-obsidian-400/20">
+                                <button onClick={() => setAssignModal(ship)} className="flex items-center gap-1 text-xs text-sky-400 hover:text-sky-300 transition-colors">
+                                  <Plus size={12} />Manage Cars
+                                </button>
+                              </div>
+                            )}
+                            {shipCars.length === 0 ? (
+                              <div className="px-4 py-4 text-center text-gray-600 text-sm">No cars assigned</div>
+                            ) : (
+                              shipCars.map(car => {
+                                const buyer = customers.find(c => c.interestedCarId === car.id && (c.loanWorkOrder || c.cashWorkOrder));
+                                const isBooked = !!buyer;
+                                return (
+                                  <div
+                                    key={car.id}
+                                    className="flex items-center gap-3 px-4 py-2.5 border-b border-obsidian-400/20 last:border-b-0 hover:bg-white/[0.02] cursor-pointer transition-colors"
+                                    onClick={() => navigate(`/inventory/${car.id}`, { state: { inventoryTab } })}
+                                  >
+                                    <div className="w-10 h-7 bg-obsidian-700/60 rounded flex-shrink-0 flex items-center justify-center overflow-hidden">
+                                      {car.photo ? <img src={car.photo} alt="" className="w-full h-full object-cover" /> : <CarIcon size={12} className="text-gray-600" />}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-white text-xs font-medium">{car.year} {car.make} {car.model}</p>
+                                      <p className="text-gray-500 text-[11px]">{car.colour} · {car.carPlate ?? '—'}</p>
+                                    </div>
+                                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border shrink-0 ${isBooked ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-obsidian-600/60 text-gray-500 border-obsidian-400/40'}`}>
+                                      {isBooked ? 'Booked' : 'Available'}
+                                    </span>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+
+                {/* Shipment create/edit modal */}
+                {shipmentModal && createPortal(
+                  <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShipmentModal(null)}>
+                    <div className="bg-obsidian-800 border border-obsidian-400/60 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-4" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-white font-semibold">{shipmentModal.mode === 'add' ? 'New Shipment' : 'Edit Shipment'}</h3>
+                        <button onClick={() => setShipmentModal(null)} className="text-gray-500 hover:text-white"><X size={18} /></button>
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <label className="text-gray-400 text-xs mb-1 block">Vessel Name *</label>
+                          <input className="input w-full" placeholder="e.g. MV Kinabalu Express" value={shipmentForm.vesselName} onChange={e => setShipmentForm(f => ({ ...f, vesselName: e.target.value }))} />
+                        </div>
+                        <div>
+                          <label className="text-gray-400 text-xs mb-1 block">Shipping Line</label>
+                          <input className="input w-full" placeholder="e.g. MISC, Haulage" value={shipmentForm.shippingLine} onChange={e => setShipmentForm(f => ({ ...f, shippingLine: e.target.value }))} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-gray-400 text-xs mb-1 block">Origin Port *</label>
+                            <input className="input w-full" value={shipmentForm.originPort} onChange={e => setShipmentForm(f => ({ ...f, originPort: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="text-gray-400 text-xs mb-1 block">Destination Port *</label>
+                            <input className="input w-full" value={shipmentForm.destinationPort} onChange={e => setShipmentForm(f => ({ ...f, destinationPort: e.target.value }))} />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-gray-400 text-xs mb-1 block">ETD *</label>
+                            <input type="date" className="input w-full" value={shipmentForm.etd} onChange={e => setShipmentForm(f => ({ ...f, etd: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="text-gray-400 text-xs mb-1 block">ETA *</label>
+                            <input type="date" className="input w-full" value={shipmentForm.eta} onChange={e => setShipmentForm(f => ({ ...f, eta: e.target.value }))} />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-gray-400 text-xs mb-1 block">Freight Cost (RM)</label>
+                          <input type="number" className="input w-full" placeholder="0" value={shipmentForm.freightCost} onChange={e => setShipmentForm(f => ({ ...f, freightCost: e.target.value }))} />
+                        </div>
+                        <div>
+                          <label className="text-gray-400 text-xs mb-1 block">Payment Status</label>
+                          <div className="flex gap-2">
+                            {(['unpaid', 'paid'] as const).map(s => (
+                              <button key={s} onClick={() => setShipmentForm(f => ({ ...f, paymentStatus: s }))} className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${shipmentForm.paymentStatus === s ? s === 'paid' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-amber-500/20 text-amber-400 border border-amber-500/40' : 'bg-obsidian-700/60 text-gray-500 border border-obsidian-400/40'}`}>
+                                {s === 'paid' ? 'Paid' : 'Unpaid'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-gray-400 text-xs mb-1 block">Notes</label>
+                          <textarea className="input w-full resize-none" rows={2} value={shipmentForm.notes} onChange={e => setShipmentForm(f => ({ ...f, notes: e.target.value }))} />
+                        </div>
+                      </div>
+                      <div className="flex gap-2 pt-1">
+                        <button onClick={() => setShipmentModal(null)} className="flex-1 py-2.5 rounded-xl border border-obsidian-400/60 text-gray-400 text-sm">Cancel</button>
+                        <button onClick={saveShipment} disabled={!shipmentForm.vesselName.trim() || !shipmentForm.etd || !shipmentForm.eta} className="flex-1 py-2.5 rounded-xl btn-gold text-sm font-semibold disabled:opacity-40">
+                          {shipmentModal.mode === 'add' ? 'Create' : 'Save'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>,
+                  document.body
+                )}
+
+                {/* Assign cars modal */}
+                {assignModal && createPortal(
+                  <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm" onClick={() => setAssignModal(null)}>
+                    <div className="bg-obsidian-800 border border-obsidian-400/60 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-white font-semibold">Manage Cars — {assignModal.vesselName}</h3>
+                        <button onClick={() => setAssignModal(null)} className="text-gray-500 hover:text-white"><X size={18} /></button>
+                      </div>
+                      <div className="space-y-1.5 max-h-80 overflow-y-auto">
+                        {cars.filter(c => c.status === 'coming_soon').map(car => {
+                          const inThisShip = car.shipmentId === assignModal.id;
+                          const inOtherShip = car.shipmentId && car.shipmentId !== assignModal.id;
+                          const otherShipName = inOtherShip ? shipments.find(s => s.id === car.shipmentId)?.vesselName : null;
+                          return (
+                            <div key={car.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-obsidian-700/40 border border-obsidian-400/30">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-white text-xs font-medium">{car.year} {car.make} {car.model}</p>
+                                <p className="text-gray-500 text-[11px]">{car.colour}{car.carPlate ? ` · ${car.carPlate}` : ''}{inOtherShip ? ` · In: ${otherShipName}` : ''}</p>
+                              </div>
+                              <button
+                                onClick={() => updateCar(car.id, { shipmentId: inThisShip ? undefined : assignModal.id })}
+                                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${inThisShip ? 'bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25' : 'bg-sky-500/15 text-sky-400 border border-sky-500/30 hover:bg-sky-500/25'}`}
+                              >
+                                {inThisShip ? 'Remove' : 'Add'}
+                              </button>
+                            </div>
+                          );
+                        })}
+                        {cars.filter(c => c.status === 'coming_soon').length === 0 && (
+                          <p className="text-center text-gray-600 text-sm py-6">No coming soon cars</p>
+                        )}
+                      </div>
+                      <button onClick={() => setAssignModal(null)} className="w-full mt-4 py-2.5 rounded-xl border border-obsidian-400/60 text-gray-400 text-sm">Done</button>
+                    </div>
+                  </div>,
+                  document.body
+                )}
+
+                {/* Delete shipment confirm */}
+                {deleteShipmentId && createPortal(
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setDeleteShipmentId(null)}>
+                    <div className="bg-obsidian-800 border border-obsidian-400/60 rounded-2xl p-5 w-full max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
+                      <p className="text-white font-semibold">Delete Shipment?</p>
+                      <p className="text-gray-400 text-sm">Cars assigned to this shipment will be unlinked.</p>
+                      <div className="flex gap-2">
+                        <button onClick={() => setDeleteShipmentId(null)} className="flex-1 py-2.5 rounded-xl border border-obsidian-400/60 text-gray-400 text-sm">Cancel</button>
+                        <button onClick={async () => { await deleteShipment(deleteShipmentId); setDeleteShipmentId(null); }} className="flex-1 py-2.5 rounded-xl bg-red-500/20 border border-red-500/40 text-red-400 text-sm font-semibold">Delete</button>
+                      </div>
+                    </div>
+                  </div>,
+                  document.body
+                )}
+              </div>
+            );
+          })()}
+
+          {/* ── Cars view ── */}
+          {comingSoonView === 'cars' && (comingSoonFiltered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <CarIcon size={40} className="text-gray-600 mb-3" />
               <p className="text-gray-400 font-medium">No coming soon cars</p>
@@ -1192,7 +1588,7 @@ export default function Inventory() {
             </div>
             </SortableContext>
             </DndContext>
-          )}
+          ))}
         </>
       )}
 
@@ -2466,6 +2862,7 @@ export default function Inventory() {
             <div className="border-b border-obsidian-400/60 bg-[#0F0E0C] flex justify-center">
               <div className="flex gap-1">
                 <button onClick={() => setWoTab('deal')} className={`px-5 py-2.5 text-xs font-semibold transition-colors ${woTab === 'deal' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}>Work Order</button>
+                <button onClick={() => { setWoTab('progress'); setWoEditMode(false); }} className={`px-5 py-2.5 text-xs font-semibold transition-colors ${woTab === 'progress' ? 'text-white border-b-2 border-amber-500' : 'text-gray-500 hover:text-gray-300'}`}>Progress</button>
                 <button onClick={() => { setWoTab('postsale'); setWoEditMode(false); }} className={`px-5 py-2.5 text-xs font-semibold transition-colors ${woTab === 'postsale' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}>Post-Sale</button>
               </div>
             </div>
@@ -2778,12 +3175,16 @@ export default function Inventory() {
 
             </div>}
 
+            {woTab === 'progress' && (
+              <DealProgressPanel car={car} isLoan={isLoan} />
+            )}
+
             {woTab === 'postsale' && (
               <div className="max-w-lg mx-auto px-4 py-5 space-y-4" style={{ paddingBottom: 'calc(2rem + env(safe-area-inset-bottom, 0px))' }}>
                 <PostSalePanel buyerId={buyer.id} />
 
-                {/* Deliver — button or inline confirm, always visible in the same spot */}
-                {!woDeliveryConfirm ? (
+                {/* Deliver — only show for undelivered cars */}
+                {car.status !== 'delivered' && (!woDeliveryConfirm ? (
                   <button
                     onClick={() => setWoDeliveryConfirm(true)}
                     className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-semibold bg-violet-600 hover:bg-violet-500 text-white transition-colors"
@@ -2800,7 +3201,7 @@ export default function Inventory() {
                       <button onClick={handleDelivery} className="flex-1 py-2.5 text-xs font-semibold text-white bg-violet-600 hover:bg-violet-500 rounded-lg transition-colors">Yes, Delivered</button>
                     </div>
                   </div>
-                )}
+                ))}
               </div>
             )}
 
@@ -2826,6 +3227,185 @@ export default function Inventory() {
           document.body,
         );
       })()}
+    </div>
+  );
+}
+
+function DealProgressPanel({ car, isLoan }: { car: Car; isLoan: boolean }) {
+  const updateCar = useStore((s) => s.updateCar);
+  const [dp, setDp] = React.useState<DealProgress>(() => car.dealProgress ?? {});
+  const isDelivered = car.status === 'delivered';
+
+  const save = (patch: Partial<DealProgress>) => {
+    const next = { ...dp, ...patch };
+    setDp(next);
+    updateCar(car.id, { dealProgress: next });
+  };
+
+  const today = () => new Date().toISOString().slice(0, 10);
+
+  const stepCheck = (
+    label: string,
+    done: boolean,
+    onToggle: (v: boolean) => void,
+    subtitle?: string,
+  ) => (
+    <div className={`flex items-start gap-3 px-4 py-3 border-b border-obsidian-400/20 ${done ? 'opacity-80' : ''}`}>
+      <button
+        onClick={() => onToggle(!done)}
+        className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${done ? 'border-emerald-500 bg-emerald-500' : 'border-gray-600 hover:border-amber-400'}`}
+      >
+        {done && <Check size={11} className="text-white" />}
+      </button>
+      <div className="flex-1 min-w-0">
+        <p className={`text-sm font-medium ${done ? 'text-gray-400 line-through' : 'text-white'}`}>{label}</p>
+        {subtitle && <p className="text-gray-600 text-xs mt-0.5">{subtitle}</p>}
+      </div>
+    </div>
+  );
+
+  const dateStep = (
+    label: string,
+    value: string | undefined,
+    onSet: (v: string | undefined) => void,
+    subtitle?: string,
+  ) => (
+    <div className={`flex items-start gap-3 px-4 py-3 border-b border-obsidian-400/20 ${value ? 'opacity-80' : ''}`}>
+      <button
+        onClick={() => onSet(value ? undefined : today())}
+        className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${value ? 'border-emerald-500 bg-emerald-500' : 'border-gray-600 hover:border-amber-400'}`}
+      >
+        {value && <Check size={11} className="text-white" />}
+      </button>
+      <div className="flex-1 min-w-0">
+        <p className={`text-sm font-medium ${value ? 'text-gray-400' : 'text-white'}`}>{label}</p>
+        {subtitle && !value && <p className="text-gray-600 text-xs mt-0.5">{subtitle}</p>}
+        {value && (
+          <input
+            type="date"
+            value={value}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => onSet(e.target.value || undefined)}
+            className="mt-1 bg-transparent text-emerald-400 text-xs outline-none border-b border-emerald-500/30 focus:border-emerald-400"
+          />
+        )}
+      </div>
+    </div>
+  );
+
+  const loanSteps = (
+    <>
+      <p className="px-4 pt-4 pb-1 text-[10px] text-gray-600 uppercase tracking-widest font-semibold">Pre-Delivery</p>
+      {dateStep('Puspakom Booked', dp.puspakomBookedDate, v => save({ puspakomBookedDate: v }), 'Book inspection appointment')}
+      {dateStep('Puspakom Done', dp.puspakomDoneDate, v => save({ puspakomDoneDate: v }), 'B2 / B5 / B7 inspection completed')}
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-obsidian-400/20">
+        <span className="text-gray-500 text-xs">Inspection type:</span>
+        {(['B2', 'B5', 'B7'] as const).map(t => (
+          <button
+            key={t}
+            onClick={() => {
+              const cur = dp.puspakomType ?? [];
+              save({ puspakomType: cur.includes(t) ? cur.filter(x => x !== t) : [...cur, t] });
+            }}
+            className={`px-2 py-0.5 rounded text-xs font-semibold border transition-colors ${dp.puspakomType?.includes(t) ? 'bg-blue-500/20 text-blue-300 border-blue-500/40' : 'border-obsidian-400/40 text-gray-500 hover:text-gray-300'}`}
+          >{t}</button>
+        ))}
+      </div>
+      {dateStep('eHak Requested', dp.ehakRequestedDate, v => save({ ehakRequestedDate: v }), 'Request eHak from bank')}
+      {dateStep('eHak Received', dp.ehakReceivedDate, v => save({ ehakReceivedDate: v }), 'eHak document from bank received')}
+      {stepCheck('Insurance Covernote Done', !!dp.insuranceCovernoteDone, v => save({ insuranceCovernoteDone: v }))}
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-obsidian-400/20">
+        <span className="text-gray-500 text-xs">Name change:</span>
+        {(['eauto', 'jpj'] as const).map(m => (
+          <button
+            key={m}
+            onClick={() => save({ nameChangeMethod: dp.nameChangeMethod === m ? undefined : m })}
+            className={`px-2 py-0.5 rounded text-xs font-semibold border transition-colors ${dp.nameChangeMethod === m ? 'bg-violet-500/20 text-violet-300 border-violet-500/40' : 'border-obsidian-400/40 text-gray-500 hover:text-gray-300'}`}
+          >{m.toUpperCase()}</button>
+        ))}
+      </div>
+      {stepCheck('Name Change Done', !!dp.nameChangeDone, v => save({ nameChangeDone: v }), dp.nameChangeMethod === 'eauto' ? 'eAuto — seller thumbprint required' : dp.nameChangeMethod === 'jpj' ? 'JPJ — buyer + seller in person' : undefined)}
+
+      <p className="px-4 pt-4 pb-1 text-[10px] text-gray-600 uppercase tracking-widest font-semibold">Delivery & Disbursement</p>
+      {stepCheck('Delivery Order Signed', !!dp.deliveryOrderSigned, v => save({ deliveryOrderSigned: v }))}
+      {dateStep('Documents Submitted', dp.documentsSubmittedDate, v => save({ documentsSubmittedDate: v }), 'Delivery order + B5/B7 sent to bank')}
+      {stepCheck('Disbursement Received', !!dp.disbursementReceived, v => {
+        save({ disbursementReceived: v });
+        updateCar(car.id, { disbursementDate: v ? new Date().toISOString().slice(0, 10) : undefined });
+      })}
+    </>
+  );
+
+  const cashSteps = (
+    <>
+      <p className="px-4 pt-4 pb-1 text-[10px] text-gray-600 uppercase tracking-widest font-semibold">Pre-Delivery</p>
+      {dateStep('Puspakom Booked', dp.puspakomBookedDate, v => save({ puspakomBookedDate: v }), 'Book inspection appointment')}
+      {dateStep('Puspakom Done', dp.puspakomDoneDate, v => save({ puspakomDoneDate: v }), 'B2 / B5 / B7 inspection completed')}
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-obsidian-400/20">
+        <span className="text-gray-500 text-xs">Inspection type:</span>
+        {(['B2', 'B5', 'B7'] as const).map(t => (
+          <button
+            key={t}
+            onClick={() => {
+              const cur = dp.puspakomType ?? [];
+              save({ puspakomType: cur.includes(t) ? cur.filter(x => x !== t) : [...cur, t] });
+            }}
+            className={`px-2 py-0.5 rounded text-xs font-semibold border transition-colors ${dp.puspakomType?.includes(t) ? 'bg-blue-500/20 text-blue-300 border-blue-500/40' : 'border-obsidian-400/40 text-gray-500 hover:text-gray-300'}`}
+          >{t}</button>
+        ))}
+      </div>
+      {stepCheck('Insurance Covernote Done', !!dp.insuranceCovernoteDone, v => save({ insuranceCovernoteDone: v }))}
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-obsidian-400/20">
+        <span className="text-gray-500 text-xs">Name change:</span>
+        {(['eauto', 'jpj'] as const).map(m => (
+          <button
+            key={m}
+            onClick={() => save({ nameChangeMethod: dp.nameChangeMethod === m ? undefined : m })}
+            className={`px-2 py-0.5 rounded text-xs font-semibold border transition-colors ${dp.nameChangeMethod === m ? 'bg-violet-500/20 text-violet-300 border-violet-500/40' : 'border-obsidian-400/40 text-gray-500 hover:text-gray-300'}`}
+          >{m.toUpperCase()}</button>
+        ))}
+      </div>
+      {stepCheck('Name Change Done', !!dp.nameChangeDone, v => save({ nameChangeDone: v }), dp.nameChangeMethod === 'eauto' ? 'eAuto — seller thumbprint required' : dp.nameChangeMethod === 'jpj' ? 'JPJ — buyer + seller in person' : undefined)}
+
+      <p className="px-4 pt-4 pb-1 text-[10px] text-gray-600 uppercase tracking-widest font-semibold">Delivery</p>
+      {stepCheck('Delivery Order Signed', !!dp.deliveryOrderSigned, v => save({ deliveryOrderSigned: v }))}
+      {stepCheck('Full Payment Collected', !!dp.fullPaymentCollected, v => save({ fullPaymentCollected: v }))}
+    </>
+  );
+
+  const totalSteps = isLoan ? 9 : 6;
+  const doneCount = [
+    dp.puspakomBookedDate, dp.puspakomDoneDate, dp.insuranceCovernoteDone,
+    dp.nameChangeDone, dp.deliveryOrderSigned,
+    ...(isLoan ? [dp.ehakRequestedDate, dp.ehakReceivedDate, dp.documentsSubmittedDate, dp.disbursementReceived] : [dp.fullPaymentCollected]),
+  ].filter(Boolean).length;
+  const pct = Math.round((doneCount / totalSteps) * 100);
+
+  return (
+    <div className="max-w-lg mx-auto" style={{ paddingBottom: 'calc(2rem + env(safe-area-inset-bottom, 0px))' }}>
+      {/* Progress bar */}
+      <div className="px-4 pt-4 pb-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-white text-sm font-semibold">{isDelivered ? 'Post-deal progress' : 'Deal progress'}</span>
+          <span className="text-gray-400 text-xs">{doneCount}/{totalSteps} steps</span>
+        </div>
+        <div className="w-full h-2 rounded-full bg-obsidian-600">
+          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: pct === 100 ? '#10b981' : '#f59e0b' }} />
+        </div>
+        <div className="mt-3 flex items-center gap-2">
+          <button
+            onClick={() => updateCar(car.id, { sellerThumbprintSaved: !car.sellerThumbprintSaved })}
+            className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${car.sellerThumbprintSaved ? 'border-emerald-500 bg-emerald-500' : 'border-gray-600 hover:border-amber-400'}`}
+          >
+            {car.sellerThumbprintSaved && <Check size={11} className="text-white" />}
+          </button>
+          <span className="text-gray-400 text-xs">Seller thumbprint saved (eAuto)</span>
+        </div>
+      </div>
+
+      <div className="border-t border-obsidian-400/30">
+        {isLoan ? loanSteps : cashSteps}
+      </div>
     </div>
   );
 }
