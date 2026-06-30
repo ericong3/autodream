@@ -1307,18 +1307,23 @@ export default function Inventory() {
                         />
                       </div>
                       <div className="space-y-1.5 max-h-72 overflow-y-auto">
-                        {cars.filter(c => c.status === 'coming_soon').filter(c => {
+                        {cars.filter(c => c.status === 'coming_soon' || c.shipmentId === assignModal.id).filter(c => {
                           const q = assignSearch.toLowerCase();
                           return !q || `${c.year} ${c.make} ${c.model} ${c.variant ?? ''} ${c.carPlate ?? ''} ${c.colour}`.toLowerCase().includes(q);
                         }).map(car => {
                           const inThisShip = car.shipmentId === assignModal.id;
                           const inOtherShip = car.shipmentId && car.shipmentId !== assignModal.id;
                           const otherShipName = inOtherShip ? shipments.find(s => s.id === car.shipmentId)?.vesselName : null;
+                          const statusLabel = car.status !== 'coming_soon' ? car.status.replace(/_/g, ' ') : null;
                           return (
                             <div key={car.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-obsidian-700/40 border border-obsidian-400/30">
                               <div className="flex-1 min-w-0">
                                 <p className="text-white text-xs font-medium">{car.year} {car.make} {car.model}</p>
-                                <p className="text-gray-500 text-[11px]">{car.colour}{car.carPlate ? ` · ${car.carPlate}` : ''}{inOtherShip ? ` · In: ${otherShipName}` : ''}</p>
+                                <p className="text-gray-500 text-[11px]">
+                                  {car.colour}{car.carPlate ? ` · ${car.carPlate}` : ''}
+                                  {statusLabel && <span className="ml-1 text-amber-400/80">· {statusLabel}</span>}
+                                  {inOtherShip && <span className="ml-1">· In: {otherShipName}</span>}
+                                </p>
                               </div>
                               <button
                                 onClick={() => updateCar(car.id, { shipmentId: inThisShip ? undefined : assignModal.id })}
@@ -1329,11 +1334,11 @@ export default function Inventory() {
                             </div>
                           );
                         })}
-                        {cars.filter(c => c.status === 'coming_soon').filter(c => {
+                        {cars.filter(c => c.status === 'coming_soon' || c.shipmentId === assignModal.id).filter(c => {
                           const q = assignSearch.toLowerCase();
                           return !q || `${c.year} ${c.make} ${c.model} ${c.variant ?? ''} ${c.carPlate ?? ''} ${c.colour}`.toLowerCase().includes(q);
                         }).length === 0 && (
-                          <p className="text-center text-gray-600 text-sm py-6">{assignSearch ? 'No cars match your search' : 'No coming soon cars'}</p>
+                          <p className="text-center text-gray-600 text-sm py-6">{assignSearch ? 'No cars match your search' : 'No cars available'}</p>
                         )}
                       </div>
                       <button onClick={() => { setAssignModal(null); setAssignSearch(''); }} className="w-full mt-4 py-2.5 rounded-xl border border-obsidian-400/60 text-gray-400 text-sm">Done</button>
