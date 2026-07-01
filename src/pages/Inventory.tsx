@@ -239,6 +239,7 @@ export default function Inventory() {
   const [shipmentForm, setShipmentForm] = useState({ vesselName: '', shippingLine: '', originPort: 'Port Klang', destinationPort: 'Port Kuching', etd: '', eta: '', freightCost: '', paymentStatus: 'unpaid' as 'unpaid' | 'paid', notes: '' });
   const [assignModal, setAssignModal] = useState<Shipment | null>(null);
   const [assignSearch, setAssignSearch] = useState('');
+  const [assignSelected, setAssignSelected] = useState<Set<string>>(new Set());
   const [deleteShipmentId, setDeleteShipmentId] = useState<string | null>(null);
 
   const sensors = useSensors(
@@ -1182,7 +1183,7 @@ export default function Inventory() {
                           <div className="border-t border-obsidian-400/30">
                             {isDirector && (
                               <div className="px-4 py-2 flex justify-end border-b border-obsidian-400/20">
-                                <button onClick={() => setAssignModal(ship)} className="flex items-center gap-1 text-xs text-sky-400 hover:text-sky-300 transition-colors">
+                                <button onClick={() => { setAssignModal(ship); setAssignSearch(''); setAssignSelected(new Set(cars.filter(c => c.shipmentId === ship.id).map(c => c.id))); }} className="flex items-center gap-1 text-xs text-sky-400 hover:text-sky-300 transition-colors">
                                   <Plus size={12} />Manage Cars
                                 </button>
                               </div>
@@ -1306,42 +1307,84 @@ export default function Inventory() {
                           autoFocus
                         />
                       </div>
-                      <div className="space-y-1.5 max-h-72 overflow-y-auto">
-                        {cars.filter(c => c.status === 'coming_soon' || c.shipmentId === assignModal.id).filter(c => {
+                      {(() => {
+                        const eligible = cars.filter(c => c.status === 'coming_soon' || c.shipmentId === assignModal.id);
+                        const filtered = eligible.filter(c => {
                           const q = assignSearch.toLowerCase();
                           return !q || `${c.year} ${c.make} ${c.model} ${c.variant ?? ''} ${c.carPlate ?? ''} ${c.colour}`.toLowerCase().includes(q);
-                        }).map(car => {
-                          const inThisShip = car.shipmentId === assignModal.id;
-                          const inOtherShip = car.shipmentId && car.shipmentId !== assignModal.id;
-                          const otherShipName = inOtherShip ? shipments.find(s => s.id === car.shipmentId)?.vesselName : null;
-                          const statusLabel = car.status !== 'coming_soon' ? car.status.replace(/_/g, ' ') : null;
-                          return (
-                            <div key={car.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-obsidian-700/40 border border-obsidian-400/30">
-                              <div className="flex-1 min-w-0">
-                                <p className="text-white text-xs font-medium">{car.year} {car.make} {car.model}</p>
-                                <p className="text-gray-500 text-[11px]">
-                                  {car.colour}{car.carPlate ? ` · ${car.carPlate}` : ''}
-                                  {statusLabel && <span className="ml-1 text-amber-400/80">· {statusLabel}</span>}
-                                  {inOtherShip && <span className="ml-1">· In: {otherShipName}</span>}
-                                </p>
+                        });
+                        const allVisibleSelected = filtered.length > 0 && filtered.every(c => assignSelected.has(c.id));
+                        const addedCount = assignSelected.size;
+                        return (
+                          <>
+                            {filtered.length > 0 && (
+                              <div className="flex items-center gap-2 px-1 mb-2">
+                                <button
+                                  onClick={() => {
+                                    if (allVisibleSelected) {
+                                      setAssignSelected(prev => { const next = new Set(prev); filtered.forEach(c => next.delete(c.id)); return next; });
+                                    } else {
+                                      setAssignSelected(prev => { const next = new Set(prev); filtered.forEach(c => next.add(c.id)); return next; });
+                                    }
+                                  }}
+                                  className="text-xs text-sky-400 hover:text-sky-300 transition-colors"
+                                >
+                                  {allVisibleSelected ? 'Deselect all' : 'Select all'}
+                                </button>
+                                <span className="text-gray-600 text-xs ml-auto">{filtered.length} car{filtered.length !== 1 ? 's' : ''}</span>
                               </div>
+                            )}
+                            <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                              {filtered.map(car => {
+                                const isSelected = assignSelected.has(car.id);
+                                const inOtherShip = car.shipmentId && car.shipmentId !== assignModal.id;
+                                const otherShipName = inOtherShip ? shipments.find(s => s.id === car.shipmentId)?.vesselName : null;
+                                const statusLabel = car.status !== 'coming_soon' ? car.status.replace(/_/g, ' ') : null;
+                                return (
+                                  <div
+                                    key={car.id}
+                                    onClick={() => setAssignSelected(prev => { const next = new Set(prev); isSelected ? next.delete(car.id) : next.add(car.id); return next; })}
+                                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors ${isSelected ? 'bg-sky-500/10 border-sky-500/40' : 'bg-obsidian-700/40 border-obsidian-400/30 hover:border-obsidian-400/60'}`}
+                                  >
+                                    <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${isSelected ? 'bg-sky-500 border-sky-500' : 'border-gray-600'}`}>
+                                      {isSelected && <Check size={10} className="text-white" />}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-white text-xs font-medium">{car.year} {car.make} {car.model}</p>
+                                      <p className="text-gray-500 text-[11px]">
+                                        {car.colour}{car.carPlate ? ` · ${car.carPlate}` : ''}
+                                        {statusLabel && <span className="text-amber-400/80"> · {statusLabel}</span>}
+                                        {inOtherShip && <span className="text-orange-400/80"> · In: {otherShipName}</span>}
+                                      </p>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                              {filtered.length === 0 && (
+                                <p className="text-center text-gray-600 text-sm py-6">{assignSearch ? 'No cars match your search' : 'No cars available'}</p>
+                              )}
+                            </div>
+                            <div className="flex gap-2 mt-4">
+                              <button onClick={() => { setAssignModal(null); setAssignSearch(''); }} className="flex-1 py-2.5 rounded-xl border border-obsidian-400/60 text-gray-400 text-sm">Cancel</button>
                               <button
-                                onClick={() => updateCar(car.id, { shipmentId: inThisShip ? undefined : assignModal.id })}
-                                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${inThisShip ? 'bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25' : 'bg-sky-500/15 text-sky-400 border border-sky-500/30 hover:bg-sky-500/25'}`}
+                                onClick={async () => {
+                                  const originalIds = new Set(eligible.map(c => c.id).filter(id => cars.find(c => c.id === id)?.shipmentId === assignModal!.id));
+                                  const toAdd = [...assignSelected].filter(id => !originalIds.has(id));
+                                  const toRemove = [...originalIds].filter(id => !assignSelected.has(id));
+                                  await Promise.all([
+                                    ...toAdd.map(id => updateCar(id, { shipmentId: assignModal!.id })),
+                                    ...toRemove.map(id => updateCar(id, { shipmentId: undefined })),
+                                  ]);
+                                  setAssignModal(null); setAssignSearch('');
+                                }}
+                                className="flex-1 py-2.5 rounded-xl btn-gold text-sm font-semibold"
                               >
-                                {inThisShip ? 'Remove' : 'Add'}
+                                Save{addedCount > 0 ? ` (${addedCount})` : ''}
                               </button>
                             </div>
-                          );
-                        })}
-                        {cars.filter(c => c.status === 'coming_soon' || c.shipmentId === assignModal.id).filter(c => {
-                          const q = assignSearch.toLowerCase();
-                          return !q || `${c.year} ${c.make} ${c.model} ${c.variant ?? ''} ${c.carPlate ?? ''} ${c.colour}`.toLowerCase().includes(q);
-                        }).length === 0 && (
-                          <p className="text-center text-gray-600 text-sm py-6">{assignSearch ? 'No cars match your search' : 'No cars available'}</p>
-                        )}
-                      </div>
-                      <button onClick={() => { setAssignModal(null); setAssignSearch(''); }} className="w-full mt-4 py-2.5 rounded-xl border border-obsidian-400/60 text-gray-400 text-sm">Done</button>
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>,
                   document.body
