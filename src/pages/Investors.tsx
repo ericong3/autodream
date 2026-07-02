@@ -3,11 +3,12 @@ import { thumbUrl } from '../utils/photoUrl';
 import {
   Users, Plus, ChevronDown, ChevronUp, Car as CarIcon,
   Package, CheckCircle2, Edit2, X, Eye, EyeOff,
-  Building2, ArrowDownToLine, ArrowUpFromLine,
+  Building2, ArrowDownToLine, ArrowUpFromLine, Trash2,
+  Wallet, ArrowUpCircle, ArrowDownCircle, Clock, Check, XCircle, Send,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { formatRM, generateId } from '../utils/format';
-import { User, Car } from '../types';
+import { User, Car, InvestorTransaction } from '../types';
 
 const STATUS_LABEL: Record<Car['status'], string> = {
   coming_soon: 'Coming Soon', in_workshop: 'In Workshop', ready: 'Ready',
@@ -26,6 +27,11 @@ export default function Investors() {
   const customers = useStore((s) => s.customers);
   const addUser = useStore((s) => s.addUser);
   const updateUser = useStore((s) => s.updateUser);
+  const deleteUser = useStore((s) => s.deleteUser);
+  const investorTransactions = useStore((s) => s.investorTransactions);
+  const addInvestorTransaction = useStore((s) => s.addInvestorTransaction);
+  const updateInvestorTransaction = useStore((s) => s.updateInvestorTransaction);
+  const currentUser = useStore((s) => s.currentUser);
 
   const [activeTab, setActiveTab] = useState<'investors' | 'consignment'>('investors');
   const [investorView, setInvestorView] = useState<'all' | 'by_investor'>('all');
@@ -35,11 +41,15 @@ export default function Investors() {
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState(emptyInvestorForm);
   const [showPass, setShowPass] = useState(false);
-  const [editingCapital, setEditingCapital] = useState<{ id: string; value: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [editingPassword, setEditingPassword] = useState<{ id: string; value: string } | null>(null);
   const [showResetPw, setShowResetPw] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [showTopUp, setShowTopUp] = useState<string | null>(null);
+  const [topUpAmount, setTopUpAmount] = useState('');
+  const [topUpDate, setTopUpDate] = useState(new Date().toISOString().slice(0, 10));
+  const [approvalModal, setApprovalModal] = useState<{ txn: InvestorTransaction; months: number } | null>(null);
 
   const investors = useMemo(
     () => users.filter((u) => u.role === 'investor'),
@@ -62,7 +72,7 @@ export default function Investors() {
       : car.finalDeal?.dealPrice ?? car.sellingPrice;
     const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
     const profitBeforeComm = dealPrice - car.purchasePrice - repairCost - miscCost - additionalTotal;
-    const commission = car.outgoingConsignment ? 0 : (car.priceFloor != null && dealPrice < car.priceFloor) ? 1000 : 1500;
+    const commission = (car.outgoingConsignment || car.isStaffSale) ? 0 : (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
     const netProfit = profitBeforeComm - commission;
     return { car, repairCost, miscCost, additionalTotal, commission, dealPrice, netProfit, myShare: netProfit * split, split, customer };
   };
@@ -73,11 +83,22 @@ export default function Investors() {
       const active = myCars.filter((c) => c.status !== 'delivered');
       const realized = myCars.filter((c) => c.status === 'delivered');
       const deployed = active.reduce((s, c) => s + c.purchasePrice, 0);
-      const available = (inv.capitalAmount ?? 0) - deployed;
+      const txns = investorTransactions.filter(t => t.investorId === inv.id);
+      const buyIn = txns.find(t => t.type === 'buy_in')?.amount ?? inv.capitalAmount ?? 0;
+      let totalCapital = 0;
+      for (const t of txns) {
+        if (t.type === 'buy_in' || t.type === 'top_up') totalCapital += t.amount;
+        if (t.type === 'withdrawal' && t.status === 'transferred') totalCapital -= t.amount;
+      }
+      if (txns.length === 0) totalCapital = inv.capitalAmount ?? 0;
+      const onHold = txns
+        .filter(t => t.type === 'withdrawal' && ['pending', 'approved'].includes(t.status))
+        .reduce((s, t) => s + t.amount, 0);
+      const available = totalCapital - deployed - onHold;
       const realizedProfit = realized.map(getCarData).reduce((s, d) => s + d.myShare, 0);
-      return { inv, myCars, active, realized, deployed, available, realizedProfit };
+      return { inv, myCars, active, realized, deployed, available, realizedProfit, totalCapital, buyIn, onHold, txns };
     });
-  }, [investors, cars, repairs, customers]);
+  }, [investors, cars, repairs, customers, investorTransactions]);
 
   const handleAddInvestor = async () => {
     if (!form.name.trim() || !form.username.trim() || !form.password.trim()) return;
@@ -96,6 +117,16 @@ export default function Investors() {
     };
     try {
       await addUser(newUser);
+      if (form.capitalAmount > 0) {
+        await addInvestorTransaction({
+          id: generateId(),
+          investorId: newUser.id,
+          type: 'buy_in',
+          amount: form.capitalAmount,
+          status: 'completed',
+          createdAt: new Date().toISOString(),
+        });
+      }
       setForm(emptyInvestorForm);
       setShowAdd(false);
     } catch (e: any) {
@@ -105,10 +136,57 @@ export default function Investors() {
     }
   };
 
-  const handleSaveCapital = async (invId: string) => {
-    if (!editingCapital) return;
-    await updateUser(invId, { capitalAmount: Number(editingCapital.value) });
-    setEditingCapital(null);
+  const handleTopUp = async (invId: string) => {
+    const amt = Number(topUpAmount);
+    if (!amt || amt <= 0) return;
+    setSaving(true);
+    try {
+      await addInvestorTransaction({
+        id: generateId(),
+        investorId: invId,
+        type: 'top_up',
+        amount: amt,
+        status: 'completed',
+        createdAt: new Date(topUpDate + 'T00:00:00').toISOString(),
+      });
+      await updateUser(invId, { capitalAmount: (investors.find(i => i.id === invId)?.capitalAmount ?? 0) + amt });
+      setShowTopUp(null);
+      setTopUpAmount('');
+      setTopUpDate(new Date().toISOString().slice(0, 10));
+    } catch (e: any) {
+      setSaveError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleApproveWithdrawal = async (txnId: string, months: number) => {
+    const now = new Date();
+    const dueDate = new Date(now);
+    dueDate.setMonth(dueDate.getMonth() + months);
+    await updateInvestorTransaction(txnId, {
+      status: 'approved',
+      approvedAt: now.toISOString(),
+      approvedBy: currentUser?.id,
+      waitingMonths: months,
+      dueDate: dueDate.toISOString(),
+    });
+    setApprovalModal(null);
+  };
+
+  const handleRejectWithdrawal = async (txnId: string) => {
+    await updateInvestorTransaction(txnId, {
+      status: 'rejected',
+      rejectedBy: currentUser?.id,
+      rejectedAt: new Date().toISOString(),
+    });
+  };
+
+  const handleMarkTransferred = async (txn: InvestorTransaction) => {
+    await updateInvestorTransaction(txn.id, { status: 'transferred' });
+    await updateUser(txn.investorId, {
+      capitalAmount: Math.max(0, (investors.find(i => i.id === txn.investorId)?.capitalAmount ?? 0) - txn.amount),
+    });
   };
 
   const handleSavePassword = async (invId: string) => {
@@ -219,7 +297,7 @@ export default function Investors() {
             </div>
             <div>
               <label className="text-gray-400 text-xs block mb-1">Username (login)</label>
-              <input className="input w-full px-3 py-2 rounded-lg text-sm" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="investor_username" autoCapitalize="none" />
+              <input className="input w-full px-3 py-2 rounded-lg text-sm" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="investor_username" autoCapitalize="none" autoComplete="username" />
             </div>
             <div>
               <label className="text-gray-400 text-xs block mb-1">Password</label>
@@ -231,6 +309,7 @@ export default function Investors() {
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                   placeholder="••••••••"
                   autoCapitalize="none"
+                  autoComplete="new-password"
                   autoCorrect="off"
                   spellCheck={false}
                 />
@@ -335,9 +414,10 @@ export default function Investors() {
       )}
 
       {/* Investor cards */}
-      {investorStats.map(({ inv, myCars, active, realized, deployed, available, realizedProfit }) => {
+      {investorStats.map(({ inv, myCars, active, realized, deployed, available, realizedProfit, totalCapital, buyIn, onHold, txns }) => {
 
         const isExpanded = expanded === inv.id;
+        const pendingWithdrawal = txns.find(t => t.type === 'withdrawal' && ['pending', 'approved'].includes(t.status));
         return (
           <div key={inv.id} className="bg-card-gradient border border-obsidian-400/70 rounded-xl overflow-hidden">
             {/* Header row */}
@@ -356,7 +436,7 @@ export default function Investors() {
               <div className="hidden sm:flex items-center gap-6 text-right">
                 <div>
                   <p className="text-gray-600 text-[10px] uppercase tracking-wide">Capital</p>
-                  <p className="text-white font-semibold text-sm">{formatRM(inv.capitalAmount ?? 0)}</p>
+                  <p className="text-white font-semibold text-sm">{formatRM(totalCapital)}</p>
                 </div>
                 <div>
                   <p className="text-gray-600 text-[10px] uppercase tracking-wide">Deployed</p>
@@ -366,6 +446,12 @@ export default function Investors() {
                   <p className="text-gray-600 text-[10px] uppercase tracking-wide">Available</p>
                   <p className={`font-semibold text-sm ${available >= 0 ? 'text-green-400' : 'text-red-400'}`}>{formatRM(available)}</p>
                 </div>
+                {onHold > 0 && (
+                  <div>
+                    <p className="text-gray-600 text-[10px] uppercase tracking-wide">On Hold</p>
+                    <p className="text-orange-400 font-semibold text-sm">{formatRM(onHold)}</p>
+                  </div>
+                )}
                 <div>
                   <p className="text-gray-600 text-[10px] uppercase tracking-wide">Realized P&amp;L</p>
                   <p className={`font-semibold text-sm ${realizedProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatRM(realizedProfit)}</p>
@@ -378,29 +464,169 @@ export default function Investors() {
             <div className={`grid transition-all duration-300 ease-in-out ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
               <div className="overflow-hidden">
               <div className="border-t border-obsidian-400/40 p-5 space-y-5">
-                {/* Capital editor */}
-                <div className="flex items-center gap-3">
-                  <p className="text-gray-400 text-xs">Capital:</p>
-                  {editingCapital?.id === inv.id ? (
+                {/* ── Wallet Card ── */}
+                <div className="bg-gradient-to-br from-obsidian-800/80 to-obsidian-900/60 border border-gold-500/20 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        className="input px-2 py-1 rounded-lg text-sm w-36"
-                        value={editingCapital.value}
-                        onChange={(e) => setEditingCapital({ id: inv.id, value: e.target.value })}
-                      />
-                      <button onClick={() => handleSaveCapital(inv.id)} className="px-3 py-1 text-xs btn-gold rounded-lg">Save</button>
-                      <button onClick={() => setEditingCapital(null)} className="px-3 py-1 text-xs text-gray-400 border border-obsidian-400/60 rounded-lg">Cancel</button>
+                      <Wallet size={15} className="text-gold-400" />
+                      <span className="text-gold-300 text-xs font-semibold uppercase tracking-wider">Wallet</span>
                     </div>
-                  ) : (
-                    <button
-                      onClick={() => setEditingCapital({ id: inv.id, value: String(inv.capitalAmount ?? 0) })}
-                      className="flex items-center gap-1.5 text-white font-semibold text-sm hover:text-gold-400 transition-colors"
-                    >
-                      {formatRM(inv.capitalAmount ?? 0)} <Edit2 size={11} className="text-gray-500" />
-                    </button>
-                  )}
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => { setShowTopUp(inv.id); setTopUpAmount(''); setTopUpDate(new Date().toISOString().slice(0, 10)); }}
+                        className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/20 transition-colors"
+                      >
+                        <ArrowDownCircle size={12} /> Top Up
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Wallet stats grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="bg-obsidian-800/60 rounded-lg p-2.5">
+                      <p className="text-gray-600 text-[10px] uppercase tracking-wide">Total Capital</p>
+                      <p className="text-white font-bold text-sm mt-0.5">{formatRM(totalCapital)}</p>
+                      <p className="text-gray-600 text-[9px] mt-0.5">Buy-in: {formatRM(buyIn)}</p>
+                    </div>
+                    <div className="bg-obsidian-800/60 rounded-lg p-2.5">
+                      <p className="text-amber-400/80 text-[10px] uppercase tracking-wide">Deployed</p>
+                      <p className="text-amber-400 font-bold text-sm mt-0.5">{formatRM(deployed)}</p>
+                      <p className="text-gray-600 text-[9px] mt-0.5">{active.length} active car{active.length !== 1 ? 's' : ''}</p>
+                    </div>
+                    <div className="bg-obsidian-800/60 rounded-lg p-2.5">
+                      <p className={`text-[10px] uppercase tracking-wide ${available >= 0 ? 'text-green-400/80' : 'text-red-400/80'}`}>Available</p>
+                      <p className={`font-bold text-sm mt-0.5 ${available >= 0 ? 'text-green-400' : 'text-red-400'}`}>{formatRM(available)}</p>
+                      {onHold > 0 && <p className="text-orange-400 text-[9px] mt-0.5">On hold: {formatRM(onHold)}</p>}
+                    </div>
+                    <div className="bg-obsidian-800/60 rounded-lg p-2.5">
+                      <p className="text-gray-500 text-[10px] uppercase tracking-wide">Realized P&amp;L</p>
+                      <p className={`font-bold text-sm mt-0.5 ${realizedProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatRM(realizedProfit)}</p>
+                      <p className="text-gray-600 text-[9px] mt-0.5">{realized.length} sold</p>
+                    </div>
+                  </div>
                 </div>
+
+                {/* Top-up form */}
+                {showTopUp === inv.id && (
+                  <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 space-y-3">
+                    <p className="text-emerald-400 text-xs font-semibold">Top Up Capital</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-gray-400 text-[10px] block mb-1">Amount (RM)</label>
+                        <input type="number" className="input w-full px-3 py-2 rounded-lg text-sm" value={topUpAmount} onChange={e => setTopUpAmount(e.target.value)} placeholder="e.g. 150000" />
+                      </div>
+                      <div>
+                        <label className="text-gray-400 text-[10px] block mb-1">Date</label>
+                        <input type="date" className="input w-full px-3 py-2 rounded-lg text-sm" value={topUpDate} onChange={e => setTopUpDate(e.target.value)} />
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <button onClick={() => setShowTopUp(null)} className="px-3 py-1.5 text-xs text-gray-400 border border-obsidian-400/60 rounded-lg">Cancel</button>
+                      <button onClick={() => handleTopUp(inv.id)} disabled={saving || !topUpAmount || Number(topUpAmount) <= 0} className="px-3 py-1.5 text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg disabled:opacity-40">
+                        {saving ? 'Saving...' : 'Confirm Top Up'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Pending withdrawal action */}
+                {pendingWithdrawal && (
+                  <div className={`border rounded-xl p-4 space-y-3 ${
+                    pendingWithdrawal.status === 'pending'
+                      ? 'bg-orange-500/5 border-orange-500/20'
+                      : 'bg-blue-500/5 border-blue-500/20'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Clock size={14} className={pendingWithdrawal.status === 'pending' ? 'text-orange-400' : 'text-blue-400'} />
+                        <span className={`text-xs font-semibold ${pendingWithdrawal.status === 'pending' ? 'text-orange-400' : 'text-blue-400'}`}>
+                          {pendingWithdrawal.status === 'pending' ? 'Withdrawal Request' : 'Withdrawal Approved — Waiting'}
+                        </span>
+                      </div>
+                      <span className="text-white font-bold text-sm">{formatRM(pendingWithdrawal.amount)}</span>
+                    </div>
+                    {pendingWithdrawal.status === 'pending' && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-gray-400 text-xs">Submitted {new Date(pendingWithdrawal.createdAt).toLocaleDateString()}</span>
+                        <div className="flex-1" />
+                        <button
+                          onClick={() => setApprovalModal({ txn: pendingWithdrawal, months: 3 })}
+                          className="flex items-center gap-1 px-3 py-1.5 text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg hover:bg-emerald-500/30 transition-colors"
+                        >
+                          <Check size={12} /> Approve
+                        </button>
+                        <button
+                          onClick={() => handleRejectWithdrawal(pendingWithdrawal.id)}
+                          className="flex items-center gap-1 px-3 py-1.5 text-xs bg-red-500/10 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/20 transition-colors"
+                        >
+                          <XCircle size={12} /> Reject
+                        </button>
+                      </div>
+                    )}
+                    {pendingWithdrawal.status === 'approved' && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="text-gray-400 text-xs space-y-0.5">
+                          <p>Approved {pendingWithdrawal.approvedAt ? new Date(pendingWithdrawal.approvedAt).toLocaleDateString() : ''} · {pendingWithdrawal.waitingMonths} months</p>
+                          <p>Due: <span className="text-white font-medium">{pendingWithdrawal.dueDate ? new Date(pendingWithdrawal.dueDate).toLocaleDateString() : '—'}</span></p>
+                        </div>
+                        <div className="flex-1" />
+                        <button
+                          onClick={() => handleMarkTransferred(pendingWithdrawal)}
+                          className="flex items-center gap-1 px-3 py-1.5 text-xs bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg hover:bg-blue-500/30 transition-colors"
+                        >
+                          <Send size={12} /> Mark Transferred
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Transaction history */}
+                {txns.length > 0 && (
+                  <div>
+                    <p className="text-gray-500 text-xs font-semibold uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                      <Wallet size={11} /> Transaction History
+                    </p>
+                    <div className="bg-obsidian-800/60 border border-obsidian-400/40 rounded-xl divide-y divide-obsidian-400/30">
+                      {[...txns].reverse().map(t => (
+                        <div key={t.id} className="flex items-center gap-3 px-4 py-2.5">
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
+                            t.type === 'buy_in' ? 'bg-gold-500/20' :
+                            t.type === 'top_up' ? 'bg-emerald-500/20' :
+                            'bg-red-500/20'
+                          }`}>
+                            {t.type === 'buy_in' && <Wallet size={13} className="text-gold-400" />}
+                            {t.type === 'top_up' && <ArrowDownCircle size={13} className="text-emerald-400" />}
+                            {t.type === 'withdrawal' && <ArrowUpCircle size={13} className="text-red-400" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-white text-sm font-medium">
+                              {t.type === 'buy_in' ? 'Buy-in' : t.type === 'top_up' ? 'Top Up' : 'Withdrawal'}
+                            </p>
+                            <p className="text-gray-600 text-[10px]">
+                              {new Date(t.createdAt).toLocaleDateString()}
+                              {t.type === 'withdrawal' && t.status !== 'completed' && (
+                                <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-semibold ${
+                                  t.status === 'pending' ? 'bg-orange-500/20 text-orange-400' :
+                                  t.status === 'approved' ? 'bg-blue-500/20 text-blue-400' :
+                                  t.status === 'rejected' ? 'bg-red-500/20 text-red-400' :
+                                  'bg-emerald-500/20 text-emerald-400'
+                                }`}>
+                                  {t.status === 'transferred' ? 'Transferred' : t.status.charAt(0).toUpperCase() + t.status.slice(1)}
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                          <p className={`text-sm font-semibold shrink-0 ${
+                            t.type === 'withdrawal' ? 'text-red-400' : 'text-emerald-400'
+                          }`}>
+                            {t.type === 'withdrawal' ? '-' : '+'}{formatRM(t.amount)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Password reset */}
                 <div className="flex items-center gap-3">
@@ -440,18 +666,29 @@ export default function Investors() {
                   )}
                 </div>
 
-                {/* Mobile quick stats */}
-                <div className="sm:hidden grid grid-cols-3 gap-3">
-                  {[
-                    { label: 'Deployed', value: formatRM(deployed), cls: 'text-amber-400' },
-                    { label: 'Available', value: formatRM(available), cls: available >= 0 ? 'text-green-400' : 'text-red-400' },
-                    { label: 'Realized P&L', value: formatRM(realizedProfit), cls: realizedProfit >= 0 ? 'text-emerald-400' : 'text-red-400' },
-                  ].map(({ label, value, cls }) => (
-                    <div key={label} className="bg-obsidian-800/60 rounded-lg p-3">
-                      <p className="text-gray-600 text-[10px] uppercase tracking-wide">{label}</p>
-                      <p className={`font-semibold text-sm mt-0.5 ${cls}`}>{value}</p>
+                {/* Delete account */}
+                <div className="flex items-center gap-3">
+                  {confirmDelete === inv.id ? (
+                    <div className="flex items-center gap-2">
+                      <p className="text-red-400 text-xs">
+                        {myCars.length > 0
+                          ? `This investor has ${myCars.length} car(s). Delete anyway?`
+                          : 'Delete this investor account?'}
+                      </p>
+                      <button
+                        onClick={async () => { await deleteUser(inv.id); setConfirmDelete(null); setExpanded(null); }}
+                        className="px-3 py-1 text-xs bg-red-500/20 text-red-400 border border-red-500/40 rounded-lg hover:bg-red-500/30 transition-colors"
+                      >Confirm Delete</button>
+                      <button onClick={() => setConfirmDelete(null)} className="px-3 py-1 text-xs text-gray-400 border border-obsidian-400/60 rounded-lg">Cancel</button>
                     </div>
-                  ))}
+                  ) : (
+                    <button
+                      onClick={() => setConfirmDelete(inv.id)}
+                      className="flex items-center gap-1.5 text-gray-600 text-xs hover:text-red-400 transition-colors"
+                    >
+                      <Trash2 size={12} /> Delete Account
+                    </button>
+                  )}
                 </div>
 
                 {/* Active cars */}
@@ -799,6 +1036,52 @@ export default function Investors() {
             </div>
           )}
 
+        </div>
+      )}
+
+      {/* Approval modal */}
+      {approvalModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setApprovalModal(null)}>
+          <div className="bg-obsidian-800 border border-obsidian-400/60 rounded-xl p-5 w-full max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
+            <h3 className="text-white font-semibold text-sm">Approve Withdrawal</h3>
+            <p className="text-gray-400 text-xs">
+              {investors.find(i => i.id === approvalModal.txn.investorId)?.name} wants to withdraw <span className="text-white font-medium">{formatRM(approvalModal.txn.amount)}</span>
+            </p>
+            <div>
+              <label className="text-gray-400 text-[10px] block mb-1.5">Waiting Period</label>
+              <div className="flex gap-2">
+                {[3, 6].map(m => (
+                  <button
+                    key={m}
+                    onClick={() => setApprovalModal({ ...approvalModal, months: m })}
+                    className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition-colors ${
+                      approvalModal.months === m
+                        ? 'bg-gold-500/20 text-gold-300 border-gold-500/30'
+                        : 'text-gray-400 border-obsidian-400/40 hover:text-white'
+                    }`}
+                  >
+                    {m} Months
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="text-gray-500 text-[10px]">
+              Due date: {(() => {
+                const d = new Date();
+                d.setMonth(d.getMonth() + approvalModal.months);
+                return d.toLocaleDateString();
+              })()}
+            </p>
+            <div className="flex justify-end gap-2 pt-1">
+              <button onClick={() => setApprovalModal(null)} className="px-4 py-2 text-sm text-gray-400 border border-obsidian-400/60 rounded-lg">Cancel</button>
+              <button
+                onClick={() => handleApproveWithdrawal(approvalModal.txn.id, approvalModal.months)}
+                className="px-4 py-2 text-sm btn-gold rounded-lg"
+              >
+                Approve
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

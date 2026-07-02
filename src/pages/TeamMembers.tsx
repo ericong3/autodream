@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Edit, Trash2, Users, AlertCircle, Shield, UserCheck, Wrench, Phone, Mail, AtSign, Car, TrendingUp, Target, Award, X, KeyRound } from 'lucide-react';
+import { Plus, Edit, Trash2, Users, AlertCircle, Shield, UserCheck, Wrench, Phone, Mail, AtSign, Car, TrendingUp, Target, Award, X, KeyRound, CreditCard, Save } from 'lucide-react';
 import { useStore } from '../store';
 import { User } from '../types';
 import Modal from '../components/Modal';
@@ -43,6 +43,9 @@ const emptyForm = {
   phone: '',
   role: 'salesperson' as User['role'],
   monthlyTarget: 4,
+  bankName: '',
+  bankAccountNumber: '',
+  bankAccountHolder: '',
 };
 
 const ROLE_CONFIG = {
@@ -75,9 +78,21 @@ const ROLE_CONFIG = {
 function EmployeeDetailModal({ member, onClose, currentUserId }: { member: User; onClose: () => void; currentUserId?: string }) {
   const cars = useStore((s) => s.cars);
   const customers = useStore((s) => s.customers);
+  const updateUser = useStore((s) => s.updateUser);
 
   const cfg = ROLE_CONFIG[member.role as keyof typeof ROLE_CONFIG];
   const isSelf = member.id === currentUserId;
+
+  const [editMode, setEditMode] = useState(false);
+  const [selfForm, setSelfForm] = useState({
+    phone: member.phone ?? '',
+    email: member.email ?? '',
+    bio: member.bio ?? '',
+    bankName: member.bankName ?? '',
+    bankAccountNumber: member.bankAccountNumber ?? '',
+    bankAccountHolder: member.bankAccountHolder ?? '',
+  });
+  const [saving, setSaving] = useState(false);
 
   const getDealSalespersonId = (car: typeof cars[0]): string | undefined => {
     const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
@@ -91,7 +106,7 @@ function EmployeeDetailModal({ member, onClose, currentUserId }: { member: User;
     const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
     const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
     const dealPrice = (wo?.sellingPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
-    if (car.priceFloor != null && dealPrice < car.priceFloor) return 1000;
+    if (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) return 1000;
     return 1500;
   };
 
@@ -163,28 +178,109 @@ function EmployeeDetailModal({ member, onClose, currentUserId }: { member: User;
               </div>
             </div>
 
-            {/* Bio */}
-            {member.bio && (
-              <p className="mt-3 text-gray-400 text-sm italic leading-snug">{member.bio}</p>
-            )}
+            {!editMode ? (
+              <>
+                {/* Bio */}
+                {member.bio && (
+                  <p className="mt-3 text-gray-400 text-sm italic leading-snug">{member.bio}</p>
+                )}
 
-            {/* Contact info */}
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <div className="flex items-center gap-2">
-                <AtSign size={13} className="text-gray-500 shrink-0" />
-                <span className="text-gray-400 text-sm truncate">@{member.username}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Phone size={13} className="text-gray-500 shrink-0" />
-                <span className="text-gray-400 text-sm truncate">{member.phone || '—'}</span>
-              </div>
-              {member.email && (
-                <div className="flex items-center gap-2 col-span-2">
-                  <Mail size={13} className="text-gray-500 shrink-0" />
-                  <span className="text-gray-400 text-sm truncate">{member.email}</span>
+                {/* Contact info */}
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div className="flex items-center gap-2">
+                    <AtSign size={13} className="text-gray-500 shrink-0" />
+                    <span className="text-gray-400 text-sm truncate">@{member.username}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Phone size={13} className="text-gray-500 shrink-0" />
+                    <span className="text-gray-400 text-sm truncate">{member.phone || '—'}</span>
+                  </div>
+                  {member.email && (
+                    <div className="flex items-center gap-2 col-span-2">
+                      <Mail size={13} className="text-gray-500 shrink-0" />
+                      <span className="text-gray-400 text-sm truncate">{member.email}</span>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+
+                {/* Bank details (read-only) */}
+                {(member.bankName || member.bankAccountNumber) && (
+                  <div className="mt-3 flex items-center gap-2">
+                    <CreditCard size={13} className="text-gold-400 shrink-0" />
+                    <span className="text-gray-400 text-sm">{member.bankName} · {member.bankAccountNumber}</span>
+                  </div>
+                )}
+
+                {/* Edit own profile button */}
+                {isSelf && (
+                  <button
+                    onClick={() => setEditMode(true)}
+                    className="mt-4 w-full flex items-center justify-center gap-2 py-2 text-xs text-gray-400 border border-obsidian-400/50 rounded-lg hover:text-white hover:border-gray-500 transition-colors"
+                  >
+                    <Edit size={12} /> Edit My Profile
+                  </button>
+                )}
+              </>
+            ) : (
+              /* ── Self-edit form ── */
+              <div className="mt-4 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-gray-400 text-xs mb-1">Phone</label>
+                    <input className={inputCls()} value={selfForm.phone} onChange={e => setSelfForm({ ...selfForm, phone: e.target.value })} placeholder="+601X-XXXXXXX" />
+                  </div>
+                  <div>
+                    <label className="block text-gray-400 text-xs mb-1">Email</label>
+                    <input className={inputCls()} type="email" value={selfForm.email} onChange={e => setSelfForm({ ...selfForm, email: e.target.value })} placeholder="your@email.com" autoCapitalize="none" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-gray-400 text-xs mb-1">Bio</label>
+                    <textarea className={`${inputCls()} h-16 resize-none`} value={selfForm.bio} onChange={e => setSelfForm({ ...selfForm, bio: e.target.value })} placeholder="Short intro..." />
+                  </div>
+                </div>
+
+                <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wider flex items-center gap-1.5 pt-1">
+                  <CreditCard size={10} className="text-gold-400" /> Bank Details
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-gray-400 text-xs mb-1">Bank Name</label>
+                    <input className={inputCls()} placeholder="e.g. Maybank" value={selfForm.bankName} onChange={e => setSelfForm({ ...selfForm, bankName: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-gray-400 text-xs mb-1">Account Number</label>
+                    <input className={inputCls()} placeholder="e.g. 1234567890" value={selfForm.bankAccountNumber} onChange={e => setSelfForm({ ...selfForm, bankAccountNumber: e.target.value })} />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-gray-400 text-xs mb-1">Account Holder Name</label>
+                    <input className={inputCls()} placeholder="Full name as per bank" value={selfForm.bankAccountHolder} onChange={e => setSelfForm({ ...selfForm, bankAccountHolder: e.target.value })} />
+                  </div>
+                </div>
+
+                <div className="flex gap-2 pt-1">
+                  <button onClick={() => setEditMode(false)} className="flex-1 py-2 text-xs btn-ghost rounded-lg">Cancel</button>
+                  <button
+                    disabled={saving}
+                    onClick={async () => {
+                      setSaving(true);
+                      await updateUser(member.id, {
+                        phone: selfForm.phone || member.phone,
+                        email: selfForm.email || undefined,
+                        bio: selfForm.bio || undefined,
+                        bankName: selfForm.bankName || undefined,
+                        bankAccountNumber: selfForm.bankAccountNumber || undefined,
+                        bankAccountHolder: selfForm.bankAccountHolder || undefined,
+                      });
+                      setSaving(false);
+                      setEditMode(false);
+                    }}
+                    className="flex-1 btn-gold py-2 rounded-lg text-xs flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    <Save size={12} /> {saving ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Salesperson stats */}
@@ -299,7 +395,7 @@ export default function TeamMembers() {
     const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
     const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
     const dealPrice = (wo?.sellingPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
-    if (car.priceFloor != null && dealPrice < car.priceFloor) return 1000;
+    if (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) return 1000;
     return 1500;
   };
 
@@ -350,6 +446,9 @@ export default function TeamMembers() {
         phone: form.phone,
         role: form.role,
         monthlyTarget: form.role === 'salesperson' ? form.monthlyTarget : target.monthlyTarget,
+        bankName: form.bankName || undefined,
+        bankAccountNumber: form.bankAccountNumber || undefined,
+        bankAccountHolder: form.bankAccountHolder || undefined,
         ...(form.password ? { password: form.password } : {}),
       });
     } else {
@@ -362,6 +461,9 @@ export default function TeamMembers() {
         phone: form.phone,
         monthlyTarget: form.role === 'salesperson' ? form.monthlyTarget : 0,
         carsInMonth: 0,
+        bankName: form.bankName || undefined,
+        bankAccountNumber: form.bankAccountNumber || undefined,
+        bankAccountHolder: form.bankAccountHolder || undefined,
       });
     }
   };
@@ -375,6 +477,9 @@ export default function TeamMembers() {
       phone: user.phone,
       role: user.role,
       monthlyTarget: user.monthlyTarget || 4,
+      bankName: user.bankName ?? '',
+      bankAccountNumber: user.bankAccountNumber ?? '',
+      bankAccountHolder: user.bankAccountHolder ?? '',
     });
     setErrors({});
     setShowModal(true);
@@ -667,6 +772,41 @@ export default function TeamMembers() {
               placeholder="+601X-XXXXXXX"
             />
           </FormField>
+
+          {/* Bank details */}
+          <div className="pt-1">
+            <p className="text-gray-500 text-xs font-semibold uppercase tracking-wider mb-3 flex items-center gap-1.5">
+              <KeyRound size={11} className="text-gold-400" /> Bank Details (for commission transfer)
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <FormField label="Bank Name">
+                <input
+                  className={inputCls()}
+                  placeholder="e.g. Maybank"
+                  value={form.bankName}
+                  onChange={(e) => setForm({ ...form, bankName: e.target.value })}
+                />
+              </FormField>
+              <FormField label="Account Number">
+                <input
+                  className={inputCls()}
+                  placeholder="e.g. 1234567890"
+                  value={form.bankAccountNumber}
+                  onChange={(e) => setForm({ ...form, bankAccountNumber: e.target.value })}
+                />
+              </FormField>
+              <div className="col-span-2">
+                <FormField label="Account Holder Name">
+                  <input
+                    className={inputCls()}
+                    placeholder="Full name as per bank"
+                    value={form.bankAccountHolder}
+                    onChange={(e) => setForm({ ...form, bankAccountHolder: e.target.value })}
+                  />
+                </FormField>
+              </div>
+            </div>
+          </div>
 
           {/* Role selector */}
           <FormField label="Role">

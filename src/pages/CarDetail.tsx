@@ -328,7 +328,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     if (!files || !car) return;
     setPhotoUploading(true);
     try {
-      const urls = await Promise.all(Array.from(files).map((f) => uploadToStorage(f, 'cars')));
+      const filesToUpload = car.consignment ? Array.from(files).slice(0, 1 - allPhotos.length) : Array.from(files);
+      if (filesToUpload.length === 0) return;
+      const urls = await Promise.all(filesToUpload.map((f) => uploadToStorage(f, 'cars')));
       const updated = [...allPhotos, ...urls];
       await updateCar(car.id, { photos: updated, photo: updated[0] });
     } catch (e) { console.error(e); }
@@ -397,7 +399,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     : (car.finalDeal?.dealPrice ?? car.sellingPrice);
   const _additionalTotal = _wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
   const _profitBeforeComm = _dealPrice - car.purchasePrice - totalRepairCost - totalMiscCost - _additionalTotal;
-  const _commission = car.outgoingConsignment ? 0 : (car.priceFloor != null && _dealPrice < car.priceFloor) ? 1000 : 1500;
+  const _commission = (car.outgoingConsignment || car.isStaffSale) ? 0 : (car.consignment || (car.priceFloor != null && _dealPrice < car.priceFloor)) ? 1000 : 1500;
   const netProfit = _profitBeforeComm - _commission;
 
   // Checklist helpers
@@ -427,7 +429,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     if (!editForm.make?.trim()) e.make = 'Required';
     if (!editForm.model?.trim()) e.model = 'Required';
     if (!editForm.colour?.trim()) e.colour = 'Required';
-    if (!editForm.purchasePrice || editForm.purchasePrice <= 0) e.purchasePrice = 'Required';
+    if (!editForm.consignment && (!editForm.purchasePrice || editForm.purchasePrice <= 0)) e.purchasePrice = 'Required';
     setEditErrors(e);
     if (Object.keys(e).length > 0) return;
     setShowEditModal(false);
@@ -769,10 +771,10 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 onClick={() => allPhotos.length > 0 ? openGallery(0) : addPhotoMainRef.current?.click()}
                 className="absolute bottom-2 right-2 z-10 flex items-center gap-1.5 bg-black/70 hover:bg-black/90 text-white px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors border border-white/20"
               >
-                <Camera size={13} /> {allPhotos.length === 0 ? 'Add Photos' : 'Edit Photos'}
+                <Camera size={13} /> {allPhotos.length === 0 ? (car.consignment ? 'Add Photo' : 'Add Photos') : 'Edit Photos'}
               </button>
             )}
-            <input ref={addPhotoMainRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleAddPhotos(e.target.files)} />
+            <input ref={addPhotoMainRef} type="file" accept="image/*" {...(!car.consignment && { multiple: true })} className="hidden" onChange={(e) => handleAddPhotos(e.target.files)} />
           </div>
 
           <div className="flex-1 p-6">
@@ -822,6 +824,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   <InfoItem label="Misc Costs" value={formatRM(totalMiscCost)} valueClass="text-purple-400" />
                   {car.priceFloor != null && (
                     <InfoItem label="Floor Price" value={formatRM(car.priceFloor)} valueClass="text-blue-400 font-semibold" />
+                  )}
+                  {car.isStaffSale && (
+                    <InfoItem label="Staff Sale" value="No commission" valueClass="text-amber-400 font-semibold" />
                   )}
                   <InfoItem label="Net Profit" value={formatRM(netProfit)} valueClass={netProfit >= 0 ? 'text-green-400 font-bold' : 'text-red-400 font-bold'} />
                 </>
@@ -1259,7 +1264,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           // Director profit
           const dealNetPrice = sellingPrice - discount;
           const profitBeforeCommission = dealNetPrice - purchasePrice - totalRepairCost - totalMiscCost - additionalTotal;
-          const commission = car.outgoingConsignment ? 0 : (car.priceFloor != null && dealNetPrice < car.priceFloor) ? 1000 : 1500;
+          const commission = (car.outgoingConsignment || car.isStaffSale) ? 0 : (car.consignment || (car.priceFloor != null && dealNetPrice < car.priceFloor)) ? 1000 : 1500;
           const netProfit = profitBeforeCommission - commission;
 
           return (
@@ -1345,8 +1350,10 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   <DRow label="− Purchase Price" value={formatRM(purchasePrice)} valueClass="text-red-400" />
                   {totalRepairCost > 0 && <DRow label="− Repair Expenses" value={formatRM(totalRepairCost)} valueClass="text-red-400" />}
                   {additionalTotal > 0 && <DRow label="− Additional Expenses" value={formatRM(additionalTotal)} valueClass="text-red-400" />}
-                  {!car.outgoingConsignment && <DRow label="− Salesman Commission" value={formatRM(commission)} valueClass="text-purple-400" />}
-                  {car.priceFloor != null && (
+                  {car.isStaffSale ? (
+                    <DRow label="− Salesman Commission" value="Staff Sale — Waived" valueClass="text-amber-400" />
+                  ) : !car.outgoingConsignment && <DRow label="− Salesman Commission" value={formatRM(commission)} valueClass="text-purple-400" />}
+                  {car.priceFloor != null && !car.isStaffSale && (
                     <p className="text-xs text-gray-500 text-right pr-5 pb-1">
                       Deal ({formatRM(dealNetPrice)}) {dealNetPrice >= car.priceFloor ? '≥' : '<'} floor → {commission === 1000 ? 'RM 1,000' : 'RM 1,500'}
                     </p>
@@ -1370,7 +1377,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                       {discount > 0 && <DRow label="Discount" value={`− ${formatRM(discount)}`} valueClass="text-red-400" />}
                       {insurance > 0 && <DRow label="Insurance" value={`− ${formatRM(insurance)}`} valueClass="text-red-400" />}
                       {bankProduct > 0 && <DRow label="Bank Product" value={`− ${formatRM(bankProduct)}`} valueClass="text-red-400" />}
-                      {!car.outgoingConsignment && <DRow label="Salesman Commission" value={`− ${formatRM(commission)}`} valueClass="text-red-400" />}
+                      {car.isStaffSale ? (
+                        <DRow label="Salesman Commission" value="Staff Sale — Waived" valueClass="text-amber-400" />
+                      ) : !car.outgoingConsignment && <DRow label="Salesman Commission" value={`− ${formatRM(commission)}`} valueClass="text-red-400" />}
                       {totalRepairCost > 0 && <DRow label="Repair Expenses" value={`− ${formatRM(totalRepairCost)}`} valueClass="text-red-400" />}
                       {additionalTotal > 0 && <DRow label="Additional Expenses" value={`− ${formatRM(additionalTotal)}`} valueClass="text-red-400" />}
                       <div className="flex justify-between items-center pt-3 mt-1 border-t-2 border-obsidian-400/50">
@@ -1621,7 +1630,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   { label: 'Purchase Price', value: formatRM(car.purchasePrice), cls: 'text-white' },
                   { label: 'Repair Costs', value: formatRM(totalRepairCost), cls: 'text-orange-400' },
                   { label: 'Misc Costs', value: formatRM(totalMiscCost), cls: 'text-purple-400' },
-                  { label: 'Commission', value: formatRM(_commission), cls: 'text-gray-300' },
+                  { label: 'Commission', value: car.isStaffSale ? 'Staff Sale — Waived' : formatRM(_commission), cls: car.isStaffSale ? 'text-amber-400' : 'text-gray-300' },
                 ].map(({ label, value, cls }) => (
                   <div key={label} className="flex justify-between items-center">
                     <span className="text-gray-500 text-xs">{label}</span>
@@ -1692,6 +1701,23 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               />
               <p className="text-gray-600 text-xs mt-1">Deal ≥ floor → 1.5k commission · Deal below floor → 1k commission</p>
             </FormField>
+          )}
+          {isDirector && (
+            <div className="col-span-2">
+              <button
+                type="button"
+                onClick={() => setEditForm({ ...editForm, isStaffSale: !editForm.isStaffSale })}
+                className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${editForm.isStaffSale ? 'bg-amber-500/10 border-amber-500/40 text-amber-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
+              >
+                <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${editForm.isStaffSale ? 'bg-amber-500 border-amber-500' : 'border-gray-600'}`}>
+                  {editForm.isStaffSale && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Staff Sale — Sold at cost, no commission</p>
+                  <p className="text-xs opacity-60 mt-0.5">No salesman commission will be charged for this deal</p>
+                </div>
+              </button>
+            </div>
           )}
           <FormField label="Transmission">
             <select className={inputCls()} value={editForm.transmission ?? 'auto'} onChange={(e) => setEditForm({ ...editForm, transmission: e.target.value as Car['transmission'] })}>
@@ -2556,13 +2582,15 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               >
                 <Upload size={13} /> Replace
               </button>
-              <button
-                onClick={() => addPhotoRef.current?.click()}
-                disabled={photoUploading}
-                className="flex items-center gap-1.5 bg-green-500/20 border border-green-500/40 text-green-300 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-green-500/30 transition-colors disabled:opacity-50"
-              >
-                <Plus size={13} /> Add Photos
-              </button>
+              {!(car.consignment && allPhotos.length >= 1) && (
+                <button
+                  onClick={() => addPhotoRef.current?.click()}
+                  disabled={photoUploading}
+                  className="flex items-center gap-1.5 bg-green-500/20 border border-green-500/40 text-green-300 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-green-500/30 transition-colors disabled:opacity-50"
+                >
+                  <Plus size={13} /> Add Photos
+                </button>
+              )}
               <button
                 onClick={handleDeletePhoto}
                 disabled={photoUploading}

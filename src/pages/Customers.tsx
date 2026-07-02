@@ -406,7 +406,7 @@ export default function Customers() {
     // Commission auto-calc: profit = selling - purchase - repairs; RM 2k if > 12k else RM 1k
     const wo = c.loanWorkOrder ?? c.cashWorkOrder;
     const dealPrice = wo ? (wo.sellingPrice - (wo.discount ?? 0)) : (car?.sellingPrice ?? 0);
-    const commission = car?.isStaffSale ? 0 : (car?.priceFloor != null && dealPrice < car.priceFloor) ? 1000 : 1500;
+    const commission = car?.isStaffSale ? 0 : (car?.consignment || (car?.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
 
     updateCustomer(c.id, {
       delivered: true,

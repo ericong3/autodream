@@ -402,7 +402,7 @@ export default function Inventory() {
       const repairCosts = repairs.filter(r => r.carId === car.id && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
       const miscCosts = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
       const profitBeforeComm = dealPrice - car.purchasePrice - repairCosts - miscCosts - additionalTotal;
-      const commission = (car.outgoingConsignment || car.isStaffSale) ? 0 : (car.priceFloor != null && dealPrice < car.priceFloor) ? 1000 : 1500;
+      const commission = (car.outgoingConsignment || car.isStaffSale) ? 0 : (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
       map[car.id] = profitBeforeComm - commission;
     }
     return map;
@@ -542,8 +542,9 @@ export default function Inventory() {
     if (!form.make.trim()) newErrors.make = 'Make is required';
     if (!form.model.trim()) newErrors.model = 'Model is required';
     if (!form.colour.trim()) newErrors.colour = 'Colour is required';
-    if (!isComingSoon && (form.photos?.length ?? 0) < 4) {
-      newErrors.photos = 'Please upload at least 4 photos';
+    const minPhotos = form.consignment ? 1 : 4;
+    if (!isComingSoon && (form.photos?.length ?? 0) < minPhotos) {
+      newErrors.photos = `Please upload at least ${minPhotos} photo${minPhotos > 1 ? 's' : ''}`;
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -1534,7 +1535,7 @@ export default function Inventory() {
                       </p>
                     )}
                   </div>
-                  {isDirectorView && (
+                  {isDirectorView && !(car.consignment && !car.purchasePrice) && (
                     <p className={`text-xs font-semibold ${(carProfitMap[car.id] ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                       {formatRM(carProfitMap[car.id] ?? 0)}
                     </p>
@@ -1705,7 +1706,7 @@ export default function Inventory() {
                     <p className="text-gray-600 text-xs line-through">{formatRM(car.sellingPrice)}</p>
                   )}
                   <p className="text-gold-400 font-bold text-sm">{formatRM(price)}</p>
-                  {isDirectorView && (
+                  {isDirectorView && !(car.consignment && !car.purchasePrice) && (
                     <p className={`text-xs font-medium mt-0.5 ${profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                       {profit >= 0 ? '+' : ''}{formatRM(profit)}
                     </p>
@@ -2124,15 +2125,21 @@ export default function Inventory() {
 
           {/* Car Photos — not required for Coming Soon */}
           {!isComingSoon && <div className="col-span-2">
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-gray-300 text-xs font-medium">
-                Car Photos
-                <span className="ml-1.5 text-gray-500 font-normal">(minimum 4 required)</span>
-              </label>
-              <span className={`text-xs font-medium ${(form.photos?.length ?? 0) >= 4 ? 'text-green-400' : 'text-yellow-400'}`}>
-                {form.photos?.length ?? 0} / 4 min
-              </span>
-            </div>
+            {(() => {
+              const photoMin = form.consignment ? 1 : 4;
+              const photoCount = form.photos?.length ?? 0;
+              return (
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-gray-300 text-xs font-medium">
+                    Car Photos
+                    <span className="ml-1.5 text-gray-500 font-normal">(minimum {photoMin} required)</span>
+                  </label>
+                  <span className={`text-xs font-medium ${photoCount >= photoMin ? 'text-green-400' : 'text-yellow-400'}`}>
+                    {photoCount} / {photoMin} min
+                  </span>
+                </div>
+              );
+            })()}
 
             {/* Thumbnail grid — drag to reorder */}
             <div className="flex flex-wrap gap-2 mb-2">
@@ -2187,7 +2194,7 @@ export default function Inventory() {
               )}
 
               {/* Add photo button */}
-              {!uploadingPhotos && (
+              {!uploadingPhotos && !(form.consignment && (form.photos?.length ?? 0) >= 1) && (
                 <button
                   type="button"
                   onClick={() => photoInputRef.current?.click()}
@@ -2203,7 +2210,7 @@ export default function Inventory() {
               ref={photoInputRef}
               type="file"
               accept="image/*"
-              multiple
+              {...(!form.consignment && { multiple: true })}
               className="hidden"
               onChange={(e) => handlePhotoFiles(e.target.files)}
             />
@@ -2474,7 +2481,7 @@ export default function Inventory() {
           const { updateCar } = useStore.getState();
           const wo = buyer.loanWorkOrder ?? buyer.cashWorkOrder;
           const dealPrice = wo ? (wo.sellingPrice - (wo.discount ?? 0)) : (car.sellingPrice ?? 0);
-          const commission = car.isStaffSale ? 0 : (car.priceFloor != null && dealPrice < car.priceFloor) ? 1000 : 1500;
+          const commission = car.isStaffSale ? 0 : (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
           updateCustomer(buyer.id, {
             delivered: true,
             deliveredAt: new Date().toISOString(),

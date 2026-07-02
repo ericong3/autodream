@@ -41,6 +41,7 @@ import { Car } from '../types';
 import { formatRM as _formatRM } from '../utils/format';
 import Modal from '../components/Modal';
 import { useStore } from '../store';
+import { generateLoanDisbursement } from '../utils/generatePayments';
 import { formatRM, formatMileage, shortName } from '../utils/format';
 import StatCard from '../components/StatCard';
 import { CarDetailContent } from './CarDetail';
@@ -145,6 +146,9 @@ export default function History() {
   const repairs = useStore((s) => s.repairs);
   const currentUser = useStore((s) => s.currentUser);
   const updateCar = useStore((s) => s.updateCar);
+  const payments = useStore((s) => s.payments);
+  const addPayment = useStore((s) => s.addPayment);
+  const updatePayment = useStore((s) => s.updatePayment);
   const viewPreference = useStore((s) => s.viewPreference);
   const setViewPreference = useStore((s) => s.setViewPreference);
 
@@ -225,7 +229,7 @@ export default function History() {
       const miscCosts = (c.miscCosts ?? []).reduce((a, m) => a + m.amount, 0);
       const dealNetPrice = grossPrice - discount;
       const profitBeforeCommission = dealNetPrice - c.purchasePrice - repairCosts - miscCosts - additionalTotal;
-      const commission = c.outgoingConsignment ? 0 : (c.priceFloor != null && dealNetPrice < c.priceFloor) ? 1000 : 1500;
+      const commission = (c.outgoingConsignment || c.isStaffSale) ? 0 : (c.consignment || (c.priceFloor != null && dealNetPrice < c.priceFloor)) ? 1000 : 1500;
       map[c.id] = { dealNetPrice, profit: profitBeforeCommission - commission };
     }
     return map;
@@ -667,13 +671,18 @@ export default function History() {
             <button onClick={() => setDisbursalCarId(null)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
             <button
               disabled={!disbursalForm.amount}
-              onClick={() => {
+              onClick={async () => {
                 if (!disbursalCarId) return;
-                updateCar(disbursalCarId, {
+                const disbAmt = Number(disbursalForm.amount);
+                await updateCar(disbursalCarId, {
                   moneyReceived: true,
-                  disbursementAmount: Number(disbursalForm.amount),
+                  disbursementAmount: disbAmt,
                   disbursementDate: disbursalForm.date || undefined,
                 });
+                const disbCar = cars.find(c => c.id === disbursalCarId);
+                if (disbCar && disbAmt > 0) {
+                  generateLoanDisbursement({ car: disbCar, disbursementAmount: disbAmt, payments, addPayment, updatePayment });
+                }
                 setDisbursalCarId(null);
               }}
               className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed"

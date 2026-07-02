@@ -52,7 +52,7 @@ export default function Salespeople() {
     const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
     const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
     const dealPrice = (wo?.sellingPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
-    if (car.priceFloor != null && dealPrice < car.priceFloor) return 1000;
+    if (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) return 1000;
     return 1500;
   };
 

@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { DollarSign, TrendingUp, Car, Wrench, Award, ChevronLeft, ChevronRight } from 'lucide-react';
+import { DollarSign, TrendingUp, Car, Wrench, Award, ChevronLeft, ChevronRight, Wallet } from 'lucide-react';
 import { useStore } from '../store';
 import StatCard from '../components/StatCard';
 import { formatRM, shortName } from '../utils/format';
+import Payments from './Payments';
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -14,6 +15,8 @@ export default function Finance() {
   const repairs = useStore((s) => s.repairs);
   const users = useStore((s) => s.users);
   const customers = useStore((s) => s.customers);
+
+  const [financeTab, setFinanceTab] = useState<'overview' | 'payments'>('overview');
 
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
@@ -61,10 +64,10 @@ export default function Finance() {
   };
 
   const calcCommission = (car: typeof cars[0]): number => {
-    if (car.outgoingConsignment) return 0;
+    if (car.outgoingConsignment || car.isStaffSale) return 0;
     const wo = getWorkOrder(car);
     const dealPrice = (wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
-    if (car.priceFloor != null && dealPrice < car.priceFloor) return 1000;
+    if (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) return 1000;
     return 1500;
   };
 
@@ -105,7 +108,28 @@ export default function Finance() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      {/* Tab switcher */}
+      <div className="flex gap-1 rounded-xl bg-obsidian-800/60 border border-white/[0.06] p-1">
+        <button
+          onClick={() => setFinanceTab('overview')}
+          className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${financeTab === 'overview' ? 'bg-gold-gradient text-obsidian-950 font-bold shadow-gold-sm' : 'text-gray-400 hover:text-white'}`}
+        >
+          <TrendingUp size={12} />
+          Overview
+        </button>
+        <button
+          onClick={() => setFinanceTab('payments')}
+          className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${financeTab === 'payments' ? 'bg-gold-gradient text-obsidian-950 font-bold shadow-gold-sm' : 'text-gray-400 hover:text-white'}`}
+        >
+          <Wallet size={12} />
+          Payments
+        </button>
+      </div>
+
+      {financeTab === 'payments' && <Payments embedded />}
+
+      {financeTab === 'overview' && <div className="space-y-6">
       {/* Month selector */}
       <div className="flex items-center gap-3">
         <button
@@ -363,6 +387,7 @@ export default function Finance() {
           </div>
         )}
       </div>
+      </div>}
     </div>
   );
 }

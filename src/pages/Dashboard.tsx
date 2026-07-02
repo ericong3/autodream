@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   ArrowRight,
   AlertTriangle,
+  CalendarCheck,
 } from 'lucide-react';
 import { useStore } from '../store';
 import StatCard from '../components/StatCard';
@@ -21,7 +22,18 @@ export default function Dashboard() {
   const cars = useStore((s) => s.cars);
   const repairs = useStore((s) => s.repairs);
   const customers = useStore((s) => s.customers);
+  const testDrives = useStore((s) => s.testDrives);
+  const currentUser = useStore((s) => s.currentUser);
   const navigate = useNavigate();
+
+  const isDirector = currentUser?.role === 'director' || currentUser?.role === 'admin';
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayTestDrives = useMemo(() =>
+    testDrives.filter(td =>
+      td.scheduledAt.startsWith(todayStr) &&
+      td.status === 'scheduled' &&
+      (isDirector || td.salesId === currentUser?.id)
+    ), [testDrives, todayStr, isDirector, currentUser]);
 
   // 15-day stock alert: cars with no leads for 15+ days
   const staleStock = useMemo(() => {
@@ -60,7 +72,7 @@ export default function Dashboard() {
     const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
 
     const profitBeforeComm = dealPrice - car.purchasePrice - repairCost - miscCost - additionalTotal;
-    const commission = car.outgoingConsignment ? 0 : (car.priceFloor != null && dealPrice < car.priceFloor) ? 1000 : 1500;
+    const commission = (car.outgoingConsignment || car.isStaffSale) ? 0 : (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
     const intakeComm = car.intakeCommission ?? 0;
     const sourceComm = car.sourceCommission ?? 0;
 
@@ -114,6 +126,22 @@ export default function Dashboard() {
           Live
         </div>
       </div>
+
+      {/* ── Today's Test Drives ─────────────────────────────── */}
+      {todayTestDrives.length > 0 && (
+        <button
+          onClick={() => navigate('/customers')}
+          className="w-full flex items-center gap-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl px-4 py-3 hover:bg-yellow-500/15 transition-colors text-left"
+        >
+          <div className="w-8 h-8 rounded-lg bg-yellow-500/20 flex items-center justify-center shrink-0">
+            <CalendarCheck size={16} className="text-yellow-400" />
+          </div>
+          <div>
+            <p className="text-yellow-400 text-sm font-semibold">{todayTestDrives.length} Test Drive{todayTestDrives.length > 1 ? 's' : ''} Today</p>
+            <p className="text-yellow-400/60 text-xs">scheduled for today · tap to view</p>
+          </div>
+        </button>
+      )}
 
       {/* ── Stat Cards ───────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">

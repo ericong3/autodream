@@ -91,7 +91,7 @@ export default function SalesDashboard() {
     const wo = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
     const workOrder = wo?.loanWorkOrder ?? wo?.cashWorkOrder;
     const dealPrice = (workOrder?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (workOrder?.discount ?? 0);
-    if (car.priceFloor != null && dealPrice < car.priceFloor) return 1000;
+    if (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) return 1000;
     return 1500;
   };
 
