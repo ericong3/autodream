@@ -234,7 +234,7 @@ export default function Inventory() {
   const [comingSoonOrder, setComingSoonOrder] = useState<string[]>([]);
   const [pendingOrder, setPendingOrder] = useState<string[]>([]);
   const [comingSoonView, setComingSoonView] = useState<'cars' | 'shipments'>('cars');
-  const [stockView, setStockView] = useState<'own' | 'consignment'>('own');
+  const [stockView, setStockView] = useState<'own' | 'consignment' | 'out'>('own');
   const [showQR, setShowQR] = useState(false);
 
   const sensors = useSensors(
@@ -526,6 +526,10 @@ export default function Inventory() {
   }, [filtered, stockOrder, unreadCarIds]);
   const ownStockOrdered      = useMemo(() => filteredOrdered.filter(c => !c.consignment), [filteredOrdered]);
   const consignmentOrdered   = useMemo(() => filteredOrdered.filter(c => !!c.consignment), [filteredOrdered]);
+  const outOrdered           = useMemo(() => consignmentOrdered.filter(c => {
+    const last = carMovements.find(m => m.carId === c.id || (c.carPlate && m.carPlate === c.carPlate));
+    return last?.type === 'out';
+  }), [consignmentOrdered, carMovements]);
   const comingSoonOrdered = useMemo(() => {
     const ordered = comingSoonOrder.map(id => comingSoonFiltered.find(c => c.id === id)).filter(Boolean) as Car[];
     return [...ordered].sort((a, b) => (unreadCarIds.has(a.id) ? 0 : 1) - (unreadCarIds.has(b.id) ? 0 : 1));
@@ -729,6 +733,8 @@ export default function Inventory() {
           ? <><span className="text-green-400 font-medium">{pendingDelivery.length}</span> car{pendingDelivery.length !== 1 ? 's' : ''} sold, awaiting delivery</>
           : stockView === 'consignment'
           ? <><span className="text-white font-medium">{consignmentOrdered.length}</span> consignment car{consignmentOrdered.length !== 1 ? 's' : ''}</>
+          : stockView === 'out'
+          ? <><span className="text-red-400 font-medium">{outOrdered.length}</span> car{outOrdered.length !== 1 ? 's' : ''} currently out</>
           : <>Showing <span className="text-white font-medium">{ownStockOrdered.length}</span> of {cars.filter(c => c.status !== 'delivered' && c.status !== 'coming_soon' && c.status !== 'deal_pending' && !c.outgoingConsignment && !c.consignment).length} own stock</>
         }
       </p>
@@ -1374,7 +1380,15 @@ export default function Inventory() {
           Consignment
           {consignmentOrdered.length > 0 && <span className="text-[10px] font-bold bg-violet-500/30 text-violet-300 px-1.5 py-0.5 rounded-full">{consignmentOrdered.length}</span>}
         </button>
-        {stockView === 'consignment' && isDirector && (
+        <button
+          onClick={() => setStockView('out')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${stockView === 'out' ? 'bg-red-500/20 text-red-300 border border-red-500/40' : 'text-gray-500 hover:text-gray-300'}`}
+        >
+          <LogOut size={14} />
+          Out
+          {outOrdered.length > 0 && <span className="text-[10px] font-bold bg-red-500/30 text-red-300 px-1.5 py-0.5 rounded-full">{outOrdered.length}</span>}
+        </button>
+        {(stockView === 'consignment' || stockView === 'out') && isDirector && (
           <button
             onClick={() => setShowQR(true)}
             className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-obsidian-700/60 border border-obsidian-400/60 text-gray-400 hover:text-white transition-colors"
@@ -1401,13 +1415,13 @@ export default function Inventory() {
       )}
 
       {/* Empty state */}
-      {!initialLoad && (stockView === 'own' ? ownStockOrdered : consignmentOrdered).length === 0 && (
+      {!initialLoad && (stockView === 'own' ? ownStockOrdered : stockView === 'out' ? outOrdered : consignmentOrdered).length === 0 && (
         <div className="flex flex-col items-center justify-center py-24 text-center">
           <div className="w-20 h-20 rounded-2xl bg-obsidian-800/60 border border-obsidian-400/30 flex items-center justify-center mb-5">
             <CarIcon size={36} className="text-gray-600" />
           </div>
-          <p className="text-white font-semibold text-base">{stockView === 'consignment' ? 'No consignment cars' : 'No cars found'}</p>
-          <p className="text-gray-500 text-sm mt-1.5 max-w-xs">{stockView === 'consignment' ? 'Dealer consignment cars will appear here' : 'Try adjusting your filters or search term'}</p>
+          <p className="text-white font-semibold text-base">{stockView === 'consignment' ? 'No consignment cars' : stockView === 'out' ? 'No cars out' : 'No cars found'}</p>
+          <p className="text-gray-500 text-sm mt-1.5 max-w-xs">{stockView === 'consignment' ? 'Dealer consignment cars will appear here' : stockView === 'out' ? 'All consignment cars are in the showroom' : 'Try adjusting your filters or search term'}</p>
           <button
             onClick={() => { setSearch(''); setFilterStatus(''); setFilterMake('All'); }}
             className="mt-4 px-4 py-2 text-sm text-gold-400 border border-gold-500/30 rounded-lg hover:bg-gold-500/10 transition-colors"
@@ -1430,7 +1444,7 @@ export default function Inventory() {
       )}
 
       {/* Grid view */}
-      {!initialLoad && view === 'grid' && (stockView === 'own' ? ownStockOrdered : consignmentOrdered).length > 0 && (
+      {!initialLoad && view === 'grid' && (stockView === 'own' ? ownStockOrdered : stockView === 'out' ? outOrdered : consignmentOrdered).length > 0 && (
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -1448,9 +1462,9 @@ export default function Inventory() {
           }}
           onDragCancel={() => { dragActiveRef.current = false; setDragActiveId(null); }}
         >
-          <SortableContext items={(stockView === 'own' ? ownStockOrdered : consignmentOrdered).map(c => c.id)} strategy={rectSortingStrategy}>
+          <SortableContext items={(stockView === 'own' ? ownStockOrdered : stockView === 'out' ? outOrdered : consignmentOrdered).map(c => c.id)} strategy={rectSortingStrategy}>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {(stockView === 'own' ? ownStockOrdered : consignmentOrdered).map((car, idx) => {
+              {(stockView === 'own' ? ownStockOrdered : stockView === 'out' ? outOrdered : consignmentOrdered).map((car, idx) => {
                 const unreadNotifs = carNotifs(car.id);
                 const hasUnread = unreadNotifs.length > 0;
                 const latestUnread = unreadNotifs[0] ?? null;
@@ -1641,7 +1655,7 @@ export default function Inventory() {
       )}
 
       {/* List view */}
-      {!initialLoad && view === 'list' && (stockView === 'own' ? ownStockOrdered : consignmentOrdered).length > 0 && (
+      {!initialLoad && view === 'list' && (stockView === 'own' ? ownStockOrdered : stockView === 'out' ? outOrdered : consignmentOrdered).length > 0 && (
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -1658,9 +1672,9 @@ export default function Inventory() {
           }}
           onDragCancel={() => { dragActiveRef.current = false; setDragActiveId(null); }}
         >
-        <SortableContext items={(stockView === 'own' ? ownStockOrdered : consignmentOrdered).map(c => c.id)} strategy={verticalListSortingStrategy}>
+        <SortableContext items={(stockView === 'own' ? ownStockOrdered : stockView === 'out' ? outOrdered : consignmentOrdered).map(c => c.id)} strategy={verticalListSortingStrategy}>
         <div className="space-y-2">
-          {(stockView === 'own' ? ownStockOrdered : consignmentOrdered).map((car, idx) => {
+          {(stockView === 'own' ? ownStockOrdered : stockView === 'out' ? outOrdered : consignmentOrdered).map((car, idx) => {
             const { cls, label } = getDealBadge(car);
             const leadCount = carStats[car.id]?.leadCount ?? 0;
             const submissions = car.loanSubmissions ?? [];
