@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { QRCodeSVG } from 'qrcode.react';
+import { QRCodeCanvas } from 'qrcode.react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { thumbUrl } from '../utils/photoUrl';
@@ -301,6 +301,7 @@ export default function Inventory() {
   const photoInputRef = useRef<HTMLInputElement>(null);
   const greenCardInputRef = useRef<HTMLInputElement>(null);
   const dragIndexRef = useRef<number | null>(null);
+  const qrCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const handleTouchMove = (e: React.TouchEvent) => {
     if (dragIndexRef.current === null) return;
@@ -433,17 +434,6 @@ export default function Inventory() {
 
   const pendingDelivery = useMemo(() =>
     cars.filter((c) => c.status === 'deal_pending'),
-  [cars]);
-
-  const pendingDisbursement = useMemo(() =>
-    cars.filter((c) =>
-      c.status === 'delivered' &&
-      c.finalDeal != null &&
-      c.finalDeal.bank &&
-      c.finalDeal.bank.toLowerCase() !== 'cash' &&
-      !c.disbursementDate &&
-      c.dealProgress?.disbursementReceived !== true,
-    ),
   [cars]);
 
   const filtered = useMemo(() => {
@@ -627,18 +617,6 @@ export default function Inventory() {
               </span>
             )}
             {pendingUnreadCount > 0 && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
-          </button>
-          <button
-            onClick={() => { setInventoryTab('pending_disbursement'); setSearchParams({ tab: 'pending_disbursement' }); }}
-            className={`flex-1 sm:flex-none min-w-0 px-2 sm:px-4 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${inventoryTab === 'pending_disbursement' ? 'bg-amber-600 text-white' : 'text-gray-400 hover:text-white'}`}
-          >
-            <span className="hidden sm:inline">Disbursement</span>
-            <span className="sm:hidden">Disburse</span>
-            {pendingDisbursement.length > 0 && (
-              <span className={`shrink-0 text-[10px] sm:text-xs px-1.5 py-0.5 rounded-full font-semibold ${inventoryTab === 'pending_disbursement' ? 'bg-white/20' : 'bg-amber-500/20 text-amber-400'}`}>
-                {pendingDisbursement.length}
-              </span>
-            )}
           </button>
         </div>
 
@@ -997,82 +975,6 @@ export default function Inventory() {
         </>
       )}
 
-      {/* ── Pending Disbursement tab ── */}
-      {inventoryTab === 'pending_disbursement' && (
-        <>
-          {pendingDisbursement.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <CarIcon size={40} className="text-gray-600 mb-3" />
-              <p className="text-gray-400 font-medium">No pending disbursements</p>
-              <p className="text-gray-500 text-sm mt-1">Delivered loan cars awaiting bank disbursement appear here</p>
-            </div>
-          ) : (
-            <div className="space-y-3 mt-1">
-              {pendingDisbursement.map((car) => {
-                const buyer = customers.find(c => c.interestedCarId === car.id);
-                const dp = car.dealProgress ?? {};
-                const steps = [
-                  { key: 'puspakomDoneDate', label: 'Puspakom' },
-                  { key: 'ehakReceivedDate', label: 'eHak' },
-                  { key: 'insuranceCovernoteDone', label: 'Insurance' },
-                  { key: 'nameChangeDone', label: 'Name Change' },
-                  { key: 'deliveryOrderSigned', label: 'Delivery Order' },
-                  { key: 'documentsSubmittedDate', label: 'Docs Submitted' },
-                  { key: 'disbursementReceived', label: 'Disbursed' },
-                ] as const;
-                const done = steps.filter(s => !!(dp as any)[s.key]).length;
-                const pct = Math.round((done / steps.length) * 100);
-                const nextStep = steps.find(s => !(dp as any)[s.key]);
-                return (
-                  <div
-                    key={car.id}
-                    className="flex flex-col gap-0 rounded-2xl bg-obsidian-800/60 border border-amber-500/30 cursor-pointer transition-colors hover:border-amber-400/60"
-                    onClick={() => { if (buyer) { setWoViewCar({ car, buyer }); setWoTab('progress'); } }}
-                  >
-                    <div className="flex gap-4 p-4">
-                      {car.photo ? (
-                        <img src={car.photo} alt="" className="w-20 h-14 rounded-xl object-cover shrink-0" />
-                      ) : (
-                        <div className="w-20 h-14 rounded-xl bg-obsidian-700/60 flex items-center justify-center shrink-0">
-                          <CarIcon size={20} className="text-gray-600" />
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <p className="text-white font-semibold text-sm leading-snug">{car.year} {car.make} {car.model}</p>
-                            <p className="text-gray-500 text-xs mt-0.5">{car.carPlate ?? '—'} · {car.colour}</p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <p className="text-white font-bold text-sm">{car.finalDeal ? formatRM(car.finalDeal.dealPrice) : '—'}</p>
-                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400">{car.finalDeal?.bank ?? 'Loan'}</span>
-                          </div>
-                        </div>
-                        <div className="mt-2">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-gray-500 text-[10px]">{nextStep ? `Next: ${nextStep.label}` : 'All steps done'}</span>
-                            <span className="text-gray-400 text-[10px] font-semibold">{done}/{steps.length}</span>
-                          </div>
-                          <div className="w-full h-1.5 rounded-full bg-obsidian-600">
-                            <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${pct}%` }} />
-                          </div>
-                        </div>
-                        {buyer && (
-                          <div className="flex items-center gap-1.5 mt-2">
-                            <Users size={11} className="text-gray-500" />
-                            <span className="text-gray-300 text-xs">{buyer.name}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </>
-      )}
-
       {/* ── Coming Soon tab ── */}
       {inventoryTab === 'coming_soon' && (
         <>
@@ -1405,10 +1307,43 @@ export default function Inventory() {
             <p className="text-white font-bold text-lg">Car Movement QR</p>
             <p className="text-gray-400 text-xs text-center">Staff scan this to log car in / out</p>
             <div className="bg-white p-4 rounded-xl">
-              <QRCodeSVG value={`${window.location.origin}${window.location.pathname}#/movement`} size={200} />
+              <QRCodeCanvas
+                ref={qrCanvasRef}
+                value={`${window.location.origin}${window.location.pathname}#/movement`}
+                size={200}
+              />
             </div>
             <p className="text-gray-600 text-xs break-all text-center">{`${window.location.origin}${window.location.pathname}#/movement`}</p>
-            <button onClick={() => setShowQR(false)} className="w-full py-2.5 bg-obsidian-700 hover:bg-obsidian-600 text-gray-300 rounded-xl text-sm transition-colors">Close</button>
+            <div className="flex gap-2 w-full">
+              <button
+                onClick={() => {
+                  const canvas = qrCanvasRef.current;
+                  if (!canvas) return;
+                  const link = document.createElement('a');
+                  link.download = 'autodream-movement-qr.png';
+                  link.href = canvas.toDataURL('image/png');
+                  link.click();
+                }}
+                className="flex-1 py-2.5 bg-gold-500 hover:bg-gold-400 text-black font-semibold rounded-xl text-sm transition-colors"
+              >
+                Download PNG
+              </button>
+              <button
+                onClick={() => {
+                  const canvas = qrCanvasRef.current;
+                  if (!canvas) return;
+                  const img = canvas.toDataURL('image/png');
+                  const win = window.open('', '_blank');
+                  if (!win) return;
+                  win.document.write(`<html><body style="margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#fff"><img src="${img}" style="width:300px;height:300px" /><script>window.onload=()=>{window.print();}<\/script></body></html>`);
+                  win.document.close();
+                }}
+                className="flex-1 py-2.5 bg-obsidian-700 hover:bg-obsidian-600 text-gray-300 rounded-xl text-sm transition-colors"
+              >
+                Print
+              </button>
+            </div>
+            <button onClick={() => setShowQR(false)} className="w-full py-2 text-gray-600 hover:text-gray-400 text-sm transition-colors">Close</button>
           </div>
         </div>,
         document.body
