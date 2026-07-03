@@ -33,6 +33,8 @@ import {
   Receipt,
   TrendingUp,
   CreditCard,
+  LogIn,
+  LogOut,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
@@ -189,6 +191,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const [jobTab, setJobTab] = useState<'repairs' | 'loans' | 'final_deal' | 'misc'>(initialTab ?? 'repairs');
   const [dealView, setDealView] = useState<'salesman' | 'director'>('salesman');
   const [showConsignment, setShowConsignment] = useState(false);
+  const carMovements = useStore((s) => s.carMovements);
   const [outgoingConsignModal, setOutgoingConsignModal] = useState<{ dealer: string; terms: 'fixed_amount' | 'profit_split'; fixedAmount: number; splitPercent: number } | null>(null);
   const [outgoingConsignSaving, setOutgoingConsignSaving] = useState(false);
   const [outgoingConsignError, setOutgoingConsignError] = useState<string | null>(null);
@@ -888,6 +891,48 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
         </div>
       )}
 
+
+      {/* ── Car Movement Log (consignment-in only) ── */}
+      {car.consignment && (() => {
+        const movements = carMovements.filter((m) => m.carId === car.id || m.carPlate === car.carPlate).slice(0, 20);
+        const isOut = movements[0]?.type === 'out';
+        return (
+          <div className="bg-card-gradient border border-blue-500/30 rounded-xl shadow-card overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-obsidian-400/60">
+              <div className="flex items-center gap-2">
+                <span className="text-blue-400 font-semibold text-sm">Car Movement Log</span>
+                {movements.length > 0 && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isOut ? 'bg-red-500/20 text-red-300' : 'bg-green-500/20 text-green-300'}`}>
+                    {isOut ? 'Currently Out' : 'In Showroom'}
+                  </span>
+                )}
+              </div>
+            </div>
+            {movements.length === 0 ? (
+              <p className="text-gray-600 text-sm text-center py-6">No movements recorded yet</p>
+            ) : (
+              <div className="divide-y divide-obsidian-400/30">
+                {movements.map((m) => (
+                  <div key={m.id} className="flex items-start gap-3 px-5 py-3">
+                    <div className={`mt-0.5 flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${m.type === 'out' ? 'bg-red-500/15' : 'bg-green-500/15'}`}>
+                      {m.type === 'out' ? <LogOut size={13} className="text-red-400" /> : <LogIn size={13} className="text-green-400" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-xs font-bold ${m.type === 'out' ? 'text-red-300' : 'text-green-300'}`}>{m.type === 'out' ? 'OUT' : 'IN'}</span>
+                        <span className="text-gray-400 text-xs">{m.userName}</span>
+                        {m.reason && <span className="text-gray-500 text-xs">· {m.reason}</span>}
+                      </div>
+                      {m.notes && <p className="text-gray-500 text-xs mt-0.5">{m.notes}</p>}
+                      <p className="text-gray-600 text-xs mt-0.5">{new Date(m.createdAt).toLocaleString('en-MY', { dateStyle: 'medium', timeStyle: 'short' })}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── Repair Jobs & Loans ── */}
       <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card">

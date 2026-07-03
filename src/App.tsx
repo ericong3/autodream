@@ -31,6 +31,7 @@ import InvestorPortal from './pages/InvestorPortal';
 import LoanCases from './pages/LoanCases';
 import BankerDashboard from './pages/BankerDashboard';
 import Payments from './pages/Payments';
+import CarMovement from './pages/CarMovement';
 
 function roleHome(role: string) {
   if (role === 'banker') return '/banker-dashboard';
@@ -117,6 +118,9 @@ export default function App() {
     <HashRouter>
       <ToastContainer />
       <Routes>
+        {/* Car Movement — login-required but standalone (no Layout) */}
+        <Route path="/movement" element={<CarMovement />} />
+
         {/* Public */}
         <Route
           path="/login"

@@ -585,6 +585,18 @@ export interface AppNotification {
   createdAt: string;
 }
 
+export interface CarMovement {
+  id: string;
+  carId?: string;
+  carPlate: string;
+  type: 'in' | 'out';
+  userId: string;
+  userName: string;
+  reason?: string;
+  notes?: string;
+  createdAt: string;
+}
+
 export interface Shipment {
   id: string;
   vesselName: string;

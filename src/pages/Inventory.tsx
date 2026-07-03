@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { thumbUrl } from '../utils/photoUrl';
@@ -28,6 +29,8 @@ import {
   RotateCcw,
   Calendar,
   Ship,
+  QrCode,
+  LogOut,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
@@ -176,6 +179,7 @@ export default function Inventory() {
   const notifications = useStore((s) => s.notifications);
   const carNotifs = (carId: string) => notifications.filter(n => n.referenceId === carId && !n.isRead);
   const shipments = useStore((s) => s.shipments);
+  const carMovements = useStore((s) => s.carMovements);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
@@ -231,6 +235,7 @@ export default function Inventory() {
   const [pendingOrder, setPendingOrder] = useState<string[]>([]);
   const [comingSoonView, setComingSoonView] = useState<'cars' | 'shipments'>('cars');
   const [stockView, setStockView] = useState<'own' | 'consignment'>('own');
+  const [showQR, setShowQR] = useState(false);
 
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
@@ -1352,7 +1357,7 @@ export default function Inventory() {
       {inventoryTab === 'stock' && <>
 
       {/* Sub-tab toggle */}
-      <div className="flex items-center gap-2 mb-1">
+      <div className="flex items-center gap-2 mb-1 flex-wrap">
         <button
           onClick={() => setStockView('own')}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${stockView === 'own' ? 'bg-gold-500/20 text-gold-300 border border-gold-500/40' : 'text-gray-500 hover:text-gray-300'}`}
@@ -1369,7 +1374,31 @@ export default function Inventory() {
           Consignment
           {consignmentOrdered.length > 0 && <span className="text-[10px] font-bold bg-violet-500/30 text-violet-300 px-1.5 py-0.5 rounded-full">{consignmentOrdered.length}</span>}
         </button>
+        {stockView === 'consignment' && isDirector && (
+          <button
+            onClick={() => setShowQR(true)}
+            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-obsidian-700/60 border border-obsidian-400/60 text-gray-400 hover:text-white transition-colors"
+          >
+            <QrCode size={14} /> Movement QR
+          </button>
+        )}
       </div>
+
+      {/* QR Code modal */}
+      {showQR && createPortal(
+        <div className="fixed inset-0 z-[500] bg-black/80 flex items-center justify-center p-6" onClick={() => setShowQR(false)}>
+          <div className="bg-obsidian-900 border border-obsidian-400/60 rounded-2xl p-8 flex flex-col items-center gap-5 max-w-xs w-full" onClick={(e) => e.stopPropagation()}>
+            <p className="text-white font-bold text-lg">Car Movement QR</p>
+            <p className="text-gray-400 text-xs text-center">Staff scan this to log car in / out</p>
+            <div className="bg-white p-4 rounded-xl">
+              <QRCodeSVG value={`${window.location.origin}${window.location.pathname}#/movement`} size={200} />
+            </div>
+            <p className="text-gray-600 text-xs break-all text-center">{`${window.location.origin}${window.location.pathname}#/movement`}</p>
+            <button onClick={() => setShowQR(false)} className="w-full py-2.5 bg-obsidian-700 hover:bg-obsidian-600 text-gray-300 rounded-xl text-sm transition-colors">Close</button>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* Empty state */}
       {!initialLoad && (stockView === 'own' ? ownStockOrdered : consignmentOrdered).length === 0 && (
@@ -1482,6 +1511,14 @@ export default function Inventory() {
                           {car.consignment.dealer}
                         </span>
                       )}
+                      {car.consignment && (() => {
+                        const lastMove = carMovements.find((m) => m.carId === car.id || (car.carPlate && m.carPlate === car.carPlate));
+                        return lastMove?.type === 'out' ? (
+                          <span className="flex items-center gap-1 bg-red-500/80 text-white px-2 py-0.5 rounded-full text-[10px] font-medium w-fit">
+                            <LogOut size={9} /> Out
+                          </span>
+                        ) : null;
+                      })()}
                     </div>
                     {car.carPlate && (
                       <span className="text-[10px] font-mono text-gold-300 bg-black/60 backdrop-blur-sm px-1.5 py-0.5 rounded border border-gold-500/20">
@@ -1698,6 +1735,14 @@ export default function Inventory() {
                       <AlertCircle size={9} /> No GC
                     </span>
                   )}
+                  {car.consignment && (() => {
+                    const lastMove = carMovements.find((m) => m.carId === car.id || (car.carPlate && m.carPlate === car.carPlate));
+                    return lastMove?.type === 'out' ? (
+                      <span className="flex items-center gap-1 bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full text-[10px] font-medium border border-red-500/30">
+                        <LogOut size={9} /> Out
+                      </span>
+                    ) : null;
+                  })()}
                 </div>
 
                 {/* Price + profit */}

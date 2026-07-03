@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
-import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, MiscCost, ExternalSalesman, Banker, LoanCase, LoanCaseDocument, LoanCaseActivity, Payment, AppNotification, InvestorTransaction, Shipment } from '../types';
+import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, MiscCost, ExternalSalesman, Banker, LoanCase, LoanCaseDocument, LoanCaseActivity, Payment, AppNotification, InvestorTransaction, Shipment, CarMovement } from '../types';
 import { sendPush } from '../utils/sendPush';
 
 // ── Notification helpers ─────────────────────────────────────────────────────
@@ -41,6 +41,7 @@ interface StoreState {
   externalSalesmen: ExternalSalesman[];
   bankers: Banker[];
   shipments: Shipment[];
+  carMovements: CarMovement[];
   loanCases: LoanCase[];
   loanCaseDocuments: LoanCaseDocument[];
   loanCaseActivities: LoanCaseActivity[];
@@ -132,6 +133,9 @@ interface StoreState {
   addBanker: (b: Banker) => Promise<void>;
   updateBanker: (id: string, b: Partial<Banker>) => Promise<void>;
   deleteBanker: (id: string) => Promise<void>;
+
+  // Car Movements
+  addCarMovement: (m: CarMovement) => Promise<void>;
 
   // Shipments
   addShipment: (s: Shipment) => Promise<void>;
@@ -279,6 +283,20 @@ function bankerToRow(b: Partial<Banker>) {
   if (b.userId !== undefined) row.user_id = b.userId;
   if (b.createdAt !== undefined) row.created_at = b.createdAt;
   return row;
+}
+
+function rowToCarMovement(r: any): CarMovement {
+  return {
+    id: r.id,
+    carId: r.car_id ?? undefined,
+    carPlate: r.car_plate,
+    type: r.type,
+    userId: r.user_id,
+    userName: r.user_name,
+    reason: r.reason ?? undefined,
+    notes: r.notes ?? undefined,
+    createdAt: r.created_at,
+  };
 }
 
 function rowToShipment(r: any): Shipment {
@@ -828,6 +846,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   externalSalesmen: [],
   bankers: [],
   shipments: [],
+  carMovements: [],
   loanCases: [],
   loanCaseDocuments: [],
   loanCaseActivities: [],
@@ -927,7 +946,8 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       supabase.from('payments').select('*').order('created_at', { ascending: false }),
       supabase.from('investor_transactions').select('*').order('created_at', { ascending: true }),
       supabase.from('shipments').select('*').order('eta', { ascending: true }),
-    ]).then(([deliveredCarsResult, closedCasesResult, quotations, instructions, testDrives, reminders, dealers, workshops, suppliers, merchants, loanCaseDocsResult, loanCaseActivitiesResult, paymentsResult, investorTxnsResult, shipmentsResult]) => {
+      supabase.from('car_movements').select('*').order('created_at', { ascending: false }),
+    ]).then(([deliveredCarsResult, closedCasesResult, quotations, instructions, testDrives, reminders, dealers, workshops, suppliers, merchants, loanCaseDocsResult, loanCaseActivitiesResult, paymentsResult, investorTxnsResult, shipmentsResult, carMovementsResult]) => {
       const allQuotations  = (quotations.data ?? []).map(rowToQuotation);
       const allTestDrives  = (testDrives.data ?? []).map(rowToTestDrive);
       const deliveredCars  = (deliveredCarsResult.data ?? []).map(rowToCar);
@@ -955,6 +975,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         payments:            paymentsResult.data       ? paymentsResult.data.map(rowToPayment)                                  : s.payments,
         investorTransactions:investorTxnsResult.data   ? investorTxnsResult.data.map(rowToInvestorTxn)                          : s.investorTransactions,
         shipments:           shipmentsResult.data      ? shipmentsResult.data.map(rowToShipment)                                : s.shipments,
+        carMovements:        carMovementsResult.data   ? carMovementsResult.data.map(rowToCarMovement)                           : s.carMovements,
       }));
 
       // ── Scheduled notifications (once per day, after secondary data is ready) ──
@@ -1928,6 +1949,27 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   deleteBanker: async (id) => {
     set((st) => ({ bankers: st.bankers.filter((x) => x.id !== id) }));
     await supabase.from('bankers').delete().eq('id', id);
+  },
+
+  // Car Movements
+  addCarMovement: async (m) => {
+    set((st) => ({ carMovements: [m, ...st.carMovements] }));
+    const { data, error } = await supabase.from('car_movements').insert({
+      id: m.id,
+      car_id: m.carId ?? null,
+      car_plate: m.carPlate,
+      type: m.type,
+      user_id: m.userId,
+      user_name: m.userName,
+      reason: m.reason ?? null,
+      notes: m.notes ?? null,
+      created_at: m.createdAt,
+    }).select().single();
+    if (error) {
+      set((st) => ({ carMovements: st.carMovements.filter((x) => x.id !== m.id) }));
+      throw new Error(error.message);
+    }
+    if (data) set((st) => ({ carMovements: st.carMovements.map((x) => x.id === m.id ? rowToCarMovement(data) : x) }));
   },
 
   // Shipments

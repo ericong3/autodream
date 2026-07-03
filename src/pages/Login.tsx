@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useStore } from '../store';
 
@@ -11,6 +11,8 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const login = useStore((s) => s.login);
   const navigate = useNavigate();
+  const location = useLocation();
+  const from = (location.state as any)?.from;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,7 +25,7 @@ export default function Login() {
     setLoading(false);
     if (success) {
       const role = useStore.getState().currentUser?.role;
-      navigate(role === 'investor' ? '/investor-portal' : '/inventory');
+      navigate(from ?? (role === 'investor' ? '/investor-portal' : '/inventory'));
     } else { setError('Invalid username or password'); }
   };
 
