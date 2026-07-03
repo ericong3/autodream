@@ -1702,12 +1702,14 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   <span className="text-gray-500 text-xs">Misc Costs</span>
                   <span className="text-sm font-medium text-purple-400">− {formatRM(totalMiscCost)}</span>
                 </div>
-                {_additionalTotal > 0 && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-500 text-xs">Additional Expenses</span>
-                    <span className="text-sm font-medium text-red-400">− {formatRM(_additionalTotal)}</span>
+                {(_wo?.additionalItems ?? []).filter(i => i.amount !== 0).map((item, idx) => (
+                  <div key={idx} className="flex justify-between items-center">
+                    <span className="text-gray-500 text-xs">{item.label}</span>
+                    <span className={`text-sm font-medium ${item.amount >= 0 ? 'text-red-400' : 'text-green-400'}`}>
+                      {item.amount >= 0 ? '− ' : '+ '}{formatRM(Math.abs(item.amount))}
+                    </span>
                   </div>
-                )}
+                ))}
                 <div className="flex justify-between items-center">
                   <span className="text-gray-500 text-xs">Commission</span>
                   <span className={`text-sm font-medium ${car.isStaffSale ? 'text-amber-400' : 'text-gray-300'}`}>
