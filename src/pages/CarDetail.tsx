@@ -400,10 +400,13 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const _dealPrice = _wo
     ? (_wo.sellingPrice - (_wo.discount ?? 0))
     : (car.finalDeal?.dealPrice ?? car.sellingPrice);
+  const _discount = _wo ? (_wo.discount ?? 0) : 0;
   const _additionalTotal = _wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
+  const _intakeCommission = car.intakeCommission ?? 0;
+  const _sourceCommission = car.sourceCommission ?? 0;
   const _profitBeforeComm = _dealPrice - car.purchasePrice - totalRepairCost - totalMiscCost - _additionalTotal;
   const _commission = (car.outgoingConsignment || car.isStaffSale) ? 0 : (car.consignment || (car.priceFloor != null && _dealPrice < car.priceFloor)) ? 1000 : 1500;
-  const netProfit = _profitBeforeComm - _commission;
+  const netProfit = car.isStaffSale ? 0 : _profitBeforeComm - _commission - _intakeCommission - _sourceCommission;
 
   // Checklist helpers
   const checklist: ChecklistItem[] = car.checklistItems ?? DEFAULT_CHECKLIST_LABELS.map((label, i) => ({
@@ -1310,7 +1313,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           const dealNetPrice = sellingPrice - discount;
           const profitBeforeCommission = dealNetPrice - purchasePrice - totalRepairCost - totalMiscCost - additionalTotal;
           const commission = (car.outgoingConsignment || car.isStaffSale) ? 0 : (car.consignment || (car.priceFloor != null && dealNetPrice < car.priceFloor)) ? 1000 : 1500;
-          const netProfit = profitBeforeCommission - commission;
+          const netProfit = car.isStaffSale ? 0 : profitBeforeCommission - commission;
 
           return (
             <div className="divide-y-0">
@@ -1669,19 +1672,60 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               <p className="text-white font-semibold text-sm flex items-center gap-2">
                 <TrendingUp size={15} className="text-gold-400" /> Financial Summary
               </p>
-              <div className="space-y-3">
-                {[
-                  { label: 'Asking Price', value: formatRM(car.sellingPrice), cls: 'text-gold-400 font-bold' },
-                  { label: 'Purchase Price', value: formatRM(car.purchasePrice), cls: 'text-white' },
-                  { label: 'Repair Costs', value: formatRM(totalRepairCost), cls: 'text-orange-400' },
-                  { label: 'Misc Costs', value: formatRM(totalMiscCost), cls: 'text-purple-400' },
-                  { label: 'Commission', value: car.isStaffSale ? 'Staff Sale — Waived' : formatRM(_commission), cls: car.isStaffSale ? 'text-amber-400' : 'text-gray-300' },
-                ].map(({ label, value, cls }) => (
-                  <div key={label} className="flex justify-between items-center">
-                    <span className="text-gray-500 text-xs">{label}</span>
-                    <span className={`text-sm font-medium ${cls}`}>{value}</span>
+              <div className="space-y-2.5">
+                {/* Asking / Deal Price */}
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-500 text-xs">Asking Price</span>
+                  <span className="text-sm font-medium text-gold-400 font-bold">{formatRM(car.sellingPrice)}</span>
+                </div>
+                {_discount > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-500 text-xs">Discount</span>
+                    <span className="text-sm font-medium text-red-400">− {formatRM(_discount)}</span>
                   </div>
-                ))}
+                )}
+                {_dealPrice !== car.sellingPrice && _discount === 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-500 text-xs">Deal Price</span>
+                    <span className="text-sm font-medium text-gold-300">{formatRM(_dealPrice)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-500 text-xs">Purchase Price</span>
+                  <span className="text-sm font-medium text-white">− {formatRM(car.purchasePrice)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-500 text-xs">Repair Costs</span>
+                  <span className="text-sm font-medium text-orange-400">− {formatRM(totalRepairCost)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-500 text-xs">Misc Costs</span>
+                  <span className="text-sm font-medium text-purple-400">− {formatRM(totalMiscCost)}</span>
+                </div>
+                {_additionalTotal > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-500 text-xs">Additional Expenses</span>
+                    <span className="text-sm font-medium text-red-400">− {formatRM(_additionalTotal)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-500 text-xs">Commission</span>
+                  <span className={`text-sm font-medium ${car.isStaffSale ? 'text-amber-400' : 'text-gray-300'}`}>
+                    {car.isStaffSale ? 'Waived (Staff)' : `− ${formatRM(_commission)}`}
+                  </span>
+                </div>
+                {_intakeCommission > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-500 text-xs">Intake Bonus</span>
+                    <span className="text-sm font-medium text-gray-300">− {formatRM(_intakeCommission)}</span>
+                  </div>
+                )}
+                {_sourceCommission > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-500 text-xs">{car.sourceType === 'internal' ? 'Sourcing Commission' : 'Ext. Commission'}</span>
+                    <span className="text-sm font-medium text-gray-300">− {formatRM(_sourceCommission)}</span>
+                  </div>
+                )}
                 <div className="pt-2 border-t border-obsidian-400/30 flex justify-between items-center">
                   <span className="text-gray-400 text-xs font-semibold">Net Profit</span>
                   <span className={`text-base font-bold ${netProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatRM(netProfit)}</span>
