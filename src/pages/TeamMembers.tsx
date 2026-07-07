@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Edit, Trash2, Users, AlertCircle, Shield, UserCheck, Wrench, Phone, Mail, AtSign, Car, TrendingUp, Target, Award, X, KeyRound, CreditCard, Save } from 'lucide-react';
+import { Plus, Edit, Trash2, Users, AlertCircle, Shield, UserCheck, Wrench, Phone, Mail, AtSign, Car, TrendingUp, Target, Award, X, KeyRound, CreditCard, Save, Settings } from 'lucide-react';
 import { useStore } from '../store';
-import { User } from '../types';
+import { User, NO_BANKER_BANKS } from '../types';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, generateId } from '../utils/format';
@@ -46,6 +46,7 @@ const emptyForm = {
   bankName: '',
   bankAccountNumber: '',
   bankAccountHolder: '',
+  banks: [] as string[],
 };
 
 const ROLE_CONFIG = {
@@ -72,6 +73,12 @@ const ROLE_CONFIG = {
     icon: TrendingUp,
     badgeBg: 'bg-cyan-500/20 border-cyan-500/30 text-cyan-400',
     avatarBg: 'bg-cyan-500/20 border-cyan-500/30 text-cyan-400',
+  },
+  admin: {
+    label: 'Admin',
+    icon: Settings,
+    badgeBg: 'bg-gray-500/20 border-gray-500/30 text-gray-300',
+    avatarBg: 'bg-gray-500/20 border-gray-500/30 text-gray-300',
   },
 };
 
@@ -449,6 +456,7 @@ export default function TeamMembers() {
         bankName: form.bankName || undefined,
         bankAccountNumber: form.bankAccountNumber || undefined,
         bankAccountHolder: form.bankAccountHolder || undefined,
+        banks: form.role === 'admin' ? form.banks : undefined,
         ...(form.password ? { password: form.password } : {}),
       });
     } else {
@@ -464,6 +472,7 @@ export default function TeamMembers() {
         bankName: form.bankName || undefined,
         bankAccountNumber: form.bankAccountNumber || undefined,
         bankAccountHolder: form.bankAccountHolder || undefined,
+        banks: form.role === 'admin' ? form.banks : undefined,
       });
     }
   };
@@ -480,6 +489,7 @@ export default function TeamMembers() {
       bankName: user.bankName ?? '',
       bankAccountNumber: user.bankAccountNumber ?? '',
       bankAccountHolder: user.bankAccountHolder ?? '',
+      banks: user.banks ?? [],
     });
     setErrors({});
     setShowModal(true);
@@ -811,7 +821,7 @@ export default function TeamMembers() {
           {/* Role selector */}
           <FormField label="Role">
             <div className="grid grid-cols-2 gap-2">
-              {(['salesperson', 'mechanic', 'director', 'shareholder'] as const).map((role) => {
+              {(['salesperson', 'mechanic', 'director', 'shareholder', 'admin'] as const).map((role) => {
                 const cfg = ROLE_CONFIG[role];
                 const selected = form.role === role;
                 const selectedStyle = role === 'director'
@@ -850,6 +860,36 @@ export default function TeamMembers() {
                 onChange={(e) => setForm({ ...form, monthlyTarget: Number(e.target.value) })}
                 min={1}
               />
+            </FormField>
+          )}
+
+          {/* Banks — only for admin */}
+          {form.role === 'admin' && (
+            <FormField label="Assigned Banks (Loan Submissions)">
+              <div className="flex flex-wrap gap-2 pt-1">
+                {NO_BANKER_BANKS.map(bank => {
+                  const checked = form.banks.includes(bank);
+                  return (
+                    <button
+                      key={bank}
+                      type="button"
+                      onClick={() => setForm({
+                        ...form,
+                        banks: checked
+                          ? form.banks.filter(b => b !== bank)
+                          : [...form.banks, bank],
+                      })}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                        checked
+                          ? 'bg-sky-500/20 border-sky-500/50 text-sky-300'
+                          : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:text-gray-200'
+                      }`}
+                    >
+                      {bank}
+                    </button>
+                  );
+                })}
+              </div>
             </FormField>
           )}
         </div>
