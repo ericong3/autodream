@@ -7,7 +7,7 @@ import {
   FileText, Calculator, GitCompare,
   ClipboardList, Bot, TrendingUp, UsersRound,
   History, Banknote, Briefcase, Search,
-  Loader2, RefreshCw, Database, FolderOpen,
+  Loader2, RefreshCw, Database, FolderOpen, Settings,
 } from 'lucide-react';
 import { NavLink, useNavigate, useLocation, Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
@@ -64,6 +64,11 @@ const MECHANIC_PRIMARY = [
   { to: '/inventory',    icon: Car,           label: 'Inventory'    },
   { to: '/reminders',    icon: ClipboardList, label: 'Instructions' },
   { to: '/ai-assistant', icon: Bot,           label: 'AI'           },
+];
+
+const ADMIN_PRIMARY = [
+  { to: '/admin-dashboard', icon: Settings, label: 'Dashboard' },
+  { to: '/inventory',       icon: Car,      label: 'Inventory' },
 ];
 
 export default function Layout() {
@@ -137,8 +142,9 @@ export default function Layout() {
   const isSalesperson = currentUser?.role === 'salesperson';
   const isInvestor = currentUser?.role === 'investor';
   const isBanker = currentUser?.role === 'banker';
+  const isAdmin = currentUser?.role === 'admin';
   const unreadNotifs = notifications.filter(n => !n.isRead);
-  const primaryNav = (isDirector || isShareHolder) ? DIRECTOR_PRIMARY : isSalesperson ? SALESPERSON_PRIMARY : isInvestor ? INVESTOR_PRIMARY : isBanker ? BANKER_PRIMARY : MECHANIC_PRIMARY;
+  const primaryNav = (isDirector || isShareHolder) ? DIRECTOR_PRIMARY : isSalesperson ? SALESPERSON_PRIMARY : isInvestor ? INVESTOR_PRIMARY : isBanker ? BANKER_PRIMARY : isAdmin ? ADMIN_PRIMARY : MECHANIC_PRIMARY;
   const moreNav = (isDirector || isShareHolder) ? DIRECTOR_MORE : isSalesperson ? SALESPERSON_MORE : [];
 
   return (

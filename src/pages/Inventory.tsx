@@ -401,10 +401,7 @@ export default function Inventory() {
   const carProfitMap = useMemo(() => {
     const map: Record<string, number> = {};
     for (const car of cars) {
-      const customer = customers.find(c => c.interestedCarId === car.id && (c.loanWorkOrder || c.cashWorkOrder));
-      const wo = customer?.loanWorkOrder ?? customer?.cashWorkOrder;
       const dealPrice = confirmedDealPrice[car.id] ?? car.finalDeal?.dealPrice ?? car.sellingPrice;
-      const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
       const repairCosts = repairs.filter(r => r.carId === car.id && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
       const miscCosts = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
       const profitBeforeComm = dealPrice - car.purchasePrice - repairCosts - miscCosts;

@@ -30,12 +30,14 @@ import Investors from './pages/Investors';
 import InvestorPortal from './pages/InvestorPortal';
 import LoanCases from './pages/LoanCases';
 import BankerDashboard from './pages/BankerDashboard';
+import AdminDashboard from './pages/AdminDashboard';
 import Payments from './pages/Payments';
 import CarMovement from './pages/CarMovement';
 
 function roleHome(role: string) {
   if (role === 'banker') return '/banker-dashboard';
   if (role === 'investor') return '/investor-portal';
+  if (role === 'admin') return '/admin-dashboard';
   return '/inventory';
 }
 
@@ -46,6 +48,13 @@ function AuthedLayout() {
   if (currentUser.role === 'banker') return <Navigate to="/banker-dashboard" replace />;
   if (currentUser.role === 'investor') return <Navigate to="/investor-portal" replace />;
   return <Layout />;
+}
+
+function RequireAdmin({ children }: { children: React.ReactNode }) {
+  const currentUser = useStore((s) => s.currentUser);
+  if (!currentUser) return <Navigate to="/login" replace />;
+  if (currentUser.role !== 'admin') return <Navigate to={roleHome(currentUser.role)} replace />;
+  return <>{children}</>;
 }
 
 // Layout wrapper for bankers
@@ -154,6 +163,7 @@ export default function App() {
           <Route path="/dashboard" element={<RequireDirectorOrAdmin><Dashboard /></RequireDirectorOrAdmin>} />
           <Route path="/history" element={<RequireDirectorOrAdmin><History /></RequireDirectorOrAdmin>} />
           <Route path="/history/:id" element={<RequireDirectorOrAdmin><History /></RequireDirectorOrAdmin>} />
+          <Route path="/admin-dashboard" element={<RequireAdmin><AdminDashboard /></RequireAdmin>} />
         </Route>
 
         {/* Banker — own Layout instance */}

@@ -401,7 +401,6 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     ? (_wo.sellingPrice - (_wo.discount ?? 0))
     : (car.finalDeal?.dealPrice ?? car.sellingPrice);
   const _discount = _wo ? (_wo.discount ?? 0) : 0;
-  const _additionalTotal = _wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
   const _intakeCommission = car.intakeCommission ?? 0;
   const _sourceCommission = car.sourceCommission ?? 0;
   const _profitBeforeComm = _dealPrice - car.purchasePrice - totalRepairCost - totalMiscCost;
