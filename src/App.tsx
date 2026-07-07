@@ -160,7 +160,7 @@ export default function App() {
           <Route path="/team" element={<RequireDirector><TeamMembers /></RequireDirector>} />
           <Route path="/data" element={<RequireSalesOrDirector><Data /></RequireSalesOrDirector>} />
           <Route path="/investors" element={<RequireDirector><Investors /></RequireDirector>} />
-          <Route path="/dashboard" element={<RequireDirectorOrAdmin><Dashboard /></RequireDirectorOrAdmin>} />
+          <Route path="/dashboard" element={<RequireDirector><Dashboard /></RequireDirector>} />
           <Route path="/history" element={<RequireDirectorOrAdmin><History /></RequireDirectorOrAdmin>} />
           <Route path="/history/:id" element={<RequireDirectorOrAdmin><History /></RequireDirectorOrAdmin>} />
           <Route path="/admin-dashboard" element={<RequireAdmin><AdminDashboard /></RequireAdmin>} />

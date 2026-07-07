@@ -81,18 +81,11 @@ const bankerItems: NavItem[] = [
   { to: '/banker-dashboard', icon: FolderOpen, label: 'Cases' },
 ];
 
-// Admin: same nav as director but no Finance page (no purchase price / profit access)
 const adminItems: NavItem[] = [
-  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/inventory', icon: Car, label: 'Inventory' },
-];
-
-const adminBottomItems: NavItem[] = [
-  { to: '/team', icon: UsersRound, label: 'Team Members' },
-  { to: '/data', icon: Database, label: 'Data' },
-  { to: '/reminders', icon: ClipboardList, label: 'Instructions' },
-  { to: '/history', icon: History, label: 'Delivered' },
-  { to: '/ai-assistant', icon: Bot, label: 'AI Assistant' },
+  { to: '/admin-dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/inventory',       icon: Car,             label: 'Inventory' },
+  { to: '/reminders',       icon: ClipboardList,   label: 'Instructions' },
+  { to: '/ai-assistant',    icon: Bot,             label: 'AI Assistant' },
 ];
 
 const SALES_ROUTES = salesGroupItems.map(i => i.to);
@@ -226,21 +219,7 @@ export default function Sidebar() {
       <aside className={asideClass}>
         <SidebarLogo collapsed={collapsed} onToggle={() => setCollapsed(v => !v)} />
         <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto overflow-x-hidden">
-          <SidebarLabel collapsed={collapsed}>Overview</SidebarLabel>
           {adminItems.map(item => <NavItemLink key={item.to} item={item} collapsed={collapsed} badge={badgeByPath[item.to] ?? 0} />)}
-
-          <SidebarLabel collapsed={collapsed}>Sales</SidebarLabel>
-          <div>
-            {salesAccordionButton}
-            {showSalesItems && (
-              <div className="mt-1 space-y-0.5 border-l border-obsidian-400/60 ml-5">
-                {salesGroupItems.map(item => <NavItemLink key={item.to} item={item} indent collapsed={collapsed} badge={badgeByPath[item.to] ?? 0} />)}
-              </div>
-            )}
-          </div>
-
-          <SidebarLabel collapsed={collapsed}>Management</SidebarLabel>
-          {adminBottomItems.map(item => <NavItemLink key={item.to} item={item} collapsed={collapsed} badge={badgeByPath[item.to] ?? 0} />)}
         </nav>
         <SidebarFooter collapsed={collapsed} />
       </aside>
