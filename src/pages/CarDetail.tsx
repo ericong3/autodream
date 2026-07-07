@@ -595,7 +595,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           {backLabel}
         </button>
         <div className="flex gap-3 flex-wrap">
-          {(isMechanic || isDirector) && (
+          {(isMechanic || isDirector || isAdmin) && (
             <button
               onClick={openAddRepair}
               className="flex items-center gap-2 bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/60 text-gray-300 hover:text-white px-4 py-2 rounded-lg text-sm transition-colors"
@@ -1052,7 +1052,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                         </div>
                       )}
                       {/* Proceed button for queued repairs */}
-                      {isQueued && (isMechanic || isDirector) && (
+                      {isQueued && (isMechanic || isDirector || isAdmin) && (
                         <button
                           onClick={() => handleProceedRepair(r)}
                           disabled={hasSentOutRepair}
@@ -1064,7 +1064,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                         </button>
                       )}
                       {/* Mark Done button for sent-out / in-progress repairs */}
-                      {isActive && (isMechanic || isDirector) && (
+                      {isActive && (isMechanic || isDirector || isAdmin) && (
                         <button
                           onClick={() => openCompleteRepair(r)}
                           className="flex items-center gap-1.5 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
