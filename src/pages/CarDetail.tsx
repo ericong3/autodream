@@ -840,10 +840,10 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               {car.sourceSalesman && (
                 <InfoItem label={car.sourceType === 'external' ? 'Ext. Salesman' : 'Source Salesman'} value={car.sourceSalesman} valueClass="text-teal-400" />
               )}
-              {(car.sourceCommission ?? 0) > 0 && (
+              {!isAdmin && (car.sourceCommission ?? 0) > 0 && (
                 <InfoItem label={car.sourceType === 'internal' ? 'Sourcing Commission' : 'Ext. Commission'} value={`RM ${(car.sourceCommission ?? 0).toLocaleString()}`} valueClass="text-teal-400 font-semibold" />
               )}
-              {car.sourceType === 'external' && (car.intakeCommission ?? 0) > 0 && (
+              {!isAdmin && car.sourceType === 'external' && (car.intakeCommission ?? 0) > 0 && (
                 <InfoItem label="Intake Bonus" value={`RM ${(car.intakeCommission ?? 0).toLocaleString()}`} valueClass="text-green-400 font-semibold" />
               )}
             </div>
