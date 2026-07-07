@@ -211,6 +211,7 @@ function rowToCar(r: any): Car {
     moneyReceived: r.money_received ?? undefined,
     priceFloor: r.price_floor ?? undefined,
     isStaffSale: r.is_staff_sale ?? false,
+    waiveCommission: r.waive_commission ?? false,
     miscCosts: parseJsonField<any[]>(r.misc_costs) ?? [],
     investorId: r.investor_id ?? undefined,
     investorSplit: r.investor_split ?? undefined,
@@ -365,6 +366,7 @@ function carToRow(c: Partial<Car>) {
   if ('moneyReceived' in c) row.money_received = c.moneyReceived ?? null;
   if (c.priceFloor !== undefined) row.price_floor = c.priceFloor;
   if ('isStaffSale' in c) row.is_staff_sale = c.isStaffSale ?? false;
+  if ('waiveCommission' in c) row.waive_commission = c.waiveCommission ?? false;
   if (c.miscCosts !== undefined) row.misc_costs = c.miscCosts;
   if (c.investorId !== undefined) row.investor_id = c.investorId;
   if (c.investorSplit !== undefined) row.investor_split = c.investorSplit;

@@ -39,7 +39,7 @@ export async function generateDeliveryPayments(opts: {
   const dealPrice = ((wo?.sellingPrice ?? car.sellingPrice) - (wo?.discount ?? 0)) || car.sellingPrice;
 
   // Salesman commission
-  if (car.assignedSalesperson && !car.outgoingConsignment && !car.isStaffSale) {
+  if (car.assignedSalesperson && !car.outgoingConsignment && !car.isStaffSale && !car.waiveCommission) {
     const sp = users.find(u => u.id === car.assignedSalesperson);
     if (sp && !exists(payments, 'salesman_commission', { carId: car.id })) {
       const effectiveFloor = car.priceFloor ?? car.sellingPrice;
@@ -293,7 +293,7 @@ export function collectMissingPayments(data: {
     const dealPrice = ((wo?.sellingPrice ?? car.sellingPrice) - (wo?.discount ?? 0)) || car.sellingPrice;
 
     // Salesman commission
-    if (car.assignedSalesperson && !car.outgoingConsignment && !car.isStaffSale && !alreadyExists('salesman_commission', { carId: car.id })) {
+    if (car.assignedSalesperson && !car.outgoingConsignment && !car.isStaffSale && !car.waiveCommission && !alreadyExists('salesman_commission', { carId: car.id })) {
       const sp = users.find(u => u.id === car.assignedSalesperson);
       if (sp) {
         const effectiveFloor = car.priceFloor ?? car.sellingPrice;

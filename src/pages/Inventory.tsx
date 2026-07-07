@@ -407,8 +407,8 @@ export default function Inventory() {
       const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
       const repairCosts = repairs.filter(r => r.carId === car.id && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
       const miscCosts = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
-      const profitBeforeComm = dealPrice - car.purchasePrice - repairCosts - miscCosts - additionalTotal;
-      const commission = (car.outgoingConsignment || car.isStaffSale) ? 0 : (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
+      const profitBeforeComm = dealPrice - car.purchasePrice - repairCosts - miscCosts;
+      const commission = (car.outgoingConsignment || car.isStaffSale || car.waiveCommission) ? 0 : (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
       map[car.id] = profitBeforeComm - commission;
     }
     return map;
@@ -515,11 +515,15 @@ export default function Inventory() {
     return [...ordered].sort((a, b) => (unreadCarIds.has(a.id) ? 0 : 1) - (unreadCarIds.has(b.id) ? 0 : 1));
   }, [filtered, stockOrder, unreadCarIds]);
   const ownStockOrdered      = useMemo(() => filteredOrdered.filter(c => !c.consignment), [filteredOrdered]);
-  const consignmentOrdered   = useMemo(() => filteredOrdered.filter(c => !!c.consignment), [filteredOrdered]);
-  const outOrdered           = useMemo(() => consignmentOrdered.filter(c => {
-    const last = carMovements.find(m => m.carId === c.id || (c.carPlate && m.carPlate === c.carPlate));
-    return last?.type === 'out';
-  }), [consignmentOrdered, carMovements]);
+  const outOrdered           = useMemo(() => filteredOrdered.filter(c => {
+    if (!c.consignment) return false;
+    const movements = carMovements
+      .filter(m => m.carId === c.id || (c.carPlate && m.carPlate === c.carPlate))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return movements[0]?.type === 'out';
+  }), [filteredOrdered, carMovements]);
+  const outCarIds            = useMemo(() => new Set(outOrdered.map(c => c.id)), [outOrdered]);
+  const consignmentOrdered   = useMemo(() => filteredOrdered.filter(c => !!c.consignment && !outCarIds.has(c.id)), [filteredOrdered, outCarIds]);
   const comingSoonOrdered = useMemo(() => {
     const ordered = comingSoonOrder.map(id => comingSoonFiltered.find(c => c.id === id)).filter(Boolean) as Car[];
     return [...ordered].sort((a, b) => (unreadCarIds.has(a.id) ? 0 : 1) - (unreadCarIds.has(b.id) ? 0 : 1));
@@ -2475,7 +2479,7 @@ export default function Inventory() {
           const { updateCar } = useStore.getState();
           const wo = buyer.loanWorkOrder ?? buyer.cashWorkOrder;
           const dealPrice = wo ? (wo.sellingPrice - (wo.discount ?? 0)) : (car.sellingPrice ?? 0);
-          const commission = car.isStaffSale ? 0 : (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
+          const commission = (car.isStaffSale || car.waiveCommission) ? 0 : (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
           updateCustomer(buyer.id, {
             delivered: true,
             deliveredAt: new Date().toISOString(),

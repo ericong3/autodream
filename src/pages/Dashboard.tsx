@@ -71,12 +71,12 @@ export default function Dashboard() {
       : car.finalDeal?.dealPrice ?? car.sellingPrice;
     const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
 
-    const profitBeforeComm = dealPrice - car.purchasePrice - repairCost - miscCost - additionalTotal;
-    const commission = (car.outgoingConsignment || car.isStaffSale) ? 0 : (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
+    const profitBeforeComm = dealPrice - car.purchasePrice - repairCost - miscCost;
+    const commission = (car.outgoingConsignment || car.isStaffSale || car.waiveCommission) ? 0 : (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
     const intakeComm = car.intakeCommission ?? 0;
     const sourceComm = car.sourceCommission ?? 0;
 
-    const netCarProfit = profitBeforeComm - commission - intakeComm - sourceComm;
+    const netCarProfit = car.isStaffSale ? 0 : profitBeforeComm - commission - intakeComm - sourceComm;
     return { car, dealPrice, repairCost, miscCost, additionalTotal, commission, intakeComm, sourceComm, netCarProfit };
   }), [soldCars, repairs, customers]);
 

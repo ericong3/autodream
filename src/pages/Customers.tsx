@@ -1509,10 +1509,11 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
             <p className="text-gray-600 text-xs mt-1">Cases appear here once a work order is submitted</p>
           </div>
         ) : (() => {
+          const todayMonth = new Date().toISOString().slice(0, 7);
           const getMonthKey = (c: Customer) => {
             if (c.delivered && c.deliveredAt) return c.deliveredAt.slice(0, 7);
-            const wo = c.loanWorkOrder ?? c.cashWorkOrder;
-            return (wo?.createdAt ?? c.createdAt).slice(0, 7);
+            // Undelivered cases always carry forward to current month
+            return todayMonth;
           };
 
           // All months that have data — for knowing when prev/next exist

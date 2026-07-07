@@ -404,8 +404,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const _additionalTotal = _wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
   const _intakeCommission = car.intakeCommission ?? 0;
   const _sourceCommission = car.sourceCommission ?? 0;
-  const _profitBeforeComm = _dealPrice - car.purchasePrice - totalRepairCost - totalMiscCost - _additionalTotal;
-  const _commission = (car.outgoingConsignment || car.isStaffSale) ? 0 : (car.consignment || (car.priceFloor != null && _dealPrice < car.priceFloor)) ? 1000 : 1500;
+  const _profitBeforeComm = _dealPrice - car.purchasePrice - totalRepairCost - totalMiscCost;
+  const _commission = (car.outgoingConsignment || car.isStaffSale || car.waiveCommission) ? 0 : (car.consignment || (car.priceFloor != null && _dealPrice < car.priceFloor)) ? 1000 : 1500;
   const netProfit = car.isStaffSale ? 0 : _profitBeforeComm - _commission - _intakeCommission - _sourceCommission;
 
   // Checklist helpers
@@ -1311,9 +1311,11 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
 
           // Director profit
           const dealNetPrice = sellingPrice - discount;
-          const profitBeforeCommission = dealNetPrice - purchasePrice - totalRepairCost - totalMiscCost - additionalTotal;
-          const commission = (car.outgoingConsignment || car.isStaffSale) ? 0 : (car.consignment || (car.priceFloor != null && dealNetPrice < car.priceFloor)) ? 1000 : 1500;
-          const netProfit = car.isStaffSale ? 0 : profitBeforeCommission - commission;
+          const profitBeforeCommission = dealNetPrice - purchasePrice - totalRepairCost - totalMiscCost;
+          const commission = (car.outgoingConsignment || car.isStaffSale || car.waiveCommission) ? 0 : (car.consignment || (car.priceFloor != null && dealNetPrice < car.priceFloor)) ? 1000 : 1500;
+          const dealIntakeCommission = car.intakeCommission ?? 0;
+          const dealSourceCommission = car.sourceCommission ?? 0;
+          const netProfit = car.isStaffSale ? 0 : profitBeforeCommission - commission - dealIntakeCommission - dealSourceCommission;
 
           return (
             <div className="divide-y-0">
@@ -1397,15 +1399,19 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   {discount > 0 && <DRow label="− Discount" value={formatRM(discount)} valueClass="text-red-400" />}
                   <DRow label="− Purchase Price" value={formatRM(purchasePrice)} valueClass="text-red-400" />
                   {totalRepairCost > 0 && <DRow label="− Repair Expenses" value={formatRM(totalRepairCost)} valueClass="text-red-400" />}
-                  {additionalTotal > 0 && <DRow label="− Additional Expenses" value={formatRM(additionalTotal)} valueClass="text-red-400" />}
+                  {totalMiscCost > 0 && <DRow label="− Misc Costs" value={formatRM(totalMiscCost)} valueClass="text-red-400" />}
                   {car.isStaffSale ? (
                     <DRow label="− Salesman Commission" value="Staff Sale — Waived" valueClass="text-amber-400" />
+                  ) : car.waiveCommission ? (
+                    <DRow label="− Salesman Commission" value="Waived" valueClass="text-amber-400" />
                   ) : !car.outgoingConsignment && <DRow label="− Salesman Commission" value={formatRM(commission)} valueClass="text-purple-400" />}
                   {car.priceFloor != null && !car.isStaffSale && (
                     <p className="text-xs text-gray-500 text-right pr-5 pb-1">
                       Deal ({formatRM(dealNetPrice)}) {dealNetPrice >= car.priceFloor ? '≥' : '<'} floor → {commission === 1000 ? 'RM 1,000' : 'RM 1,500'}
                     </p>
                   )}
+                  {dealIntakeCommission > 0 && <DRow label="− Intake Bonus" value={formatRM(dealIntakeCommission)} valueClass="text-red-400" />}
+                  {dealSourceCommission > 0 && <DRow label="− Sourcing Commission" value={formatRM(dealSourceCommission)} valueClass="text-red-400" />}
                   <div className="flex justify-between items-center pt-3 mt-1 border-t-2 border-obsidian-400/50">
                     <span className="text-white font-semibold">Net Profit</span>
                     <span className={`text-lg font-bold ${netProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
@@ -1427,9 +1433,13 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                       {bankProduct > 0 && <DRow label="Bank Product" value={`− ${formatRM(bankProduct)}`} valueClass="text-red-400" />}
                       {car.isStaffSale ? (
                         <DRow label="Salesman Commission" value="Staff Sale — Waived" valueClass="text-amber-400" />
+                      ) : car.waiveCommission ? (
+                        <DRow label="Salesman Commission" value="Waived" valueClass="text-amber-400" />
                       ) : !car.outgoingConsignment && <DRow label="Salesman Commission" value={`− ${formatRM(commission)}`} valueClass="text-red-400" />}
                       {totalRepairCost > 0 && <DRow label="Repair Expenses" value={`− ${formatRM(totalRepairCost)}`} valueClass="text-red-400" />}
-                      {additionalTotal > 0 && <DRow label="Additional Expenses" value={`− ${formatRM(additionalTotal)}`} valueClass="text-red-400" />}
+                      {totalMiscCost > 0 && <DRow label="Misc Costs" value={`− ${formatRM(totalMiscCost)}`} valueClass="text-red-400" />}
+                      {dealIntakeCommission > 0 && <DRow label="Intake Bonus" value={`− ${formatRM(dealIntakeCommission)}`} valueClass="text-red-400" />}
+                      {dealSourceCommission > 0 && <DRow label="Sourcing Commission" value={`− ${formatRM(dealSourceCommission)}`} valueClass="text-red-400" />}
                       <div className="flex justify-between items-center pt-3 mt-1 border-t-2 border-obsidian-400/50">
                         <span className="text-white font-semibold">Net Profit</span>
                         <span className={`text-lg font-bold ${netProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
@@ -1702,18 +1712,10 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   <span className="text-gray-500 text-xs">Misc Costs</span>
                   <span className="text-sm font-medium text-purple-400">− {formatRM(totalMiscCost)}</span>
                 </div>
-                {(_wo?.additionalItems ?? []).filter(i => i.amount !== 0).map((item, idx) => (
-                  <div key={idx} className="flex justify-between items-center">
-                    <span className="text-gray-500 text-xs">{item.label}</span>
-                    <span className={`text-sm font-medium ${item.amount >= 0 ? 'text-red-400' : 'text-green-400'}`}>
-                      {item.amount >= 0 ? '− ' : '+ '}{formatRM(Math.abs(item.amount))}
-                    </span>
-                  </div>
-                ))}
                 <div className="flex justify-between items-center">
                   <span className="text-gray-500 text-xs">Commission</span>
-                  <span className={`text-sm font-medium ${car.isStaffSale ? 'text-amber-400' : 'text-gray-300'}`}>
-                    {car.isStaffSale ? 'Waived (Staff)' : `− ${formatRM(_commission)}`}
+                  <span className={`text-sm font-medium ${car.isStaffSale || car.waiveCommission ? 'text-amber-400' : 'text-gray-300'}`}>
+                    {car.isStaffSale ? 'Waived (Staff)' : car.waiveCommission ? 'Waived' : `− ${formatRM(_commission)}`}
                   </span>
                 </div>
                 {_intakeCommission > 0 && (
@@ -1794,7 +1796,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             </FormField>
           )}
           {isDirector && (
-            <div className="col-span-2">
+            <div className="col-span-2 space-y-2">
               <button
                 type="button"
                 onClick={() => setEditForm({ ...editForm, isStaffSale: !editForm.isStaffSale })}
@@ -1806,6 +1808,19 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 <div>
                   <p className="text-sm font-medium">Staff Sale — Sold at cost, no commission</p>
                   <p className="text-xs opacity-60 mt-0.5">No salesman commission will be charged for this deal</p>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditForm({ ...editForm, waiveCommission: !editForm.waiveCommission })}
+                className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${editForm.waiveCommission ? 'bg-blue-500/10 border-blue-500/40 text-blue-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
+              >
+                <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${editForm.waiveCommission ? 'bg-blue-500 border-blue-500' : 'border-gray-600'}`}>
+                  {editForm.waiveCommission && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Waive Commission — Break even deal</p>
+                  <p className="text-xs opacity-60 mt-0.5">Commission set to RM 0, profit calculated normally</p>
                 </div>
               </button>
             </div>

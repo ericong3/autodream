@@ -355,6 +355,7 @@ export interface Car {
   panelChargeAmount?: number;    // fee charged by panel dealer (varies by bank)
   collectionReceiptUrl?: string;
   isStaffSale?: boolean;
+  waiveCommission?: boolean;
   sellerThumbprintSaved?: boolean;
   dealProgress?: DealProgress;
 }
