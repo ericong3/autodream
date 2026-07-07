@@ -49,12 +49,14 @@ export default function AdminDashboard() {
   const loanCaseActivities = useStore(s => s.loanCaseActivities);
 
   const [tab, setTab] = useState<TabType>('repairs');
+  const [selectedBank, setSelectedBank] = useState<string | null>(null);
   const [loanFilter, setLoanFilter] = useState<'new' | 'submitted' | 'approved' | 'rejected' | 'appeal' | 'cancelled'>('new');
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [paymentFilter, setPaymentFilter] = useState<'pending' | 'done'>('pending');
   const [markingId, setMarkingId] = useState<string | null>(null);
 
   const myBanks = currentUser.banks ?? [];
+  const activeBank = selectedBank ?? myBanks[0] ?? null;
 
   // ── Repairs tab ──────────────────────────────────────────────
   const activeRepairs = useMemo(() =>
@@ -78,11 +80,25 @@ export default function AdminDashboard() {
   );
 
   // ── Loan submissions tab ──────────────────────────────────────
-  const myCases = useMemo(() =>
+  const allMyCases = useMemo(() =>
     loanCases
       .filter(c => myBanks.includes(c.bank))
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
     [loanCases, myBanks]
+  );
+
+  // per-bank new case counts for badge display on bank tabs
+  const newCountByBank = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const bank of myBanks) {
+      map[bank] = allMyCases.filter(c => c.bank === bank && c.status === 'pending').length;
+    }
+    return map;
+  }, [allMyCases, myBanks]);
+
+  const myCases = useMemo(() =>
+    activeBank ? allMyCases.filter(c => c.bank === activeBank) : [],
+    [allMyCases, activeBank]
   );
 
   const filteredLoanCases = useMemo(() => myCases.filter(c => {
@@ -108,8 +124,8 @@ export default function AdminDashboard() {
   }, [filteredLoanCases]);
 
   const selectedCase = loanCases.find(c => c.id === selectedCaseId) ?? null;
-  const selectedGroupCases = selectedCase ? myCases.filter(c => c.customerId === selectedCase.customerId) : null;
-  const newCaseCount = myCases.filter(c => c.status === 'pending').length;
+  const selectedGroupCases = selectedCase ? allMyCases.filter(c => c.customerId === selectedCase.customerId) : null;
+  const newCaseCount = allMyCases.filter(c => c.status === 'pending').length;
   const appealCount  = myCases.filter(c => c.status === 'appeal').length;
 
   // ── Payments tab ─────────────────────────────────────────────
@@ -242,6 +258,41 @@ export default function AdminDashboard() {
       {/* ── Loan Submissions tab ── */}
       {tab === 'loans' && myBanks.length > 0 && (
         <div className="space-y-3">
+
+          {/* Bank selector — tabs when multiple, pill header when one */}
+          {myBanks.length === 1 ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold uppercase tracking-widest text-gray-500">Bank</span>
+              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                {myBanks[0]}
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
+              {myBanks.map(bank => {
+                const isActive = bank === activeBank;
+                const count = newCountByBank[bank] ?? 0;
+                return (
+                  <button
+                    key={bank}
+                    onClick={() => { setSelectedBank(bank); setLoanFilter('new'); }}
+                    className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors ${
+                      isActive
+                        ? 'bg-sky-500/20 border-sky-500/40 text-sky-300'
+                        : 'bg-obsidian-700/60 border-obsidian-400/30 text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    {bank}
+                    {count > 0 && (
+                      <span className="bg-gold-500/30 text-gold-300 px-1.5 py-0.5 rounded-full text-[10px] font-bold">{count}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Status filters */}
           <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
             {LOAN_FILTER_TABS.map(t => (
               <button
@@ -254,8 +305,8 @@ export default function AdminDashboard() {
                 }`}
               >
                 {t.label}
-                {t.value === 'new' && newCaseCount > 0 && (
-                  <span className="ml-1.5 bg-obsidian-900/50 text-gold-300 px-1.5 py-0.5 rounded-full text-[10px]">{newCaseCount}</span>
+                {t.value === 'new' && (newCountByBank[activeBank ?? ''] ?? 0) > 0 && (
+                  <span className="ml-1.5 bg-obsidian-900/50 text-gold-300 px-1.5 py-0.5 rounded-full text-[10px]">{newCountByBank[activeBank ?? ''] ?? 0}</span>
                 )}
                 {t.value === 'appeal' && appealCount > 0 && (
                   <span className="ml-1.5 bg-obsidian-900/50 text-purple-300 px-1.5 py-0.5 rounded-full text-[10px]">{appealCount}</span>
@@ -292,10 +343,7 @@ export default function AdminDashboard() {
                       {isNew && <span className="w-1.5 h-1.5 rounded-full bg-gold-400 shadow-[0_0_6px_rgba(234,184,32,0.7)] shrink-0" />}
                       <span className="text-white font-semibold text-sm truncate">{customer?.name ?? 'Unknown'}</span>
                       {group.map(lc => (
-                        <span key={lc.id} className="flex items-center gap-1">
-                          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-sky-500/15 text-sky-300 border-sky-500/30">{lc.bank}</span>
-                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${LOAN_STATUS_COLORS[lc.status] ?? ''}`}>{LOAN_STATUS_LABELS[lc.status] ?? lc.status}</span>
-                        </span>
+                        <span key={lc.id} className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${LOAN_STATUS_COLORS[lc.status] ?? ''}`}>{LOAN_STATUS_LABELS[lc.status] ?? lc.status}</span>
                       ))}
                     </div>
                     <p className="text-xs text-gray-400">RM {first.loanAmount.toLocaleString()} · {allDocs.length} doc{allDocs.length !== 1 ? 's' : ''}{car ? ` · ${car.year} ${car.make} ${car.model}` : ''}</p>
