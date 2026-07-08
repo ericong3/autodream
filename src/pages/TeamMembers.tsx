@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Edit, Trash2, Users, AlertCircle, Shield, UserCheck, Wrench, Phone, Mail, AtSign, Car, TrendingUp, Target, Award, X, KeyRound, CreditCard, Save, Settings } from 'lucide-react';
+import { Plus, Edit, Trash2, Users, AlertCircle, Shield, UserCheck, Wrench, Phone, Mail, AtSign, Car, TrendingUp, Target, Award, X, KeyRound, CreditCard, Save, Settings, Copy, Check } from 'lucide-react';
 import { useStore } from '../store';
 import { User, NO_BANKER_BANKS } from '../types';
 import Modal from '../components/Modal';
@@ -211,10 +211,16 @@ function EmployeeDetailModal({ member, onClose, currentUserId }: { member: User;
                 </div>
 
                 {/* Bank details (read-only) */}
-                {(member.bankName || member.bankAccountNumber) && (
-                  <div className="mt-3 flex items-center gap-2">
-                    <CreditCard size={13} className="text-gold-400 shrink-0" />
-                    <span className="text-gray-400 text-sm">{member.bankName} · {member.bankAccountNumber}</span>
+                {(member.bankName || member.bankAccountNumber) ? (
+                  <BankCard
+                    bankName={member.bankName}
+                    accountNumber={member.bankAccountNumber}
+                    accountHolder={member.bankAccountHolder}
+                  />
+                ) : (
+                  <div className="mt-3 flex items-center gap-1.5 text-[11px] text-gray-600 italic">
+                    <CreditCard size={11} />
+                    No bank details added
                   </div>
                 )}
 
@@ -378,6 +384,35 @@ function EmployeeDetailModal({ member, onClose, currentUserId }: { member: User;
       </div>
     </div>,
     document.body
+  );
+}
+
+function BankCard({ bankName, accountNumber, accountHolder }: { bankName?: string; accountNumber?: string; accountHolder?: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    if (!accountNumber) return;
+    navigator.clipboard.writeText(accountNumber);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <div className="mt-3 bg-obsidian-700/40 border border-obsidian-400/40 rounded-xl px-3 py-2.5 space-y-1">
+      <div className="flex items-center gap-1.5">
+        <CreditCard size={11} className="text-gold-400 shrink-0" />
+        <span className="text-[11px] font-semibold text-gold-300 uppercase tracking-wide">{bankName ?? '—'}</span>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-white text-sm font-mono tracking-wider">{accountNumber ?? '—'}</span>
+        {accountNumber && (
+          <button onClick={copy} className="shrink-0 text-gray-500 hover:text-gold-400 transition-colors">
+            {copied ? <Check size={13} className="text-green-400" /> : <Copy size={13} />}
+          </button>
+        )}
+      </div>
+      {accountHolder && (
+        <p className="text-[11px] text-gray-500">{accountHolder}</p>
+      )}
+    </div>
   );
 }
 
