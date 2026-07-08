@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { createPortal } from 'react-dom';
-import { X, Camera, User as UserIcon, QrCode, Phone, Mail, Globe, Instagram, Facebook, MessageCircle, Briefcase, FileText, Eye, EyeOff, Lock, CheckCircle2, AlertCircle } from 'lucide-react';
+import { X, Camera, User as UserIcon, QrCode, Phone, Mail, Globe, Instagram, Facebook, MessageCircle, Briefcase, FileText, Eye, EyeOff, Lock, CheckCircle2, AlertCircle, CreditCard } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useStore } from '../store';
 
@@ -23,11 +23,15 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
   const [avatar, setAvatar] = useState(currentUser?.avatar ?? '');
   const [position, setPosition] = useState(currentUser?.position ?? '');
   const [bio, setBio] = useState(currentUser?.bio ?? '');
+  const [phone, setPhone] = useState(currentUser?.phone ?? '');
   const [email, setEmail] = useState(currentUser?.email ?? '');
   const [whatsapp, setWhatsapp] = useState(currentUser?.whatsapp ?? '');
   const [instagram, setInstagram] = useState(currentUser?.instagram ?? '');
   const [facebook, setFacebook] = useState(currentUser?.facebook ?? '');
   const [website, setWebsite] = useState(currentUser?.website ?? '');
+  const [bankName, setBankName] = useState(currentUser?.bankName ?? '');
+  const [bankAccountNumber, setBankAccountNumber] = useState(currentUser?.bankAccountNumber ?? '');
+  const [bankAccountHolder, setBankAccountHolder] = useState(currentUser?.bankAccountHolder ?? '');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -46,6 +50,7 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
   if (!isOpen || !currentUser) return null;
 
   const isSalesperson = currentUser.role === 'salesperson';
+  const showBankDetails = currentUser.role !== 'shareholder';
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -67,7 +72,12 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
 
   const handleSave = async () => {
     setSaving(true);
-    await updateUser(currentUser.id, { avatar, position, bio, email, whatsapp, instagram, facebook, website });
+    await updateUser(currentUser.id, {
+      avatar, position, bio, phone, email, whatsapp, instagram, facebook, website,
+      bankName: bankName || undefined,
+      bankAccountNumber: bankAccountNumber || undefined,
+      bankAccountHolder: bankAccountHolder || undefined,
+    });
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -183,7 +193,7 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
         </div>
 
         {!isSalesperson ? (
-          /* ── Simple profile for non-salespeople ── */
+          /* ── Editable profile for non-salespeople ── */
           <div className="p-5 space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -195,6 +205,63 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                 <div className="px-3 py-2 rounded-lg bg-obsidian-700/40 text-white text-sm capitalize">{currentUser.role}</div>
               </div>
             </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[11px] text-gray-400 font-medium uppercase tracking-wider block mb-1">
+                  <span className="flex items-center gap-1"><Phone size={10} />Phone</span>
+                </label>
+                <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+601X-XXXXXXX"
+                  className="w-full px-3 py-2 rounded-lg bg-obsidian-700/40 border border-white/[0.08] text-white text-sm placeholder-gray-500 focus:outline-none focus:border-gold-500/50 transition-colors" />
+              </div>
+              <div>
+                <label className="text-[11px] text-gray-400 font-medium uppercase tracking-wider block mb-1">
+                  <span className="flex items-center gap-1"><Mail size={10} />Email</span>
+                </label>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@email.com" autoCapitalize="none" autoCorrect="off" spellCheck={false}
+                  className="w-full px-3 py-2 rounded-lg bg-obsidian-700/40 border border-white/[0.08] text-white text-sm placeholder-gray-500 focus:outline-none focus:border-gold-500/50 transition-colors" />
+              </div>
+              <div className="col-span-2">
+                <label className="text-[11px] text-gray-400 font-medium uppercase tracking-wider block mb-1">
+                  <span className="flex items-center gap-1"><FileText size={10} />Bio</span>
+                </label>
+                <textarea value={bio} onChange={e => setBio(e.target.value)} placeholder="Short intro..." rows={2}
+                  className="w-full px-3 py-2 rounded-lg bg-obsidian-700/40 border border-white/[0.08] text-white text-sm placeholder-gray-500 focus:outline-none focus:border-gold-500/50 transition-colors resize-none" />
+              </div>
+            </div>
+
+            {/* Bank details */}
+            {showBankDetails && (
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <CreditCard size={11} className="text-gold-400" />
+                  <span className="text-[11px] text-gray-400 font-semibold uppercase tracking-wider">Bank Details</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] text-gray-400 font-medium uppercase tracking-wider block mb-1">Bank Name</label>
+                    <input value={bankName} onChange={e => setBankName(e.target.value)} placeholder="e.g. Maybank"
+                      className="w-full px-3 py-2 rounded-lg bg-obsidian-700/40 border border-white/[0.08] text-white text-sm placeholder-gray-500 focus:outline-none focus:border-gold-500/50 transition-colors" />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-gray-400 font-medium uppercase tracking-wider block mb-1">Account Number</label>
+                    <input value={bankAccountNumber} onChange={e => setBankAccountNumber(e.target.value)} placeholder="e.g. 1234567890"
+                      className="w-full px-3 py-2 rounded-lg bg-obsidian-700/40 border border-white/[0.08] text-white text-sm placeholder-gray-500 focus:outline-none focus:border-gold-500/50 transition-colors" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-[11px] text-gray-400 font-medium uppercase tracking-wider block mb-1">Account Holder Name</label>
+                    <input value={bankAccountHolder} onChange={e => setBankAccountHolder(e.target.value)} placeholder="Full name as per bank"
+                      className="w-full px-3 py-2 rounded-lg bg-obsidian-700/40 border border-white/[0.08] text-white text-sm placeholder-gray-500 focus:outline-none focus:border-gold-500/50 transition-colors" />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <button onClick={handleSave} disabled={saving}
+              className="w-full py-2.5 rounded-lg bg-gold-gradient text-obsidian-950 text-sm font-bold shadow-gold-sm hover:opacity-90 active:scale-95 transition-all disabled:opacity-60">
+              {saving ? 'Saving...' : saved ? '✓ Saved!' : 'Save Profile'}
+            </button>
+
             {changePasswordSection}
           </div>
         ) : (
@@ -350,6 +417,33 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                   className="w-full px-3 py-2 rounded-lg bg-obsidian-700/40 border border-white/[0.08] text-white text-sm placeholder-gray-500 focus:outline-none focus:border-gold-500/50 transition-colors"
                 />
               </div>
+
+              {/* Bank details */}
+              {showBankDetails && (
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <CreditCard size={11} className="text-gold-400" />
+                    <span className="text-[11px] text-gray-400 font-semibold uppercase tracking-wider">Bank Details</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] text-gray-400 font-medium uppercase tracking-wider block mb-1">Bank Name</label>
+                      <input value={bankName} onChange={e => setBankName(e.target.value)} placeholder="e.g. Maybank"
+                        className="w-full px-3 py-2 rounded-lg bg-obsidian-700/40 border border-white/[0.08] text-white text-sm placeholder-gray-500 focus:outline-none focus:border-gold-500/50 transition-colors" />
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-gray-400 font-medium uppercase tracking-wider block mb-1">Account Number</label>
+                      <input value={bankAccountNumber} onChange={e => setBankAccountNumber(e.target.value)} placeholder="e.g. 1234567890"
+                        className="w-full px-3 py-2 rounded-lg bg-obsidian-700/40 border border-white/[0.08] text-white text-sm placeholder-gray-500 focus:outline-none focus:border-gold-500/50 transition-colors" />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-[11px] text-gray-400 font-medium uppercase tracking-wider block mb-1">Account Holder Name</label>
+                      <input value={bankAccountHolder} onChange={e => setBankAccountHolder(e.target.value)} placeholder="Full name as per bank"
+                        className="w-full px-3 py-2 rounded-lg bg-obsidian-700/40 border border-white/[0.08] text-white text-sm placeholder-gray-500 focus:outline-none focus:border-gold-500/50 transition-colors" />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <button
                 onClick={handleSave}
