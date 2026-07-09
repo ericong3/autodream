@@ -1396,7 +1396,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   )}
                   <DRow label="Selling Price" value={formatRM(sellingPrice)} valueClass="text-gold-400 font-bold" />
                   {discount > 0 && <DRow label="− Discount" value={formatRM(discount)} valueClass="text-red-400" />}
-                  <DRow label="− Purchase Price" value={formatRM(purchasePrice)} valueClass="text-red-400" />
+                  <DRow label="− Purchase Price" value={formatRM(purchasePrice + dealSourceCommission)} valueClass="text-red-400" />
                   {totalRepairCost > 0 && <DRow label="− Repair Expenses" value={formatRM(totalRepairCost)} valueClass="text-red-400" />}
                   {totalMiscCost > 0 && <DRow label="− Misc Costs" value={formatRM(totalMiscCost)} valueClass="text-red-400" />}
                   {car.isStaffSale ? (
@@ -1410,7 +1410,6 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                     </p>
                   )}
                   {dealIntakeCommission > 0 && <DRow label="− Intake Bonus" value={formatRM(dealIntakeCommission)} valueClass="text-red-400" />}
-                  {dealSourceCommission > 0 && <DRow label="− Sourcing Commission" value={formatRM(dealSourceCommission)} valueClass="text-red-400" />}
                   <div className="flex justify-between items-center pt-3 mt-1 border-t-2 border-obsidian-400/50">
                     <span className="text-white font-semibold">Net Profit</span>
                     <span className={`text-lg font-bold ${netProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
@@ -1426,7 +1425,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   <DRow label="Selling Price" value={formatRM(sellingPrice)} valueClass="text-gold-400 font-bold" />
                   {isDirectorView && (
                     <>
-                      <DRow label="Purchase Price" value={`− ${formatRM(purchasePrice)}`} valueClass="text-red-400" />
+                      <DRow label="Purchase Price" value={`− ${formatRM(purchasePrice + dealSourceCommission)}`} valueClass="text-red-400" />
                       {discount > 0 && <DRow label="Discount" value={`− ${formatRM(discount)}`} valueClass="text-red-400" />}
                       {insurance > 0 && <DRow label="Insurance" value={`− ${formatRM(insurance)}`} valueClass="text-red-400" />}
                       {bankProduct > 0 && <DRow label="Bank Product" value={`− ${formatRM(bankProduct)}`} valueClass="text-red-400" />}
@@ -1438,7 +1437,6 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                       {totalRepairCost > 0 && <DRow label="Repair Expenses" value={`− ${formatRM(totalRepairCost)}`} valueClass="text-red-400" />}
                       {totalMiscCost > 0 && <DRow label="Misc Costs" value={`− ${formatRM(totalMiscCost)}`} valueClass="text-red-400" />}
                       {dealIntakeCommission > 0 && <DRow label="Intake Bonus" value={`− ${formatRM(dealIntakeCommission)}`} valueClass="text-red-400" />}
-                      {dealSourceCommission > 0 && <DRow label="Sourcing Commission" value={`− ${formatRM(dealSourceCommission)}`} valueClass="text-red-400" />}
                       <div className="flex justify-between items-center pt-3 mt-1 border-t-2 border-obsidian-400/50">
                         <span className="text-white font-semibold">Net Profit</span>
                         <span className={`text-lg font-bold ${netProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
@@ -1701,7 +1699,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 )}
                 <div className="flex justify-between items-center">
                   <span className="text-gray-500 text-xs">Purchase Price</span>
-                  <span className="text-sm font-medium text-white">− {formatRM(car.purchasePrice)}</span>
+                  <span className="text-sm font-medium text-white">− {formatRM(car.purchasePrice + (_sourceCommission))}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-gray-500 text-xs">Repair Costs</span>
@@ -1721,12 +1719,6 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   <div className="flex justify-between items-center">
                     <span className="text-gray-500 text-xs">Intake Bonus</span>
                     <span className="text-sm font-medium text-gray-300">− {formatRM(_intakeCommission)}</span>
-                  </div>
-                )}
-                {_sourceCommission > 0 && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-500 text-xs">{car.sourceType === 'internal' ? 'Sourcing Commission' : 'Ext. Commission'}</span>
-                    <span className="text-sm font-medium text-gray-300">− {formatRM(_sourceCommission)}</span>
                   </div>
                 )}
                 <div className="pt-2 border-t border-obsidian-400/30 flex justify-between items-center">
