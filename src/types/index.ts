@@ -322,6 +322,15 @@ export interface Car {
   photo?: string;
   photos?: string[];
   greenCard?: string;
+  // Intake checklist (own stock only) — prep required when the car is taken in,
+  // before it's resold: the physical green card from the previous owner (the
+  // greenCard photo above is the proof it's in hand), and the eAuto
+  // ownership-transfer thumbprint from the previous owner (as seller).
+  // intakeComplete is a separate explicit confirmation — having both the green
+  // card and thumbprint doesn't remove the task by itself, so it can't vanish
+  // unnoticed; admin has to actually confirm it before it drops off.
+  thumbprintDone?: boolean;
+  intakeComplete?: boolean;
   assignedSalesperson?: string;
   dateAdded: string;
   notes?: string;
@@ -637,6 +646,9 @@ export interface Payment {
   referenceNumber?: string;
   receiptUrl?: string;
   notes?: string;
+  // Delete request (admin requests, director approves)
+  deleteRequestedBy?: string;
+  deleteRequestedAt?: string;
   // Batch info for weekly/monthly grouped payments
   batchId?: string;
   periodStart?: string;

@@ -196,6 +196,8 @@ function rowToCar(r: any): Car {
     photo: r.photo,
     photos: parseJsonField<string[]>(r.photos) ?? [],
     greenCard: r.green_card,
+    thumbprintDone: r.thumbprint_done,
+    intakeComplete: r.intake_complete,
     assignedSalesperson: r.assigned_salesperson,
     dateAdded: r.date_added,
     notes: r.notes,
@@ -351,6 +353,8 @@ function carToRow(c: Partial<Car>) {
   if (c.photo !== undefined) row.photo = c.photo;
   if (c.photos !== undefined) row.photos = c.photos;
   if (c.greenCard !== undefined) row.green_card = c.greenCard;
+  if (c.thumbprintDone !== undefined) row.thumbprint_done = c.thumbprintDone;
+  if (c.intakeComplete !== undefined) row.intake_complete = c.intakeComplete;
   if (c.assignedSalesperson !== undefined) row.assigned_salesperson = c.assignedSalesperson;
   if (c.dateAdded !== undefined) row.date_added = c.dateAdded;
   if (c.notes !== undefined) row.notes = c.notes;
@@ -760,6 +764,8 @@ function rowToPayment(r: any): Payment {
     referenceNumber: r.reference_number ?? undefined,
     receiptUrl: r.receipt_url ?? undefined,
     notes: r.notes ?? undefined,
+    deleteRequestedBy: r.delete_requested_by ?? undefined,
+    deleteRequestedAt: r.delete_requested_at ?? undefined,
     batchId: r.batch_id ?? undefined,
     periodStart: r.period_start ?? undefined,
     periodEnd: r.period_end ?? undefined,
@@ -788,6 +794,8 @@ function paymentToRow(p: Partial<Payment>) {
   if (p.referenceNumber !== undefined) row.reference_number = p.referenceNumber;
   if (p.receiptUrl !== undefined) row.receipt_url = p.receiptUrl;
   if (p.notes !== undefined) row.notes = p.notes;
+  if (p.deleteRequestedBy !== undefined) row.delete_requested_by = p.deleteRequestedBy ?? null;
+  if (p.deleteRequestedAt !== undefined) row.delete_requested_at = p.deleteRequestedAt ?? null;
   if (p.batchId !== undefined) row.batch_id = p.batchId;
   if (p.periodStart !== undefined) row.period_start = p.periodStart;
   if (p.periodEnd !== undefined) row.period_end = p.periodEnd;
@@ -832,6 +840,30 @@ function investorTxnToRow(t: Partial<InvestorTransaction>) {
 // Guard: realtime channels are set up only once per session, regardless of how many
 // times loadAll is called (e.g. pull-to-refresh creates duplicate channels otherwise).
 let realtimeSubscribed = false;
+
+// Car IDs with an updateCar write in flight (optimistic set() already applied locally,
+// DB write not yet confirmed). loadAll's phase 1/2 queries are snapshots that can resolve
+// after a local write and are otherwise merged in wholesale by status filter — without this
+// guard, a delivered-in-flight car gets dropped or reverted by a stale concurrent fetch.
+const pendingCarWrites = new Set<string>();
+
+// Reconciles a freshly-fetched car list with local state: any car with a write in flight
+// keeps its local (optimistic) version — and is kept even if the fetch's status filter
+// would otherwise have excluded it — since the fetch may be a stale snapshot relative to
+// that in-flight write.
+function mergePendingCars(fetched: Car[], localCars: Car[]): Car[] {
+  if (pendingCarWrites.size === 0) return fetched;
+  const fetchedIds = new Set(fetched.map((c) => c.id));
+  const merged = fetched
+    // A pending id with no local match means it was deleted locally while its DB write
+    // was still in flight — drop it rather than letting the stale fetch resurrect it.
+    .map((c) => (pendingCarWrites.has(c.id) ? localCars.find((l) => l.id === c.id) ?? null : c))
+    .filter((c): c is Car => c !== null);
+  for (const c of localCars) {
+    if (pendingCarWrites.has(c.id) && !fetchedIds.has(c.id)) merged.push(c);
+  }
+  return merged;
+}
 
 export const useStore = create<StoreState>()(persist((set, get) => ({
   currentUser: null,
@@ -912,7 +944,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
 
     set((s) => ({
       users:           users.data              ? allUsers                                                            : s.users,
-      cars:            cars.data               ? allCars                                                             : s.cars,
+      cars:            cars.data               ? mergePendingCars(allCars, s.cars)                                   : s.cars,
       repairs:         repairs.data            ? repairs.data.map(rowToRepair)                                       : s.repairs,
       customers:       customers.data          ? allCustomers                                                        : s.customers,
       externalSalesmen:externalSalesmenResult.data ? externalSalesmenResult.data.map(rowToExternalSalesman)          : s.externalSalesmen,
@@ -958,9 +990,11 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       const closedCases    = (closedCasesResult.data ?? []).map(rowToLoanCase);
 
       set((s) => ({
-        // Merge delivered cars into store — deduplicate by id so force-refresh is safe
+        // Merge delivered cars into store — deduplicate by id so force-refresh is safe.
+        // Guarded by mergePendingCars so a car whose delivery write is still in flight
+        // (or just landed) isn't reverted by this fetch's now-stale snapshot.
         cars: deliveredCarsResult.data
-          ? [...s.cars.filter(c => c.status !== 'delivered'), ...deliveredCars]
+          ? mergePendingCars([...s.cars.filter(c => c.status !== 'delivered'), ...deliveredCars], s.cars)
           : s.cars,
         // Merge closed loan cases — deduplicate by id
         loanCases: closedCasesResult.data
@@ -1383,7 +1417,13 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   // Cars
   addCar: async (car) => {
     set((s) => ({ cars: [...s.cars, car] }));
-    const { error } = await supabase.from('cars').insert(carToRow(car));
+    pendingCarWrites.add(car.id);
+    let error;
+    try {
+      ({ error } = await supabase.from('cars').insert(carToRow(car)));
+    } finally {
+      pendingCarWrites.delete(car.id);
+    }
     if (error) {
       set((s) => ({ cars: s.cars.filter((c) => c.id !== car.id) }));
       throw new Error(error.message);
@@ -1404,7 +1444,13 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       delete (car as any).status;
     }
     set((s) => ({ cars: s.cars.map((c) => (c.id === id ? { ...c, ...car } : c)) }));
-    const { error } = await supabase.from('cars').update(carToRow(car)).eq('id', id);
+    pendingCarWrites.add(id);
+    let error;
+    try {
+      ({ error } = await supabase.from('cars').update(carToRow(car)).eq('id', id));
+    } finally {
+      pendingCarWrites.delete(id);
+    }
     if (error) {
       if (prev) set((s) => ({ cars: s.cars.map((c) => (c.id === id ? prev : c)) }));
       console.error('updateCar failed:', error.message);
@@ -1462,7 +1508,13 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   deleteCar: async (id) => {
     // Optimistic: remove from UI immediately so the page doesn't go blank
     set((s) => ({ cars: s.cars.filter((c) => c.id !== id) }));
-    const { error } = await supabase.from('cars').delete().eq('id', id);
+    pendingCarWrites.add(id);
+    let error;
+    try {
+      ({ error } = await supabase.from('cars').delete().eq('id', id));
+    } finally {
+      pendingCarWrites.delete(id);
+    }
     if (error) {
       console.error('deleteCar failed:', error.message);
       // Restore state on failure — only if re-fetch has data
