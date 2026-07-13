@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { thumbUrl } from '../utils/photoUrl';
+import Lightbox from '../components/Lightbox';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -281,6 +282,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const [deliveryPhoto, setDeliveryPhoto] = useState('');
   const deliveryRef = useRef<HTMLInputElement>(null);
   const collectionRef = useRef<HTMLInputElement>(null);
+
+  // ── Green Card preview ──
+  const [showGreenCardPreview, setShowGreenCardPreview] = useState(false);
 
   // ── Photo Gallery ──
   const [showGallery, setShowGallery] = useState(false);
@@ -866,7 +870,13 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           <div className="p-5">
             <div className="flex items-center gap-4">
               {car.greenCard.startsWith('http') && (car.greenCard.includes('.jpg') || car.greenCard.includes('.jpeg') || car.greenCard.includes('.png') || car.greenCard.includes('.webp')) ? (
-                <img src={car.greenCard} alt="Green Card" className="w-32 h-24 object-cover rounded-lg border border-obsidian-400/60" />
+                <button
+                  type="button"
+                  onClick={() => setShowGreenCardPreview(true)}
+                  className="shrink-0"
+                >
+                  <img src={car.greenCard} alt="Green Card" className="w-32 h-24 object-cover rounded-lg border border-obsidian-400/60 hover:border-green-500/60 transition-colors cursor-pointer" />
+                </button>
               ) : (
                 <div className="w-16 h-16 bg-green-500/10 border border-green-500/30 rounded-lg flex items-center justify-center">
                   <FileText size={28} className="text-green-400" />
@@ -893,6 +903,13 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
         </div>
       )}
 
+      {car.greenCard && (
+        <Lightbox
+          images={[car.greenCard]}
+          isOpen={showGreenCardPreview}
+          onClose={() => setShowGreenCardPreview(false)}
+        />
+      )}
 
       {/* ── Car Movement Log (consignment-in only) ── */}
       {car.consignment && (() => {
