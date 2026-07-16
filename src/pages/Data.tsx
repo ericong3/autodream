@@ -31,6 +31,7 @@ export default function Data() {
   const isAdmin = currentUser?.role === 'admin';
   const isDirectorLike = currentUser?.role === 'director' || currentUser?.role === 'shareholder';
   const [activeTab, setActiveTab] = useState<Tab>(isSalesperson ? 'bankers' : isAdmin ? 'workshops' : 'dealers');
+  const visibleTabs = isSalesperson ? [] : isAdmin ? TABS.filter((t) => t.key === 'workshops' || t.key === 'misc') : TABS;
   const [error, setError] = useState('');
 
   const dealers   = useStore((s) => s.dealers);
@@ -100,10 +101,10 @@ export default function Data() {
           {error}
         </div>
       )}
-      {/* Tabs — hidden for salesperson (bankers only) and admin (workshops only) */}
-      {!isSalesperson && !isAdmin && (
+      {/* Tabs — hidden for salesperson (bankers only); admin sees Workshops + Misc only */}
+      {visibleTabs.length > 1 && (
         <div className="flex gap-2 border-b border-obsidian-400/60 pb-0">
-          {TABS.map((tab) => (
+          {visibleTabs.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}

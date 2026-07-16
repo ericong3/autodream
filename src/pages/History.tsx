@@ -17,6 +17,8 @@ import {
   SlidersHorizontal,
   Building2,
   HeartHandshake,
+  Lock,
+  Unlock,
 } from 'lucide-react';
 import {
   DndContext,
@@ -49,8 +51,8 @@ import { SkeletonCard, SkeletonRow } from '../components/Skeleton';
 
 // ── Drag helpers ─────────────────────────────────────────────────────────────
 
-function SortableCarItem({ id, children }: { id: string; children: React.ReactNode }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+function SortableCarItem({ id, children, dragEnabled }: { id: string; children: React.ReactNode; dragEnabled: boolean }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled: !dragEnabled });
   return (
     <div
       ref={setNodeRef}
@@ -61,9 +63,9 @@ function SortableCarItem({ id, children }: { id: string; children: React.ReactNo
         touchAction: 'none',
         userSelect: 'none',
       }}
-      {...attributes}
-      {...listeners}
-      className="touch-none cursor-grab active:cursor-grabbing"
+      {...(dragEnabled ? attributes : {})}
+      {...(dragEnabled ? listeners : {})}
+      className={`touch-none ${dragEnabled ? 'cursor-grab active:cursor-grabbing' : ''}`}
       onDragStart={(e) => e.preventDefault()}
     >
       {children}
@@ -156,6 +158,11 @@ export default function History() {
   const navigate = useNavigate();
 
   const isDirectorView = currentUser?.role === 'director' || currentUser?.role === 'shareholder';
+  // Moving delivered cars between months changes finalDeal/dateAdded — director only,
+  // and only once they explicitly unlock edit mode (prevents accidental drags).
+  const isDirector = currentUser?.role === 'director';
+  const [editMode, setEditMode] = useState(false);
+  const canDragCars = isDirector && editMode;
   const viewKey = `${currentUser?.id}-history`;
   const view = viewPreference[viewKey] ?? 'grid';
 
@@ -170,6 +177,7 @@ export default function History() {
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor,   { activationConstraint: { delay: 250, tolerance: 8 } }),
   );
+  const emptySensors = useSensors();
 
   useEffect(() => {
     const t = setTimeout(() => setInitialLoad(false), 500);
@@ -290,7 +298,7 @@ export default function History() {
     dragActiveRef.current = false;
     setDragActiveId(null);
     const { active, over } = e;
-    if (!over) return;
+    if (!over || !canDragCars) return;
 
     if (over.id === 'prev-month' || over.id === 'next-month') {
       const car = cars.find(c => c.id === active.id as string);
@@ -317,7 +325,7 @@ export default function History() {
 
   return (
   <DndContext
-    sensors={sensors}
+    sensors={canDragCars ? sensors : emptySensors}
     collisionDetection={collisionDetection}
     onDragStart={(e) => { dragActiveRef.current = true; setDragActiveId(e.active.id as string); }}
     onDragEnd={handleDragEnd}
@@ -356,6 +364,23 @@ export default function History() {
               <ChevronRight size={16} />
             </MonthDropZone>
           </div>
+
+          {/* Edit mode toggle — director must explicitly unlock before cards can be dragged between months */}
+          {isDirector && (
+            <button
+              onClick={() => setEditMode((v) => !v)}
+              title={editMode ? 'Editing enabled — drag a card onto a month arrow to move it. Click to lock.' : 'Unlock to drag cards between months'}
+              className={`flex items-center gap-1.5 px-3 py-2.5 rounded-lg border text-xs font-medium transition-colors ${
+                editMode
+                  ? 'bg-gold-500/15 border-gold-500/40 text-gold-400'
+                  : 'border-obsidian-400/60 text-gray-400 hover:text-white'
+              }`}
+              style={editMode ? undefined : { background: '#0E0D0B' }}
+            >
+              {editMode ? <Unlock size={14} /> : <Lock size={14} />}
+              {editMode ? 'Editing On' : 'Edit Mode'}
+            </button>
+          )}
 
           {/* Make filter */}
           <Select
@@ -433,7 +458,7 @@ export default function History() {
             const profit = carCalcMap[car.id]?.profit;
             const staggerCls = `stagger-enter stagger-${Math.min(idx + 1, 12)}`;
             return (
-              <SortableCarItem key={car.id} id={car.id}>
+              <SortableCarItem key={car.id} id={car.id} dragEnabled={canDragCars}>
               <div
                 onClick={() => navigate(`/history/${car.id}`)}
                 className={`relative bg-obsidian-900 rounded-xl overflow-hidden cursor-pointer aspect-[4/3] shadow-card border border-obsidian-400/50 hover:border-gold-500/30 transition-colors duration-300 group card-lift card-streak ${staggerCls}`}
