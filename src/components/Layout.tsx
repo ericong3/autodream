@@ -7,7 +7,7 @@ import {
   FileText, Calculator, GitCompare,
   ClipboardList, Bot, TrendingUp, UsersRound,
   History, Banknote, Briefcase, Search,
-  Loader2, RefreshCw, Database, FolderOpen, Settings,
+  Loader2, RefreshCw, Database, FolderOpen, Settings, Wallet,
 } from 'lucide-react';
 import { NavLink, useNavigate, useLocation, Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
@@ -30,6 +30,7 @@ const SALESPERSON_MORE = [
   { to: '/loan-calculator', icon: Calculator,    label: 'Loan Calculator' },
   { to: '/car-compare',     icon: GitCompare,    label: 'Car Compare'     },
   { to: '/data',            icon: Database,      label: 'Bankers'         },
+  { to: '/history',         icon: History,       label: 'Delivered'       },
   { to: '/reminders',       icon: ClipboardList, label: 'Instructions'    },
   { to: '/ai-assistant',    icon: Bot,           label: 'AI Assistant'    },
 ];
@@ -62,6 +63,7 @@ const INVESTOR_PRIMARY = [
 
 const MECHANIC_PRIMARY = [
   { to: '/inventory',    icon: Car,           label: 'Inventory'    },
+  { to: '/history',      icon: History,       label: 'Delivered'    },
   { to: '/reminders',    icon: ClipboardList, label: 'Instructions' },
   { to: '/ai-assistant', icon: Bot,           label: 'AI'           },
 ];
@@ -69,6 +71,8 @@ const MECHANIC_PRIMARY = [
 const ADMIN_PRIMARY = [
   { to: '/admin-dashboard', icon: Settings, label: 'Dashboard' },
   { to: '/inventory',       icon: Car,      label: 'Inventory' },
+  { to: '/payments',        icon: Wallet,   label: 'Payments'  },
+  { to: '/history',         icon: History,  label: 'Delivered' },
 ];
 
 export default function Layout() {

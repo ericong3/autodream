@@ -79,7 +79,7 @@ export default function Finance() {
     const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
     const dealPrice = (wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
     const commission = calcCommission(car);
-    const profit = dealPrice - car.purchasePrice - repairCosts - miscCosts - additionalTotal - commission;
+    const profit = car.isStaffSale ? 0 : dealPrice - car.purchasePrice - repairCosts - miscCosts - additionalTotal - commission;
     const sp = getSalesperson(getDealSalespersonId(car));
     return { car, dealPrice, repairCosts, miscCosts, additionalTotal, commission, profit, sp };
   });

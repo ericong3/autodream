@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, Wrench, Trash2, Edit, AlertCircle, MapPin } from 'lucide-react';
 import { useStore } from '../store';
+import { generateRepairPayment } from '../utils/generatePayments';
 import { RepairJob } from '../types';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
@@ -52,10 +53,14 @@ export default function Workshop() {
   const addRepair = useStore((s) => s.addRepair);
   const updateRepair = useStore((s) => s.updateRepair);
   const deleteRepair = useStore((s) => s.deleteRepair);
+  const workshops = useStore((s) => s.workshops);
+  const payments = useStore((s) => s.payments);
+  const addPayment = useStore((s) => s.addPayment);
 
   const isDirector = currentUser?.role === 'director';
   const isMechanic = currentUser?.role === 'mechanic';
-  const canManageRepairs = isDirector || isMechanic;
+  const isAdmin = currentUser?.role === 'admin';
+  const canManageRepairs = isDirector || isMechanic || isAdmin;
 
   const [showModal, setShowModal] = useState(false);
   const [editTarget, setEditTarget] = useState<RepairJob | null>(null);
@@ -90,6 +95,7 @@ export default function Workshop() {
     setErrors({});
 
     if (editTarget) {
+      const becomingDone = form.status === 'done' && editTarget.status !== 'done';
       updateRepair(editTarget.id, {
         carId: form.carId,
         typeOfRepair: form.typeOfRepair,
@@ -100,6 +106,12 @@ export default function Workshop() {
         status: form.status,
         notes: form.notes,
       });
+      if (becomingDone) {
+        generateRepairPayment({
+          repair: { ...editTarget, location: form.location || editTarget.location, typeOfRepair: form.typeOfRepair, totalCost: total, carId: form.carId },
+          payments, workshops, addPayment,
+        });
+      }
     } else {
       addRepair({
         id: generateId(),

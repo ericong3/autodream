@@ -3,6 +3,7 @@ import {
   Wallet, CheckCircle2, X, Search, CreditCard, Camera,
   Trash2, Plus, ChevronDown, ArrowUpRight, ArrowDownLeft, Receipt, CalendarDays,
   Users, Wrench, Building2, UserCircle, DollarSign, RefreshCw, TrendingDown, TrendingUp,
+  Clock, AlertTriangle, Check,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { Payment, PaymentType, RecipientType } from '../types';
@@ -409,9 +410,27 @@ export default function Payments({ embedded }: PaymentsProps) {
     setAddForm({ ...EMPTY_ADD });
   };
 
+  const isAdmin     = currentUser?.role === 'admin';
+  const isDirectorView = currentUser?.role === 'director' || currentUser?.role === 'shareholder';
+
   // ── Delete ────────────────────────────────────────────────────────────────────
   const handleDelete = (id: string) => {
     if (confirm('Delete this payment entry?')) deletePayment(id);
+  };
+
+  const handleRequestDelete = async (id: string) => {
+    await updatePayment(id, {
+      deleteRequestedBy: currentUser!.id,
+      deleteRequestedAt: new Date().toISOString(),
+    });
+  };
+
+  const handleApproveDelete = (id: string) => {
+    if (confirm('Approve deletion of this payment?')) deletePayment(id);
+  };
+
+  const handleRejectDelete = async (id: string) => {
+    await updatePayment(id, { deleteRequestedBy: undefined, deleteRequestedAt: undefined });
   };
 
   // ── Backfill ──────────────────────────────────────────────────────────────────
@@ -437,9 +456,10 @@ export default function Payments({ embedded }: PaymentsProps) {
     const isPending = p.status === 'pending';
     const isChecked = selected.has(p.id);
     const isInbound = INBOUND_TYPES.has(p.type);
+    const hasDeleteRequest = !!p.deleteRequestedBy;
 
     return (
-      <div className={`flex items-center gap-3 px-4 py-3 border-b border-white/[0.04] last:border-0 transition-colors ${isChecked ? 'bg-gold-500/5' : 'hover:bg-white/[0.02]'}`}>
+      <div className={`flex items-center gap-3 px-4 py-3 border-b border-white/[0.04] last:border-0 transition-colors ${hasDeleteRequest && isDirectorView ? 'bg-red-500/5 border-l-2 border-l-red-500/40' : isChecked ? 'bg-gold-500/5' : 'hover:bg-white/[0.02]'}`}>
         {/* Checkbox — only for pending */}
         {isPending ? (
           <button
@@ -515,12 +535,46 @@ export default function Payments({ embedded }: PaymentsProps) {
           ) : (
             <CheckCircle2 size={14} className="text-green-400 opacity-60" />
           )}
-          <button
-            onClick={() => handleDelete(p.id)}
-            className="p-1 rounded text-gray-600 hover:text-red-400 transition-colors"
-          >
-            <Trash2 size={12} />
-          </button>
+          {/* Delete / Request Delete */}
+          {isDirectorView && p.deleteRequestedBy ? (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => handleApproveDelete(p.id)}
+                title="Approve deletion"
+                className="p-1 rounded text-red-400 hover:bg-red-500/20 transition-colors"
+              >
+                <Check size={12} />
+              </button>
+              <button
+                onClick={() => handleRejectDelete(p.id)}
+                title="Reject deletion"
+                className="p-1 rounded text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ) : isAdmin ? (
+            p.deleteRequestedBy ? (
+              <span title="Pending director approval" className="flex items-center gap-1 text-[10px] text-amber-400 px-1.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                <Clock size={10} /> Pending
+              </span>
+            ) : (
+              <button
+                onClick={() => handleRequestDelete(p.id)}
+                title="Request deletion"
+                className="p-1 rounded text-gray-600 hover:text-red-400 transition-colors"
+              >
+                <Trash2 size={12} />
+              </button>
+            )
+          ) : isDirectorView ? (
+            <button
+              onClick={() => handleDelete(p.id)}
+              className="p-1 rounded text-gray-600 hover:text-red-400 transition-colors"
+            >
+              <Trash2 size={12} />
+            </button>
+          ) : null}
         </div>
       </div>
     );
@@ -657,6 +711,18 @@ export default function Payments({ embedded }: PaymentsProps) {
           </div>
         </div>
       </div>
+
+      {/* Delete-request banner for directors */}
+      {isDirectorView && payments.some(p => p.deleteRequestedBy) && (
+        <div className="px-4 pt-3">
+          <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 mb-1">
+            <AlertTriangle size={13} className="text-red-400 shrink-0" />
+            <p className="text-xs text-red-300 font-medium">
+              {payments.filter(p => p.deleteRequestedBy).length} payment{payments.filter(p => p.deleteRequestedBy).length !== 1 ? 's' : ''} pending deletion approval — review below (✓ approve · ✕ reject)
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* List */}
       <div className="px-4 pt-3">

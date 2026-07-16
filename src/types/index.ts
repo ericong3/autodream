@@ -251,6 +251,11 @@ export interface Workshop {
   bankAccountNumber?: string;
   bankAccountHolder?: string;
   paymentTerms?: PaymentTerms;
+  companyDocPath?: string;   // storage path in 'workshop-documents' bucket (SSM / business registration)
+  companyDocName?: string;   // original filename for display
+  // Deletion requires director approval — admin can only flag it
+  deleteRequestedBy?: string;
+  deleteRequestedAt?: string;
 }
 
 export interface Supplier {

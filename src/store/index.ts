@@ -263,6 +263,43 @@ function externalSalesmanToRow(s: Partial<ExternalSalesman>) {
   return row;
 }
 
+function rowToWorkshop(r: any): Workshop {
+  return {
+    id: r.id,
+    name: r.name,
+    phone: r.phone ?? undefined,
+    speciality: r.speciality ?? undefined,
+    bankName: r.bank_name ?? undefined,
+    bankAccountNumber: r.bank_account_number ?? undefined,
+    bankAccountHolder: r.bank_account_holder ?? undefined,
+    paymentTerms: r.payment_terms ?? undefined,
+    companyDocPath: r.company_doc_path ?? undefined,
+    companyDocName: r.company_doc_name ?? undefined,
+    deleteRequestedBy: r.delete_requested_by ?? undefined,
+    deleteRequestedAt: r.delete_requested_at ?? undefined,
+  };
+}
+
+function workshopToRow(w: Partial<Workshop>) {
+  // Use `in` rather than `!== undefined` so callers can explicitly clear a field
+  // by passing `undefined` (e.g. rejecting a delete request nulls deleteRequestedBy) —
+  // a strict undefined check can't tell "clear this" apart from "field not touched".
+  const row: any = {};
+  if ('id' in w) row.id = w.id;
+  if ('name' in w) row.name = w.name;
+  if ('phone' in w) row.phone = w.phone ?? null;
+  if ('speciality' in w) row.speciality = w.speciality ?? null;
+  if ('bankName' in w) row.bank_name = w.bankName ?? null;
+  if ('bankAccountNumber' in w) row.bank_account_number = w.bankAccountNumber ?? null;
+  if ('bankAccountHolder' in w) row.bank_account_holder = w.bankAccountHolder ?? null;
+  if ('paymentTerms' in w) row.payment_terms = w.paymentTerms ?? null;
+  if ('companyDocPath' in w) row.company_doc_path = w.companyDocPath ?? null;
+  if ('companyDocName' in w) row.company_doc_name = w.companyDocName ?? null;
+  if ('deleteRequestedBy' in w) row.delete_requested_by = w.deleteRequestedBy ?? null;
+  if ('deleteRequestedAt' in w) row.delete_requested_at = w.deleteRequestedAt ?? null;
+  return row;
+}
+
 function rowToBanker(r: any): Banker {
   return {
     id: r.id,
@@ -1005,7 +1042,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         testDrives:          testDrives.data           ? allTestDrives                                                          : s.testDrives,
         personalReminders:   reminders.data            ? reminders.data.map(rowToReminder)                                      : s.personalReminders,
         dealers:             dealers.data              ? (dealers.data as Dealer[])                                             : s.dealers,
-        workshops:           workshops.data            ? (workshops.data as Workshop[])                                         : s.workshops,
+        workshops:           workshops.data            ? workshops.data.map(rowToWorkshop)                                      : s.workshops,
         suppliers:           suppliers.data            ? (suppliers.data as Supplier[])                                         : s.suppliers,
         merchants:           merchants.data            ? (merchants.data as Merchant[])                                         : s.merchants,
         loanCaseDocuments:   loanCaseDocsResult.data   ? loanCaseDocsResult.data.map(rowToLoanCaseDocument)                     : s.loanCaseDocuments,
@@ -1169,14 +1206,14 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     supabase.channel('realtime-workshops')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'workshops' }, (payload) => {
         if (payload.eventType === 'INSERT') {
+          const w = rowToWorkshop(payload.new);
           set((s) => ({
-            workshops: s.workshops.some((w) => w.id === (payload.new as any).id)
-              ? s.workshops
-              : [...s.workshops, payload.new as Workshop],
+            workshops: s.workshops.some((x) => x.id === w.id) ? s.workshops : [...s.workshops, w],
           }));
         } else if (payload.eventType === 'UPDATE') {
+          const w = rowToWorkshop(payload.new);
           set((s) => ({
-            workshops: s.workshops.map((w) => w.id === (payload.new as any).id ? payload.new as Workshop : w),
+            workshops: s.workshops.map((x) => x.id === w.id ? w : x),
           }));
         } else if (payload.eventType === 'DELETE') {
           set((s) => ({ workshops: s.workshops.filter((w) => w.id !== (payload.old as any)?.id) }));
@@ -1529,9 +1566,13 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
 
   // Repairs
   addRepair: async (repair) => {
+    // Admin only logs expenses/bills here — they have no in-house mechanic tracking
+    // physical car location, so their entries must never move the car.
+    const actorIsAdmin = get().currentUser?.role === 'admin';
     const car = get().cars.find((c) => c.id === repair.carId);
     const protectedStatus = car?.status === 'delivered' || car?.status === 'deal_pending' || car?.finalDeal != null;
-    const updatedCars = repair.location && repair.status !== 'queued'
+    const shouldMoveCar = !actorIsAdmin && repair.location && repair.status !== 'queued';
+    const updatedCars = shouldMoveCar
       ? get().cars.map((c) =>
           c.id === repair.carId
             ? { ...c, currentLocation: repair.location, ...(protectedStatus ? {} : { status: 'in_workshop' as Car['status'] }) }
@@ -1541,7 +1582,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     set((s) => ({ repairs: [...s.repairs, repair], cars: updatedCars }));
     const { error } = await supabase.from('repairs').insert(repairToRow(repair));
     if (error) console.error('addRepair failed:', error.message);
-    if (repair.location && repair.status !== 'queued') {
+    if (shouldMoveCar) {
       const dbUpdate: any = { current_location: repair.location };
       if (!protectedStatus) dbUpdate.status = 'in_workshop';
       await supabase.from('cars').update(dbUpdate).eq('id', repair.carId);
@@ -1551,11 +1592,12 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     const carName = `${car?.year ?? ''} ${car?.make ?? ''} ${car?.model ?? ''}`.trim();
     sendPush(mechs, '🔧 New repair job', `${repair.typeOfRepair} for ${carName}`, '/inventory', repair.carId);
     // #22 Car moved to workshop (notify directors)
-    if (repair.location && repair.status !== 'queued' && !protectedStatus) {
+    if (shouldMoveCar && !protectedStatus) {
       sendPush(dirIds(get().users), '🔧 Car in workshop', `${carName} moved to workshop`, '/inventory', repair.carId);
     }
   },
   updateRepair: async (id, repair) => {
+    const actorIsAdmin = get().currentUser?.role === 'admin';
     const existing = get().repairs.find((r) => r.id === id);
     const { error: repErr } = await supabase.from('repairs').update(repairToRow(repair)).eq('id', id);
     if (repErr) console.error('updateRepair failed:', repErr.message);
@@ -1568,7 +1610,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     set((s) => {
       const updatedRepairs = s.repairs.map((r) => (r.id === id ? { ...r, ...repair } : r));
       let updatedCars = s.cars;
-      if (existing) {
+      if (existing && !actorIsAdmin) {
         if (repair.status === 'done') {
           updatedCars = s.cars.map((c) =>
             c.id === existing.carId ? { ...c, currentLocation: 'Showroom' } : c
@@ -1884,7 +1926,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
 
   addWorkshop: async (workshop) => {
     set((s) => ({ workshops: [...s.workshops, workshop] }));
-    const { error } = await supabase.from('workshops').insert(workshop);
+    const { error } = await supabase.from('workshops').insert(workshopToRow(workshop));
     if (error) {
       set((s) => ({ workshops: s.workshops.filter((w) => w.id !== workshop.id) }));
       throw new Error(error.message);
@@ -1892,7 +1934,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   },
   updateWorkshop: async (id, updates) => {
     set((s) => ({ workshops: s.workshops.map((w) => w.id === id ? { ...w, ...updates } : w) }));
-    await supabase.from('workshops').update(updates).eq('id', id);
+    await supabase.from('workshops').update(workshopToRow(updates)).eq('id', id);
   },
   deleteWorkshop: async (id) => {
     set((s) => ({ workshops: s.workshops.filter((w) => w.id !== id) }));

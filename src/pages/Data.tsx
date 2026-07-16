@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { Plus, X, Building2, Wrench, Package, ShoppingBag, UserCheck, Landmark, Phone, Mail, Pencil, Trash2, Eye, EyeOff, CreditCard } from 'lucide-react';
+import { Plus, X, Building2, Wrench, Package, ShoppingBag, UserCheck, Landmark, Phone, Mail, Pencil, Trash2, Eye, EyeOff, CreditCard, Paperclip, Download, Check, Loader2, Clock } from 'lucide-react';
 import { useStore } from '../store';
 import { formatRM, generateId } from '../utils/format';
+import { supabase } from '../lib/supabase';
+import { toast } from '../utils/toast';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import Modal from '../components/Modal';
 import { ExternalSalesman, Banker, BANKS, Dealer, Workshop, Merchant } from '../types';
@@ -26,7 +28,9 @@ const emptyExtSalesman = { name: '', ic: '', phone: '', email: '', bank: '', ban
 export default function Data() {
   const currentUser = useStore((s) => s.currentUser);
   const isSalesperson = currentUser?.role === 'salesperson';
-  const [activeTab, setActiveTab] = useState<Tab>(isSalesperson ? 'bankers' : 'dealers');
+  const isAdmin = currentUser?.role === 'admin';
+  const isDirectorLike = currentUser?.role === 'director' || currentUser?.role === 'shareholder';
+  const [activeTab, setActiveTab] = useState<Tab>(isSalesperson ? 'bankers' : isAdmin ? 'workshops' : 'dealers');
   const [error, setError] = useState('');
 
   const dealers   = useStore((s) => s.dealers);
@@ -96,8 +100,8 @@ export default function Data() {
           {error}
         </div>
       )}
-      {/* Tabs — hidden for salesperson (bankers only) */}
-      {!isSalesperson && (
+      {/* Tabs — hidden for salesperson (bankers only) and admin (workshops only) */}
+      {!isSalesperson && !isAdmin && (
         <div className="flex gap-2 border-b border-obsidian-400/60 pb-0">
           {TABS.map((tab) => (
             <button
@@ -162,6 +166,8 @@ export default function Data() {
           addWorkshop={addWorkshop}
           updateWorkshop={updateWorkshop}
           deleteWorkshop={deleteWorkshop}
+          canManage={isDirectorLike}
+          currentUser={currentUser}
         />
       )}
 
@@ -921,8 +927,77 @@ function BankFields({ value, onChange }: { value: { bankName: string; bankAccoun
   );
 }
 
+async function uploadWorkshopDoc(file: File): Promise<{ path: string; name: string }> {
+  const path = `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name}`;
+  const { error } = await supabase.storage.from('workshop-documents').upload(path, file);
+  if (error) throw new Error(error.message);
+  return { path, name: file.name };
+}
+
+async function viewWorkshopDoc(path: string, name: string) {
+  const { data, error } = await supabase.storage.from('workshop-documents').createSignedUrl(path, 60);
+  if (error || !data) { toast.error('Failed to get document link'); return; }
+  const a = document.createElement('a');
+  a.href = data.signedUrl;
+  a.download = name;
+  a.target = '_blank';
+  a.click();
+}
+
+function DocField({ path, name, canManage, onUpload }: { path?: string; name?: string; canManage: boolean; onUpload: (file: File) => Promise<void> }) {
+  const [uploading, setUploading] = useState(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      await onUpload(file);
+    } catch (err: any) {
+      toast.error(err.message ?? 'Upload failed');
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
+  return (
+    <div className="col-span-full">
+      <label className="block text-gray-400 text-xs mb-1">Company Document (SSM / business registration)</label>
+      <div className="flex items-center gap-2 flex-wrap">
+        {path && name ? (
+          <button
+            type="button"
+            onClick={() => viewWorkshopDoc(path, name)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gold-400 border border-gold-500/20 rounded-lg hover:bg-gold-500/10 transition-colors"
+          >
+            <Download size={12} /> {name}
+          </button>
+        ) : (
+          <span className="text-gray-600 text-xs italic">No document attached</span>
+        )}
+        {canManage && (
+          <>
+            <input ref={inputRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={handleChange} />
+            <button
+              type="button"
+              disabled={uploading}
+              onClick={() => inputRef.current?.click()}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-300 bg-obsidian-700/60 border border-obsidian-400/60 rounded-lg hover:border-gold-500/50 transition-colors disabled:opacity-50"
+            >
+              {uploading ? <Loader2 size={12} className="animate-spin" /> : <Paperclip size={12} />}
+              {path ? 'Replace' : 'Attach'}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function WorkshopsTab({
-  workshops, workshopForm, setWorkshopForm, addWorkshop, updateWorkshop, deleteWorkshop,
+  workshops, workshopForm, setWorkshopForm, addWorkshop, updateWorkshop, deleteWorkshop, canManage, currentUser,
 }: {
   workshops: Workshop[];
   workshopForm: { name: string; phone: string; speciality: string };
@@ -930,10 +1005,15 @@ function WorkshopsTab({
   addWorkshop: (w: any) => void;
   updateWorkshop: (id: string, updates: Partial<Workshop>) => void;
   deleteWorkshop: (id: string) => void;
+  canManage: boolean;
+  currentUser: { id: string; name: string; role: string } | null;
 }) {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
   const [customMode, setCustomMode] = useState(false);
   const [customCat, setCustomCat] = useState('');
+  const [addDocFile, setAddDocFile] = useState<File | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
   type CardState = { name: string; phone: string; bankName: string; bankAccountNumber: string; bankAccountHolder: string; paymentTerms: string };
   const [cardEdits, setCardEdits] = useState<Record<string, CardState>>({});
   const [popupWorkshop, setPopupWorkshop] = useState<Workshop | null>(null);
@@ -965,6 +1045,16 @@ function WorkshopsTab({
 
   const closePopup = () => setPopupWorkshop(null);
 
+  const handleRequestDelete = async (w: Workshop) => {
+    if (!currentUser) return;
+    await updateWorkshop(w.id, { deleteRequestedBy: currentUser.id, deleteRequestedAt: new Date().toISOString() });
+    closePopup();
+  };
+
+  const handleRejectDelete = async (w: Workshop) => {
+    await updateWorkshop(w.id, { deleteRequestedBy: undefined, deleteRequestedAt: undefined });
+  };
+
   const allCategories = [
     ...WORKSHOP_CATEGORIES,
     ...workshops
@@ -973,21 +1063,37 @@ function WorkshopsTab({
       .filter((s, i, arr) => arr.indexOf(s) === i),
   ];
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     const speciality = customMode ? customCat.trim() : workshopForm.speciality;
     if (!workshopForm.name.trim() || !speciality) return;
-    addWorkshop({ id: generateId(), name: workshopForm.name.trim(), phone: workshopForm.phone || undefined, speciality });
-    setWorkshopForm({ name: '', phone: '', speciality: '' });
-    setCustomMode(false);
-    setCustomCat('');
+    setAdding(true);
+    try {
+      let doc: { path: string; name: string } | undefined;
+      if (addDocFile) doc = await uploadWorkshopDoc(addDocFile);
+      await addWorkshop({
+        id: generateId(),
+        name: workshopForm.name.trim(),
+        phone: workshopForm.phone || undefined,
+        speciality,
+        companyDocPath: doc?.path,
+        companyDocName: doc?.name,
+      });
+      setWorkshopForm({ name: '', phone: '', speciality: '' });
+      setCustomMode(false);
+      setCustomCat('');
+      setAddDocFile(null);
+      setShowAdd(false);
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to add workshop');
+    } finally {
+      setAdding(false);
+    }
   };
-
-  const [showAdd, setShowAdd] = useState(false);
 
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <button onClick={() => { setWorkshopForm({ name: '', phone: '', speciality: '' }); setCustomMode(false); setCustomCat(''); setShowAdd(true); }} className="btn-gold px-4 py-2 rounded-xl text-sm flex items-center gap-2">
+        <button onClick={() => { setWorkshopForm({ name: '', phone: '', speciality: '' }); setCustomMode(false); setCustomCat(''); setAddDocFile(null); setShowAdd(true); }} className="btn-gold px-4 py-2 rounded-xl text-sm flex items-center gap-2">
           <Plus size={14} /> Add Workshop
         </button>
       </div>
@@ -1017,9 +1123,20 @@ function WorkshopsTab({
               </select>
             )}
           </div>
+          <div>
+            <label className="block text-gray-400 text-xs mb-1">Company Document (SSM / business registration)</label>
+            <input
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png"
+              className="w-full text-xs text-gray-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border file:border-obsidian-400/60 file:bg-obsidian-700/60 file:text-gray-300 file:text-xs hover:file:border-gold-500/50 file:cursor-pointer cursor-pointer"
+              onChange={(e) => setAddDocFile(e.target.files?.[0] ?? null)}
+            />
+          </div>
           <div className="flex gap-2 pt-1">
             <button onClick={() => setShowAdd(false)} className="flex-1 btn-ghost py-2 rounded-xl text-sm">Cancel</button>
-            <button onClick={() => { handleAdd(); setShowAdd(false); }} disabled={!workshopForm.name.trim() || !(customMode ? customCat.trim() : workshopForm.speciality)} className="flex-1 btn-gold py-2 rounded-xl text-sm disabled:opacity-40">Add Workshop</button>
+            <button onClick={handleAdd} disabled={adding || !workshopForm.name.trim() || !(customMode ? customCat.trim() : workshopForm.speciality)} className="flex-1 btn-gold py-2 rounded-xl text-sm disabled:opacity-40 flex items-center justify-center gap-1.5">
+              {adding && <Loader2 size={14} className="animate-spin" />} Add Workshop
+            </button>
           </div>
         </div>
       </Modal>
@@ -1044,13 +1161,19 @@ function WorkshopsTab({
                     <button
                       key={w.id}
                       onClick={() => openPopup(w)}
-                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-obsidian-700/30 transition-colors text-left"
+                      className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-obsidian-700/30 transition-colors text-left ${w.deleteRequestedBy && canManage ? 'bg-red-500/5' : ''}`}
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-white font-semibold text-sm">{w.name}</span>
                           {w.paymentTerms && (
                             <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-obsidian-600/60 text-gray-400 border border-obsidian-400/30">{PAYMENT_TERMS_LABELS[w.paymentTerms]}</span>
+                          )}
+                          {w.companyDocPath && (
+                            <Paperclip size={11} className="text-gray-500" />
+                          )}
+                          {w.deleteRequestedBy && canManage && (
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/20 flex items-center gap-1"><Clock size={9} /> Deletion requested</span>
                           )}
                         </div>
                         <div className="flex items-center gap-3 mt-0.5 flex-wrap">
@@ -1073,60 +1196,130 @@ function WorkshopsTab({
 
       {/* Workshop detail popup */}
       {popupWorkshop && (() => {
-        const w = popupWorkshop;
+        // Re-read from the live list so Reject/Approve/Save/upload reflect immediately
+        // instead of the stale snapshot captured when the popup was opened.
+        const w = workshops.find((x) => x.id === popupWorkshop.id) ?? popupWorkshop;
         const s = getCard(w);
         const dirty = isDirty(w);
+        const hasDeleteRequest = !!w.deleteRequestedBy;
         return (
           <Modal isOpen onClose={closePopup} title={w.name}>
             <div className="space-y-4">
               <div className="flex items-center gap-2 flex-wrap">
                 {w.speciality && <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-orange-500/15 text-orange-300 border border-orange-500/20">{w.speciality}</span>}
               </div>
+              {hasDeleteRequest && (
+                <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs px-3 py-2 rounded-lg flex items-center gap-1.5">
+                  <Clock size={12} /> {canManage ? 'Deletion requested — approve or reject below.' : 'Deletion requested — awaiting director approval.'}
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-gray-400 text-xs mb-1">Name</label>
-                  <input className={inputCls()} value={s.name} onChange={e => patchCard(w.id, 'name', e.target.value, w)} />
+                  {canManage ? (
+                    <input className={inputCls()} value={s.name} onChange={e => patchCard(w.id, 'name', e.target.value, w)} />
+                  ) : (
+                    <p className="text-white text-sm py-2">{w.name}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-gray-400 text-xs mb-1">Phone</label>
-                  <input className={inputCls()} placeholder="e.g. 012-3456789" value={s.phone} onChange={e => patchCard(w.id, 'phone', e.target.value, w)} />
+                  {canManage ? (
+                    <input className={inputCls()} placeholder="e.g. 012-3456789" value={s.phone} onChange={e => patchCard(w.id, 'phone', e.target.value, w)} />
+                  ) : (
+                    <p className="text-white text-sm py-2">{w.phone || '—'}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-gray-400 text-xs mb-1">Bank Name</label>
-                  <input className={inputCls()} placeholder="e.g. Maybank" value={s.bankName} onChange={e => patchCard(w.id, 'bankName', e.target.value, w)} />
+                  {canManage ? (
+                    <input className={inputCls()} placeholder="e.g. Maybank" value={s.bankName} onChange={e => patchCard(w.id, 'bankName', e.target.value, w)} />
+                  ) : (
+                    <p className="text-white text-sm py-2">{w.bankName || '—'}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-gray-400 text-xs mb-1">Account Number</label>
-                  <input className={inputCls()} placeholder="e.g. 1234567890" value={s.bankAccountNumber} onChange={e => patchCard(w.id, 'bankAccountNumber', e.target.value, w)} />
+                  {canManage ? (
+                    <input className={inputCls()} placeholder="e.g. 1234567890" value={s.bankAccountNumber} onChange={e => patchCard(w.id, 'bankAccountNumber', e.target.value, w)} />
+                  ) : (
+                    <p className="text-white text-sm py-2">{w.bankAccountNumber || '—'}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-gray-400 text-xs mb-1">Account Holder</label>
-                  <input className={inputCls()} placeholder="Full name as per bank" value={s.bankAccountHolder} onChange={e => patchCard(w.id, 'bankAccountHolder', e.target.value, w)} />
+                  {canManage ? (
+                    <input className={inputCls()} placeholder="Full name as per bank" value={s.bankAccountHolder} onChange={e => patchCard(w.id, 'bankAccountHolder', e.target.value, w)} />
+                  ) : (
+                    <p className="text-white text-sm py-2">{w.bankAccountHolder || '—'}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-gray-400 text-xs mb-1">Payment Terms</label>
-                  <select className={inputCls()} value={s.paymentTerms} onChange={e => patchCard(w.id, 'paymentTerms', e.target.value, w)}>
-                    <option value="">— Select —</option>
-                    <option value="per_job">Per Job</option>
-                    <option value="weekly">Weekly</option>
-                    <option value="monthly">Monthly</option>
-                  </select>
+                  {canManage ? (
+                    <select className={inputCls()} value={s.paymentTerms} onChange={e => patchCard(w.id, 'paymentTerms', e.target.value, w)}>
+                      <option value="">— Select —</option>
+                      <option value="per_job">Per Job</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
+                  ) : (
+                    <p className="text-white text-sm py-2">{w.paymentTerms ? PAYMENT_TERMS_LABELS[w.paymentTerms] : '—'}</p>
+                  )}
                 </div>
+                <DocField
+                  path={w.companyDocPath}
+                  name={w.companyDocName}
+                  canManage={canManage}
+                  onUpload={async (file) => {
+                    const doc = await uploadWorkshopDoc(file);
+                    await updateWorkshop(w.id, { companyDocPath: doc.path, companyDocName: doc.name });
+                  }}
+                />
               </div>
               <div className="flex gap-2 pt-1">
-                <button
-                  onClick={() => { closePopup(); setDeleteTarget({ id: w.id, label: w.name }); }}
-                  className="flex items-center gap-1.5 px-3 py-2 text-xs text-red-400 border border-red-500/20 rounded-lg hover:bg-red-500/10 transition-colors"
-                >
-                  <Trash2 size={12} /> Delete
-                </button>
-                <button
-                  onClick={async () => { await handleSave(w); closePopup(); }}
-                  disabled={!dirty}
-                  className="flex-1 btn-gold py-2 rounded-lg text-xs font-semibold disabled:opacity-40"
-                >
-                  Save Changes
-                </button>
+                {canManage ? (
+                  hasDeleteRequest ? (
+                    <>
+                      <button
+                        onClick={() => handleRejectDelete(w)}
+                        className="flex items-center gap-1.5 px-3 py-2 text-xs text-gray-300 border border-obsidian-400/60 rounded-lg hover:bg-obsidian-700/60 transition-colors"
+                      >
+                        <X size={12} /> Reject
+                      </button>
+                      <button
+                        onClick={() => { closePopup(); setDeleteTarget({ id: w.id, label: w.name }); }}
+                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs text-white bg-red-500/80 hover:bg-red-500 rounded-lg transition-colors font-semibold"
+                      >
+                        <Check size={12} /> Approve Deletion
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => { closePopup(); setDeleteTarget({ id: w.id, label: w.name }); }}
+                        className="flex items-center gap-1.5 px-3 py-2 text-xs text-red-400 border border-red-500/20 rounded-lg hover:bg-red-500/10 transition-colors"
+                      >
+                        <Trash2 size={12} /> Delete
+                      </button>
+                      <button
+                        onClick={async () => { await handleSave(w); closePopup(); }}
+                        disabled={!dirty}
+                        className="flex-1 btn-gold py-2 rounded-lg text-xs font-semibold disabled:opacity-40"
+                      >
+                        Save Changes
+                      </button>
+                    </>
+                  )
+                ) : (
+                  <button
+                    onClick={() => handleRequestDelete(w)}
+                    disabled={hasDeleteRequest}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs text-red-400 border border-red-500/20 rounded-lg hover:bg-red-500/10 transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
+                  >
+                    <Trash2 size={12} /> {hasDeleteRequest ? 'Deletion Requested' : 'Request Deletion'}
+                  </button>
+                )}
               </div>
             </div>
           </Modal>

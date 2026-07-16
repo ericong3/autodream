@@ -21,6 +21,8 @@ import {
   Database,
   Briefcase,
   FolderOpen,
+  Wallet,
+  Wrench,
 } from 'lucide-react';
 import { useStore } from '../store';
 
@@ -67,12 +69,14 @@ const salespersonItems: NavItem[] = [
   { to: '/car-compare', icon: GitCompare, label: 'Car Compare' },
   { to: '/calendar', icon: CalendarDays, label: 'Calendar' },
   { to: '/data', icon: Database, label: 'Bankers' },
+  { to: '/history', icon: History, label: 'Delivered' },
   { to: '/reminders', icon: ClipboardList, label: 'Instructions' },
   { to: '/ai-assistant', icon: Bot, label: 'AI Assistant' },
 ];
 
 const mechanicItems: NavItem[] = [
   { to: '/inventory', icon: Car, label: 'Inventory' },
+  { to: '/history', icon: History, label: 'Delivered' },
   { to: '/reminders', icon: ClipboardList, label: 'Instructions' },
   { to: '/ai-assistant', icon: Bot, label: 'AI Assistant' },
 ];
@@ -84,6 +88,10 @@ const bankerItems: NavItem[] = [
 const adminItems: NavItem[] = [
   { to: '/admin-dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/inventory',       icon: Car,             label: 'Inventory' },
+  { to: '/workshop',        icon: Wrench,          label: 'Workshop'  },
+  { to: '/data',            icon: Database,        label: 'Register Merchant' },
+  { to: '/payments',        icon: Wallet,          label: 'Payments'  },
+  { to: '/history',         icon: History,         label: 'Delivered' },
   { to: '/reminders',       icon: ClipboardList,   label: 'Instructions' },
   { to: '/ai-assistant',    icon: Bot,             label: 'AI Assistant' },
 ];

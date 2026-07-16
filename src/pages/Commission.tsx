@@ -1,15 +1,19 @@
-import { useState, useMemo } from 'react';
-import { Car, Plus, CheckCircle, Circle, Trash2, Bell } from 'lucide-react';
+import { useState, useMemo, useRef } from 'react';
+import { Car, Plus, CheckCircle, Circle, Trash2, Bell, Pencil, Check, X } from 'lucide-react';
 import { useStore } from '../store';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, generateId } from '../utils/format';
+
+type EditState = { carId: string; field: 'deal' | 'intake' | 'source'; customerId?: string; value: string };
 
 export default function Commission() {
   const cars = useStore((s) => s.cars);
   const currentUser = useStore((s) => s.currentUser);
   const users = useStore((s) => s.users);
   const customers = useStore((s) => s.customers);
+  const updateCar = useStore((s) => s.updateCar);
+  const updateCustomer = useStore((s) => s.updateCustomer);
   const personalReminders = useStore((s) => s.personalReminders);
   const addPersonalReminder = useStore((s) => s.addPersonalReminder);
   const updatePersonalReminder = useStore((s) => s.updatePersonalReminder);
@@ -22,18 +26,23 @@ export default function Commission() {
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [reminderForm, setReminderForm] = useState({ title: '', dueAt: '' });
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
+  const [editing, setEditing] = useState<EditState | null>(null);
+  const editRef = useRef<HTMLInputElement>(null);
 
   const salespeople = users.filter(u => u.role === 'salesperson');
 
   const allSoldCars = cars.filter(c => c.status === 'delivered');
 
+  const getDealCustomer = (car: typeof cars[0]) =>
+    customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
+
   const getDealSalespersonId = (car: typeof cars[0]): string | undefined => {
-    const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
+    const dealCustomer = getDealCustomer(car);
     return car.assignedSalesperson || dealCustomer?.assignedSalesId;
   };
 
   const getSaleDate = (car: typeof cars[0]): string => {
-    const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
+    const dealCustomer = getDealCustomer(car);
     return dealCustomer?.deliveredAt
       ?? dealCustomer?.loanWorkOrder?.createdAt
       ?? dealCustomer?.cashWorkOrder?.createdAt
@@ -42,11 +51,31 @@ export default function Commission() {
 
   const calcCommission = (car: typeof cars[0]): number => {
     if (car.outgoingConsignment) return 0;
-    const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
+    const dealCustomer = getDealCustomer(car);
+    if (dealCustomer?.commission != null) return dealCustomer.commission;
     const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
     const dealPrice = (wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
     if (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) return 1000;
     return 1500;
+  };
+
+  const startEdit = (carId: string, field: EditState['field'], currentValue: number, customerId?: string) => {
+    setEditing({ carId, field, customerId, value: String(currentValue) });
+    setTimeout(() => editRef.current?.select(), 20);
+  };
+
+  const saveEdit = async () => {
+    if (!editing) return;
+    const amount = parseFloat(editing.value);
+    if (isNaN(amount) || amount < 0) { setEditing(null); return; }
+    if (editing.field === 'deal' && editing.customerId) {
+      await updateCustomer(editing.customerId, { commission: amount });
+    } else if (editing.field === 'intake') {
+      await updateCar(editing.carId, { intakeCommission: amount });
+    } else if (editing.field === 'source') {
+      await updateCar(editing.carId, { sourceCommission: amount });
+    }
+    setEditing(null);
   };
 
   const filteredSoldCars = useMemo(() => allSoldCars.filter(c => {
@@ -213,20 +242,56 @@ export default function Commission() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredSoldCars.map((c, i) => (
-                    <tr key={c.id} className={`border-b border-obsidian-400/60/50 ${i % 2 !== 0 ? 'bg-obsidian-950/30' : ''} hover:bg-obsidian-700/50 transition-colors`}>
-                      <td className="px-5 py-3">
-                        <p className="text-white font-medium">{c.year} {c.make} {c.model}</p>
-                        <p className="text-gray-500 text-xs capitalize">{c.colour} · {c.transmission}</p>
-                      </td>
-                      <td className="px-5 py-3 text-gray-400">{new Date(getSaleDate(c)).toLocaleDateString('en-MY')}</td>
-                      {isDirector && <td className="px-5 py-3 text-gray-400">{getSalesName(getDealSalespersonId(c))}</td>}
-                      <td className="px-5 py-3 text-right text-gold-400 font-semibold">
-                        {formatRM(c.finalDeal?.dealPrice ?? c.sellingPrice)}
-                      </td>
-                      <td className="px-5 py-3 text-right text-green-400 font-semibold">{formatRM(calcCommission(c))}</td>
-                    </tr>
-                  ))}
+                  {filteredSoldCars.map((c, i) => {
+                    const dealCustomer = getDealCustomer(c);
+                    const isEditingThis = editing?.carId === c.id && editing.field === 'deal';
+                    const isOverride = dealCustomer?.commission != null;
+                    return (
+                      <tr key={c.id} className={`border-b border-obsidian-400/60/50 ${i % 2 !== 0 ? 'bg-obsidian-950/30' : ''} hover:bg-obsidian-700/50 transition-colors`}>
+                        <td className="px-5 py-3">
+                          <p className="text-white font-medium">{c.year} {c.make} {c.model}</p>
+                          <p className="text-gray-500 text-xs capitalize">{c.colour} · {c.transmission}</p>
+                        </td>
+                        <td className="px-5 py-3 text-gray-400">{new Date(getSaleDate(c)).toLocaleDateString('en-MY')}</td>
+                        {isDirector && <td className="px-5 py-3 text-gray-400">{getSalesName(getDealSalespersonId(c))}</td>}
+                        <td className="px-5 py-3 text-right text-gold-400 font-semibold">
+                          {formatRM(c.finalDeal?.dealPrice ?? c.sellingPrice)}
+                        </td>
+                        <td className="px-5 py-3 text-right">
+                          {isDirector && isEditingThis ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <input
+                                ref={editRef}
+                                type="number"
+                                min="0"
+                                value={editing.value}
+                                onChange={e => setEditing({ ...editing!, value: e.target.value })}
+                                onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(null); }}
+                                className="w-24 bg-obsidian-700 border border-gold-500 text-white rounded px-2 py-1 text-right text-sm focus:outline-none"
+                              />
+                              <button onClick={saveEdit} className="text-green-400 hover:text-green-300 p-0.5"><Check size={14} /></button>
+                              <button onClick={() => setEditing(null)} className="text-gray-500 hover:text-gray-300 p-0.5"><X size={14} /></button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end gap-2">
+                              <span className={`font-semibold ${isOverride ? 'text-yellow-400' : 'text-green-400'}`}>
+                                {formatRM(calcCommission(c))}
+                              </span>
+                              {isOverride && <span className="text-xs text-yellow-600 font-normal">custom</span>}
+                              {isDirector && (
+                                <button
+                                  onClick={() => startEdit(c.id, 'deal', calcCommission(c), dealCustomer?.id)}
+                                  className="text-gray-600 hover:text-gold-400 transition-colors"
+                                >
+                                  <Pencil size={12} />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
                 <tfoot>
                   <tr className="border-t border-obsidian-400/60 bg-[#161410]">
@@ -261,19 +326,50 @@ export default function Commission() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredSourcingCars.map((c, i) => (
-                    <tr key={c.id} className={`border-b border-obsidian-400/30 ${i % 2 !== 0 ? 'bg-obsidian-950/30' : ''} hover:bg-obsidian-700/50 transition-colors`}>
-                      <td className="px-5 py-3">
-                        <p className="text-white font-medium">{c.year} {c.make} {c.model}</p>
-                        <p className="text-gray-500 text-xs capitalize">{c.colour} · {c.carPlate ?? '—'}</p>
-                      </td>
-                      <td className="px-5 py-3 text-gray-400">{new Date(c.dateAdded).toLocaleDateString('en-MY')}</td>
-                      <td className="px-5 py-3">
-                        <span className="text-xs capitalize px-2 py-0.5 rounded-full bg-obsidian-700/60 text-gray-400">{c.status.replace('_', ' ')}</span>
-                      </td>
-                      <td className="px-5 py-3 text-right text-blue-400 font-semibold">{formatRM(c.sourceCommission ?? 0)}</td>
-                    </tr>
-                  ))}
+                  {filteredSourcingCars.map((c, i) => {
+                    const isEditingThis = editing?.carId === c.id && editing.field === 'source';
+                    return (
+                      <tr key={c.id} className={`border-b border-obsidian-400/30 ${i % 2 !== 0 ? 'bg-obsidian-950/30' : ''} hover:bg-obsidian-700/50 transition-colors`}>
+                        <td className="px-5 py-3">
+                          <p className="text-white font-medium">{c.year} {c.make} {c.model}</p>
+                          <p className="text-gray-500 text-xs capitalize">{c.colour} · {c.carPlate ?? '—'}</p>
+                        </td>
+                        <td className="px-5 py-3 text-gray-400">{new Date(c.dateAdded).toLocaleDateString('en-MY')}</td>
+                        <td className="px-5 py-3">
+                          <span className="text-xs capitalize px-2 py-0.5 rounded-full bg-obsidian-700/60 text-gray-400">{c.status.replace('_', ' ')}</span>
+                        </td>
+                        <td className="px-5 py-3 text-right">
+                          {isDirector && isEditingThis ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <input
+                                ref={editRef}
+                                type="number"
+                                min="0"
+                                value={editing.value}
+                                onChange={e => setEditing({ ...editing!, value: e.target.value })}
+                                onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(null); }}
+                                className="w-24 bg-obsidian-700 border border-gold-500 text-white rounded px-2 py-1 text-right text-sm focus:outline-none"
+                              />
+                              <button onClick={saveEdit} className="text-green-400 hover:text-green-300 p-0.5"><Check size={14} /></button>
+                              <button onClick={() => setEditing(null)} className="text-gray-500 hover:text-gray-300 p-0.5"><X size={14} /></button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end gap-2">
+                              <span className="text-blue-400 font-semibold">{formatRM(c.sourceCommission ?? 0)}</span>
+                              {isDirector && (
+                                <button
+                                  onClick={() => startEdit(c.id, 'source', c.sourceCommission ?? 0)}
+                                  className="text-gray-600 hover:text-gold-400 transition-colors"
+                                >
+                                  <Pencil size={12} />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
                 <tfoot>
                   <tr className="border-t border-obsidian-400/60 bg-[#161410]">
@@ -302,18 +398,49 @@ export default function Commission() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredIntakeCars.map((c, i) => (
-                    <tr key={c.id} className={`border-b border-obsidian-400/60/50 ${i % 2 !== 0 ? 'bg-obsidian-950/30' : ''} hover:bg-obsidian-700/50 transition-colors`}>
-                      <td className="px-5 py-3">
-                        <p className="text-white font-medium">{c.year} {c.make} {c.model}</p>
-                        <p className="text-gray-500 text-xs capitalize">{c.colour} · {c.carPlate ?? '—'}</p>
-                      </td>
-                      <td className="px-5 py-3 text-gray-400">{new Date(c.dateAdded).toLocaleDateString('en-MY')}</td>
-                      {isDirector && <td className="px-5 py-3 text-gray-400">{getSalesName(c.assignedSalesperson)}</td>}
-                      <td className="px-5 py-3 text-gray-400">{c.sourceSalesman || '—'}</td>
-                      <td className="px-5 py-3 text-right text-teal-400 font-semibold">{formatRM(c.intakeCommission ?? 0)}</td>
-                    </tr>
-                  ))}
+                  {filteredIntakeCars.map((c, i) => {
+                    const isEditingThis = editing?.carId === c.id && editing.field === 'intake';
+                    return (
+                      <tr key={c.id} className={`border-b border-obsidian-400/60/50 ${i % 2 !== 0 ? 'bg-obsidian-950/30' : ''} hover:bg-obsidian-700/50 transition-colors`}>
+                        <td className="px-5 py-3">
+                          <p className="text-white font-medium">{c.year} {c.make} {c.model}</p>
+                          <p className="text-gray-500 text-xs capitalize">{c.colour} · {c.carPlate ?? '—'}</p>
+                        </td>
+                        <td className="px-5 py-3 text-gray-400">{new Date(c.dateAdded).toLocaleDateString('en-MY')}</td>
+                        {isDirector && <td className="px-5 py-3 text-gray-400">{getSalesName(c.assignedSalesperson)}</td>}
+                        <td className="px-5 py-3 text-gray-400">{c.sourceSalesman || '—'}</td>
+                        <td className="px-5 py-3 text-right">
+                          {isDirector && isEditingThis ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <input
+                                ref={editRef}
+                                type="number"
+                                min="0"
+                                value={editing.value}
+                                onChange={e => setEditing({ ...editing!, value: e.target.value })}
+                                onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(null); }}
+                                className="w-24 bg-obsidian-700 border border-gold-500 text-white rounded px-2 py-1 text-right text-sm focus:outline-none"
+                              />
+                              <button onClick={saveEdit} className="text-green-400 hover:text-green-300 p-0.5"><Check size={14} /></button>
+                              <button onClick={() => setEditing(null)} className="text-gray-500 hover:text-gray-300 p-0.5"><X size={14} /></button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end gap-2">
+                              <span className="text-teal-400 font-semibold">{formatRM(c.intakeCommission ?? 0)}</span>
+                              {isDirector && (
+                                <button
+                                  onClick={() => startEdit(c.id, 'intake', c.intakeCommission ?? 0)}
+                                  className="text-gray-600 hover:text-gold-400 transition-colors"
+                                >
+                                  <Pencil size={12} />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
                 <tfoot>
                   <tr className="border-t border-obsidian-400/60 bg-[#161410]">

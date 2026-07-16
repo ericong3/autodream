@@ -276,12 +276,28 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   };
 
   const editGreenCardRef = useRef<HTMLInputElement>(null);
+  const adminGreenCardRef = useRef<HTMLInputElement>(null);
+  const [uploadingGreenCard, setUploadingGreenCard] = useState(false);
 
   // ── Delivery Modal ──
   const [showDeliveryModal, setShowDeliveryModal] = useState(false);
   const [deliveryPhoto, setDeliveryPhoto] = useState('');
   const deliveryRef = useRef<HTMLInputElement>(null);
   const collectionRef = useRef<HTMLInputElement>(null);
+  const inlineCollectionRef = useRef<HTMLInputElement>(null);
+
+  // ── Refund transfer form (inline in Collection Balance) ──
+  const refundReceiptRef = useRef<HTMLInputElement>(null);
+  const [refundForm, setRefundForm] = useState({ bank: '', accountName: '', accountNo: '' });
+  const [uploadingRefundReceipt, setUploadingRefundReceipt] = useState(false);
+  useEffect(() => {
+    const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
+    setRefundForm({
+      bank: (wo as any)?.refundBank ?? '',
+      accountName: (wo as any)?.refundAccountName ?? '',
+      accountNo: (wo as any)?.refundAccountNo ?? '',
+    });
+  }, [dealCustomer?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Green Card preview ──
   const [showGreenCardPreview, setShowGreenCardPreview] = useState(false);
@@ -864,41 +880,87 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       </div>
 
       {/* ── Green Card ── */}
-      {car.greenCard && (
+      {(car.greenCard || isAdmin) && (
         <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card">
           <SectionHeader icon={FileText} title="Green Card" color="text-green-400" />
           <div className="p-5">
-            <div className="flex items-center gap-4">
-              {car.greenCard.startsWith('http') && (car.greenCard.includes('.jpg') || car.greenCard.includes('.jpeg') || car.greenCard.includes('.png') || car.greenCard.includes('.webp')) ? (
-                <button
-                  type="button"
-                  onClick={() => setShowGreenCardPreview(true)}
-                  className="shrink-0"
-                >
-                  <img src={car.greenCard} alt="Green Card" className="w-32 h-24 object-cover rounded-lg border border-obsidian-400/60 hover:border-green-500/60 transition-colors cursor-pointer" />
-                </button>
-              ) : (
-                <div className="w-16 h-16 bg-green-500/10 border border-green-500/30 rounded-lg flex items-center justify-center">
-                  <FileText size={28} className="text-green-400" />
+            {car.greenCard ? (
+              <div className="flex items-center gap-4 flex-wrap">
+                {car.greenCard.startsWith('http') && (car.greenCard.includes('.jpg') || car.greenCard.includes('.jpeg') || car.greenCard.includes('.png') || car.greenCard.includes('.webp')) ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowGreenCardPreview(true)}
+                    className="shrink-0"
+                  >
+                    <img src={car.greenCard} alt="Green Card" className="w-32 h-24 object-cover rounded-lg border border-obsidian-400/60 hover:border-green-500/60 transition-colors cursor-pointer" />
+                  </button>
+                ) : (
+                  <div className="w-16 h-16 bg-green-500/10 border border-green-500/30 rounded-lg flex items-center justify-center">
+                    <FileText size={28} className="text-green-400" />
+                  </div>
+                )}
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={async () => {
+                      const res = await fetch(car.greenCard!);
+                      const blob = await res.blob();
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `${car.make}-${car.model}-${car.year}-greencard.jpg`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                    className="flex items-center gap-2 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    <Download size={15} />
+                    Download Green Card
+                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={() => adminGreenCardRef.current?.click()}
+                      disabled={uploadingGreenCard}
+                      className="flex items-center gap-2 bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/60 text-gray-300 px-4 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                    >
+                      <Upload size={13} />
+                      {uploadingGreenCard ? 'Uploading…' : 'Replace'}
+                    </button>
+                  )}
                 </div>
-              )}
-              <button
-                onClick={async () => {
-                  const res = await fetch(car.greenCard!);
-                  const blob = await res.blob();
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `${car.make}-${car.model}-${car.year}-greencard.jpg`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-                }}
-                className="flex items-center gap-2 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
-              >
-                <Download size={15} />
-                Download Green Card
-              </button>
-            </div>
+              </div>
+            ) : (
+              isAdmin && (
+                <button
+                  onClick={() => adminGreenCardRef.current?.click()}
+                  disabled={uploadingGreenCard}
+                  className="flex items-center gap-3 w-full border-2 border-dashed border-green-500/30 hover:border-green-500/60 bg-green-500/5 hover:bg-green-500/10 rounded-xl p-5 text-green-400 transition-colors disabled:opacity-50"
+                >
+                  <Upload size={20} className="shrink-0" />
+                  <div className="text-left">
+                    <p className="text-sm font-medium">{uploadingGreenCard ? 'Uploading…' : 'Upload Green Card'}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">JPG, PNG or PDF</p>
+                  </div>
+                </button>
+              )
+            )}
+            <input
+              ref={adminGreenCardRef}
+              type="file"
+              accept="image/*,.pdf"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setUploadingGreenCard(true);
+                try {
+                  const url = await uploadToStorage(file, 'greencards');
+                  await updateCar(car.id, { greenCard: url });
+                } finally {
+                  setUploadingGreenCard(false);
+                  e.target.value = '';
+                }
+              }}
+            />
           </div>
         </div>
       )}
@@ -1391,12 +1453,127 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                       {Math.abs(balance) < 0.01 ? '✓ Balanced' : formatRM(Math.abs(balance))}
                     </span>
                   </div>
-                  {balance < 0 && ((wo as any)?.refundBank || (wo as any)?.refundAccountNo) && (
-                    <div className="mt-3 bg-sky-500/5 border border-sky-500/20 rounded-xl p-3 space-y-1">
-                      <p className="text-xs font-semibold text-sky-400 uppercase tracking-wide mb-2">Refund Bank Details</p>
-                      {(wo as any).refundAccountName && <DRow label="Account Name" value={(wo as any).refundAccountName} border={false} />}
-                      {(wo as any).refundBank && <DRow label="Bank" value={(wo as any).refundBank} border={false} />}
-                      {(wo as any).refundAccountNo && <DRow label="Account No." value={<span className="font-mono">{(wo as any).refundAccountNo}</span>} border={false} />}
+                  {/* ── Refund to customer: bank details + Done Transfer ── */}
+                  {balance < 0 && Math.abs(balance) >= 0.01 && (
+                    <div className="mt-3 pt-3 border-t border-sky-500/20 space-y-2">
+                      <p className="text-[11px] font-semibold text-sky-400 uppercase tracking-wide">Refund Destination</p>
+                      {(wo as any)?.refundTransferredAt ? (
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <Check size={13} className="text-green-400" />
+                            <span className="text-xs text-green-400 font-semibold">
+                              Transferred {new Date((wo as any).refundTransferredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </span>
+                          </div>
+                          {(wo as any)?.refundBank && (
+                            <p className="text-xs text-gray-400">{(wo as any).refundBank}{(wo as any)?.refundAccountNo ? ` · ${(wo as any).refundAccountNo}` : ''}</p>
+                          )}
+                          {(wo as any)?.refundReceiptUrl && (
+                            <a href={(wo as any).refundReceiptUrl} target="_blank" rel="noopener noreferrer"
+                              className="flex items-center gap-1 text-xs text-sky-400 hover:underline">
+                              <Receipt size={10} /> View Receipt
+                            </a>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <input
+                            value={refundForm.bank}
+                            onChange={e => setRefundForm(f => ({ ...f, bank: e.target.value }))}
+                            placeholder="Bank name (e.g. Maybank)"
+                            className="w-full px-3 py-2 rounded-lg bg-obsidian-700/40 border border-obsidian-400/40 text-white text-xs placeholder-gray-600 focus:outline-none focus:border-sky-500/50 transition-colors"
+                          />
+                          <input
+                            value={refundForm.accountNo}
+                            onChange={e => setRefundForm(f => ({ ...f, accountNo: e.target.value }))}
+                            placeholder="Account number"
+                            className="w-full px-3 py-2 rounded-lg bg-obsidian-700/40 border border-obsidian-400/40 text-white text-xs placeholder-gray-600 focus:outline-none focus:border-sky-500/50 font-mono tracking-wider transition-colors"
+                          />
+                          <input
+                            value={refundForm.accountName}
+                            onChange={e => setRefundForm(f => ({ ...f, accountName: e.target.value }))}
+                            placeholder="Account holder name"
+                            className="w-full px-3 py-2 rounded-lg bg-obsidian-700/40 border border-obsidian-400/40 text-white text-xs placeholder-gray-600 focus:outline-none focus:border-sky-500/50 transition-colors"
+                          />
+                          <button
+                            onClick={() => refundReceiptRef.current?.click()}
+                            disabled={uploadingRefundReceipt || !refundForm.accountNo.trim()}
+                            className="flex items-center gap-2 w-full justify-center px-3 py-2 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/30 text-sky-300 text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            <Upload size={12} />
+                            {uploadingRefundReceipt ? 'Uploading…' : 'Done Transfer — Upload Receipt'}
+                          </button>
+                          <input
+                            ref={refundReceiptRef}
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file || !dealCustomer) return;
+                              setUploadingRefundReceipt(true);
+                              try {
+                                const url = await uploadToStorage(file, 'receipts');
+                                const baseWo = dealCustomer.loanWorkOrder ?? dealCustomer.cashWorkOrder!;
+                                const field = dealCustomer.loanWorkOrder ? 'loanWorkOrder' : 'cashWorkOrder';
+                                await updateCustomer(dealCustomer.id, {
+                                  [field]: {
+                                    ...baseWo,
+                                    refundBank: refundForm.bank,
+                                    refundAccountName: refundForm.accountName,
+                                    refundAccountNo: refundForm.accountNo,
+                                    refundReceiptUrl: url,
+                                    refundTransferredAt: new Date().toISOString(),
+                                  },
+                                });
+                              } finally {
+                                setUploadingRefundReceipt(false);
+                                e.target.value = '';
+                              }
+                            }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Collect from customer: settle + receipt ── */}
+                  {balance > 0 && Math.abs(balance) >= 0.01 && (
+                    <div className="mt-3 pt-3 border-t border-orange-500/20">
+                      {car.collectionReceiptUrl ? (
+                        <div className="flex items-center gap-2">
+                          <Check size={13} className="text-green-400" />
+                          <span className="text-xs text-green-400 font-semibold">Settled</span>
+                          <a href={car.collectionReceiptUrl} target="_blank" rel="noopener noreferrer"
+                            className="flex items-center gap-1 text-xs text-amber-400 hover:underline ml-auto">
+                            <Receipt size={10} /> Receipt
+                          </a>
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => inlineCollectionRef.current?.click()}
+                            className="flex items-center gap-2 w-full justify-center px-3 py-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 text-xs font-medium transition-colors"
+                          >
+                            <Upload size={12} /> Mark Settled — Upload Receipt
+                          </button>
+                          <input
+                            ref={inlineCollectionRef}
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            className="hidden"
+                            onChange={async (e) => {
+                              if (e.target.files?.[0]) {
+                                const url = await uploadToStorage(e.target.files[0], 'receipts');
+                                await updateCar(car.id, { collectionReceiptUrl: url });
+                                e.target.value = '';
+                              }
+                            }}
+                          />
+                        </>
+                      )}
                     </div>
                   )}
                 </Section>
@@ -1654,7 +1831,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                         }} />
                       </div>
                     ) : (
-                      <p className="text-gray-500 text-xs mt-1">Accounting will be notified to process this refund upon delivery</p>
+                      <p className="text-gray-500 text-xs mt-1">Fill in the customer's bank details in the Collection Balance section to transfer the refund</p>
                     )}
                   </div>
                 )}

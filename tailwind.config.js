@@ -51,12 +51,14 @@ export default {
         'float':      { '0%,100%': { transform: 'translateY(0)' }, '50%': { transform: 'translateY(-8px)' } },
         'price-in':   { from: { opacity: '0', transform: 'translateY(6px)' }, to: { opacity: '1', transform: 'translateY(0)' } },
         'gold-pulse': { '0%,100%': { boxShadow: '0 0 0 0 rgba(234,184,32,0)' }, '50%': { boxShadow: '0 0 16px 4px rgba(234,184,32,0.2)' } },
+        'toast-in':   { from: { opacity: '0', transform: 'translateX(24px)' }, to: { opacity: '1', transform: 'translateX(0)' } },
       },
       animation: {
         'page-in':    'page-in 0.25s ease forwards',
         'float':      'float 3s ease-in-out infinite',
         'price-in':   'price-in 0.4s ease forwards',
         'gold-pulse': 'gold-pulse 2.5s ease-in-out infinite',
+        'toast-in':   'toast-in 0.25s ease forwards',
       },
       backgroundImage: {
         'gold-gradient': 'linear-gradient(135deg, #F7D96A 0%, #EAB820 40%, #B8880A 100%)',

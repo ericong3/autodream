@@ -155,7 +155,7 @@ export default function History() {
   const { id: selectedCarId } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const isDirector = currentUser?.role === 'director';
+  const isDirectorView = currentUser?.role === 'director' || currentUser?.role === 'shareholder';
   const viewKey = `${currentUser?.id}-history`;
   const view = viewPreference[viewKey] ?? 'grid';
 
@@ -325,10 +325,10 @@ export default function History() {
   >
     <div className="space-y-5">
       {/* Stat cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className={`grid grid-cols-1 gap-4 ${isDirectorView ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
         <StatCard title="Units Delivered" value={soldCars.length} icon={CheckCircle} borderColor="border-l-green-400" iconColor="text-green-400" />
         <StatCard title="Total Revenue" value={formatRM(totalRevenue)} icon={DollarSign} borderColor="border-l-gold-400" iconColor="text-gold-400" />
-        <StatCard title="Total Profit" value={formatRM(totalProfit)} icon={TrendingUp} borderColor="border-l-yellow-400" iconColor="text-yellow-400" />
+        {isDirectorView && <StatCard title="Total Profit" value={formatRM(totalProfit)} icon={TrendingUp} borderColor="border-l-yellow-400" iconColor="text-yellow-400" />}
       </div>
 
       {/* ── Sticky filter bar ── */}
@@ -489,7 +489,7 @@ export default function History() {
                     >
                       {formatRM(dealPrice)}
                     </p>
-                    {isDirector && profit !== undefined && (
+                    {isDirectorView && profit !== undefined && (
                       <p className={`text-xs font-semibold ${profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                         {profit >= 0 ? '+' : ''}{formatRM(profit)}
                       </p>
@@ -498,7 +498,7 @@ export default function History() {
                   <p className="text-gray-600 text-[10px] mt-0.5 truncate">{getSalesperson(getDealSalespersonId(car))}</p>
 
                   {/* Money received button — all delivered cars */}
-                  {isDirector && (() => {
+                  {isDirectorView && (() => {
                     const { type, label } = getPaymentType(car);
                     const Icon = type === 'loan' ? Building2 : type === 'consignment' ? HeartHandshake : Banknote;
                     const isLoanType = type === 'loan';
@@ -585,7 +585,7 @@ export default function History() {
                 <div className="hidden md:flex flex-col gap-1 min-w-[140px]">
                   <span className="text-xs text-gray-500">{getSalesperson(getDealSalespersonId(car))}</span>
                   {car.finalDeal?.bank && <p className="text-xs text-violet-400">{car.finalDeal.bank}</p>}
-                  {isDirector && (() => {
+                  {isDirectorView && (() => {
                     const { type, label } = getPaymentType(car);
                     const Icon = type === 'loan' ? Building2 : type === 'consignment' ? HeartHandshake : Banknote;
                     const isLoanType = type === 'loan';
@@ -626,7 +626,7 @@ export default function History() {
                 {/* Price + profit */}
                 <div className="text-right flex-shrink-0">
                   <p className="text-gold-400 font-bold text-sm">{formatRM(dealPrice)}</p>
-                  {isDirector && profit !== undefined && (
+                  {isDirectorView && profit !== undefined && (
                     <p className={`text-xs font-medium mt-0.5 ${profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                       {profit >= 0 ? '+' : ''}{formatRM(profit)}
                     </p>

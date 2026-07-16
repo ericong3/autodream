@@ -81,17 +81,19 @@ function RequireDirector({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function RequireDirectorOrAdmin({ children }: { children: React.ReactNode }) {
-  const currentUser = useStore((s) => s.currentUser);
-  if (!currentUser) return <Navigate to="/login" replace />;
-  if (!['director', 'admin', 'shareholder'].includes(currentUser.role)) return <Navigate to={roleHome(currentUser.role)} replace />;
-  return <>{children}</>;
-}
 
 function RequireSalesOrDirector({ children }: { children: React.ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
   if (!currentUser) return <Navigate to="/login" replace />;
   if (!['director', 'salesperson', 'shareholder'].includes(currentUser.role)) return <Navigate to={roleHome(currentUser.role)} replace />;
+  return <>{children}</>;
+}
+
+// Data page — sales/director as above, plus admin (scoped to the Workshops tab only, see Data.tsx)
+function RequireDataAccess({ children }: { children: React.ReactNode }) {
+  const currentUser = useStore((s) => s.currentUser);
+  if (!currentUser) return <Navigate to="/login" replace />;
+  if (!['director', 'salesperson', 'shareholder', 'admin'].includes(currentUser.role)) return <Navigate to={roleHome(currentUser.role)} replace />;
   return <>{children}</>;
 }
 
@@ -158,11 +160,11 @@ export default function App() {
           <Route path="/loan-cases" element={<RequireSalesOrDirector><LoanCases /></RequireSalesOrDirector>} />
           <Route path="/finance" element={<RequireDirector><Finance /></RequireDirector>} />
           <Route path="/team" element={<RequireDirector><TeamMembers /></RequireDirector>} />
-          <Route path="/data" element={<RequireSalesOrDirector><Data /></RequireSalesOrDirector>} />
+          <Route path="/data" element={<RequireDataAccess><Data /></RequireDataAccess>} />
           <Route path="/investors" element={<RequireDirector><Investors /></RequireDirector>} />
           <Route path="/dashboard" element={<RequireDirector><Dashboard /></RequireDirector>} />
-          <Route path="/history" element={<RequireDirectorOrAdmin><History /></RequireDirectorOrAdmin>} />
-          <Route path="/history/:id" element={<RequireDirectorOrAdmin><History /></RequireDirectorOrAdmin>} />
+          <Route path="/history" element={<History />} />
+          <Route path="/history/:id" element={<History />} />
           <Route path="/admin-dashboard" element={<RequireAdmin><AdminDashboard /></RequireAdmin>} />
         </Route>
 
