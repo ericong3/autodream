@@ -47,6 +47,7 @@
     "typescript": "^5.2.2",
     "vite": "^5.0.8",
     "vite-plugin-pwa": "^1.2.0",
+    "workbox-core": "^7.4.1",
     "workbox-precaching": "^7.4.1",
     "workbox-routing": "^7.4.1"
   }

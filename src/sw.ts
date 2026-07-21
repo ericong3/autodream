@@ -1,7 +1,14 @@
 /// <reference lib="webworker" />
 import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
+import { clientsClaim } from 'workbox-core';
 
 declare const self: ServiceWorkerGlobalScope;
+
+// Without these, a new deployment sits "waiting" until every open tab of the
+// app is closed — the browser refuses to activate a new SW while an old one
+// still controls a page. This makes updates take over immediately instead.
+self.skipWaiting();
+clientsClaim();
 
 cleanupOutdatedCaches();
 precacheAndRoute(self.__WB_MANIFEST);
