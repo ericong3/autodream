@@ -1084,7 +1084,10 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     }
 
     // ── Phase 2: historical + secondary tables — load in background ──
-    Promise.all([
+    // Wrapped so a rejected query (network blip, PWA waking from background, etc.) doesn't
+    // silently blackhole delivered cars / quotations / instructions / payments / etc. for the
+    // rest of the session — `loaded` is already true from phase 1, so nothing else retries this.
+    const runPhase2 = (isRetry = false): Promise<void> => Promise.all([
       supabase.from('cars').select('*').eq('status', 'delivered'),
       supabase.from('loan_cases').select('*').in('status', ['rejected', 'cancelled', 'withdrawn']),
       supabase.from('quotations').select('*'),
@@ -1172,7 +1175,11 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
           .filter(q => q.status === 'pending' && new Date(q.expiryDate).toDateString() === tomorrow)
           .forEach(q => sendPush(dirIds(allUsers), '⏰ Quotation expiring', `${q.contactName} – ${q.make} ${q.model} expires tomorrow`, '/quotations'));
       }
+    }).catch((err) => {
+      console.error('loadAll phase 2 failed:', err);
+      if (!isRetry) setTimeout(() => { runPhase2(true).catch(() => {}); }, 4000);
     });
+    runPhase2();
 
     // Real-time subscriptions — set up once only; calling loadAll again (e.g. pull-to-refresh)
     // must not create duplicate channels or the server may reset the socket on seeing
