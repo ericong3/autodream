@@ -329,6 +329,23 @@ button:not(.btn-gold):not(.btn-ghost):active:not(:disabled) {
 }
 .input option { background: #141210; color: #F0EDE8; }
 
+/* Taller fields for roomier desktop forms (e.g. New Customer modal) — scoped
+   so it doesn't affect the compact `.input` styling used everywhere else.
+   Desktop-only: mobile keeps the compact bottom-sheet sizing. */
+@media (min-width: 640px) {
+  /* padding-top/bottom only — leaves horizontal padding (e.g. pl-9 for icons) alone */
+  .form-lg .input {
+    padding-top: 0.9375rem;
+    padding-bottom: 0.9375rem;
+    font-size: 0.95rem;
+    border-radius: 0.625rem;
+  }
+  .form-lg label {
+    font-size: 0.8125rem;
+    margin-bottom: 0.5rem;
+  }
+}
+
 /* ─── Row hover (#35) ─────────────────────────────────────────────────────── */
 .row-item {
   position: relative;

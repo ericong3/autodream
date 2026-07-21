@@ -74,7 +74,13 @@
       "Bash(powershell -Command \"Stop-Process -Id 20340 -Force\")",
       "Bash(powershell -Command \"Stop-Process -Id 13732 -Force\")",
       "Bash(grep -n \"setForm\\(\\(f\\) => \\({ ...f, vendorId: v.id\" src/pages/Claims.tsx)",
-      "Bash(grep -n \"block text-gray-400 text-xs mb-1\\\\\">$\\\\|Category{isVendorRegistered\" src/pages/Claims.tsx)"
+      "Bash(grep -n \"block text-gray-400 text-xs mb-1\\\\\">$\\\\|Category{isVendorRegistered\" src/pages/Claims.tsx)",
+      "Bash(break)",
+      "Read(//tmp/**)",
+      "Bash(rm -f test_applicant_edit.mjs test_console_check.mjs test_console_check2.mjs 1_search.png 1b_search_open.png 2_detail.png 3_applicant_edit_open.png 4_final.png)",
+      "Bash(lsof -ti:5174 -sTCP:LISTEN)",
+      "Bash(xargs -r kill)",
+      "Bash(powershell -Command \"Stop-Process -Id 38048 -Force\")"
     ]
   }
 }

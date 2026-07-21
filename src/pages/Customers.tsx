@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
-import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList, Truck, Upload, Lock, Skull, Clock, RotateCcw, MoreVertical, FileText, Download } from 'lucide-react';
+import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList, Truck, Upload, Lock, Skull, Clock, RotateCcw, MoreVertical, FileText, Download, Search } from 'lucide-react';
 import { useStore } from '../store';
 import { Customer, CashWorkOrder, LoanWorkOrder, WorkOrderItem, BANKS } from '../types';
 import LoanSubmitModal from './LoanSubmitModal';
@@ -119,6 +119,49 @@ export default function Customers() {
   const [editTarget, setEditTarget] = useState<Customer | null>(null);
   const [form, setForm] = useState({ ...emptyForm, assignedSalesId: currentUser?.id ?? '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [carQuery, setCarQuery] = useState('');
+  const [showCarDropdown, setShowCarDropdown] = useState(false);
+  const [carDropdownPos, setCarDropdownPos] = useState({ top: 0, left: 0, width: 0, maxHeight: 320 });
+  const carPickerRef = useRef<HTMLDivElement>(null);
+  const carDropdownPanelRef = useRef<HTMLDivElement>(null);
+
+  const positionCarDropdown = () => {
+    const el = carPickerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setCarDropdownPos({
+      top: rect.bottom + 6,
+      left: rect.left,
+      width: rect.width,
+      maxHeight: Math.max(160, Math.min(360, window.innerHeight - rect.bottom - 20)),
+    });
+  };
+
+  useEffect(() => {
+    if (!showCarDropdown) return;
+    const onScrollOrResize = () => positionCarDropdown();
+    window.addEventListener('scroll', onScrollOrResize, true);
+    window.addEventListener('resize', onScrollOrResize);
+    return () => {
+      window.removeEventListener('scroll', onScrollOrResize, true);
+      window.removeEventListener('resize', onScrollOrResize);
+    };
+  }, [showCarDropdown]);
+
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      const target = e.target as Node;
+      const insideAnchor = carPickerRef.current?.contains(target);
+      const insidePanel = carDropdownPanelRef.current?.contains(target);
+      if (!insideAnchor && !insidePanel) setShowCarDropdown(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, []);
+
+  useEffect(() => {
+    if (!showModal) { setCarQuery(''); setShowCarDropdown(false); }
+  }, [showModal]);
 
 
 
@@ -2740,12 +2783,12 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
       </Modal>
 
       {/* Add/Edit Customer Modal */}
-      <Modal isOpen={showModal} onClose={() => { setShowModal(false); setEditTarget(null); }} title={editTarget ? 'Edit Customer' : 'New Customer'} maxWidth="max-w-lg">
-        <div className="space-y-3">
+      <Modal isOpen={showModal} onClose={() => { setShowModal(false); setEditTarget(null); }} title={editTarget ? 'Edit Customer' : 'New Customer'} maxWidth="max-w-lg sm:max-w-2xl">
+        <div className="space-y-5 form-lg">
           <FormField label="Full Name *" error={errors.name}>
             <input className={inputCls(errors.name)} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Ahmad Bin Ismail" autoFocus />
           </FormField>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-4">
             <FormField label="Phone *" error={errors.phone}>
               <input className={inputCls(errors.phone)} value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+601X-XXXXXXX" />
             </FormField>
@@ -2761,7 +2804,7 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
               </select>
             </FormField>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-4">
             {editTarget && (
               <FormField label="Lead Status">
                 <select className={inputCls()} value={form.leadStatus} onChange={e => setForm({ ...form, leadStatus: e.target.value as Customer['leadStatus'] })}>
@@ -2772,14 +2815,75 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
               </FormField>
             )}
             <FormField label="Interested Car" className={editTarget ? '' : 'col-span-2'}>
-              <select className={inputCls()} value={form.interestedCarId} onChange={e => setForm({ ...form, interestedCarId: e.target.value })}>
-                <option value="">— None —</option>
-                {cars.filter(car => car.status !== 'sold').map(car => (
-                  <option key={car.id} value={car.id}>
-                    {car.carPlate ? `${car.carPlate} · ` : ''}{car.year} {car.make} {car.model}
-                  </option>
-                ))}
-              </select>
+              {(() => {
+                const selectedCar = cars.find(car => car.id === form.interestedCarId);
+                const availableCars = cars.filter(car => car.status !== 'sold');
+                const q = carQuery.trim().toLowerCase();
+                const filteredCars = !q ? availableCars : availableCars.filter(car =>
+                  (car.carPlate ?? '').toLowerCase().includes(q) ||
+                  car.make.toLowerCase().includes(q) ||
+                  car.model.toLowerCase().includes(q) ||
+                  String(car.year).includes(q)
+                );
+                return selectedCar ? (
+                  <div className="flex items-center gap-3 bg-obsidian-700/60 border border-obsidian-400/60 rounded-lg pl-3 pr-2.5 py-2 sm:py-3.5">
+                    {selectedCar.carPlate && (
+                      <span className="shrink-0 font-mono font-semibold text-xs rounded bg-[#2C2415] text-gold-300 border border-[#3C321E] tracking-wider px-2 py-0.5">
+                        {selectedCar.carPlate}
+                      </span>
+                    )}
+                    <span className="flex-1 text-sm text-white truncate">{selectedCar.year} {selectedCar.make} {selectedCar.model}</span>
+                    <button
+                      type="button"
+                      onClick={() => { setForm({ ...form, interestedCarId: '' }); setCarQuery(''); }}
+                      className="shrink-0 p-1 rounded text-gray-500 hover:text-red-400 transition-colors"
+                    >
+                      <X size={15} />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="relative" ref={carPickerRef}>
+                    <div className="relative">
+                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                      <input
+                        className={`${inputCls()} pl-9`}
+                        placeholder="Search by plate, make or model..."
+                        value={carQuery}
+                        onChange={e => { setCarQuery(e.target.value); positionCarDropdown(); setShowCarDropdown(true); }}
+                        onFocus={() => { positionCarDropdown(); setShowCarDropdown(true); }}
+                      />
+                    </div>
+                    {showCarDropdown && createPortal(
+                      <div
+                        ref={carDropdownPanelRef}
+                        className="fixed z-[600] overflow-y-auto rounded-xl bg-obsidian-800 border border-obsidian-400/60 shadow-card-lg divide-y divide-obsidian-400/20"
+                        style={{ top: carDropdownPos.top, left: carDropdownPos.left, width: carDropdownPos.width, maxHeight: carDropdownPos.maxHeight }}
+                      >
+                        {filteredCars.length === 0 ? (
+                          <p className="px-4 py-3 text-sm text-gray-600">No cars found</p>
+                        ) : (
+                          filteredCars.slice(0, 40).map(car => (
+                            <button
+                              key={car.id}
+                              type="button"
+                              onClick={() => { setForm({ ...form, interestedCarId: car.id }); setCarQuery(''); setShowCarDropdown(false); }}
+                              className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-white/[0.06] transition-colors"
+                            >
+                              {car.carPlate && (
+                                <span className="shrink-0 font-mono font-semibold text-xs rounded bg-[#2C2415] text-gold-300 border border-[#3C321E] tracking-wider px-2 py-0.5">
+                                  {car.carPlate}
+                                </span>
+                              )}
+                              <span className="text-sm text-gray-200 truncate">{car.year} {car.make} {car.model}</span>
+                            </button>
+                          ))
+                        )}
+                      </div>,
+                      document.body
+                    )}
+                  </div>
+                );
+              })()}
             </FormField>
           </div>
           {isDirector && (
@@ -2791,9 +2895,9 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
             </FormField>
           )}
         </div>
-        <div className="flex justify-center gap-3 mt-5">
-          <button onClick={() => { setShowModal(false); setEditTarget(null); }} className="px-6 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
-          <button onClick={handleSubmit} className="btn-gold px-6 py-2.5 rounded-lg text-sm">
+        <div className="flex justify-center gap-3 mt-5 sm:mt-7">
+          <button onClick={() => { setShowModal(false); setEditTarget(null); }} className="px-6 py-2.5 sm:py-3.5 sm:px-8 btn-ghost rounded-lg text-sm">Cancel</button>
+          <button onClick={handleSubmit} className="btn-gold px-6 py-2.5 sm:py-3.5 sm:px-8 rounded-lg text-sm">
             {editTarget ? 'Save Changes' : 'Add Customer'}
           </button>
         </div>

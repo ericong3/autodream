@@ -3,7 +3,7 @@ import {
   Wallet, CheckCircle2, X, Search, CreditCard, Camera,
   Trash2, Plus, ChevronDown, ArrowUpRight, ArrowDownLeft, Receipt, CalendarDays,
   Users, Wrench, Building2, UserCircle, DollarSign, RefreshCw, TrendingDown, TrendingUp,
-  Clock, AlertTriangle, Check,
+  Clock, AlertTriangle, Check, FileText,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { Payment, PaymentType, RecipientType } from '../types';
@@ -14,7 +14,8 @@ import { supabase } from '../lib/supabase';
 import Modal from '../components/Modal';
 
 async function uploadReceipt(file: File): Promise<string> {
-  const path = `receipts/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+  const ext = file.type === 'application/pdf' ? 'pdf' : 'jpg';
+  const path = `receipts/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
   const { error } = await supabase.storage.from('car-photos').upload(path, file, { contentType: file.type || 'image/jpeg', upsert: false });
   if (error) throw new Error(error.message);
   const { data } = supabase.storage.from('car-photos').getPublicUrl(path);
@@ -125,6 +126,8 @@ function TransferModal({ count, totalAmount, isCollect, onConfirm, onClose }: Tr
     setReceiptPreview(URL.createObjectURL(file));
   };
 
+  const isPdfReceipt = receiptFile?.type === 'application/pdf';
+
   const handleConfirm = async () => {
     setSaving(true);
     let receiptUrl: string | undefined;
@@ -193,10 +196,17 @@ function TransferModal({ count, totalAmount, isCollect, onConfirm, onClose }: Tr
             <label className="text-[11px] text-gray-400 font-medium uppercase tracking-wider block mb-1.5">
               <span className="flex items-center gap-1"><Receipt size={10} />Transaction Receipt</span>
             </label>
-            <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handlePickReceipt} className="hidden" />
+            <input ref={fileRef} type="file" accept="image/*,.pdf,application/pdf" onChange={handlePickReceipt} className="hidden" />
             {receiptPreview ? (
               <div className="relative">
-                <img src={receiptPreview} alt="Receipt" className="w-full rounded-lg object-cover max-h-48" />
+                {isPdfReceipt ? (
+                  <div className="w-full flex items-center gap-2 py-3 px-3 rounded-lg border border-white/20 text-gray-300 text-sm">
+                    <FileText size={18} className="text-red-400 shrink-0" />
+                    <span className="truncate">{receiptFile?.name}</span>
+                  </div>
+                ) : (
+                  <img src={receiptPreview} alt="Receipt" className="w-full rounded-lg object-cover max-h-48" />
+                )}
                 <button
                   onClick={() => { setReceiptPreview(null); setReceiptFile(null); if (fileRef.current) fileRef.current.value = ''; }}
                   className="absolute top-2 right-2 p-1 rounded-full bg-black/60 text-white hover:bg-red-500/80 transition-colors"
@@ -210,7 +220,7 @@ function TransferModal({ count, totalAmount, isCollect, onConfirm, onClose }: Tr
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-dashed border-white/20 text-gray-400 hover:text-white hover:border-gold-500/40 transition-colors text-sm"
               >
                 <Camera size={16} />
-                Take photo / upload receipt
+                Take photo / upload receipt (PDF OK)
               </button>
             )}
           </div>
