@@ -32,6 +32,7 @@ import LoanCases from './pages/LoanCases';
 import BankerDashboard from './pages/BankerDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import Payments from './pages/Payments';
+import Claims from './pages/Claims';
 import CarMovement from './pages/CarMovement';
 
 function roleHome(role: string) {
@@ -150,6 +151,7 @@ export default function App() {
           <Route path="/reminders" element={<Reminders />} />
           <Route path="/ai-assistant" element={<AIAssistant />} />
           <Route path="/payments" element={<Payments />} />
+          <Route path="/claims" element={<Claims />} />
           <Route path="/quotations" element={<RequireSalesOrDirector><Quotations /></RequireSalesOrDirector>} />
           <Route path="/customers" element={<RequireSalesOrDirector><Customers /></RequireSalesOrDirector>} />
           <Route path="/commission" element={<RequireSalesOrDirector><Commission /></RequireSalesOrDirector>} />

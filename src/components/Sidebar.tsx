@@ -23,6 +23,7 @@ import {
   FolderOpen,
   Wallet,
   Wrench,
+  Receipt,
 } from 'lucide-react';
 import { useStore } from '../store';
 
@@ -42,6 +43,7 @@ const directorBottomItems: NavItem[] = [
   { to: '/team',       icon: UsersRound,    label: 'Team Members'  },
   { to: '/investors',  icon: Briefcase,     label: 'Investors / Consignment' },
   { to: '/data',       icon: Database,      label: 'Data'          },
+  { to: '/claims',     icon: Receipt,       label: 'Claims'        },
   { to: '/reminders',  icon: ClipboardList, label: 'Instructions'  },
   { to: '/history',    icon: History,       label: 'Delivered'     },
   { to: '/ai-assistant', icon: Bot,         label: 'AI Assistant'  },
@@ -70,6 +72,7 @@ const salespersonItems: NavItem[] = [
   { to: '/calendar', icon: CalendarDays, label: 'Calendar' },
   { to: '/data', icon: Database, label: 'Bankers' },
   { to: '/history', icon: History, label: 'Delivered' },
+  { to: '/claims', icon: Receipt, label: 'Claims' },
   { to: '/reminders', icon: ClipboardList, label: 'Instructions' },
   { to: '/ai-assistant', icon: Bot, label: 'AI Assistant' },
 ];
@@ -77,6 +80,7 @@ const salespersonItems: NavItem[] = [
 const mechanicItems: NavItem[] = [
   { to: '/inventory', icon: Car, label: 'Inventory' },
   { to: '/history', icon: History, label: 'Delivered' },
+  { to: '/claims', icon: Receipt, label: 'Claims' },
   { to: '/reminders', icon: ClipboardList, label: 'Instructions' },
   { to: '/ai-assistant', icon: Bot, label: 'AI Assistant' },
 ];
@@ -91,6 +95,7 @@ const adminItems: NavItem[] = [
   { to: '/workshop',        icon: Wrench,          label: 'Workshop'  },
   { to: '/data',            icon: Database,        label: 'Register Merchant' },
   { to: '/payments',        icon: Wallet,          label: 'Payments'  },
+  { to: '/claims',          icon: Receipt,         label: 'Claims'    },
   { to: '/history',         icon: History,         label: 'Delivered' },
   { to: '/reminders',       icon: ClipboardList,   label: 'Instructions' },
   { to: '/ai-assistant',    icon: Bot,             label: 'AI Assistant' },

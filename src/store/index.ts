@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
-import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, MiscCost, ExternalSalesman, Banker, LoanCase, LoanCaseDocument, LoanCaseActivity, Payment, AppNotification, InvestorTransaction, Shipment, CarMovement } from '../types';
+import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, ClaimCategory, LedgerAccount, JournalEntry, JournalLine, MiscCost, ExternalSalesman, Banker, LoanCase, LoanCaseDocument, LoanCaseActivity, Payment, AppNotification, InvestorTransaction, Shipment, CarMovement } from '../types';
 import { sendPush } from '../utils/sendPush';
+import { hashPassword, verifyPassword } from '../utils/password';
 
 // ── Notification helpers ─────────────────────────────────────────────────────
 const dirIds      = (users: User[]) => users.filter(u => u.role === 'director').map(u => u.id);
@@ -38,6 +39,9 @@ interface StoreState {
   workshops: Workshop[];
   suppliers: Supplier[];
   merchants: Merchant[];
+  claimCategories: ClaimCategory[];
+  ledgerAccounts: LedgerAccount[];
+  journalEntries: JournalEntry[];
   externalSalesmen: ExternalSalesman[];
   bankers: Banker[];
   shipments: Shipment[];
@@ -116,6 +120,18 @@ interface StoreState {
   addMerchant: (merchant: Merchant) => Promise<void>;
   updateMerchant: (id: string, updates: Partial<Merchant>) => Promise<void>;
   deleteMerchant: (id: string) => Promise<void>;
+
+  // Claim categories
+  addClaimCategory: (category: ClaimCategory) => Promise<void>;
+  deleteClaimCategory: (id: string) => Promise<void>;
+
+  // Chart of Accounts
+  addLedgerAccount: (account: LedgerAccount) => Promise<void>;
+  deleteLedgerAccount: (id: string) => Promise<void>;
+
+  // General Ledger
+  addJournalEntry: (entry: JournalEntry) => Promise<void>;
+  voidJournalEntry: (id: string, voidedBy: string, reason: string) => Promise<void>;
 
   // Payments
   payments: Payment[];
@@ -297,6 +313,60 @@ function workshopToRow(w: Partial<Workshop>) {
   if ('companyDocName' in w) row.company_doc_name = w.companyDocName ?? null;
   if ('deleteRequestedBy' in w) row.delete_requested_by = w.deleteRequestedBy ?? null;
   if ('deleteRequestedAt' in w) row.delete_requested_at = w.deleteRequestedAt ?? null;
+  return row;
+}
+
+function rowToLedgerAccount(r: any): LedgerAccount {
+  return {
+    id: r.id,
+    name: r.name,
+    type: r.type,
+    investorTagged: r.investor_tagged ?? undefined,
+    notes: r.notes ?? undefined,
+  };
+}
+function ledgerAccountToRow(a: Partial<LedgerAccount>) {
+  const row: any = {};
+  if ('id' in a) row.id = a.id;
+  if ('name' in a) row.name = a.name;
+  if ('type' in a) row.type = a.type;
+  if ('investorTagged' in a) row.investor_tagged = a.investorTagged ?? null;
+  if ('notes' in a) row.notes = a.notes ?? null;
+  return row;
+}
+
+function rowToJournalEntry(r: any): JournalEntry {
+  return {
+    id: r.id,
+    date: r.date,
+    description: r.description,
+    lines: parseJsonField<JournalLine[]>(r.lines) ?? [],
+    sourceType: r.source_type ?? undefined,
+    sourceId: r.source_id ?? undefined,
+    carId: r.car_id ?? undefined,
+    createdBy: r.created_by ?? undefined,
+    createdAt: r.created_at,
+    voided: r.voided ?? undefined,
+    voidedBy: r.voided_by ?? undefined,
+    voidedAt: r.voided_at ?? undefined,
+    voidReason: r.void_reason ?? undefined,
+  };
+}
+function journalEntryToRow(e: Partial<JournalEntry>) {
+  const row: any = {};
+  if ('id' in e) row.id = e.id;
+  if ('date' in e) row.date = e.date;
+  if ('description' in e) row.description = e.description;
+  if ('lines' in e) row.lines = e.lines;
+  if ('sourceType' in e) row.source_type = e.sourceType ?? null;
+  if ('sourceId' in e) row.source_id = e.sourceId ?? null;
+  if ('carId' in e) row.car_id = e.carId ?? null;
+  if ('createdBy' in e) row.created_by = e.createdBy ?? null;
+  if ('createdAt' in e) row.created_at = e.createdAt;
+  if ('voided' in e) row.voided = e.voided ?? null;
+  if ('voidedBy' in e) row.voided_by = e.voidedBy ?? null;
+  if ('voidedAt' in e) row.voided_at = e.voidedAt ?? null;
+  if ('voidReason' in e) row.void_reason = e.voidReason ?? null;
   return row;
 }
 
@@ -803,6 +873,10 @@ function rowToPayment(r: any): Payment {
     notes: r.notes ?? undefined,
     deleteRequestedBy: r.delete_requested_by ?? undefined,
     deleteRequestedAt: r.delete_requested_at ?? undefined,
+    claimConfirmedBy: r.claim_confirmed_by ?? undefined,
+    claimConfirmedAt: r.claim_confirmed_at ?? undefined,
+    claimKind: r.claim_kind ?? undefined,
+    claimCategory: r.claim_category ?? undefined,
     batchId: r.batch_id ?? undefined,
     periodStart: r.period_start ?? undefined,
     periodEnd: r.period_end ?? undefined,
@@ -833,6 +907,10 @@ function paymentToRow(p: Partial<Payment>) {
   if (p.notes !== undefined) row.notes = p.notes;
   if (p.deleteRequestedBy !== undefined) row.delete_requested_by = p.deleteRequestedBy ?? null;
   if (p.deleteRequestedAt !== undefined) row.delete_requested_at = p.deleteRequestedAt ?? null;
+  if (p.claimConfirmedBy !== undefined) row.claim_confirmed_by = p.claimConfirmedBy ?? null;
+  if (p.claimConfirmedAt !== undefined) row.claim_confirmed_at = p.claimConfirmedAt ?? null;
+  if (p.claimKind !== undefined) row.claim_kind = p.claimKind ?? null;
+  if (p.claimCategory !== undefined) row.claim_category = p.claimCategory ?? null;
   if (p.batchId !== undefined) row.batch_id = p.batchId;
   if (p.periodStart !== undefined) row.period_start = p.periodStart;
   if (p.periodEnd !== undefined) row.period_end = p.periodEnd;
@@ -916,6 +994,9 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   workshops: [],
   suppliers: [],
   merchants: [],
+  claimCategories: [],
+  ledgerAccounts: [],
+  journalEntries: [],
   externalSalesmen: [],
   bankers: [],
   shipments: [],
@@ -1014,13 +1095,16 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       supabase.from('workshops').select('*'),
       supabase.from('suppliers').select('*'),
       supabase.from('merchants').select('*'),
+      supabase.from('claim_categories').select('*'),
+      supabase.from('ledger_accounts').select('*'),
+      supabase.from('journal_entries').select('*').order('date', { ascending: false }),
       supabase.from('loan_case_documents').select('*'),
       supabase.from('loan_case_activity').select('*'),
       supabase.from('payments').select('*').order('created_at', { ascending: false }),
       supabase.from('investor_transactions').select('*').order('created_at', { ascending: true }),
       supabase.from('shipments').select('*').order('eta', { ascending: true }),
       supabase.from('car_movements').select('*').order('created_at', { ascending: false }),
-    ]).then(([deliveredCarsResult, closedCasesResult, quotations, instructions, testDrives, reminders, dealers, workshops, suppliers, merchants, loanCaseDocsResult, loanCaseActivitiesResult, paymentsResult, investorTxnsResult, shipmentsResult, carMovementsResult]) => {
+    ]).then(([deliveredCarsResult, closedCasesResult, quotations, instructions, testDrives, reminders, dealers, workshops, suppliers, merchants, claimCategories, ledgerAccounts, journalEntries, loanCaseDocsResult, loanCaseActivitiesResult, paymentsResult, investorTxnsResult, shipmentsResult, carMovementsResult]) => {
       const allQuotations  = (quotations.data ?? []).map(rowToQuotation);
       const allTestDrives  = (testDrives.data ?? []).map(rowToTestDrive);
       const deliveredCars  = (deliveredCarsResult.data ?? []).map(rowToCar);
@@ -1045,6 +1129,9 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         workshops:           workshops.data            ? workshops.data.map(rowToWorkshop)                                      : s.workshops,
         suppliers:           suppliers.data            ? (suppliers.data as Supplier[])                                         : s.suppliers,
         merchants:           merchants.data            ? (merchants.data as Merchant[])                                         : s.merchants,
+        claimCategories:     claimCategories.data       ? (claimCategories.data as ClaimCategory[])                              : s.claimCategories,
+        ledgerAccounts:      ledgerAccounts.data        ? ledgerAccounts.data.map(rowToLedgerAccount)                            : s.ledgerAccounts,
+        journalEntries:      journalEntries.data        ? journalEntries.data.map(rowToJournalEntry)                             : s.journalEntries,
         loanCaseDocuments:   loanCaseDocsResult.data   ? loanCaseDocsResult.data.map(rowToLoanCaseDocument)                     : s.loanCaseDocuments,
         loanCaseActivities:  loanCaseActivitiesResult.data ? loanCaseActivitiesResult.data.map(rowToLoanCaseActivity)           : s.loanCaseActivities,
         payments:            paymentsResult.data       ? paymentsResult.data.map(rowToPayment)                                  : s.payments,
@@ -1419,9 +1506,8 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       .from('users')
       .select('*')
       .eq('username', username)
-      .eq('password', password)
       .single();
-    if (data) {
+    if (data && await verifyPassword(password, data.password)) {
       const user = rowToUser(data);
       set({ currentUser: user });
       // Load unread notifications for this user
@@ -1693,19 +1779,21 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
 
   // Users
   addUser: async (user) => {
-    set((s) => ({ users: [...s.users, user] }));
-    const { error } = await supabase.from('users').insert(userToRow(user));
+    const stored = { ...user, password: await hashPassword(user.password) };
+    set((s) => ({ users: [...s.users, stored] }));
+    const { error } = await supabase.from('users').insert(userToRow(stored));
     if (error) {
       set((s) => ({ users: s.users.filter((u) => u.id !== user.id) }));
       throw new Error(error.message);
     }
   },
   updateUser: async (id, user) => {
+    const patch = user.password ? { ...user, password: await hashPassword(user.password) } : user;
     set((s) => ({
-      users: s.users.map((u) => (u.id === id ? { ...u, ...user } : u)),
-      currentUser: s.currentUser?.id === id ? { ...s.currentUser, ...user } : s.currentUser,
+      users: s.users.map((u) => (u.id === id ? { ...u, ...patch } : u)),
+      currentUser: s.currentUser?.id === id ? { ...s.currentUser, ...patch } : s.currentUser,
     }));
-    await supabase.from('users').update(userToRow(user)).eq('id', id);
+    await supabase.from('users').update(userToRow(patch)).eq('id', id);
   },
   deleteUser: async (id) => {
     set((s) => ({ users: s.users.filter((u) => u.id !== id) }));
@@ -1966,6 +2054,48 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   deleteMerchant: async (id) => {
     set((s) => ({ merchants: s.merchants.filter((m) => m.id !== id) }));
     await supabase.from('merchants').delete().eq('id', id);
+  },
+
+  addClaimCategory: async (category) => {
+    set((s) => ({ claimCategories: [...s.claimCategories, category] }));
+    const { error } = await supabase.from('claim_categories').insert(category);
+    if (error) {
+      set((s) => ({ claimCategories: s.claimCategories.filter((c) => c.id !== category.id) }));
+      throw new Error(error.message);
+    }
+  },
+  deleteClaimCategory: async (id) => {
+    set((s) => ({ claimCategories: s.claimCategories.filter((c) => c.id !== id) }));
+    await supabase.from('claim_categories').delete().eq('id', id);
+  },
+
+  addLedgerAccount: async (account) => {
+    set((s) => ({ ledgerAccounts: [...s.ledgerAccounts, account] }));
+    const { error } = await supabase.from('ledger_accounts').insert(ledgerAccountToRow(account));
+    if (error) {
+      set((s) => ({ ledgerAccounts: s.ledgerAccounts.filter((a) => a.id !== account.id) }));
+      throw new Error(error.message);
+    }
+  },
+  deleteLedgerAccount: async (id) => {
+    set((s) => ({ ledgerAccounts: s.ledgerAccounts.filter((a) => a.id !== id) }));
+    await supabase.from('ledger_accounts').delete().eq('id', id);
+  },
+
+  addJournalEntry: async (entry) => {
+    set((s) => ({ journalEntries: [entry, ...s.journalEntries] }));
+    const { error } = await supabase.from('journal_entries').insert(journalEntryToRow(entry));
+    if (error) {
+      set((s) => ({ journalEntries: s.journalEntries.filter((e) => e.id !== entry.id) }));
+      throw new Error(error.message);
+    }
+  },
+  // Corrections are voided, never deleted — the entry (and the mistake) stay
+  // on record, just marked reversed, with who and why.
+  voidJournalEntry: async (id, voidedBy, reason) => {
+    const patch = { voided: true, voidedBy, voidedAt: new Date().toISOString(), voidReason: reason };
+    set((s) => ({ journalEntries: s.journalEntries.map((e) => e.id === id ? { ...e, ...patch } : e) }));
+    await supabase.from('journal_entries').update(journalEntryToRow(patch)).eq('id', id);
   },
 
   addPayment: async (payment) => {

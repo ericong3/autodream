@@ -188,6 +188,7 @@ export async function generateRepairPayment(opts: {
     recipientType: 'workshop', recipientId: ws?.id ?? repair.location, recipientName: repair.location,
     bankName: ws?.bankName, accountNumber: ws?.bankAccountNumber, accountHolder: ws?.bankAccountHolder,
     amount, description: `${repair.typeOfRepair} repair`, status: 'pending', createdAt: new Date().toISOString(),
+    receiptUrl: repair.receiptPhoto,
   });
 }
 
@@ -434,9 +435,9 @@ export function collectMissingPayments(data: {
       }
     }
 
-    // Misc costs
+    // Misc costs — skip ones a claim already paid for (linked via miscCostId, any payment type)
     for (const misc of car.miscCosts ?? []) {
-      if (misc.merchant && !alreadyExists('misc_cost', { miscCostId: misc.id })) {
+      if (misc.merchant && !alreadyExists('misc_cost', { miscCostId: misc.id }) && !payments.some(p => p.miscCostId === misc.id)) {
         const merchant = merchants.find(m => m.name.toLowerCase() === misc.merchant!.toLowerCase());
         result.push({
           id: generateId(), type: 'misc_cost', carId: car.id, miscCostId: misc.id,
@@ -448,10 +449,11 @@ export function collectMissingPayments(data: {
     }
   }
 
-  // Done repairs
+  // Done repairs — skip ones a claim already paid for (linked via repairJobId, any payment type)
   for (const repair of repairs) {
     if (repair.status !== 'done' || !repair.location) continue;
     if (alreadyExists('repair', { repairJobId: repair.id })) continue;
+    if (payments.some(p => p.repairJobId === repair.id)) continue;
     const amount = repair.actualCost ?? repair.totalCost;
     if (amount <= 0) continue;
     const ws = workshops.find(w => w.name.toLowerCase() === repair.location!.toLowerCase());

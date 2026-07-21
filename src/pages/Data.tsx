@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, X, Building2, Wrench, Package, ShoppingBag, UserCheck, Landmark, Phone, Mail, Pencil, Trash2, Eye, EyeOff, CreditCard, Paperclip, Download, Check, Loader2, Clock } from 'lucide-react';
+import { Plus, X, Building2, Wrench, Package, ShoppingBag, UserCheck, Landmark, Phone, Mail, Pencil, Trash2, Eye, EyeOff, CreditCard, Paperclip, Download, Check, Loader2, Clock, Tag } from 'lucide-react';
 import { useStore } from '../store';
 import { formatRM, generateId } from '../utils/format';
 import { supabase } from '../lib/supabase';
@@ -8,13 +8,14 @@ import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import Modal from '../components/Modal';
 import { ExternalSalesman, Banker, BANKS, Dealer, Workshop, Merchant } from '../types';
 
-type Tab = 'dealers' | 'workshops' | 'suppliers' | 'misc' | 'ext_salesmen' | 'bankers';
+type Tab = 'dealers' | 'workshops' | 'suppliers' | 'misc' | 'ext_salesmen' | 'bankers' | 'claims';
 
 const TABS: { key: Tab; label: string; icon: React.ElementType; color: string }[] = [
   { key: 'dealers',      label: 'Car Dealers',   icon: Building2,  color: 'text-blue-400'   },
   { key: 'workshops',    label: 'Workshops',     icon: Wrench,     color: 'text-orange-400' },
   { key: 'suppliers',    label: 'Suppliers',     icon: Package,    color: 'text-green-400'  },
   { key: 'misc',         label: 'Misc',          icon: ShoppingBag,color: 'text-purple-400' },
+  { key: 'claims',       label: 'Claim Categories', icon: Tag,     color: 'text-amber-400'  },
   { key: 'ext_salesmen', label: 'Ext. Salesmen', icon: UserCheck,  color: 'text-teal-400'   },
   { key: 'bankers',      label: 'Bankers',        icon: Landmark,   color: 'text-sky-400'    },
 ];
@@ -31,7 +32,7 @@ export default function Data() {
   const isAdmin = currentUser?.role === 'admin';
   const isDirectorLike = currentUser?.role === 'director' || currentUser?.role === 'shareholder';
   const [activeTab, setActiveTab] = useState<Tab>(isSalesperson ? 'bankers' : isAdmin ? 'workshops' : 'dealers');
-  const visibleTabs = isSalesperson ? [] : isAdmin ? TABS.filter((t) => t.key === 'workshops' || t.key === 'misc') : TABS;
+  const visibleTabs = isSalesperson ? [] : isAdmin ? TABS.filter((t) => t.key === 'workshops' || t.key === 'misc' || t.key === 'claims') : TABS;
   const [error, setError] = useState('');
 
   const dealers   = useStore((s) => s.dealers);
@@ -49,6 +50,9 @@ export default function Data() {
   const addMerchant    = useStore((s) => s.addMerchant);
   const updateMerchant = useStore((s) => s.updateMerchant);
   const deleteMerchant = useStore((s) => s.deleteMerchant);
+  const claimCategories      = useStore((s) => s.claimCategories);
+  const addClaimCategory     = useStore((s) => s.addClaimCategory);
+  const deleteClaimCategory  = useStore((s) => s.deleteClaimCategory);
   const externalSalesmen     = useStore((s) => s.externalSalesmen);
   const addExternalSalesman    = useStore((s) => s.addExternalSalesman);
   const updateExternalSalesman = useStore((s) => s.updateExternalSalesman);
@@ -84,6 +88,7 @@ export default function Data() {
   const [workshopForm, setWorkshopForm] = useState({ name: '', phone: '', speciality: '' });
   const [supplierForm, setSupplierForm] = useState({ name: '', phone: '', category: '' });
   const [merchantForm, setMerchantForm] = useState({ name: '', phone: '', category: '' });
+  const [categoryForm, setCategoryForm] = useState({ name: '', kind: 'misc' as 'repair' | 'misc' });
   const [extForm, setExtForm] = useState(emptyExtSalesman);
   const [extProfileTarget, setExtProfileTarget] = useState<ExternalSalesman | null>(null);
   const [extEditMode, setExtEditMode] = useState(false);
@@ -229,6 +234,72 @@ export default function Data() {
           addMerchant={addMerchant}
           updateMerchant={updateMerchant}
           deleteMerchant={deleteMerchant}
+        />
+      )}
+
+      {/* Claim Categories */}
+      {activeTab === 'claims' && (
+        <Section
+          title="Claim Categories"
+          icon={Tag}
+          iconColor="text-amber-400"
+          count={claimCategories.length}
+          form={(closeModal) => (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-gray-400 text-xs mb-1">Category Name *</label>
+                <input className={inputCls()} placeholder="e.g. Toll / Parking" value={categoryForm.name} onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-gray-400 text-xs mb-1">Bucket</label>
+                <p className="text-gray-600 text-[11px] mb-2">Repair = cost of making the car sellable. Misc = process/admin cost.</p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCategoryForm({ ...categoryForm, kind: 'misc' })}
+                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                      categoryForm.kind === 'misc' ? 'bg-purple-500/20 border-purple-500/40 text-purple-300' : 'border-obsidian-400/60 text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    Misc
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCategoryForm({ ...categoryForm, kind: 'repair' })}
+                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                      categoryForm.kind === 'repair' ? 'bg-orange-500/20 border-orange-500/40 text-orange-300' : 'border-obsidian-400/60 text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    Repair
+                  </button>
+                </div>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={closeModal} className="flex-1 btn-ghost py-2 rounded-xl text-sm">Cancel</button>
+                <button
+                  disabled={!categoryForm.name.trim()}
+                  onClick={() => {
+                    if (!categoryForm.name.trim()) return;
+                    handleAdd(async () => {
+                      await addClaimCategory({ id: generateId(), name: categoryForm.name.trim(), kind: categoryForm.kind });
+                      setCategoryForm({ name: '', kind: 'misc' });
+                    });
+                    closeModal();
+                  }}
+                  className="flex-1 btn-gold py-2 rounded-xl text-sm disabled:opacity-40"
+                >Add Category</button>
+              </div>
+            </div>
+          )}
+          items={[...claimCategories]
+            .sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name))
+            .map((c) => ({
+              id: c.id,
+              primary: c.name,
+              secondary: c.kind === 'repair' ? 'Repair' : 'Misc',
+            }))}
+          onDelete={(id) => deleteClaimCategory(id)}
+          emptyText="No claim categories yet"
         />
       )}
 

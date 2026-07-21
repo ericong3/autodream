@@ -9,7 +9,9 @@ import { useStore } from '../store';
 import { Payment, PaymentType, RecipientType } from '../types';
 import { formatRM, generateId } from '../utils/format';
 import { collectMissingPayments } from '../utils/generatePayments';
+import { buildClaimConfirmedEntry, buildClaimPaidEntry } from '../utils/generateJournalEntries';
 import { supabase } from '../lib/supabase';
+import Modal from '../components/Modal';
 
 async function uploadReceipt(file: File): Promise<string> {
   const path = `receipts/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
@@ -34,6 +36,7 @@ const TYPE_LABELS: Record<PaymentType, string> = {
   customer_refund:        'Customer Refund',
   customer_collection:    'Cash Collection',
   loan_disbursement:      'Loan Disbursement',
+  expense_claim:          'Expense Claim',
 };
 
 const TYPE_COLORS: Record<PaymentType, string> = {
@@ -49,6 +52,7 @@ const TYPE_COLORS: Record<PaymentType, string> = {
   customer_refund:        'bg-red-500/20 text-red-300 border-red-500/20',
   customer_collection:    'bg-lime-500/20 text-lime-300 border-lime-500/20',
   loan_disbursement:      'bg-cyan-500/20 text-cyan-300 border-cyan-500/20',
+  expense_claim:          'bg-amber-500/20 text-amber-300 border-amber-500/20',
 };
 
 // Payments we RECEIVE (not pay out)
@@ -81,7 +85,7 @@ const RECIPIENT_TYPE_LABELS: Record<RecipientType, string> = {
   customer:         'Customer',
 };
 
-type StatusTab = 'to_pay' | 'to_collect' | 'transferred' | 'all';
+type StatusTab = 'to_pay' | 'to_collect' | 'transferred' | 'all' | 'refund_claims' | 'expense_claims';
 
 const EMPTY_ADD = {
   type: '' as PaymentType | '',
@@ -251,6 +255,7 @@ export default function Payments({ embedded }: PaymentsProps) {
   const {
     payments, addPayment, batchAddPayments, updatePayment, deletePayment,
     currentUser, users, externalSalesmen, workshops, dealers, merchants, cars, customers, repairs, loaded,
+    addRepair, addMiscCost, deleteRepair, deleteMiscCost, addJournalEntry, voidJournalEntry, journalEntries,
   } = useStore(s => ({
     payments:          s.payments,
     addPayment:        s.addPayment,
@@ -267,6 +272,13 @@ export default function Payments({ embedded }: PaymentsProps) {
     customers:         s.customers,
     repairs:           s.repairs,
     loaded:            s.loaded,
+    addRepair:         s.addRepair,
+    addMiscCost:       s.addMiscCost,
+    deleteRepair:      s.deleteRepair,
+    deleteMiscCost:    s.deleteMiscCost,
+    addJournalEntry:   s.addJournalEntry,
+    voidJournalEntry:  s.voidJournalEntry,
+    journalEntries:    s.journalEntries,
   }));
 
   const [tab, setTab] = useState<StatusTab>('to_pay');
@@ -299,6 +311,8 @@ export default function Payments({ embedded }: PaymentsProps) {
       if (tab === 'to_pay'    && (p.status !== 'pending' || INBOUND_TYPES.has(p.type))) return false;
       if (tab === 'to_collect'&& (p.status !== 'pending' || !INBOUND_TYPES.has(p.type))) return false;
       if (tab === 'transferred' && p.status !== 'transferred') return false;
+      if (tab === 'refund_claims' && p.type !== 'customer_refund') return false;
+      if (tab === 'expense_claims' && p.type !== 'expense_claim') return false;
       if (typeFilter && p.type !== typeFilter) return false;
       if (monthFilter && !p.createdAt.startsWith(monthFilter)) return false;
       if (search) {
@@ -313,6 +327,8 @@ export default function Payments({ embedded }: PaymentsProps) {
   const pendingPayments = payments.filter(p => p.status === 'pending');
   const pendingOutbound = pendingPayments.filter(p => !INBOUND_TYPES.has(p.type));
   const pendingInbound = pendingPayments.filter(p => INBOUND_TYPES.has(p.type));
+  const pendingRefundClaims = pendingPayments.filter(p => p.type === 'customer_refund');
+  const pendingExpenseClaims = pendingPayments.filter(p => p.type === 'expense_claim');
   const pendingTotal = pendingOutbound.reduce((s, p) => s + p.amount, 0);
   const toCollectTotal = pendingInbound.reduce((s, p) => s + p.amount, 0);
   const thisMonth = new Date().toISOString().slice(0, 7);
@@ -339,7 +355,9 @@ export default function Payments({ embedded }: PaymentsProps) {
   });
 
   const selectAll = () => {
-    const pendingIds = filtered.filter(p => p.status === 'pending').map(p => p.id);
+    const pendingIds = filtered
+      .filter(p => p.status === 'pending' && !(p.type === 'customer_refund' && !p.bankName) && !(p.type === 'expense_claim' && (!p.claimConfirmedBy || (p.recipientType !== 'user' && !p.recipientId))))
+      .map(p => p.id);
     setSelected(prev => pendingIds.length === prev.size && pendingIds.every(id => prev.has(id)) ? new Set() : new Set(pendingIds));
   };
 
@@ -355,10 +373,23 @@ export default function Payments({ embedded }: PaymentsProps) {
         status: 'transferred',
         transferredAt: date ? new Date(date).toISOString() : now,
         transferredBy: currentUser?.id,
-        receiptUrl: receiptUrl || undefined,
+        // Only overwrite receiptUrl if a new one was actually uploaded — some payments
+        // (expense claims, workshop invoices) already carry a receipt from submission,
+        // and updatePayment's local merge would otherwise blank it out mid-transfer.
+        ...(receiptUrl ? { receiptUrl } : {}),
         notes: notes || undefined,
       })
     ));
+    // Paying a confirmed claim clears the payable it was posted against
+    if (currentUser) {
+      const claimsBeingPaid = ids
+        .map(id => payments.find(p => p.id === id))
+        .filter((p): p is Payment => !!p && p.type === 'expense_claim');
+      await Promise.all(claimsBeingPaid.map(claim => {
+        const claimCar = claim.carId ? cars.find(c => c.id === claim.carId) : undefined;
+        return addJournalEntry(buildClaimPaidEntry({ claim, car: claimCar, createdBy: currentUser.id }));
+      }));
+    }
     // Auto-create refund if customer overpaid
     if (actualReceived !== undefined && transferTarget === 'single' && singleId) {
       const payment = payments.find(p => p.id === singleId);
@@ -381,6 +412,82 @@ export default function Payments({ embedded }: PaymentsProps) {
     setTransferTarget(null);
     setSingleId(null);
     setSelected(new Set());
+  };
+
+  // ── Expense claim review ─────────────────────────────────────────────────────
+  // Confirming is also the moment a claim starts counting toward the car's
+  // profit numbers — it writes into the same repair/misc-cost records every
+  // other page already reads, so nothing else needs to change to pick it up.
+  const handleConfirmClaim = async (id: string) => {
+    const claim = payments.find(p => p.id === id);
+    if (!claim || claim.claimConfirmedBy) return;
+    await updatePayment(id, { claimConfirmedBy: currentUser?.id, claimConfirmedAt: new Date().toISOString() });
+    if (currentUser) {
+      const claimCar = claim.carId ? cars.find(c => c.id === claim.carId) : undefined;
+      await addJournalEntry(buildClaimConfirmedEntry({ claim, car: claimCar, createdBy: currentUser.id }));
+    }
+    if (!claim.carId) return;
+    const vendorName = claim.recipientType !== 'user' ? claim.recipientName : undefined;
+    // Store the new record's id back on the claim so deleting a wrongly-added
+    // claim later can clean up the ledger entry it created, not just itself.
+    if (claim.claimKind === 'repair') {
+      const repairJobId = generateId();
+      await addRepair({
+        id: repairJobId,
+        carId: claim.carId,
+        typeOfRepair: claim.claimCategory || claim.description || 'Repair',
+        parts: [],
+        labourCost: 0,
+        totalCost: claim.amount,
+        status: 'done',
+        location: vendorName,
+        receiptPhoto: claim.receiptUrl,
+        completedAt: new Date().toISOString(),
+        notes: claim.description,
+        createdAt: claim.createdAt,
+      });
+      await updatePayment(id, { repairJobId });
+    } else if (claim.claimKind === 'misc') {
+      const miscCostId = generateId();
+      await addMiscCost(claim.carId, {
+        id: miscCostId,
+        description: claim.claimCategory || claim.description || 'Misc',
+        amount: claim.amount,
+        category: claim.claimCategory,
+        merchant: vendorName,
+        createdAt: claim.createdAt,
+        createdBy: claim.recipientId || undefined,
+      });
+      await updatePayment(id, { miscCostId });
+    }
+  };
+
+  // ── Link an unregistered claim to a real Workshop/Merchant ─────────────────────
+  const [linkVendorTarget, setLinkVendorTarget] = useState<string | null>(null);
+  const [vendorQuery, setVendorQuery] = useState('');
+
+  const vendorOptions = useMemo(() => [
+    ...workshops.map(w => ({ id: w.id, name: w.name, kind: 'workshop' as const, bankName: w.bankName, accountNumber: w.bankAccountNumber, accountHolder: w.bankAccountHolder })),
+    ...merchants.map(m => ({ id: m.id, name: m.name, kind: 'merchant' as const, bankName: m.bankName, accountNumber: m.bankAccountNumber, accountHolder: m.bankAccountHolder })),
+  ], [workshops, merchants]);
+
+  const filteredVendors = useMemo(() => {
+    const q = vendorQuery.trim().toLowerCase();
+    return !q ? vendorOptions : vendorOptions.filter(v => v.name.toLowerCase().includes(q));
+  }, [vendorOptions, vendorQuery]);
+
+  const handleLinkVendor = async (vendor: typeof vendorOptions[number]) => {
+    if (!linkVendorTarget) return;
+    await updatePayment(linkVendorTarget, {
+      recipientType: vendor.kind,
+      recipientId: vendor.id,
+      recipientName: vendor.name,
+      bankName: vendor.bankName,
+      accountNumber: vendor.accountNumber,
+      accountHolder: vendor.accountHolder,
+    });
+    setLinkVendorTarget(null);
+    setVendorQuery('');
   };
 
   // ── Add payment ───────────────────────────────────────────────────────────────
@@ -414,8 +521,21 @@ export default function Payments({ embedded }: PaymentsProps) {
   const isDirectorView = currentUser?.role === 'director' || currentUser?.role === 'shareholder';
 
   // ── Delete ────────────────────────────────────────────────────────────────────
-  const handleDelete = (id: string) => {
-    if (confirm('Delete this payment entry?')) deletePayment(id);
+  // A confirmed claim may have already written a repair job / misc cost onto its
+  // car — deleting a wrongly-added claim needs to clean that up too, not just
+  // the payment itself, or the car's cost numbers would still show the mistake.
+  const handleDelete = async (id: string) => {
+    const claim = payments.find(p => p.id === id);
+    if (!confirm('Delete this payment entry?')) return;
+    if (claim?.repairJobId) await deleteRepair(claim.repairJobId);
+    if (claim?.carId && claim?.miscCostId) await deleteMiscCost(claim.carId, claim.miscCostId);
+    // Ledger entries are never hard-deleted — void them so the mistake and its
+    // correction both stay on record, instead of quietly vanishing with the payment.
+    const linkedEntries = journalEntries.filter(e => e.sourceId === id && !e.voided);
+    if (linkedEntries.length > 0 && currentUser) {
+      await Promise.all(linkedEntries.map(e => voidJournalEntry(e.id, currentUser.id, 'Source payment deleted')));
+    }
+    await deletePayment(id);
   };
 
   const handleRequestDelete = async (id: string) => {
@@ -457,11 +577,14 @@ export default function Payments({ embedded }: PaymentsProps) {
     const isChecked = selected.has(p.id);
     const isInbound = INBOUND_TYPES.has(p.type);
     const hasDeleteRequest = !!p.deleteRequestedBy;
+    const refundMissingBankDetails = p.type === 'customer_refund' && !p.bankName;
+    const claimNeedsVendor = p.type === 'expense_claim' && p.recipientType !== 'user' && !p.recipientId;
+    const unconfirmedClaim = p.type === 'expense_claim' && !p.claimConfirmedBy;
 
     return (
       <div className={`flex items-center gap-3 px-4 py-3 border-b border-white/[0.04] last:border-0 transition-colors ${hasDeleteRequest && isDirectorView ? 'bg-red-500/5 border-l-2 border-l-red-500/40' : isChecked ? 'bg-gold-500/5' : 'hover:bg-white/[0.02]'}`}>
-        {/* Checkbox — only for pending */}
-        {isPending ? (
+        {/* Checkbox — only for pending, not for claims that still need review */}
+        {isPending && !refundMissingBankDetails && !unconfirmedClaim && !claimNeedsVendor ? (
           <button
             onClick={() => toggleSelect(p.id)}
             className={`shrink-0 w-4 h-4 rounded border transition-colors ${isChecked ? 'bg-gold-500 border-gold-500' : 'border-white/20 hover:border-gold-400/50'}`}
@@ -495,11 +618,16 @@ export default function Payments({ embedded }: PaymentsProps) {
               <span className="text-[11px] text-gray-600 hidden sm:inline">· {p.bankName} {p.accountNumber}</span>
             )}
           </div>
-          {p.status === 'transferred' && (
+          {(p.status === 'transferred' || !!p.receiptUrl || (p.type === 'expense_claim' && !!p.claimConfirmedBy)) && (
             <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-              {p.transferredAt && (
+              {p.status === 'transferred' && p.transferredAt && (
                 <span className="text-[10px] text-gray-600">
                   {new Date(p.transferredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}
+                </span>
+              )}
+              {p.type === 'expense_claim' && p.claimConfirmedBy && (
+                <span className="text-[10px] text-sky-400 flex items-center gap-1">
+                  <Check size={9} /> Confirmed{p.claimConfirmedAt ? ` ${new Date(p.claimConfirmedAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}` : ''}
                 </span>
               )}
               {p.receiptUrl && (
@@ -522,16 +650,59 @@ export default function Payments({ embedded }: PaymentsProps) {
             </span>
           </div>
           {isPending ? (
-            <button
-              onClick={() => { setSingleId(p.id); setTransferTarget('single'); }}
-              className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors whitespace-nowrap ${
-                isInbound
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/20 hover:bg-emerald-500/30'
-                  : 'bg-gold-500/20 text-gold-300 border-gold-500/20 hover:bg-gold-500/30'
-              }`}
-            >
-              {isInbound ? 'Collect' : 'Transfer'}
-            </button>
+            refundMissingBankDetails ? (
+              <span
+                title="Salesperson hasn't submitted the customer's refund bank details yet"
+                className="flex items-center gap-1 text-[10px] text-amber-400 px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 whitespace-nowrap"
+              >
+                <Clock size={10} /> Awaiting details
+              </span>
+            ) : claimNeedsVendor ? (
+              (isDirectorView || isAdmin) ? (
+                <button
+                  onClick={() => setLinkVendorTarget(p.id)}
+                  title="This vendor isn't registered yet — add them in Data before this can be confirmed"
+                  className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg border transition-colors whitespace-nowrap bg-violet-500/20 text-violet-300 border-violet-500/20 hover:bg-violet-500/30"
+                >
+                  <Building2 size={11} /> Register Vendor
+                </button>
+              ) : (
+                <span
+                  title="Waiting for the vendor to be registered before this can be reviewed"
+                  className="flex items-center gap-1 text-[10px] text-amber-400 px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 whitespace-nowrap"
+                >
+                  <Clock size={10} /> Needs vendor
+                </span>
+              )
+            ) : unconfirmedClaim ? (
+              (isDirectorView || isAdmin) ? (
+                <button
+                  onClick={() => handleConfirmClaim(p.id)}
+                  title="Check the receipt matches the amount, then confirm"
+                  className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg border transition-colors whitespace-nowrap bg-sky-500/20 text-sky-300 border-sky-500/20 hover:bg-sky-500/30"
+                >
+                  <Check size={11} /> Confirm
+                </button>
+              ) : (
+                <span
+                  title="Waiting for admin to check the receipt before this can be paid"
+                  className="flex items-center gap-1 text-[10px] text-amber-400 px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 whitespace-nowrap"
+                >
+                  <Clock size={10} /> Awaiting review
+                </span>
+              )
+            ) : (
+              <button
+                onClick={() => { setSingleId(p.id); setTransferTarget('single'); }}
+                className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors whitespace-nowrap ${
+                  isInbound
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/20 hover:bg-emerald-500/30'
+                    : 'bg-gold-500/20 text-gold-300 border-gold-500/20 hover:bg-gold-500/30'
+                }`}
+              >
+                {isInbound ? 'Collect' : 'Transfer'}
+              </button>
+            )
           ) : (
             <CheckCircle2 size={14} className="text-green-400 opacity-60" />
           )}
@@ -642,6 +813,8 @@ export default function Payments({ embedded }: PaymentsProps) {
             {([
               { key: 'to_pay',     label: 'To Pay',    icon: TrendingDown, count: pendingOutbound.length },
               { key: 'to_collect', label: 'To Collect', icon: TrendingUp,  count: pendingInbound.length },
+              { key: 'refund_claims', label: 'Refund Claims', icon: Receipt, count: pendingRefundClaims.length },
+              { key: 'expense_claims', label: 'Expense Claims', icon: CreditCard, count: pendingExpenseClaims.length },
               { key: 'transferred',label: 'Done',       icon: CheckCircle2, count: 0 },
               { key: 'all',        label: 'All',        icon: null,         count: 0 },
             ] as { key: StatusTab; label: string; icon: any; count: number }[]).map(({ key, label, icon: Icon, count }) => (
@@ -735,11 +908,21 @@ export default function Payments({ embedded }: PaymentsProps) {
                 Payment entries appear here automatically when deals are delivered, repairs completed, or misc costs logged.
               </p>
             )}
+            {tab === 'refund_claims' && (
+              <p className="text-gray-600 text-xs text-center max-w-xs">
+                Claims appear once a salesperson submits the customer's refund bank details on a loan deal with money owed back.
+              </p>
+            )}
+            {tab === 'expense_claims' && (
+              <p className="text-gray-600 text-xs text-center max-w-xs">
+                Claims appear here once staff submit a petrol/bill receipt from the Claims page.
+              </p>
+            )}
           </div>
         ) : (
           <div className="rounded-xl overflow-hidden border border-white/[0.06] bg-obsidian-900/40">
             {/* Select-all bar for pending tabs */}
-            {(tab === 'to_pay' || tab === 'to_collect') && filtered.some(p => p.status === 'pending') && (
+            {(tab === 'to_pay' || tab === 'to_collect' || tab === 'refund_claims' || tab === 'expense_claims') && filtered.some(p => p.status === 'pending') && (
               <div className="flex items-center gap-3 px-4 py-2.5 border-b border-white/[0.06] bg-obsidian-800/40">
                 <button
                   onClick={selectAll}
@@ -795,6 +978,42 @@ export default function Payments({ embedded }: PaymentsProps) {
           onClose={() => { setTransferTarget(null); setSingleId(null); }}
         />
       )}
+
+      {/* Link claim to a registered vendor */}
+      <Modal isOpen={!!linkVendorTarget} onClose={() => { setLinkVendorTarget(null); setVendorQuery(''); }} title="Register Vendor" maxWidth="max-w-sm">
+        <div className="space-y-3">
+          <p className="text-gray-400 text-xs">
+            Pick the workshop or merchant this bill is going to. Not on the list yet? Add them in Data first, then come back here.
+          </p>
+          <div className="relative">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+            <input
+              autoFocus
+              value={vendorQuery}
+              onChange={(e) => setVendorQuery(e.target.value)}
+              placeholder="Search workshops & merchants..."
+              className="w-full pl-8 pr-3 py-2 rounded-lg bg-obsidian-800/60 border border-white/[0.08] text-white text-sm placeholder-gray-600 focus:outline-none focus:border-gold-500/40 transition-colors"
+            />
+          </div>
+          <div className="max-h-64 overflow-y-auto rounded-lg border border-white/[0.06] divide-y divide-white/[0.05]">
+            {filteredVendors.length === 0 ? (
+              <p className="px-3 py-3 text-xs text-gray-600 text-center">No matching workshop or merchant — add them in Data first.</p>
+            ) : (
+              filteredVendors.map((v) => (
+                <button
+                  key={`${v.kind}-${v.id}`}
+                  onClick={() => handleLinkVendor(v)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-white/[0.05] transition-colors"
+                >
+                  {v.kind === 'workshop' ? <Wrench size={13} className="text-orange-400 shrink-0" /> : <Receipt size={13} className="text-pink-400 shrink-0" />}
+                  <span className="flex-1 text-sm text-gray-200 truncate">{v.name}</span>
+                  {!v.bankName && <span className="shrink-0 text-[10px] text-amber-400">no bank details</span>}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      </Modal>
 
       {/* Add payment modal */}
       {showAdd && (

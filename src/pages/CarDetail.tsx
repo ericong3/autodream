@@ -217,6 +217,10 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     return total - ((dealCustomer.cashWorkOrder as any)?.downpayment ?? 0);
   })();
 
+  // The customer_refund Payment doubles as the refund claim — bank details live on it,
+  // not on the work order, so Payments → Refund Claims can pick it up once submitted.
+  const refundClaim = car ? payments.find(p => p.type === 'customer_refund' && p.carId === car.id) : undefined;
+
   // ── Edit Deal Modal ──
   const [showEditDeal, setShowEditDeal] = useState(false);
   const [editDealForm, setEditDealForm] = useState({
@@ -224,7 +228,6 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     bankProduct: 0, loanAmount: 0, downpayment: 0, bookingFee: 0,
     additionalItems: [] as WorkOrderItem[],
     soldDate: '',
-    refundBank: '', refundAccountName: '', refundAccountNo: '',
   });
   const [savingDeal, setSavingDeal] = useState(false);
 
@@ -242,9 +245,6 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       bookingFee: dealWo?.bookingFee ?? 0,
       additionalItems: [...(dealWo?.additionalItems ?? [])],
       soldDate: car.finalDeal?.submittedAt?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
-      refundBank: (dealWo as any)?.refundBank ?? '',
-      refundAccountName: (dealWo as any)?.refundAccountName ?? '',
-      refundAccountNo: (dealWo as any)?.refundAccountNo ?? '',
     });
     setShowEditDeal(true);
   };
@@ -286,18 +286,16 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const collectionRef = useRef<HTMLInputElement>(null);
   const inlineCollectionRef = useRef<HTMLInputElement>(null);
 
-  // ── Refund transfer form (inline in Collection Balance) ──
-  const refundReceiptRef = useRef<HTMLInputElement>(null);
+  // ── Refund claim form (inline in Collection Balance) ──
   const [refundForm, setRefundForm] = useState({ bank: '', accountName: '', accountNo: '' });
-  const [uploadingRefundReceipt, setUploadingRefundReceipt] = useState(false);
+  const [savingRefundClaim, setSavingRefundClaim] = useState(false);
   useEffect(() => {
-    const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
     setRefundForm({
-      bank: (wo as any)?.refundBank ?? '',
-      accountName: (wo as any)?.refundAccountName ?? '',
-      accountNo: (wo as any)?.refundAccountNo ?? '',
+      bank: refundClaim?.bankName ?? '',
+      accountName: refundClaim?.accountHolder ?? '',
+      accountNo: refundClaim?.accountNumber ?? '',
     });
-  }, [dealCustomer?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [refundClaim?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Green Card preview ──
   const [showGreenCardPreview, setShowGreenCardPreview] = useState(false);
@@ -555,6 +553,38 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     if (!updated.includes(currentUser!.id)) updated.push(currentUser!.id);
     const newStatus = salespeople.every((sp) => updated.includes(sp.id)) ? 'photo_complete' : car.status;
     updateCar(car.id, { photoTakenBy: updated, status: newStatus as Car['status'] });
+  };
+
+  // ── Refund claim submit — just records bank details; director transfers, admin uploads the receipt in Payments ──
+  const handleSubmitRefundClaim = async () => {
+    if (!dealCustomer || !car) return;
+    setSavingRefundClaim(true);
+    try {
+      const bankFields = {
+        bankName: refundForm.bank.trim(),
+        accountNumber: refundForm.accountNo.trim(),
+        accountHolder: refundForm.accountName.trim(),
+      };
+      if (refundClaim) {
+        await updatePayment(refundClaim.id, bankFields);
+      } else {
+        await addPayment({
+          id: generateId(),
+          type: 'customer_refund',
+          carId: car.id,
+          recipientType: 'customer',
+          recipientId: dealCustomer.id,
+          recipientName: dealCustomer.name,
+          amount: Math.abs(customerBalance),
+          description: `Refund to ${dealCustomer.name}`,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          ...bankFields,
+        });
+      }
+    } finally {
+      setSavingRefundClaim(false);
+    }
   };
 
   // ── Delivery ──
@@ -1453,27 +1483,36 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                       {Math.abs(balance) < 0.01 ? '✓ Balanced' : formatRM(Math.abs(balance))}
                     </span>
                   </div>
-                  {/* ── Refund to customer: bank details + Done Transfer ── */}
+                  {/* ── Refund to customer: submit bank details, tracked as a Payments claim ── */}
                   {balance < 0 && Math.abs(balance) >= 0.01 && (
                     <div className="mt-3 pt-3 border-t border-sky-500/20 space-y-2">
                       <p className="text-[11px] font-semibold text-sky-400 uppercase tracking-wide">Refund Destination</p>
-                      {(wo as any)?.refundTransferredAt ? (
+                      {refundClaim?.status === 'transferred' ? (
                         <div className="space-y-1.5">
                           <div className="flex items-center gap-2">
                             <Check size={13} className="text-green-400" />
                             <span className="text-xs text-green-400 font-semibold">
-                              Transferred {new Date((wo as any).refundTransferredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              Transferred{refundClaim.transferredAt ? ` ${new Date(refundClaim.transferredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
                             </span>
                           </div>
-                          {(wo as any)?.refundBank && (
-                            <p className="text-xs text-gray-400">{(wo as any).refundBank}{(wo as any)?.refundAccountNo ? ` · ${(wo as any).refundAccountNo}` : ''}</p>
+                          {refundClaim.bankName && (
+                            <p className="text-xs text-gray-400">{refundClaim.bankName}{refundClaim.accountNumber ? ` · ${refundClaim.accountNumber}` : ''}</p>
                           )}
-                          {(wo as any)?.refundReceiptUrl && (
-                            <a href={(wo as any).refundReceiptUrl} target="_blank" rel="noopener noreferrer"
+                          {refundClaim.receiptUrl && (
+                            <a href={refundClaim.receiptUrl} target="_blank" rel="noopener noreferrer"
                               className="flex items-center gap-1 text-xs text-sky-400 hover:underline">
                               <Receipt size={10} /> View Receipt
                             </a>
                           )}
+                        </div>
+                      ) : refundClaim?.bankName ? (
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <Clock size={13} className="text-amber-400" />
+                            <span className="text-xs text-amber-400 font-semibold">Submitted — awaiting transfer</span>
+                          </div>
+                          <p className="text-xs text-gray-400">{refundClaim.bankName} · {refundClaim.accountNumber}</p>
+                          <p className="text-[11px] text-gray-600">Director transfers the money; the receipt gets uploaded in Payments → Refund Claims.</p>
                         </div>
                       ) : (
                         <div className="space-y-2">
@@ -1496,43 +1535,12 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                             className="w-full px-3 py-2 rounded-lg bg-obsidian-700/40 border border-obsidian-400/40 text-white text-xs placeholder-gray-600 focus:outline-none focus:border-sky-500/50 transition-colors"
                           />
                           <button
-                            onClick={() => refundReceiptRef.current?.click()}
-                            disabled={uploadingRefundReceipt || !refundForm.accountNo.trim()}
+                            onClick={handleSubmitRefundClaim}
+                            disabled={savingRefundClaim || !refundForm.bank.trim() || !refundForm.accountNo.trim() || !refundForm.accountName.trim()}
                             className="flex items-center gap-2 w-full justify-center px-3 py-2 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/30 text-sky-300 text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                           >
-                            <Upload size={12} />
-                            {uploadingRefundReceipt ? 'Uploading…' : 'Done Transfer — Upload Receipt'}
+                            {savingRefundClaim ? 'Submitting…' : 'Submit Refund Details'}
                           </button>
-                          <input
-                            ref={refundReceiptRef}
-                            type="file"
-                            accept="image/*"
-                            capture="environment"
-                            className="hidden"
-                            onChange={async (e) => {
-                              const file = e.target.files?.[0];
-                              if (!file || !dealCustomer) return;
-                              setUploadingRefundReceipt(true);
-                              try {
-                                const url = await uploadToStorage(file, 'receipts');
-                                const baseWo = dealCustomer.loanWorkOrder ?? dealCustomer.cashWorkOrder!;
-                                const field = dealCustomer.loanWorkOrder ? 'loanWorkOrder' : 'cashWorkOrder';
-                                await updateCustomer(dealCustomer.id, {
-                                  [field]: {
-                                    ...baseWo,
-                                    refundBank: refundForm.bank,
-                                    refundAccountName: refundForm.accountName,
-                                    refundAccountNo: refundForm.accountNo,
-                                    refundReceiptUrl: url,
-                                    refundTransferredAt: new Date().toISOString(),
-                                  },
-                                });
-                              } finally {
-                                setUploadingRefundReceipt(false);
-                                e.target.value = '';
-                              }
-                            }}
-                          />
                         </div>
                       )}
                     </div>
@@ -3065,33 +3073,14 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 </div>
 
                 {dealIsLoan && (
-                  <>
-                    <div className={`flex justify-between items-center pt-3 mt-1 border-t-2 ${Math.abs(bal) < 0.01 ? 'border-green-500/40' : bal < 0 ? 'border-sky-500/40' : 'border-orange-500/40'}`}>
-                      <span className="text-white font-semibold text-sm">
-                        {Math.abs(bal) < 0.01 ? 'Balance' : bal < 0 ? 'Refund to Customer' : 'Collect from Customer'}
-                      </span>
-                      <span className={`text-base font-bold ${Math.abs(bal) < 0.01 ? 'text-green-400' : bal < 0 ? 'text-sky-300' : 'text-orange-400'}`}>
-                        {Math.abs(bal) < 0.01 ? '✓ Balanced' : formatRM(Math.abs(bal))}
-                      </span>
-                    </div>
-                    {bal < 0 && (
-                      <div className="mt-3 bg-sky-500/5 border border-sky-500/20 rounded-xl p-4 space-y-0">
-                        <p className="text-xs font-semibold text-sky-400 uppercase tracking-wide mb-3">Refund Bank Details</p>
-                        <div className="flex items-center justify-between py-2 border-b border-obsidian-400/30 gap-4">
-                          <span className="text-gray-500 text-sm shrink-0">Account Name</span>
-                          <input value={editDealForm.refundAccountName} onChange={e => setEditDealForm(f => ({ ...f, refundAccountName: e.target.value }))} placeholder="Full name" className="bg-transparent text-right text-sm text-white w-40 outline-none focus:text-sky-300 placeholder-gray-700" />
-                        </div>
-                        <div className="flex items-center justify-between py-2 border-b border-obsidian-400/30 gap-4">
-                          <span className="text-gray-500 text-sm shrink-0">Bank</span>
-                          <input value={editDealForm.refundBank} onChange={e => setEditDealForm(f => ({ ...f, refundBank: e.target.value }))} placeholder="e.g. Maybank" className="bg-transparent text-right text-sm text-white w-40 outline-none focus:text-sky-300 placeholder-gray-700" />
-                        </div>
-                        <div className="flex items-center justify-between py-2 gap-4">
-                          <span className="text-gray-500 text-sm shrink-0">Account No.</span>
-                          <input value={editDealForm.refundAccountNo} onChange={e => setEditDealForm(f => ({ ...f, refundAccountNo: e.target.value }))} placeholder="Account number" className="bg-transparent text-right text-sm text-white w-40 outline-none focus:text-sky-300 placeholder-gray-700 font-mono" />
-                        </div>
-                      </div>
-                    )}
-                  </>
+                  <div className={`flex justify-between items-center pt-3 mt-1 border-t-2 ${Math.abs(bal) < 0.01 ? 'border-green-500/40' : bal < 0 ? 'border-sky-500/40' : 'border-orange-500/40'}`}>
+                    <span className="text-white font-semibold text-sm">
+                      {Math.abs(bal) < 0.01 ? 'Balance' : bal < 0 ? 'Refund to Customer' : 'Collect from Customer'}
+                    </span>
+                    <span className={`text-base font-bold ${Math.abs(bal) < 0.01 ? 'text-green-400' : bal < 0 ? 'text-sky-300' : 'text-orange-400'}`}>
+                      {Math.abs(bal) < 0.01 ? '✓ Balanced' : formatRM(Math.abs(bal))}
+                    </span>
+                  </div>
                 )}
               </div>
             );

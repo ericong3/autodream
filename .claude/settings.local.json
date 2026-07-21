@@ -72,7 +72,9 @@
       "Bash(netstat -ano)",
       "Bash(powershell -Command \"Stop-Process -Id 33520 -Force\")",
       "Bash(powershell -Command \"Stop-Process -Id 20340 -Force\")",
-      "Bash(powershell -Command \"Stop-Process -Id 13732 -Force\")"
+      "Bash(powershell -Command \"Stop-Process -Id 13732 -Force\")",
+      "Bash(grep -n \"setForm\\(\\(f\\) => \\({ ...f, vendorId: v.id\" src/pages/Claims.tsx)",
+      "Bash(grep -n \"block text-gray-400 text-xs mb-1\\\\\">$\\\\|Category{isVendorRegistered\" src/pages/Claims.tsx)"
     ]
   }
 }

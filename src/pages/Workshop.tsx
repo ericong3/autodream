@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Plus, Wrench, Trash2, Edit, AlertCircle, MapPin } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Plus, Wrench, Trash2, Edit, AlertCircle, MapPin, Upload, Receipt } from 'lucide-react';
 import { useStore } from '../store';
 import { generateRepairPayment } from '../utils/generatePayments';
 import { RepairJob } from '../types';
@@ -7,6 +7,15 @@ import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import StatCard from '../components/StatCard';
 import { formatRM, generateId } from '../utils/format';
+import { supabase } from '../lib/supabase';
+
+async function uploadInvoicePhoto(file: File): Promise<string> {
+  const path = `receipts/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+  const { error } = await supabase.storage.from('car-photos').upload(path, file, { contentType: file.type || 'image/jpeg', upsert: false });
+  if (error) throw new Error(error.message);
+  const { data } = supabase.storage.from('car-photos').getPublicUrl(path);
+  return data.publicUrl;
+}
 
 function inputCls(error?: string) {
   return `w-full bg-obsidian-700/60 border ${error ? 'border-red-500/50' : 'border-obsidian-400/60'} text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500 transition-colors`;
@@ -44,6 +53,7 @@ const emptyRepairForm = {
   labourCost: 0,
   status: 'pending' as RepairJob['status'],
   notes: '',
+  receiptPhoto: '',
 };
 
 export default function Workshop() {
@@ -56,6 +66,7 @@ export default function Workshop() {
   const workshops = useStore((s) => s.workshops);
   const payments = useStore((s) => s.payments);
   const addPayment = useStore((s) => s.addPayment);
+  const updatePayment = useStore((s) => s.updatePayment);
 
   const isDirector = currentUser?.role === 'director';
   const isMechanic = currentUser?.role === 'mechanic';
@@ -67,6 +78,8 @@ export default function Workshop() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
   const [form, setForm] = useState(emptyRepairForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [uploadingInvoice, setUploadingInvoice] = useState(false);
+  const invoiceRef = useRef<HTMLInputElement>(null);
 
   const totalSpend = repairs.reduce((s, r) => s + r.totalCost, 0);
   const activeJobs = repairs.filter((r) => r.status !== 'done').length;
@@ -96,6 +109,7 @@ export default function Workshop() {
 
     if (editTarget) {
       const becomingDone = form.status === 'done' && editTarget.status !== 'done';
+      const receiptChanged = !!form.receiptPhoto && form.receiptPhoto !== editTarget.receiptPhoto;
       updateRepair(editTarget.id, {
         carId: form.carId,
         typeOfRepair: form.typeOfRepair,
@@ -105,12 +119,17 @@ export default function Workshop() {
         totalCost: total,
         status: form.status,
         notes: form.notes,
+        receiptPhoto: form.receiptPhoto || undefined,
       });
       if (becomingDone) {
         generateRepairPayment({
-          repair: { ...editTarget, location: form.location || editTarget.location, typeOfRepair: form.typeOfRepair, totalCost: total, carId: form.carId },
+          repair: { ...editTarget, location: form.location || editTarget.location, typeOfRepair: form.typeOfRepair, totalCost: total, carId: form.carId, receiptPhoto: form.receiptPhoto || undefined },
           payments, workshops, addPayment,
         });
+      } else if (receiptChanged) {
+        // Invoice arrived after the job was already marked done — attach it to the existing payment too.
+        const existingPayment = payments.find(p => p.type === 'repair' && p.repairJobId === editTarget.id);
+        if (existingPayment) updatePayment(existingPayment.id, { receiptUrl: form.receiptPhoto });
       }
     } else {
       addRepair({
@@ -123,6 +142,7 @@ export default function Workshop() {
         totalCost: total,
         status: form.status,
         notes: form.notes,
+        receiptPhoto: form.receiptPhoto || undefined,
         createdAt: new Date().toISOString(),
       });
     }
@@ -138,6 +158,7 @@ export default function Workshop() {
       labourCost: r.labourCost,
       status: r.status,
       notes: r.notes ?? '',
+      receiptPhoto: r.receiptPhoto ?? '',
     });
     setErrors({});
     setShowModal(true);
@@ -343,6 +364,47 @@ export default function Workshop() {
 
           <FormField label="Notes">
             <textarea className={`${inputCls()} h-20 resize-none`} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+          </FormField>
+
+          <FormField label="Workshop Invoice (optional)">
+            {form.receiptPhoto ? (
+              <div className="flex items-center gap-3">
+                <img src={form.receiptPhoto} alt="Invoice" className="w-16 h-16 object-cover rounded-lg border border-obsidian-400/60" />
+                <a href={form.receiptPhoto} target="_blank" rel="noopener noreferrer" className="text-xs text-gold-400 hover:underline flex items-center gap-1">
+                  <Receipt size={12} /> View
+                </a>
+                <button onClick={() => setForm({ ...form, receiptPhoto: '' })} className="text-xs text-gray-500 hover:text-red-400 transition-colors">Remove</button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => invoiceRef.current?.click()}
+                disabled={uploadingInvoice}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-obsidian-700/60 border border-obsidian-400/60 text-gray-300 text-xs font-medium hover:border-gold-500/40 transition-colors disabled:opacity-50"
+              >
+                <Upload size={13} />
+                {uploadingInvoice ? 'Uploading…' : 'Attach photo of the workshop bill'}
+              </button>
+            )}
+            <input
+              ref={invoiceRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setUploadingInvoice(true);
+                try {
+                  const url = await uploadInvoicePhoto(file);
+                  setForm((f) => ({ ...f, receiptPhoto: url }));
+                } finally {
+                  setUploadingInvoice(false);
+                  e.target.value = '';
+                }
+              }}
+            />
           </FormField>
 
           <div className="bg-obsidian-700/60 rounded-lg p-3 border border-obsidian-400/60 space-y-1">

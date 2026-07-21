@@ -1,9 +1,23 @@
-import { useState } from 'react';
-import { DollarSign, TrendingUp, Car, Wrench, Award, ChevronLeft, ChevronRight, Wallet } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { DollarSign, TrendingUp, Car, Wrench, Award, ChevronLeft, ChevronRight, Wallet, BookOpen, Plus, Trash2, ScrollText, Ban } from 'lucide-react';
 import { useStore } from '../store';
 import StatCard from '../components/StatCard';
-import { formatRM, shortName } from '../utils/format';
+import { formatRM, shortName, generateId } from '../utils/format';
+import { LedgerAccountType } from '../types';
+import Modal from '../components/Modal';
+import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import Payments from './Payments';
+
+const ACCOUNT_TYPE_LABELS: Record<LedgerAccountType, string> = {
+  asset: 'Assets', liability: 'Liabilities', equity: 'Equity',
+  revenue: 'Revenue', cogs: 'Cost of Goods Sold', expense: 'Expenses',
+};
+const ACCOUNT_TYPE_ORDER: LedgerAccountType[] = ['asset', 'liability', 'equity', 'revenue', 'cogs', 'expense'];
+// Which side an increase normally posts to — assets/expenses/cogs are debit-normal,
+// liabilities/equity/revenue are credit-normal. Just for displaying a sane balance sign.
+const DEBIT_NORMAL: Record<LedgerAccountType, boolean> = {
+  asset: true, expense: true, cogs: true, liability: false, equity: false, revenue: false,
+};
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -15,8 +29,17 @@ export default function Finance() {
   const repairs = useStore((s) => s.repairs);
   const users = useStore((s) => s.users);
   const customers = useStore((s) => s.customers);
+  const ledgerAccounts = useStore((s) => s.ledgerAccounts);
+  const addLedgerAccount = useStore((s) => s.addLedgerAccount);
+  const deleteLedgerAccount = useStore((s) => s.deleteLedgerAccount);
+  const journalEntries = useStore((s) => s.journalEntries);
+  const currentUser = useStore((s) => s.currentUser);
+  const voidJournalEntry = useStore((s) => s.voidJournalEntry);
 
-  const [financeTab, setFinanceTab] = useState<'overview' | 'payments'>('overview');
+  const [financeTab, setFinanceTab] = useState<'overview' | 'payments' | 'accounts' | 'ledger'>('overview');
+  const [showAddAccount, setShowAddAccount] = useState(false);
+  const [accountForm, setAccountForm] = useState({ name: '', type: 'expense' as LedgerAccountType, investorTagged: false });
+  const [accountDeleteTarget, setAccountDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
@@ -107,6 +130,30 @@ export default function Finance() {
     (r) => r.status === 'done' && soldCarsThisMonth.some((c) => c.id === r.carId)
   );
 
+  const accountById = useMemo(() => {
+    const m: Record<string, typeof ledgerAccounts[number]> = {};
+    ledgerAccounts.forEach((a) => { m[a.id] = a; });
+    return m;
+  }, [ledgerAccounts]);
+
+  const activeEntries = useMemo(() => journalEntries.filter((e) => !e.voided), [journalEntries]);
+
+  const trialBalance = useMemo(() => {
+    const totals: Record<string, { debit: number; credit: number }> = {};
+    activeEntries.forEach((e) => {
+      e.lines.forEach((l) => {
+        if (!totals[l.accountId]) totals[l.accountId] = { debit: 0, credit: 0 };
+        totals[l.accountId].debit += l.debit;
+        totals[l.accountId].credit += l.credit;
+      });
+    });
+    return totals;
+  }, [activeEntries]);
+
+  const totalDebits = Object.values(trialBalance).reduce((s, t) => s + t.debit, 0);
+  const totalCredits = Object.values(trialBalance).reduce((s, t) => s + t.credit, 0);
+  const isBalanced = Math.abs(totalDebits - totalCredits) < 0.01;
+
   return (
     <div className="space-y-4">
       {/* Tab switcher */}
@@ -125,9 +172,233 @@ export default function Finance() {
           <Wallet size={12} />
           Payments
         </button>
+        <button
+          onClick={() => setFinanceTab('accounts')}
+          className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${financeTab === 'accounts' ? 'bg-gold-gradient text-obsidian-950 font-bold shadow-gold-sm' : 'text-gray-400 hover:text-white'}`}
+        >
+          <BookOpen size={12} />
+          Chart of Accounts
+        </button>
+        <button
+          onClick={() => setFinanceTab('ledger')}
+          className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${financeTab === 'ledger' ? 'bg-gold-gradient text-obsidian-950 font-bold shadow-gold-sm' : 'text-gray-400 hover:text-white'}`}
+        >
+          <ScrollText size={12} />
+          General Ledger
+        </button>
       </div>
 
       {financeTab === 'payments' && <Payments embedded />}
+
+      {financeTab === 'ledger' && (
+        <div className="space-y-4">
+          {/* Trial balance */}
+          <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-obsidian-400/60">
+              <span className="text-white font-medium text-sm">Trial Balance</span>
+              <span className={`text-xs px-2 py-0.5 rounded-full border ${isBalanced ? 'text-green-400 border-green-500/30 bg-green-500/10' : 'text-red-400 border-red-500/30 bg-red-500/10'}`}>
+                {isBalanced ? 'Balanced' : 'Out of balance'}
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-gray-500 text-xs border-b border-obsidian-400/40">
+                    <th className="text-left px-5 py-2 font-medium">Account</th>
+                    <th className="text-right px-5 py-2 font-medium">Debit</th>
+                    <th className="text-right px-5 py-2 font-medium">Credit</th>
+                    <th className="text-right px-5 py-2 font-medium">Balance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ledgerAccounts.filter((a) => trialBalance[a.id]).map((a) => {
+                    const t = trialBalance[a.id];
+                    const net = DEBIT_NORMAL[a.type] ? t.debit - t.credit : t.credit - t.debit;
+                    return (
+                      <tr key={a.id} className="border-b border-obsidian-400/20 last:border-0">
+                        <td className="px-5 py-2 text-gray-300">{a.name}</td>
+                        <td className="px-5 py-2 text-right text-gray-400">{t.debit > 0 ? formatRM(t.debit) : '—'}</td>
+                        <td className="px-5 py-2 text-right text-gray-400">{t.credit > 0 ? formatRM(t.credit) : '—'}</td>
+                        <td className={`px-5 py-2 text-right font-semibold ${net >= 0 ? 'text-white' : 'text-red-400'}`}>{formatRM(net)}</td>
+                      </tr>
+                    );
+                  })}
+                  {Object.keys(trialBalance).length === 0 && (
+                    <tr><td colSpan={4} className="text-center py-8 text-gray-600 text-sm">No entries posted yet</td></tr>
+                  )}
+                </tbody>
+                {Object.keys(trialBalance).length > 0 && (
+                  <tfoot>
+                    <tr className="border-t border-obsidian-400/60 font-semibold">
+                      <td className="px-5 py-2.5 text-gray-300">Total</td>
+                      <td className="px-5 py-2.5 text-right text-white">{formatRM(totalDebits)}</td>
+                      <td className="px-5 py-2.5 text-right text-white">{formatRM(totalCredits)}</td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </div>
+
+          {/* Journal entries */}
+          <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card overflow-hidden">
+            <div className="px-5 py-3 border-b border-obsidian-400/60">
+              <span className="text-white font-medium text-sm">Journal Entries</span>
+              <span className="ml-2 text-xs text-gray-500">{journalEntries.length}</span>
+            </div>
+            {journalEntries.length === 0 ? (
+              <div className="text-center py-10 text-gray-600 text-sm">No entries yet</div>
+            ) : (
+              <div className="divide-y divide-obsidian-400/40">
+                {journalEntries.map((e) => (
+                  <div key={e.id} className={`px-5 py-3 ${e.voided ? 'opacity-50' : ''}`}>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-500 text-xs">{e.date}</span>
+                        <span className="text-white text-sm">{e.description}</span>
+                        {e.voided && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/25">Voided</span>
+                        )}
+                      </div>
+                      {!e.voided && (
+                        <button
+                          onClick={() => {
+                            const reason = prompt('Reason for voiding this entry?');
+                            if (reason && currentUser) voidJournalEntry(e.id, currentUser.id, reason);
+                          }}
+                          title="Void entry"
+                          className="p-1 rounded text-gray-600 hover:text-red-400 transition-colors"
+                        >
+                          <Ban size={12} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="mt-1.5 space-y-0.5">
+                      {e.lines.map((l, i) => (
+                        <div key={i} className="flex items-center justify-between text-xs pl-3">
+                          <span className="text-gray-500">{accountById[l.accountId]?.name ?? l.accountId}</span>
+                          <span className="text-gray-400">
+                            {l.debit > 0 ? `Dr ${formatRM(l.debit)}` : `Cr ${formatRM(l.credit)}`}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    {e.voided && e.voidReason && (
+                      <p className="text-[11px] text-gray-600 mt-1 pl-3">Void reason: {e.voidReason}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {financeTab === 'accounts' && (
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <button onClick={() => setShowAddAccount(true)} className="btn-gold px-4 py-2 rounded-xl text-sm flex items-center gap-2">
+              <Plus size={14} /> Add Account
+            </button>
+          </div>
+
+          {ACCOUNT_TYPE_ORDER.map((type) => {
+            const accounts = ledgerAccounts.filter((a) => a.type === type);
+            if (accounts.length === 0) return null;
+            return (
+              <div key={type} className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card overflow-hidden">
+                <div className="px-5 py-3 border-b border-obsidian-400/60">
+                  <span className="text-white font-medium text-sm">{ACCOUNT_TYPE_LABELS[type]}</span>
+                  <span className="ml-2 text-xs text-gray-500">{accounts.length}</span>
+                </div>
+                <div className="divide-y divide-obsidian-400/40">
+                  {accounts.map((a) => (
+                    <div key={a.id} className="flex items-center justify-between px-5 py-3 hover:bg-obsidian-700/30 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <span className="text-white text-sm">{a.name}</span>
+                        {a.investorTagged && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/20">Investor</span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => setAccountDeleteTarget({ id: a.id, name: a.name })}
+                        className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+
+          {ledgerAccounts.length === 0 && (
+            <div className="text-center py-16 text-gray-600 text-sm">No accounts yet</div>
+          )}
+
+          <Modal isOpen={showAddAccount} onClose={() => setShowAddAccount(false)} title="Add Account" maxWidth="max-w-sm">
+            <div className="space-y-3">
+              <div>
+                <label className="block text-gray-400 text-xs mb-1">Account Name *</label>
+                <input
+                  className="w-full bg-obsidian-700/60 border border-obsidian-400/60 text-white placeholder-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500 transition-colors"
+                  placeholder="e.g. Vehicle Maintenance Expense"
+                  value={accountForm.name}
+                  onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-gray-400 text-xs mb-1">Type</label>
+                <select
+                  className="w-full bg-obsidian-700/60 border border-obsidian-400/60 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500 transition-colors"
+                  value={accountForm.type}
+                  onChange={(e) => setAccountForm({ ...accountForm, type: e.target.value as LedgerAccountType })}
+                >
+                  {ACCOUNT_TYPE_ORDER.map((type) => (
+                    <option key={type} value={type}>{ACCOUNT_TYPE_LABELS[type]}</option>
+                  ))}
+                </select>
+              </div>
+              <label className="flex items-center gap-2 text-sm text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={accountForm.investorTagged}
+                  onChange={(e) => setAccountForm({ ...accountForm, investorTagged: e.target.checked })}
+                  className="accent-gold-500"
+                />
+                Tied to investor funds
+              </label>
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => setShowAddAccount(false)} className="flex-1 btn-ghost py-2 rounded-xl text-sm">Cancel</button>
+                <button
+                  disabled={!accountForm.name.trim()}
+                  onClick={async () => {
+                    if (!accountForm.name.trim()) return;
+                    await addLedgerAccount({
+                      id: generateId(),
+                      name: accountForm.name.trim(),
+                      type: accountForm.type,
+                      investorTagged: accountForm.investorTagged || undefined,
+                    });
+                    setAccountForm({ name: '', type: 'expense', investorTagged: false });
+                    setShowAddAccount(false);
+                  }}
+                  className="flex-1 btn-gold py-2 rounded-xl text-sm disabled:opacity-40"
+                >Add Account</button>
+              </div>
+            </div>
+          </Modal>
+
+          <DeleteConfirmModal
+            isOpen={!!accountDeleteTarget}
+            onClose={() => setAccountDeleteTarget(null)}
+            onConfirm={async () => { if (accountDeleteTarget) await deleteLedgerAccount(accountDeleteTarget.id); }}
+            itemName={accountDeleteTarget?.name ?? ''}
+          />
+        </div>
+      )}
 
       {financeTab === 'overview' && <div className="space-y-6">
       {/* Month selector */}

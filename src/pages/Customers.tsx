@@ -741,6 +741,7 @@ export default function Customers() {
 
     updateCustomer(workOrderCustomer.id, {
       dealType: 'loan',
+      interestedCarId: workOrderCarId,
       dealPrice: totalFinalDeal,
       loanStatus: 'approved',
       loanWorkOrder,

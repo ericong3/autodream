@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { X, Camera, User as UserIcon, QrCode, Phone, Mail, Globe, Instagram, Facebook, MessageCircle, Briefcase, FileText, Eye, EyeOff, Lock, CheckCircle2, AlertCircle, CreditCard } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useStore } from '../store';
+import { verifyPassword } from '../utils/password';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -86,7 +87,7 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
   const handleChangePassword = async () => {
     setPwError('');
     if (!oldPw) { setPwError('Please enter your current password.'); return; }
-    if (oldPw !== currentUser.password) { setPwError('Current password is incorrect.'); return; }
+    if (!(await verifyPassword(oldPw, currentUser.password))) { setPwError('Current password is incorrect.'); return; }
     if (!newPw) { setPwError('New password cannot be empty.'); return; }
     if (newPw.length < 6) { setPwError('New password must be at least 6 characters.'); return; }
     if (newPw === oldPw) { setPwError('New password must be different from the current one.'); return; }

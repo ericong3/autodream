@@ -7,7 +7,7 @@ import {
   FileText, Calculator, GitCompare,
   ClipboardList, Bot, TrendingUp, UsersRound,
   History, Banknote, Briefcase, Search,
-  Loader2, RefreshCw, Database, FolderOpen, Settings, Wallet,
+  Loader2, RefreshCw, Database, FolderOpen, Settings, Wallet, Receipt,
 } from 'lucide-react';
 import { NavLink, useNavigate, useLocation, Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
@@ -31,6 +31,7 @@ const SALESPERSON_MORE = [
   { to: '/car-compare',     icon: GitCompare,    label: 'Car Compare'     },
   { to: '/data',            icon: Database,      label: 'Bankers'         },
   { to: '/history',         icon: History,       label: 'Delivered'       },
+  { to: '/claims',          icon: Receipt,       label: 'Claims'          },
   { to: '/reminders',       icon: ClipboardList, label: 'Instructions'    },
   { to: '/ai-assistant',    icon: Bot,           label: 'AI Assistant'    },
 ];
@@ -52,6 +53,7 @@ const DIRECTOR_MORE = [
   { to: '/quotations',      icon: FileText,      label: 'Quotations'   },
   { to: '/commission',      icon: Banknote,      label: 'Commission'   },
   { to: '/data',            icon: Database,      label: 'Data'         },
+  { to: '/claims',          icon: Receipt,       label: 'Claims'       },
   { to: '/reminders',       icon: ClipboardList, label: 'Instructions' },
   { to: '/history',         icon: History,       label: 'History'      },
   { to: '/ai-assistant',    icon: Bot,           label: 'AI Assistant' },
@@ -64,6 +66,7 @@ const INVESTOR_PRIMARY = [
 const MECHANIC_PRIMARY = [
   { to: '/inventory',    icon: Car,           label: 'Inventory'    },
   { to: '/history',      icon: History,       label: 'Delivered'    },
+  { to: '/claims',       icon: Receipt,       label: 'Claims'       },
   { to: '/reminders',    icon: ClipboardList, label: 'Instructions' },
   { to: '/ai-assistant', icon: Bot,           label: 'AI'           },
 ];
@@ -72,6 +75,7 @@ const ADMIN_PRIMARY = [
   { to: '/admin-dashboard', icon: Settings, label: 'Dashboard' },
   { to: '/inventory',       icon: Car,      label: 'Inventory' },
   { to: '/payments',        icon: Wallet,   label: 'Payments'  },
+  { to: '/claims',          icon: Receipt,  label: 'Claims'    },
   { to: '/history',         icon: History,  label: 'Delivered' },
 ];
 

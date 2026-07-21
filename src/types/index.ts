@@ -276,6 +276,54 @@ export interface Merchant {
   paymentTerms?: PaymentTerms;
 }
 
+// Admin-managed list of expense claim categories — 'kind' decides which car
+// cost bucket a confirmed claim in that category writes into.
+export interface ClaimCategory {
+  id: string;
+  name: string;
+  kind: 'repair' | 'misc';
+}
+
+export type LedgerAccountType = 'asset' | 'liability' | 'equity' | 'revenue' | 'cogs' | 'expense';
+
+// The Chart of Accounts — admin-managed, forms the backbone of proper
+// double-entry bookkeeping (journal entries reference these, not free text).
+export interface LedgerAccount {
+  id: string;
+  name: string;
+  type: LedgerAccountType;
+  // Only meaningful for Bank accounts under a single-investor setup —
+  // ties a bank account to the investor whose money sits in it.
+  investorTagged?: boolean;
+  notes?: string;
+}
+
+export interface JournalLine {
+  accountId: string;
+  debit: number;
+  credit: number;
+}
+
+// A balanced double-entry posting — sum(debit) must equal sum(credit) across
+// lines. Never hard-deleted once posted; corrections are voided, not removed,
+// so there's always a trail of what was recorded and why it was reversed.
+export interface JournalEntry {
+  id: string;
+  date: string;
+  description: string;
+  lines: JournalLine[];
+  // What real-world event produced this entry, for tracing back
+  sourceType?: string;
+  sourceId?: string;
+  carId?: string;
+  createdBy?: string;
+  createdAt: string;
+  voided?: boolean;
+  voidedBy?: string;
+  voidedAt?: string;
+  voidReason?: string;
+}
+
 export interface ExternalSalesman {
   id: string;
   name: string;
@@ -566,7 +614,8 @@ export type PaymentType =
   | 'investor_payout'
   | 'customer_refund'
   | 'customer_collection'
-  | 'loan_disbursement';
+  | 'loan_disbursement'
+  | 'expense_claim';
 
 export type PaymentStatus = 'pending' | 'transferred';
 export type RecipientType = 'user' | 'external_salesman' | 'workshop' | 'dealer' | 'merchant' | 'customer';
@@ -654,6 +703,14 @@ export interface Payment {
   // Delete request (admin requests, director approves)
   deleteRequestedBy?: string;
   deleteRequestedAt?: string;
+  // Expense claim review (admin checks receipt/amount before it's payable)
+  claimConfirmedBy?: string;
+  claimConfirmedAt?: string;
+  // Which car-cost bucket a confirmed claim writes into (repair vs misc) —
+  // 'repair' becomes a completed RepairJob, 'misc' becomes a MiscCost entry,
+  // so the car's existing profit math picks it up without any changes there.
+  claimKind?: 'repair' | 'misc';
+  claimCategory?: string;
   // Batch info for weekly/monthly grouped payments
   batchId?: string;
   periodStart?: string;
