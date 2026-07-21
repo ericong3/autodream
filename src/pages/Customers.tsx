@@ -69,6 +69,7 @@ export default function Customers() {
   const loanCaseActivities = useStore((s) => s.loanCaseActivities);
   const updateLoanCase = useStore((s) => s.updateLoanCase);
   const addLoanCaseDocument = useStore((s) => s.addLoanCaseDocument);
+  const deleteLoanCaseDocument = useStore((s) => s.deleteLoanCaseDocument);
   const addCustomer = useStore((s) => s.addCustomer);
   const updateCustomer = useStore((s) => s.updateCustomer);
   const deleteCustomer = useStore((s) => s.deleteCustomer);
@@ -82,6 +83,7 @@ export default function Customers() {
   const isShareHolder = currentUser?.role === 'shareholder';
   const isDirectorOrAdmin = isDirector || isAdmin;
   const isDirectorLevel = isDirectorOrAdmin || isShareHolder;
+  const canEditLoanDocs = currentUser?.role === 'salesperson' || isDirectorOrAdmin;
 
   // ── Stale lead helpers ────────────────────────────────────
   const getDaysSinceAction = (c: Customer) => {
@@ -183,6 +185,10 @@ export default function Customers() {
   const [guarantorText, setGuarantorText] = useState('');
   const [guarantorUploading, setGuarantorUploading] = useState(false);
   const guarantorFileRef = useRef<HTMLInputElement>(null);
+  const [showEditApplicant, setShowEditApplicant] = useState(false);
+  const [applicantText, setApplicantText] = useState('');
+  const [applicantUploading, setApplicantUploading] = useState(false);
+  const applicantFileRef = useRef<HTMLInputElement>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [oldAppUpdateBank, setOldAppUpdateBank] = useState<string | null>(null);
   const [oldAppNewStatus, setOldAppNewStatus] = useState<'approved' | 'rejected'>('approved');
@@ -195,6 +201,10 @@ export default function Customers() {
     if (!detailLead) return;
     setShowInlineFollowup(false);
     setOldAppUpdateBank(null);
+    setShowAddGuarantor(false);
+    setGuarantorText('');
+    setShowEditApplicant(false);
+    setApplicantText('');
   }, [detailLead?.id]);
 
   // Open customer detail from URL param (e.g. navigated from LoanCases "Confirm Deal")
@@ -1924,11 +1934,12 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                   const guarantorDocs = loanCaseDocuments.filter(d => d.caseId === primaryCase.id && d.type === 'guarantor');
                   const hasGuarantor = !!primaryCase.guarantorInterviewText || guarantorDocs.length > 0;
 
-                  const DocRow = ({ doc, onDownload }: { doc: typeof applicantDocs[0]; onDownload: () => void }) => (
+                  const DocRow = ({ doc, onDownload, onDelete }: { doc: typeof applicantDocs[0]; onDownload: () => void; onDelete?: () => void }) => (
                     <div className="flex items-center gap-2.5 px-4 py-2.5">
                       <FileText size={13} className="text-gold-400 shrink-0" />
                       <span className="text-xs text-gray-200 truncate flex-1">{doc.fileName}</span>
                       <button onClick={onDownload} className="text-gray-500 hover:text-white touch-manipulation shrink-0"><Download size={13} /></button>
+                      {onDelete && <button onClick={onDelete} className="text-gray-500 hover:text-red-400 touch-manipulation shrink-0"><Trash2 size={13} /></button>}
                     </div>
                   );
 
@@ -1936,6 +1947,24 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                     const { supabase } = await import('../lib/supabase');
                     const { data } = await supabase.storage.from('loan-documents').createSignedUrl(doc.filePath, 60);
                     if (data) { const a = document.createElement('a'); a.href = data.signedUrl; a.download = doc.fileName; a.target = '_blank'; a.click(); }
+                  };
+
+                  const makeDelete = (doc: typeof applicantDocs[0]) => async () => {
+                    if (!confirm(`Delete "${doc.fileName}"? This cannot be undone.`)) return;
+                    await deleteLoanCaseDocument(doc.id);
+                  };
+
+                  const uploadDocs = async (files: File[], type: 'applicant' | 'guarantor', setUploading: (v: boolean) => void, fileInput: HTMLInputElement | null) => {
+                    if (!files.length) return;
+                    setUploading(true);
+                    try {
+                      const { supabase } = await import('../lib/supabase');
+                      for (const file of files) {
+                        const path = `${primaryCase.id}/${type}/${Date.now()}_${file.name}`;
+                        await supabase.storage.from('loan-documents').upload(path, file);
+                        await addLoanCaseDocument({ id: crypto.randomUUID(), caseId: primaryCase.id, type, fileName: file.name, filePath: path, uploadedAt: new Date().toISOString() });
+                      }
+                    } finally { setUploading(false); if (fileInput) fileInput.value = ''; }
                   };
 
                   return (
@@ -1947,8 +1976,41 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                             <FileText size={13} className="text-blue-300" />
                           </div>
                           <span className="text-sm font-semibold text-white">Applicant</span>
-                          <span className="ml-auto text-[11px] text-gray-500">{applicantDocs.length} doc{applicantDocs.length !== 1 ? 's' : ''}</span>
+                          <div className="ml-auto flex items-center gap-2.5">
+                            <span className="text-[11px] text-gray-500">{applicantDocs.length} doc{applicantDocs.length !== 1 ? 's' : ''}</span>
+                            {canEditLoanDocs && !showEditApplicant && (
+                              <button
+                                onClick={() => { setApplicantText(primaryCase.applicantInterviewText ?? ''); setShowEditApplicant(true); }}
+                                className="text-xs text-gold-400 hover:text-gold-300 font-medium touch-manipulation flex items-center gap-1"
+                              >
+                                <Edit2 size={11} />Edit
+                              </button>
+                            )}
+                          </div>
                         </div>
+
+                        {showEditApplicant && (
+                          <div className="px-4 py-4 space-y-3 border-b border-blue-500/15">
+                            <textarea
+                              className="w-full bg-obsidian-600/60 border border-obsidian-400/50 rounded-xl p-3 text-white text-sm outline-none focus:border-blue-500/50 resize-none"
+                              rows={3}
+                              placeholder="Applicant interview notes..."
+                              value={applicantText}
+                              onChange={e => setApplicantText(e.target.value)}
+                            />
+                            <input ref={applicantFileRef} type="file" className="hidden" multiple
+                              onChange={e => uploadDocs(Array.from(e.target.files ?? []), 'applicant', setApplicantUploading, applicantFileRef.current)}
+                            />
+                            <div className="flex gap-2">
+                              <button onClick={() => applicantFileRef.current?.click()} disabled={applicantUploading} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-obsidian-600/60 border border-obsidian-400/50 text-gray-300 text-xs font-medium touch-manipulation disabled:opacity-50">
+                                <Upload size={12} />{applicantUploading ? 'Uploading...' : 'Upload'}
+                              </button>
+                              <button onClick={async () => { await updateLoanCase(primaryCase.id, { applicantInterviewText: applicantText.trim() }); setShowEditApplicant(false); }} className="flex-1 py-2 rounded-xl bg-blue-500/20 border border-blue-500/30 text-blue-300 text-xs font-semibold touch-manipulation">Save</button>
+                              <button onClick={() => { setShowEditApplicant(false); setApplicantText(''); }} className="px-3 py-2 rounded-xl bg-obsidian-600/60 border border-obsidian-400/50 text-gray-500 text-xs touch-manipulation">Cancel</button>
+                            </div>
+                          </div>
+                        )}
+
                         <div className="divide-y divide-blue-500/10">
                           {primaryCase.applicantInterviewText && (
                             <details>
@@ -1960,7 +2022,7 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                             </details>
                           )}
                           {applicantDocs.length > 0
-                            ? applicantDocs.map(doc => <DocRow key={doc.id} doc={doc} onDownload={makeDownload(doc)} />)
+                            ? applicantDocs.map(doc => <DocRow key={doc.id} doc={doc} onDownload={makeDownload(doc)} onDelete={canEditLoanDocs ? makeDelete(doc) : undefined} />)
                             : !primaryCase.applicantInterviewText && <p className="px-4 py-3 text-xs text-gray-600">No documents uploaded</p>
                           }
                         </div>
@@ -1973,10 +2035,17 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                             <FileText size={13} className="text-purple-300" />
                           </div>
                           <span className="text-sm font-semibold text-white">Guarantor</span>
-                          {!hasGuarantor && !showAddGuarantor && (
-                            <button onClick={() => setShowAddGuarantor(true)} className="ml-auto text-xs text-gold-400 hover:text-gold-300 font-medium touch-manipulation">+ Add</button>
-                          )}
-                          {hasGuarantor && <span className="ml-auto text-[11px] text-gray-500">{guarantorDocs.length} doc{guarantorDocs.length !== 1 ? 's' : ''}</span>}
+                          <div className="ml-auto flex items-center gap-2.5">
+                            {hasGuarantor && <span className="text-[11px] text-gray-500">{guarantorDocs.length} doc{guarantorDocs.length !== 1 ? 's' : ''}</span>}
+                            {canEditLoanDocs && !showAddGuarantor && (
+                              <button
+                                onClick={() => { setGuarantorText(primaryCase.guarantorInterviewText ?? ''); setShowAddGuarantor(true); }}
+                                className="text-xs text-gold-400 hover:text-gold-300 font-medium touch-manipulation flex items-center gap-1"
+                              >
+                                {hasGuarantor ? <><Edit2 size={11} />Edit</> : '+ Add'}
+                              </button>
+                            )}
+                          </div>
                         </div>
 
                         {showAddGuarantor && (
@@ -1989,25 +2058,13 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                               onChange={e => setGuarantorText(e.target.value)}
                             />
                             <input ref={guarantorFileRef} type="file" className="hidden" multiple
-                              onChange={async e => {
-                                const files = Array.from(e.target.files ?? []);
-                                if (!files.length) return;
-                                setGuarantorUploading(true);
-                                try {
-                                  const { supabase } = await import('../lib/supabase');
-                                  for (const file of files) {
-                                    const path = `${primaryCase.id}/guarantor/${Date.now()}_${file.name}`;
-                                    await supabase.storage.from('loan-documents').upload(path, file);
-                                    addLoanCaseDocument({ id: crypto.randomUUID(), caseId: primaryCase.id, type: 'guarantor', fileName: file.name, filePath: path, uploadedAt: new Date().toISOString() });
-                                  }
-                                } finally { setGuarantorUploading(false); if (guarantorFileRef.current) guarantorFileRef.current.value = ''; }
-                              }}
+                              onChange={e => uploadDocs(Array.from(e.target.files ?? []), 'guarantor', setGuarantorUploading, guarantorFileRef.current)}
                             />
                             <div className="flex gap-2">
-                              <button onClick={() => guarantorFileRef.current?.click()} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-obsidian-600/60 border border-obsidian-400/50 text-gray-300 text-xs font-medium touch-manipulation">
+                              <button onClick={() => guarantorFileRef.current?.click()} disabled={guarantorUploading} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-obsidian-600/60 border border-obsidian-400/50 text-gray-300 text-xs font-medium touch-manipulation disabled:opacity-50">
                                 <Upload size={12} />{guarantorUploading ? 'Uploading...' : 'Upload'}
                               </button>
-                              <button onClick={async () => { if (guarantorText.trim()) await updateLoanCase(primaryCase.id, { guarantorInterviewText: guarantorText.trim() }); setShowAddGuarantor(false); setGuarantorText(''); }} className="flex-1 py-2 rounded-xl bg-purple-500/20 border border-purple-500/30 text-purple-300 text-xs font-semibold touch-manipulation">Save</button>
+                              <button onClick={async () => { await updateLoanCase(primaryCase.id, { guarantorInterviewText: guarantorText.trim() }); setShowAddGuarantor(false); }} className="flex-1 py-2 rounded-xl bg-purple-500/20 border border-purple-500/30 text-purple-300 text-xs font-semibold touch-manipulation">Save</button>
                               <button onClick={() => { setShowAddGuarantor(false); setGuarantorText(''); }} className="px-3 py-2 rounded-xl bg-obsidian-600/60 border border-obsidian-400/50 text-gray-500 text-xs touch-manipulation">Cancel</button>
                             </div>
                           </div>
@@ -2024,7 +2081,7 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                             </details>
                           )}
                           {guarantorDocs.length > 0
-                            ? guarantorDocs.map(doc => <DocRow key={doc.id} doc={doc} onDownload={makeDownload(doc)} />)
+                            ? guarantorDocs.map(doc => <DocRow key={doc.id} doc={doc} onDownload={makeDownload(doc)} onDelete={canEditLoanDocs ? makeDelete(doc) : undefined} />)
                             : !hasGuarantor && !showAddGuarantor && <p className="px-4 py-3 text-xs text-gray-600">No guarantor added</p>
                           }
                         </div>
