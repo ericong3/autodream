@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import { DollarSign, TrendingUp, Car, Wrench, Award, ChevronLeft, ChevronRight, Wallet, BookOpen, Plus, Trash2, ScrollText, Ban } from 'lucide-react';
+import { DollarSign, TrendingUp, Car, Wrench, Award, ChevronLeft, ChevronRight, Wallet, BookOpen, Plus, Trash2, ScrollText, Ban, Scale } from 'lucide-react';
 import { useStore } from '../store';
 import StatCard from '../components/StatCard';
 import { formatRM, shortName, generateId } from '../utils/format';
 import { LedgerAccountType } from '../types';
+import { collectMissingJournalEntries } from '../utils/generateJournalEntries';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import Payments from './Payments';
@@ -35,8 +36,12 @@ export default function Finance() {
   const journalEntries = useStore((s) => s.journalEntries);
   const currentUser = useStore((s) => s.currentUser);
   const voidJournalEntry = useStore((s) => s.voidJournalEntry);
+  const payments = useStore((s) => s.payments);
+  const batchAddJournalEntries = useStore((s) => s.batchAddJournalEntries);
+  const [backfilling, setBackfilling] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<number | null>(null);
 
-  const [financeTab, setFinanceTab] = useState<'overview' | 'payments' | 'accounts' | 'ledger'>('overview');
+  const [financeTab, setFinanceTab] = useState<'overview' | 'payments' | 'accounts' | 'ledger' | 'balance_sheet'>('overview');
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [accountForm, setAccountForm] = useState({ name: '', type: 'expense' as LedgerAccountType, investorTagged: false });
   const [accountDeleteTarget, setAccountDeleteTarget] = useState<{ id: string; name: string } | null>(null);
@@ -154,6 +159,23 @@ export default function Finance() {
   const totalCredits = Object.values(trialBalance).reduce((s, t) => s + t.credit, 0);
   const isBalanced = Math.abs(totalDebits - totalCredits) < 0.01;
 
+  // Balance Sheet — no formal period-close exists yet, so current-period net
+  // income (revenue - COGS - expenses) is shown alongside posted Equity,
+  // same way an interim/management balance sheet works before year-end close.
+  const netOf = (type: LedgerAccountType) =>
+    ledgerAccounts.filter((a) => a.type === type).reduce((sum, a) => {
+      const t = trialBalance[a.id];
+      if (!t) return sum;
+      return sum + (DEBIT_NORMAL[type] ? t.debit - t.credit : t.credit - t.debit);
+    }, 0);
+
+  const totalAssets = netOf('asset');
+  const totalLiabilities = netOf('liability');
+  const totalEquityPosted = netOf('equity');
+  const netIncome = netOf('revenue') - netOf('cogs') - netOf('expense');
+  const totalEquity = totalEquityPosted + netIncome;
+  const isBalanceSheetBalanced = Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01;
+
   return (
     <div className="space-y-4">
       {/* Tab switcher */}
@@ -186,12 +208,131 @@ export default function Finance() {
           <ScrollText size={12} />
           General Ledger
         </button>
+        <button
+          onClick={() => setFinanceTab('balance_sheet')}
+          className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${financeTab === 'balance_sheet' ? 'bg-gold-gradient text-obsidian-950 font-bold shadow-gold-sm' : 'text-gray-400 hover:text-white'}`}
+        >
+          <Scale size={12} />
+          Balance Sheet
+        </button>
       </div>
 
       {financeTab === 'payments' && <Payments embedded />}
 
+      {financeTab === 'balance_sheet' && (
+        <div className="space-y-4">
+          <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-obsidian-400/60">
+              <span className="text-white font-medium text-sm">Balance Sheet</span>
+              <span className={`text-xs px-2 py-0.5 rounded-full border ${isBalanceSheetBalanced ? 'text-green-400 border-green-500/30 bg-green-500/10' : 'text-red-400 border-red-500/30 bg-red-500/10'}`}>
+                {isBalanceSheetBalanced ? 'Balanced' : 'Out of balance'}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-obsidian-400/40">
+              {/* Assets */}
+              <div className="p-5">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Assets</p>
+                <div className="space-y-2">
+                  {ledgerAccounts.filter((a) => a.type === 'asset' && trialBalance[a.id]).map((a) => {
+                    const t = trialBalance[a.id];
+                    const net = t.debit - t.credit;
+                    return (
+                      <div key={a.id} className="flex justify-between text-sm">
+                        <span className="text-gray-400">{a.name}</span>
+                        <span className={net >= 0 ? 'text-white' : 'text-red-400'}>{formatRM(net)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex justify-between text-sm font-semibold pt-3 mt-3 border-t border-obsidian-400/40">
+                  <span className="text-gray-300">Total Assets</span>
+                  <span className="text-white">{formatRM(totalAssets)}</span>
+                </div>
+              </div>
+
+              {/* Liabilities + Equity */}
+              <div className="p-5">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Liabilities</p>
+                <div className="space-y-2">
+                  {ledgerAccounts.filter((a) => a.type === 'liability' && trialBalance[a.id]).map((a) => {
+                    const t = trialBalance[a.id];
+                    const net = t.credit - t.debit;
+                    return (
+                      <div key={a.id} className="flex justify-between text-sm">
+                        <span className="text-gray-400">{a.name}</span>
+                        <span className="text-white">{formatRM(net)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex justify-between text-sm pt-2 mt-2 border-t border-obsidian-400/30">
+                  <span className="text-gray-300 font-medium">Total Liabilities</span>
+                  <span className="text-white font-medium">{formatRM(totalLiabilities)}</span>
+                </div>
+
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 mt-5">Equity</p>
+                <div className="space-y-2">
+                  {ledgerAccounts.filter((a) => a.type === 'equity' && trialBalance[a.id]).map((a) => {
+                    const t = trialBalance[a.id];
+                    const net = t.credit - t.debit;
+                    return (
+                      <div key={a.id} className="flex justify-between text-sm">
+                        <span className="text-gray-400">{a.name}</span>
+                        <span className="text-white">{formatRM(net)}</span>
+                      </div>
+                    );
+                  })}
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Current Period Net Income</span>
+                    <span className={netIncome >= 0 ? 'text-green-400' : 'text-red-400'}>{formatRM(netIncome)}</span>
+                  </div>
+                </div>
+                <div className="flex justify-between text-sm pt-2 mt-2 border-t border-obsidian-400/30">
+                  <span className="text-gray-300 font-medium">Total Equity</span>
+                  <span className="text-white font-medium">{formatRM(totalEquity)}</span>
+                </div>
+
+                <div className="flex justify-between text-sm font-semibold pt-3 mt-3 border-t border-obsidian-400/40">
+                  <span className="text-gray-300">Total Liabilities + Equity</span>
+                  <span className="text-white">{formatRM(totalLiabilities + totalEquity)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p className="text-[11px] text-gray-600 px-1">
+            Net income shown here isn't "closed" into retained earnings yet — this is how the balance sheet reads before a formal period close, same as any interim management report.
+          </p>
+        </div>
+      )}
+
       {financeTab === 'ledger' && (
         <div className="space-y-4">
+          {/* Backfill — catches up cars/commissions that existed before ledger posting did */}
+          <div className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-obsidian-800/60 border border-white/[0.06]">
+            <div>
+              <p className="text-xs text-gray-300 font-medium">Backfill missing history</p>
+              <p className="text-[11px] text-gray-600">Generates entries for existing cars/commissions that predate the ledger</p>
+            </div>
+            <button
+              onClick={async () => {
+                if (!currentUser) return;
+                setBackfilling(true);
+                try {
+                  const missing = collectMissingJournalEntries({ cars, customers, repairs, payments, journalEntries, createdBy: currentUser.id });
+                  if (missing.length > 0) await batchAddJournalEntries(missing);
+                  setBackfillResult(missing.length);
+                } finally {
+                  setBackfilling(false);
+                  setTimeout(() => setBackfillResult(null), 4000);
+                }
+              }}
+              disabled={backfilling}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-obsidian-700/60 border border-white/[0.08] text-xs text-gray-300 hover:text-white hover:border-gold-500/30 transition-colors disabled:opacity-40"
+            >
+              {backfilling ? '...' : backfillResult !== null ? `+${backfillResult} entries` : 'Run Backfill'}
+            </button>
+          </div>
+
           {/* Trial balance */}
           <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card overflow-hidden">
             <div className="flex items-center justify-between px-5 py-3 border-b border-obsidian-400/60">

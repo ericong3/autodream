@@ -55,6 +55,7 @@ import { CSS } from '@dnd-kit/utilities';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, formatMileage, generateId } from '../utils/format';
+import { buildCarPurchaseEntry } from '../utils/generateJournalEntries';
 import { SkeletonCard, SkeletonRow } from '../components/Skeleton';
 
 
@@ -168,6 +169,7 @@ export default function Inventory() {
   const customers = useStore((s) => s.customers);
   const repairs = useStore((s) => s.repairs);
   const currentUser = useStore((s) => s.currentUser);
+  const addJournalEntry = useStore((s) => s.addJournalEntry);
   const addCar = useStore((s) => s.addCar);
   const updateCar = useStore((s) => s.updateCar);
   const deleteCar = useStore((s) => s.deleteCar);
@@ -565,6 +567,11 @@ export default function Inventory() {
     setSubmitError('');
     try {
       await addCar(newCar);
+      // Dealer-consignment cars aren't ours to book — we never pay for or own
+      // them, we're just selling on that dealer's behalf (existing, separate flow).
+      if (!newCar.consignment && (newCar.purchasePrice ?? 0) > 0 && currentUser) {
+        await addJournalEntry(buildCarPurchaseEntry({ car: newCar, createdBy: currentUser.id }));
+      }
       setShowModal(false);
       setForm(emptyForm);
       setErrors({});

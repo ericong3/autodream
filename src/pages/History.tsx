@@ -44,6 +44,7 @@ import { formatRM as _formatRM } from '../utils/format';
 import Modal from '../components/Modal';
 import { useStore } from '../store';
 import { generateLoanDisbursement } from '../utils/generatePayments';
+import { buildDisbursementReceivedEntry } from '../utils/generateJournalEntries';
 import { formatRM, formatMileage, shortName } from '../utils/format';
 import StatCard from '../components/StatCard';
 import { CarDetailContent } from './CarDetail';
@@ -150,6 +151,7 @@ export default function History() {
   const updateCar = useStore((s) => s.updateCar);
   const payments = useStore((s) => s.payments);
   const addPayment = useStore((s) => s.addPayment);
+  const addJournalEntry = useStore((s) => s.addJournalEntry);
   const updatePayment = useStore((s) => s.updatePayment);
   const viewPreference = useStore((s) => s.viewPreference);
   const setViewPreference = useStore((s) => s.setViewPreference);
@@ -707,6 +709,11 @@ export default function History() {
                 const disbCar = cars.find(c => c.id === disbursalCarId);
                 if (disbCar && disbAmt > 0) {
                   generateLoanDisbursement({ car: disbCar, disbursementAmount: disbAmt, payments, addPayment, updatePayment });
+                  // Clears the receivable booked at sale — skip dealer-consignment
+                  // cars, which never went through that sale entry in the first place.
+                  if (!disbCar.consignment && !disbCar.outgoingConsignment && currentUser) {
+                    await addJournalEntry(buildDisbursementReceivedEntry({ car: disbCar, amount: disbAmt, createdBy: currentUser.id }));
+                  }
                 }
                 setDisbursalCarId(null);
               }}

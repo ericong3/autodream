@@ -131,6 +131,7 @@ interface StoreState {
 
   // General Ledger
   addJournalEntry: (entry: JournalEntry) => Promise<void>;
+  batchAddJournalEntries: (entries: JournalEntry[]) => Promise<void>;
   voidJournalEntry: (id: string, voidedBy: string, reason: string) => Promise<void>;
 
   // Payments
@@ -2096,6 +2097,11 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       set((s) => ({ journalEntries: s.journalEntries.filter((e) => e.id !== entry.id) }));
       throw new Error(error.message);
     }
+  },
+  batchAddJournalEntries: async (entries) => {
+    if (!entries.length) return;
+    set((s) => ({ journalEntries: [...entries, ...s.journalEntries] }));
+    await supabase.from('journal_entries').insert(entries.map(journalEntryToRow));
   },
   // Corrections are voided, never deleted — the entry (and the mistake) stay
   // on record, just marked reversed, with who and why.

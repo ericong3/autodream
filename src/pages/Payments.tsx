@@ -9,7 +9,7 @@ import { useStore } from '../store';
 import { Payment, PaymentType, RecipientType } from '../types';
 import { formatRM, generateId } from '../utils/format';
 import { collectMissingPayments } from '../utils/generatePayments';
-import { buildClaimConfirmedEntry, buildClaimPaidEntry } from '../utils/generateJournalEntries';
+import { buildClaimConfirmedEntry, buildClaimPaidEntry, buildPayablePaidEntry } from '../utils/generateJournalEntries';
 import { supabase } from '../lib/supabase';
 import Modal from '../components/Modal';
 
@@ -398,6 +398,22 @@ export default function Payments({ embedded }: PaymentsProps) {
       await Promise.all(claimsBeingPaid.map(claim => {
         const claimCar = claim.carId ? cars.find(c => c.id === claim.carId) : undefined;
         return addJournalEntry(buildClaimPaidEntry({ claim, car: claimCar, createdBy: currentUser.id }));
+      }));
+      // Commission/intake bonus were recognized (Dr expense / Cr payable) at
+      // delivery already — paying them out just clears that same payable.
+      const payablesBeingPaid = ids
+        .map(id => payments.find(p => p.id === id))
+        .filter((p): p is Payment => !!p && (p.type === 'salesman_commission' || p.type === 'intake_bonus'));
+      await Promise.all(payablesBeingPaid.map(payable => {
+        const payableCar = payable.carId ? cars.find(c => c.id === payable.carId) : undefined;
+        return addJournalEntry(buildPayablePaidEntry({
+          amount: payable.amount,
+          description: `${payable.type === 'salesman_commission' ? 'Commission' : 'Intake bonus'} paid — ${payable.recipientName}`,
+          car: payableCar,
+          sourceType: `${payable.type}_paid`,
+          sourceId: payable.id,
+          createdBy: currentUser.id,
+        }));
       }));
     }
     // Auto-create refund if customer overpaid

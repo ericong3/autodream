@@ -44,6 +44,7 @@ import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, formatMileage, generateId, shortName } from '../utils/format';
 import { generateDeliveryPayments, generateRepairPayment, generateMiscCostPayment, generatePanelChargePayment } from '../utils/generatePayments';
+import { buildCarSaleEntry, buildPayableRecognizedEntry, LEDGER_ACCOUNTS } from '../utils/generateJournalEntries';
 
 
 const STATUS_BADGE: Record<string, string> = {
@@ -137,6 +138,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const payments = useStore((s) => s.payments);
   const addPayment = useStore((s) => s.addPayment);
   const updatePayment = useStore((s) => s.updatePayment);
+  const addJournalEntry = useStore((s) => s.addJournalEntry);
   const markNotificationsReadByRef = useStore((s) => s.markNotificationsReadByRef);
 
   const car = cars.find((c) => c.id === id);
@@ -596,6 +598,34 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       deliveryCollected: true,
     });
     await generateDeliveryPayments({ car, payments, users, externalSalesmen, dealers, customers, addPayment });
+
+    // Ledger: dealer-consignment cars (someone else's car, we're just selling it
+    // for them) are a separate existing flow and never booked as our inventory.
+    if (!car.consignment && !car.outgoingConsignment && currentUser) {
+      const dealPrice = ((dealWo?.sellingPrice ?? car.sellingPrice) - (dealWo?.discount ?? 0)) || car.sellingPrice;
+      const cost = (car.purchasePrice ?? 0) + totalRepairCost + totalMiscCost;
+      await addJournalEntry(buildCarSaleEntry({ car, dealPrice, cost, isLoan: dealIsLoan, createdBy: currentUser.id }));
+
+      if (car.assignedSalesperson && !car.isStaffSale && !car.waiveCommission) {
+        const effectiveFloor = car.priceFloor ?? car.sellingPrice;
+        const commissionAmount = (car.consignment || dealPrice < effectiveFloor) ? 1000 : 1500;
+        await addJournalEntry(buildPayableRecognizedEntry({
+          expenseAccountId: LEDGER_ACCOUNTS.expSalesmanComm,
+          amount: commissionAmount,
+          description: `Commission recognized — ${car.year} ${car.make} ${car.model}`,
+          car, sourceType: 'salesman_commission', sourceId: car.id, createdBy: currentUser.id,
+        }));
+      }
+      if ((car.intakeCommission ?? 0) > 0 && car.assignedSalesperson) {
+        await addJournalEntry(buildPayableRecognizedEntry({
+          expenseAccountId: LEDGER_ACCOUNTS.expIntakeBonus,
+          amount: car.intakeCommission!,
+          description: `Intake bonus recognized — ${car.year} ${car.make} ${car.model}`,
+          car, sourceType: 'intake_bonus', sourceId: car.id, createdBy: currentUser.id,
+        }));
+      }
+    }
+
     if (customerBalance < 0 && dealCustomer) {
       const refundExists = payments.some(p => p.type === 'customer_refund' && p.carId === car.id);
       if (!refundExists) {
