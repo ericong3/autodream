@@ -604,7 +604,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     if (!car.consignment && !car.outgoingConsignment && currentUser) {
       const dealPrice = ((dealWo?.sellingPrice ?? car.sellingPrice) - (dealWo?.discount ?? 0)) || car.sellingPrice;
       const cost = (car.purchasePrice ?? 0) + totalRepairCost + totalMiscCost;
-      await addJournalEntry(buildCarSaleEntry({ car, dealPrice, cost, isLoan: dealIsLoan, createdBy: currentUser.id }));
+      const loanAmount = dealIsLoan ? (car.disbursementAmount ?? dealCustomer?.loanWorkOrder?.loanAmount ?? 0) : 0;
+      const bookingFee = dealWo?.bookingFee ?? 0;
+      await addJournalEntry(buildCarSaleEntry({ car, dealPrice, cost, isLoan: dealIsLoan, loanAmount, bookingFee, createdBy: currentUser.id }));
 
       if (car.assignedSalesperson && !car.isStaffSale && !car.waiveCommission) {
         const effectiveFloor = car.priceFloor ?? car.sellingPrice;

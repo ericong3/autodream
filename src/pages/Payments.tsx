@@ -9,7 +9,7 @@ import { useStore } from '../store';
 import { Payment, PaymentType, RecipientType } from '../types';
 import { formatRM, generateId } from '../utils/format';
 import { collectMissingPayments } from '../utils/generatePayments';
-import { buildClaimConfirmedEntry, buildClaimPaidEntry, buildPayablePaidEntry } from '../utils/generateJournalEntries';
+import { buildClaimConfirmedEntry, buildClaimPaidEntry, buildPayablePaidEntry, LEDGER_ACCOUNTS } from '../utils/generateJournalEntries';
 import { supabase } from '../lib/supabase';
 import Modal from '../components/Modal';
 
@@ -401,18 +401,22 @@ export default function Payments({ embedded }: PaymentsProps) {
       }));
       // Commission/intake bonus were recognized (Dr expense / Cr payable) at
       // delivery already — paying them out just clears that same payable.
+      // Refunds are the same shape, but clear Customer Refunds Payable
+      // instead (recognized at delivery inside the car-sale entry).
       const payablesBeingPaid = ids
         .map(id => payments.find(p => p.id === id))
-        .filter((p): p is Payment => !!p && (p.type === 'salesman_commission' || p.type === 'intake_bonus'));
+        .filter((p): p is Payment => !!p && (p.type === 'salesman_commission' || p.type === 'intake_bonus' || p.type === 'customer_refund'));
       await Promise.all(payablesBeingPaid.map(payable => {
         const payableCar = payable.carId ? cars.find(c => c.id === payable.carId) : undefined;
+        const label = payable.type === 'salesman_commission' ? 'Commission' : payable.type === 'intake_bonus' ? 'Intake bonus' : 'Refund';
         return addJournalEntry(buildPayablePaidEntry({
           amount: payable.amount,
-          description: `${payable.type === 'salesman_commission' ? 'Commission' : 'Intake bonus'} paid — ${payable.recipientName}`,
+          description: `${label} paid — ${payable.recipientName}`,
           car: payableCar,
           sourceType: `${payable.type}_paid`,
           sourceId: payable.id,
           createdBy: currentUser.id,
+          ...(payable.type === 'customer_refund' ? { payableAccountId: LEDGER_ACCOUNTS.customerRefundsPayable } : {}),
         }));
       }));
     }
