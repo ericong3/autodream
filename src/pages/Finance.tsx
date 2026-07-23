@@ -4,7 +4,7 @@ import { useStore } from '../store';
 import StatCard from '../components/StatCard';
 import { formatRM, shortName, generateId } from '../utils/format';
 import { LedgerAccountType } from '../types';
-import { collectMissingJournalEntries } from '../utils/generateJournalEntries';
+import { collectMissingJournalEntries, findStaleLoanSaleEntries, buildCarSaleEntry } from '../utils/generateJournalEntries';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import Payments from './Payments';
@@ -38,8 +38,18 @@ export default function Finance() {
   const voidJournalEntry = useStore((s) => s.voidJournalEntry);
   const payments = useStore((s) => s.payments);
   const batchAddJournalEntries = useStore((s) => s.batchAddJournalEntries);
+  const addJournalEntry = useStore((s) => s.addJournalEntry);
   const [backfilling, setBackfilling] = useState(false);
   const [backfillResult, setBackfillResult] = useState<number | null>(null);
+
+  // ── One-time review: loan-deal sales posted before the AR/refund split fix ──
+  const staleLoanSales = useMemo(
+    () => findStaleLoanSaleEntries({ journalEntries, cars, customers }),
+    [journalEntries, cars, customers]
+  );
+  const [staleSelection, setStaleSelection] = useState<Record<string, string>>({}); // entryId -> customerId | 'manual'
+  const [staleOverrides, setStaleOverrides] = useState<Record<string, { loanAmount: number; bookingFee: number }>>({});
+  const [applyingStale, setApplyingStale] = useState<string | null>(null);
 
   const [financeTab, setFinanceTab] = useState<'overview' | 'payments' | 'accounts' | 'ledger' | 'balance_sheet'>('overview');
   const [showAddAccount, setShowAddAccount] = useState(false);
@@ -307,6 +317,114 @@ export default function Finance() {
 
       {financeTab === 'ledger' && (
         <div className="space-y-4">
+          {/* One-time review — loan-deal sales posted before the AR/refund split fix */}
+          {staleLoanSales.length > 0 && (
+            <div className="bg-card-gradient border border-amber-500/30 rounded-xl shadow-card overflow-hidden">
+              <div className="px-5 py-3 border-b border-obsidian-400/60">
+                <span className="text-amber-400 font-medium text-sm">Historical Loan Sale Corrections</span>
+                <span className="ml-2 text-xs text-gray-500">{staleLoanSales.length} to review</span>
+                <p className="text-[11px] text-gray-600 mt-1">
+                  These loan-deal sales were posted before the fix that splits the loan amount (Receivable) from cash already
+                  collected before delivery. Pick the correct work order per car (or type the numbers in), review the
+                  corrected split, then apply — the old entry gets voided (not deleted) and a corrected one is posted.
+                </p>
+              </div>
+              <div className="divide-y divide-obsidian-400/40">
+                {staleLoanSales.map(({ entry, car, dealPrice, cost, candidates }) => {
+                  const selection = staleSelection[entry.id] ?? (candidates[0]?.customerId ?? 'manual');
+                  const selectedCandidate = candidates.find((c) => c.customerId === selection);
+                  const override = staleOverrides[entry.id];
+                  const loanAmount = override?.loanAmount ?? selectedCandidate?.loanAmount ?? 0;
+                  const bookingFee = override?.bookingFee ?? selectedCandidate?.bookingFee ?? 0;
+                  const refundOwed = Math.max(loanAmount - (dealPrice - bookingFee), 0);
+                  const bankAmount = bookingFee + Math.max((dealPrice - bookingFee) - loanAmount, 0);
+                  const carLabel = `${car.year} ${car.make} ${car.model}${car.carPlate ? ` (${car.carPlate})` : ''}`;
+                  return (
+                    <div key={entry.id} className="px-5 py-4 space-y-3">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <span className="text-white text-sm font-medium">{carLabel}</span>
+                        <span className="text-xs text-gray-500">Old: Dr AR {formatRM(dealPrice)}</span>
+                      </div>
+
+                      {candidates.length > 0 && (
+                        <div className="space-y-1.5">
+                          {candidates.map((c) => (
+                            <label key={c.customerId} className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                              <input
+                                type="radio"
+                                checked={selection === c.customerId}
+                                onChange={() => setStaleSelection((s) => ({ ...s, [entry.id]: c.customerId }))}
+                              />
+                              {c.customerName} — Loan {formatRM(c.loanAmount)}, Booking Fee {formatRM(c.bookingFee)}
+                            </label>
+                          ))}
+                          <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                            <input
+                              type="radio"
+                              checked={selection === 'manual'}
+                              onChange={() => setStaleSelection((s) => ({ ...s, [entry.id]: 'manual' }))}
+                            />
+                            None of these — enter manually
+                          </label>
+                        </div>
+                      )}
+                      {candidates.length === 0 && (
+                        <p className="text-xs text-gray-500">No matching work order found for this car — enter the figures manually.</p>
+                      )}
+
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <label className="text-xs text-gray-500 flex items-center gap-1.5">
+                          Loan amount
+                          <input
+                            type="number"
+                            value={loanAmount || ''}
+                            onChange={(e) => setStaleOverrides((s) => ({ ...s, [entry.id]: { loanAmount: Number(e.target.value), bookingFee } }))}
+                            className="w-28 px-2 py-1 rounded bg-obsidian-800 border border-white/[0.08] text-white text-xs"
+                          />
+                        </label>
+                        <label className="text-xs text-gray-500 flex items-center gap-1.5">
+                          Booking fee
+                          <input
+                            type="number"
+                            value={bookingFee || ''}
+                            onChange={(e) => setStaleOverrides((s) => ({ ...s, [entry.id]: { loanAmount, bookingFee: Number(e.target.value) } }))}
+                            className="w-28 px-2 py-1 rounded bg-obsidian-800 border border-white/[0.08] text-white text-xs"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="flex items-center justify-between flex-wrap gap-2 pt-2 border-t border-obsidian-400/30">
+                        <div className="text-xs text-gray-400 space-x-3">
+                          <span>New: Dr AR {formatRM(loanAmount)}</span>
+                          <span>Dr Bank {formatRM(bankAmount)}</span>
+                          {refundOwed > 0 && <span className="text-blue-400">Cr Refund Payable {formatRM(refundOwed)}</span>}
+                        </div>
+                        <button
+                          disabled={applyingStale === entry.id}
+                          onClick={async () => {
+                            if (!currentUser) return;
+                            setApplyingStale(entry.id);
+                            try {
+                              await voidJournalEntry(entry.id, currentUser.id, 'Corrected loan-deal AR/refund split');
+                              await addJournalEntry(buildCarSaleEntry({
+                                car, dealPrice, cost, isLoan: true, loanAmount, bookingFee, createdBy: currentUser.id,
+                              }));
+                            } finally {
+                              setApplyingStale(null);
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-gold-gradient text-obsidian-950 text-xs font-bold shadow-gold-sm disabled:opacity-40"
+                        >
+                          {applyingStale === entry.id ? 'Applying...' : 'Apply Correction'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Backfill — catches up cars/commissions that existed before ledger posting did */}
           <div className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-obsidian-800/60 border border-white/[0.06]">
             <div>

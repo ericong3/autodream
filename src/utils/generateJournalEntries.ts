@@ -363,3 +363,58 @@ export function collectMissingJournalEntries(opts: {
 
   return result;
 }
+
+// A loan-deal sale posted before the AR/refund split fix booked the entire
+// deal price as Accounts Receivable (no Bank line at all). Flags those for
+// manual review/correction rather than guessing — some cars have more than
+// one customer record with a loan work order pointing at them (re-submitted
+// deals, bank changes), so which one was the real, completed deal isn't
+// always mechanically resolvable. A car only qualifies if it has exactly one
+// car_sold entry (voided-and-replaced cars already have two, and drop out
+// naturally once corrected).
+export interface StaleLoanSaleCandidate {
+  customerId: string;
+  customerName: string;
+  loanAmount: number;
+  bookingFee: number;
+}
+export interface StaleLoanSale {
+  entry: JournalEntry;
+  car: Car;
+  dealPrice: number;
+  cost: number;
+  candidates: StaleLoanSaleCandidate[];
+}
+export function findStaleLoanSaleEntries(opts: {
+  journalEntries: JournalEntry[];
+  cars: Car[];
+  customers: Customer[];
+}): StaleLoanSale[] {
+  const { journalEntries, cars, customers } = opts;
+  const results: StaleLoanSale[] = [];
+  for (const car of cars) {
+    const carSoldEntries = journalEntries.filter((j) => j.sourceType === 'car_sold' && j.sourceId === car.id);
+    if (carSoldEntries.length !== 1) continue;
+    const entry = carSoldEntries[0];
+    if (entry.voided) continue;
+    const arLine = entry.lines.find((l) => l.accountId === LEDGER_ACCOUNTS.accountsReceivable);
+    if (!arLine) continue;
+    const hasBankLine = entry.lines.some((l) => l.accountId === LEDGER_ACCOUNTS.bankOperating || l.accountId === LEDGER_ACCOUNTS.bankInvestor);
+    if (hasBankLine) continue;
+    const cogsLine = entry.lines.find((l) => l.accountId === LEDGER_ACCOUNTS.cogsOwn || l.accountId === LEDGER_ACCOUNTS.inventoryInvestor);
+    const dealPrice = arLine.debit;
+    const cost = cogsLine ? (cogsLine.debit || cogsLine.credit) : 0;
+    const seen = new Set<string>();
+    const candidates = customers
+      .filter((c) => c.loanWorkOrder && (c.loanWorkOrder.carId === car.id || c.interestedCarId === car.id))
+      .filter((c) => (seen.has(c.id) ? false : (seen.add(c.id), true)))
+      .map((c) => ({
+        customerId: c.id,
+        customerName: c.name,
+        loanAmount: car.disbursementAmount ?? c.loanWorkOrder!.loanAmount ?? 0,
+        bookingFee: c.loanWorkOrder!.bookingFee ?? 0,
+      }));
+    results.push({ entry, car, dealPrice, cost, candidates });
+  }
+  return results;
+}
