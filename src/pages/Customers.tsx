@@ -189,6 +189,10 @@ export default function Customers() {
   const [changeCarNewId, setChangeCarNewId] = useState('');
   const [changeCarSearch, setChangeCarSearch] = useState('');
   const [changeCarCaseChoices, setChangeCarCaseChoices] = useState<Record<string, 'remain' | 'change'>>({});
+
+  // LOU re-approval form (resolving a car-change follow-up on an approved case)
+  const [louUpdateCaseId, setLouUpdateCaseId] = useState<string | null>(null);
+  const [louUpdateForm, setLouUpdateForm] = useState({ amount: '', rate: '', tenure: '' });
   const emptyWorkOrder = {
     sellingPrice: 0, insurance: 0, bankProduct: 0, bankProductItems: [] as WorkOrderItem[],
     additionalItems: [] as WorkOrderItem[],
@@ -910,6 +914,20 @@ export default function Customers() {
       updatedAt: new Date().toISOString(),
     });
     updateLoanCase(lc.id, { carChangeFollowUp: undefined });
+  };
+
+  const handleLouUpdateSubmit = (lc: LoanCase) => {
+    const amount = Number(louUpdateForm.amount);
+    if (!amount) return;
+    updateLoanCase(lc.id, {
+      loanAmount: amount,
+      approvedAmount: amount,
+      interestRate: louUpdateForm.rate ? Number(louUpdateForm.rate) : lc.interestRate,
+      tenure: louUpdateForm.tenure ? Number(louUpdateForm.tenure) : lc.tenure,
+      carChangeFollowUp: undefined,
+    });
+    setLouUpdateCaseId(null);
+    setLouUpdateForm({ amount: '', rate: '', tenure: '' });
   };
 
   const unreadCustomerIds = useMemo(() =>
@@ -2639,14 +2657,64 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                                     ? `Car changed — ${lc.bank} needs to reissue the LOU for ${toCarLabel}.`
                                     : `Customer moved to ${toCarLabel} — resubmit this rejected case to ${lc.bank}?`}
                                 </p>
+                                {followUp.type === 'lou_update' && louUpdateCaseId === lc.id && (
+                                  <div onClick={e => e.stopPropagation()} className="space-y-2 pt-1 border-t border-amber-500/20">
+                                    <p className="text-amber-200/70 text-[11px]">New approved terms from {lc.bank} for {toCarLabel}:</p>
+                                    <div className="grid grid-cols-3 gap-1.5">
+                                      <input
+                                        type="number"
+                                        value={louUpdateForm.amount}
+                                        onChange={e => setLouUpdateForm(f => ({ ...f, amount: e.target.value }))}
+                                        placeholder="Amount (RM)"
+                                        autoFocus
+                                        className="col-span-1 bg-obsidian-800 border border-amber-500/30 rounded-lg px-2 py-1.5 text-white text-xs placeholder-gray-600 focus:outline-none focus:border-amber-500/60"
+                                      />
+                                      <input
+                                        type="number"
+                                        value={louUpdateForm.rate}
+                                        onChange={e => setLouUpdateForm(f => ({ ...f, rate: e.target.value }))}
+                                        placeholder="Rate %"
+                                        step="0.01"
+                                        className="col-span-1 bg-obsidian-800 border border-amber-500/30 rounded-lg px-2 py-1.5 text-white text-xs placeholder-gray-600 focus:outline-none focus:border-amber-500/60"
+                                      />
+                                      <input
+                                        type="number"
+                                        value={louUpdateForm.tenure}
+                                        onChange={e => setLouUpdateForm(f => ({ ...f, tenure: e.target.value }))}
+                                        placeholder="Months"
+                                        className="col-span-1 bg-obsidian-800 border border-amber-500/30 rounded-lg px-2 py-1.5 text-white text-xs placeholder-gray-600 focus:outline-none focus:border-amber-500/60"
+                                      />
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <div
+                                        onClick={() => { setLouUpdateCaseId(null); setLouUpdateForm({ amount: '', rate: '', tenure: '' }); }}
+                                        className="flex-1 flex items-center justify-center py-1.5 rounded-lg border border-obsidian-400/40 text-gray-400 text-xs"
+                                      >
+                                        Cancel
+                                      </div>
+                                      <div
+                                        onClick={() => handleLouUpdateSubmit(lc)}
+                                        className={`flex-1 flex items-center justify-center py-1.5 rounded-lg text-xs font-semibold ${louUpdateForm.amount ? 'bg-amber-500/30 border border-amber-500/60 text-amber-200' : 'bg-amber-500/10 border border-amber-500/20 text-amber-500/40'}`}
+                                      >
+                                        Save & Clear Flag
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
                                 <div className="flex gap-2">
                                   {followUp.type === 'lou_update' ? (
-                                    <div
-                                      onClick={e => { e.stopPropagation(); updateLoanCase(lc.id, { carChangeFollowUp: undefined }); }}
-                                      className="flex-1 flex items-center justify-center py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-semibold"
-                                    >
-                                      Mark LOU Updated
-                                    </div>
+                                    louUpdateCaseId !== lc.id && (
+                                      <div
+                                        onClick={e => {
+                                          e.stopPropagation();
+                                          setLouUpdateCaseId(lc.id);
+                                          setLouUpdateForm({ amount: String(lc.loanAmount ?? ''), rate: lc.interestRate ? String(lc.interestRate) : '', tenure: lc.tenure ? String(lc.tenure) : '' });
+                                        }}
+                                        className="flex-1 flex items-center justify-center py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-semibold"
+                                      >
+                                        Mark LOU Updated
+                                      </div>
+                                    )
                                   ) : (
                                     <>
                                       <div
