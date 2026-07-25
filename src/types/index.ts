@@ -48,6 +48,15 @@ export interface LoanCase {
   interestRate?: number;
   tenure?: number; // months
   bankProducts?: LoanCaseBankProduct[];
+  // Set when Change Car touches this case without fully resolving it — surfaces a
+  // follow-up action (get a fresh LOU, or decide whether to resubmit) instead of
+  // silently pretending the switch is complete.
+  carChangeFollowUp?: {
+    type: 'lou_update' | 'resubmit';
+    fromCarId: string;
+    toCarId: string;
+    flaggedAt: string;
+  };
   createdAt: string;
   updatedAt: string;
 }

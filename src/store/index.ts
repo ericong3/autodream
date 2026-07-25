@@ -785,6 +785,7 @@ function rowToLoanCase(r: any): LoanCase {
     interestRate: r.interest_rate ?? undefined,
     tenure: r.tenure ?? undefined,
     bankProducts: r.bank_products ?? undefined,
+    carChangeFollowUp: r.car_change_follow_up ?? undefined,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -2306,6 +2307,8 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     if (updates.interestRate !== undefined) dbRow.interest_rate = updates.interestRate;
     if (updates.tenure !== undefined) dbRow.tenure = updates.tenure;
     if (updates.bankProducts !== undefined) dbRow.bank_products = updates.bankProducts;
+    // 'in' check (not !== undefined) so passing carChangeFollowUp: undefined to clear the flag is distinguishable from omitting it
+    if ('carChangeFollowUp' in updates) dbRow.car_change_follow_up = updates.carChangeFollowUp ?? null;
     const { error } = await supabase.from('loan_cases').update(dbRow).eq('id', id);
     if (error) {
       if (prev) set((s) => ({ loanCases: s.loanCases.map((c) => c.id === id ? prev : c) }));

@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList, Truck, Upload, Lock, Skull, Clock, RotateCcw, MoreVertical, FileText, Download, Search, Repeat } from 'lucide-react';
 import { useStore } from '../store';
-import { Customer, CashWorkOrder, LoanWorkOrder, WorkOrderItem, BANKS } from '../types';
+import { Customer, CashWorkOrder, LoanWorkOrder, LoanCase, WorkOrderItem, BANKS } from '../types';
 import LoanSubmitModal from './LoanSubmitModal';
 import LoanCaseDetail from './LoanCaseDetail';
 import Modal from '../components/Modal';
@@ -68,6 +68,7 @@ export default function Customers() {
   const loanCaseDocuments = useStore((s) => s.loanCaseDocuments);
   const loanCaseActivities = useStore((s) => s.loanCaseActivities);
   const updateLoanCase = useStore((s) => s.updateLoanCase);
+  const addLoanCase = useStore((s) => s.addLoanCase);
   const addLoanCaseDocument = useStore((s) => s.addLoanCaseDocument);
   const deleteLoanCaseDocument = useStore((s) => s.deleteLoanCaseDocument);
   const addCustomer = useStore((s) => s.addCustomer);
@@ -853,7 +854,18 @@ export default function Customers() {
     loanCases
       .filter(lc => lc.customerId === changeCarCustomer.id)
       .filter(lc => (changeCarCaseChoices[lc.id] ?? (lc.status === 'approved' ? 'change' : 'remain')) === 'change')
-      .forEach(lc => updateLoanCase(lc.id, { carId: changeCarNewId }));
+      .forEach(lc => {
+        const followUp = { fromCarId: lc.carId ?? '', toCarId: changeCarNewId, flaggedAt: new Date().toISOString() };
+        if (lc.status === 'approved') {
+          // Relink immediately (this is the live path to Confirm Deal) but flag it —
+          // the bank approved a specific car+amount, so the LOU still needs reissuing.
+          updateLoanCase(lc.id, { carId: changeCarNewId, carChangeFollowUp: { type: 'lou_update', ...followUp } });
+        } else {
+          // Don't touch closed/rejected history — flag it so the salesperson can decide
+          // whether it's worth a fresh submission for the new car.
+          updateLoanCase(lc.id, { carChangeFollowUp: { type: 'resubmit', ...followUp } });
+        }
+      });
 
     // Release the old car — unless it turned out to already belong to someone else's completed sale
     if (oldCar && oldCar.status !== 'delivered' && oldCar.status !== 'sold') {
@@ -878,6 +890,26 @@ export default function Customers() {
     setChangeCarCustomer(null);
     setChangeCarNewId('');
     setChangeCarCaseChoices({});
+  };
+
+  // Resubmits a closed/rejected case to the same bank+banker for the car it was flagged to move to.
+  // The old case stays untouched as history; this creates a fresh one.
+  const handleResubmitForNewCar = (lc: LoanCase) => {
+    if (!lc.carChangeFollowUp) return;
+    addLoanCase({
+      id: generateId(),
+      customerId: lc.customerId,
+      carId: lc.carChangeFollowUp.toCarId,
+      salesmanId: currentUser?.id ?? lc.salesmanId,
+      bankerId: lc.bankerId,
+      bankerName: lc.bankerName,
+      bank: lc.bank,
+      loanAmount: lc.loanAmount,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    updateLoanCase(lc.id, { carChangeFollowUp: undefined });
   };
 
   const unreadCustomerIds = useMemo(() =>
@@ -2596,6 +2628,45 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                               <CheckCircle size={12} />Confirm Deal
                             </div>
                           )}
+                          {lc.carChangeFollowUp && !isShareHolder && (() => {
+                            const followUp = lc.carChangeFollowUp;
+                            const toCar = cars.find(c => c.id === followUp.toCarId);
+                            const toCarLabel = toCar ? `${toCar.year} ${toCar.make} ${toCar.model}` : 'the new car';
+                            return (
+                              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 space-y-2">
+                                <p className="text-amber-300 text-xs font-medium">
+                                  {followUp.type === 'lou_update'
+                                    ? `Car changed — ${lc.bank} needs to reissue the LOU for ${toCarLabel}.`
+                                    : `Customer moved to ${toCarLabel} — resubmit this rejected case to ${lc.bank}?`}
+                                </p>
+                                <div className="flex gap-2">
+                                  {followUp.type === 'lou_update' ? (
+                                    <div
+                                      onClick={e => { e.stopPropagation(); updateLoanCase(lc.id, { carChangeFollowUp: undefined }); }}
+                                      className="flex-1 flex items-center justify-center py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-semibold"
+                                    >
+                                      Mark LOU Updated
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <div
+                                        onClick={e => { e.stopPropagation(); handleResubmitForNewCar(lc); }}
+                                        className="flex-1 flex items-center justify-center py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-semibold"
+                                      >
+                                        Resubmit to {lc.bank}
+                                      </div>
+                                      <div
+                                        onClick={e => { e.stopPropagation(); updateLoanCase(lc.id, { carChangeFollowUp: undefined }); }}
+                                        className="px-3 flex items-center justify-center py-1.5 rounded-lg border border-obsidian-400/40 text-gray-500 text-xs"
+                                      >
+                                        Dismiss
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </button>
                       );
                     })}
@@ -2922,7 +2993,7 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                   <div className="space-y-2 border-t border-obsidian-400/30 pt-4">
                     <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest">Existing Bank Cases</p>
                     <p className="text-gray-500 text-xs">
-                      Choose whether each case stays on its original car, or moves with the customer to {newCar ? `${newCar.year} ${newCar.make} ${newCar.model}` : 'the new car'}.
+                      Choose whether each case remains as-is, or flags a follow-up for {newCar ? `${newCar.year} ${newCar.make} ${newCar.model}` : 'the new car'} — approved cases relink now and need a fresh LOU; others get a resubmit prompt instead of being changed outright.
                     </p>
                     <div className="space-y-2">
                       {customerCases.map(lc => {
