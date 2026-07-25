@@ -1022,56 +1022,79 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     // ── Phase 1: critical tables, filtered to active records only ──
     // Delivered cars and closed loan cases are loaded in phase 2 so this stays
     // fast forever regardless of how much historical data accumulates.
-    const [users, cars, repairs, customers, externalSalesmenResult, bankersResult, loanCasesResult] =
-      await Promise.all([
-        supabase.from('users').select('*'),
-        supabase.from('cars').select('*').neq('status', 'delivered'),
-        supabase.from('repairs').select('*'),
-        supabase.from('customers').select('*'),
-        supabase.from('external_salesmen').select('*'),
-        supabase.from('bankers').select('*'),
-        supabase.from('loan_cases').select('*').not('status', 'in', '(rejected,cancelled,withdrawn)'),
-      ]);
+    // Wrapped with the same catch+retry-once pattern as phase 2 below — a rejected
+    // query here (network blip right after a refresh, PWA waking from background,
+    // etc.) used to throw out of loadAll entirely, skipping the set() below and
+    // leaving customers/loanCases/cars empty for the rest of the session with no
+    // retry, which looks like a full data wipe from the user's side.
+    let allCars: Car[] = [];
+    let allCustomers: Customer[] = [];
+    let allUsers: User[] = [];
+    const runPhase1 = async (isRetry = false): Promise<boolean> => {
+      try {
+        const [users, cars, repairs, customers, externalSalesmenResult, bankersResult, loanCasesResult] =
+          await Promise.all([
+            supabase.from('users').select('*'),
+            supabase.from('cars').select('*').neq('status', 'delivered'),
+            supabase.from('repairs').select('*'),
+            supabase.from('customers').select('*'),
+            supabase.from('external_salesmen').select('*'),
+            supabase.from('bankers').select('*'),
+            supabase.from('loan_cases').select('*').not('status', 'in', '(rejected,cancelled,withdrawn)'),
+          ]);
 
-    const allCars = (cars.data ?? []).map(rowToCar);
-    const allCustomers = (customers.data ?? []).map(rowToCustomer);
-    const allUsers = (users.data ?? []).map(rowToUser);
+        allCars = (cars.data ?? []).map(rowToCar);
+        allCustomers = (customers.data ?? []).map(rowToCustomer);
+        allUsers = (users.data ?? []).map(rowToUser);
 
-    // Auto-reconcile: clear finalDeal on cars with no matching customer work order
-    const confirmedCarIds = new Set(
-      allCustomers
-        .filter(c => c.cashWorkOrder || c.loanWorkOrder)
-        .map(c => c.interestedCarId)
-        .filter(Boolean)
-    );
-    const orphanedCars = allCars.filter(c =>
-      c.finalDeal &&
-      c.status !== 'delivered' &&
-      c.status !== 'deal_pending' &&
-      !confirmedCarIds.has(c.id) &&
-      !c.outgoingConsignment
-    );
-    if (orphanedCars.length > 0) {
-      await Promise.all(orphanedCars.map(c =>
-        supabase.from('cars').update({ final_deal: null }).eq('id', c.id)
-      ));
-      orphanedCars.forEach(c => {
-        const idx = allCars.findIndex(x => x.id === c.id);
-        if (idx !== -1) allCars[idx] = { ...allCars[idx], finalDeal: undefined };
-      });
-    }
+        // Auto-reconcile: clear finalDeal on cars with no matching customer work order
+        const confirmedCarIds = new Set(
+          allCustomers
+            .filter(c => c.cashWorkOrder || c.loanWorkOrder)
+            .map(c => c.interestedCarId)
+            .filter(Boolean)
+        );
+        const orphanedCars = allCars.filter(c =>
+          c.finalDeal &&
+          c.status !== 'delivered' &&
+          c.status !== 'deal_pending' &&
+          !confirmedCarIds.has(c.id) &&
+          !c.outgoingConsignment
+        );
+        if (orphanedCars.length > 0) {
+          await Promise.all(orphanedCars.map(c =>
+            supabase.from('cars').update({ final_deal: null }).eq('id', c.id)
+          ));
+          orphanedCars.forEach(c => {
+            const idx = allCars.findIndex(x => x.id === c.id);
+            if (idx !== -1) allCars[idx] = { ...allCars[idx], finalDeal: undefined };
+          });
+        }
 
-    set((s) => ({
-      users:           users.data              ? allUsers                                                            : s.users,
-      cars:            cars.data               ? mergePendingCars(allCars, s.cars)                                   : s.cars,
-      repairs:         repairs.data            ? repairs.data.map(rowToRepair)                                       : s.repairs,
-      customers:       customers.data          ? allCustomers                                                        : s.customers,
-      externalSalesmen:externalSalesmenResult.data ? externalSalesmenResult.data.map(rowToExternalSalesman)          : s.externalSalesmen,
-      bankers:         bankersResult.data      ? bankersResult.data.map(rowToBanker)                                 : s.bankers,
-      loanCases:       loanCasesResult.data    ? loanCasesResult.data.map(rowToLoanCase)                             : s.loanCases,
-      loaded: true,
-      lastFetched: Date.now(),
-    }));
+        set((s) => ({
+          users:           users.data              ? allUsers                                                            : s.users,
+          cars:            cars.data               ? mergePendingCars(allCars, s.cars)                                   : s.cars,
+          repairs:         repairs.data            ? repairs.data.map(rowToRepair)                                       : s.repairs,
+          customers:       customers.data          ? allCustomers                                                        : s.customers,
+          externalSalesmen:externalSalesmenResult.data ? externalSalesmenResult.data.map(rowToExternalSalesman)          : s.externalSalesmen,
+          bankers:         bankersResult.data      ? bankersResult.data.map(rowToBanker)                                 : s.bankers,
+          loanCases:       loanCasesResult.data    ? loanCasesResult.data.map(rowToLoanCase)                             : s.loanCases,
+          loaded: true,
+          lastFetched: Date.now(),
+        }));
+        return true;
+      } catch (err) {
+        console.error('loadAll phase 1 failed:', err);
+        if (!isRetry) {
+          await new Promise((r) => setTimeout(r, 4000));
+          return runPhase1(true);
+        }
+        return false;
+      }
+    };
+
+    const phase1Ok = await runPhase1();
+    if (!phase1Ok) return;
 
     // Load notifications in parallel with phase 2 (non-blocking for the UI)
     const currentUser = get().currentUser;
@@ -2274,6 +2297,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     const now = new Date().toISOString();
     set((s) => ({ loanCases: s.loanCases.map((c) => c.id === id ? { ...c, ...updates, updatedAt: now } : c) }));
     const dbRow: any = { updated_at: now };
+    if (updates.carId !== undefined) dbRow.car_id = updates.carId;
     if (updates.status !== undefined) dbRow.status = updates.status;
     if (updates.applicantInterviewText !== undefined) dbRow.applicant_interview_text = updates.applicantInterviewText;
     if (updates.guarantorInterviewText !== undefined) dbRow.guarantor_interview_text = updates.guarantorInterviewText;
