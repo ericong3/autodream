@@ -786,6 +786,7 @@ function rowToLoanCase(r: any): LoanCase {
     tenure: r.tenure ?? undefined,
     bankProducts: r.bank_products ?? undefined,
     carChangeFollowUp: r.car_change_follow_up ?? undefined,
+    carSoldAlert: r.car_sold_alert ?? undefined,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -1647,6 +1648,20 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     if (car.status === 'delivered' && prev?.status !== 'delivered') {
       sendPush(dirs, '🏁 Car delivered', `${carName} has been delivered`, '/inventory', id);
     }
+    // #20 Unit sold out from under other open cases — flag + notify each affected
+    // salesperson (not directors; they can see case status when they look) so they
+    // can convert the customer to a different car before it becomes a problem.
+    if ((car.status === 'deal_pending' || car.status === 'delivered') && prev?.status !== 'deal_pending' && prev?.status !== 'delivered') {
+      const winningCustomer = get().customers.find(c => c.cashWorkOrder?.carId === id || c.loanWorkOrder?.carId === id);
+      const flaggedAt = new Date().toISOString();
+      get().loanCases
+        .filter(lc => lc.carId === id && !['rejected', 'cancelled', 'withdrawn'].includes(lc.status) && lc.customerId !== winningCustomer?.id)
+        .forEach(lc => {
+          get().updateLoanCase(lc.id, { carSoldAlert: { soldCarId: id, flaggedAt } });
+          const custName = get().customers.find(c => c.id === lc.customerId)?.name ?? 'Customer';
+          sendPush([lc.salesmanId], '🚗 Unit sold', `${carName} sold — ${custName}'s ${lc.bank} case needs a new car`, '/customers', lc.customerId);
+        });
+    }
     // #21 Car status changed to Ready
     if (car.status === 'ready' && prev?.status !== 'ready') {
       sendPush(dirs, '✅ Car is ready', `${carName} is ready for sale`, '/inventory', id);
@@ -2309,6 +2324,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     if (updates.bankProducts !== undefined) dbRow.bank_products = updates.bankProducts;
     // 'in' check (not !== undefined) so passing carChangeFollowUp: undefined to clear the flag is distinguishable from omitting it
     if ('carChangeFollowUp' in updates) dbRow.car_change_follow_up = updates.carChangeFollowUp ?? null;
+    if ('carSoldAlert' in updates) dbRow.car_sold_alert = updates.carSoldAlert ?? null;
     const { error } = await supabase.from('loan_cases').update(dbRow).eq('id', id);
     if (error) {
       if (prev) set((s) => ({ loanCases: s.loanCases.map((c) => c.id === id ? prev : c) }));

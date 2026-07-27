@@ -69,6 +69,7 @@ export default function Customers() {
   const loanCaseActivities = useStore((s) => s.loanCaseActivities);
   const updateLoanCase = useStore((s) => s.updateLoanCase);
   const addLoanCase = useStore((s) => s.addLoanCase);
+  const addLoanCaseActivity = useStore((s) => s.addLoanCaseActivity);
   const addLoanCaseDocument = useStore((s) => s.addLoanCaseDocument);
   const deleteLoanCaseDocument = useStore((s) => s.deleteLoanCaseDocument);
   const addCustomer = useStore((s) => s.addCustomer);
@@ -184,11 +185,13 @@ export default function Customers() {
   const [workOrderCarId, setWorkOrderCarId] = useState('');
   const [workOrderIsEdit, setWorkOrderIsEdit] = useState(false);
 
-  // Change Car
-  const [changeCarCustomer, setChangeCarCustomer] = useState<Customer | null>(null);
-  const [changeCarNewId, setChangeCarNewId] = useState('');
-  const [changeCarSearch, setChangeCarSearch] = useState('');
-  const [changeCarCaseChoices, setChangeCarCaseChoices] = useState<Record<string, 'remain' | 'change'>>({});
+  // Change Car — per-case inline picker (Loans tab) + early-stage direct picker (Details tab)
+  const [carPickerCaseId, setCarPickerCaseId] = useState<string | null>(null);
+  const [carPickerSearch, setCarPickerSearch] = useState('');
+  const [carPickerConfirmCaseId, setCarPickerConfirmCaseId] = useState<string | null>(null); // in-flight "still with the bank" alert
+  const [carPickerResubmitCaseId, setCarPickerResubmitCaseId] = useState<{ caseId: string; carId: string } | null>(null); // rejected/cancelled resubmit confirm
+  const [earlyStagePickerCustomerId, setEarlyStagePickerCustomerId] = useState<string | null>(null);
+  const [earlyStagePickerSearch, setEarlyStagePickerSearch] = useState('');
 
   // LOU re-approval form (resolving a car-change follow-up on an approved case)
   const [louUpdateCaseId, setLouUpdateCaseId] = useState<string | null>(null);
@@ -460,15 +463,6 @@ export default function Customers() {
     if (c.leadStatus === 'loan_submitted') return 'Revert to Follow Up';
     if (c.leadStatus === 'follow_up') return 'Revert to Test Drive';
     if (c.leadStatus === 'test_drive') return 'Revert to Contacted';
-    return null;
-  };
-
-  const IN_FLIGHT_CASE_STATUSES = ['pending', 'under_review', 'need_more_info', 'appeal'];
-  const getBlockingLoanActivity = (c: Customer): string | null => {
-    const app = (c.loanApplications ?? []).find(a => a.status === 'submitted');
-    if (app) return `${app.bank} application is awaiting a decision`;
-    const lc = loanCases.find(x => x.customerId === c.id && IN_FLIGHT_CASE_STATUSES.includes(x.status));
-    if (lc) return `${lc.bank} case is ${lc.status.replace('_', ' ')}`;
     return null;
   };
 
@@ -841,69 +835,98 @@ export default function Customers() {
     setWorkOrderCustomer(null);
   };
 
-  const handleChangeCar = () => {
-    if (!changeCarCustomer || !changeCarNewId) return;
-    const oldCar = getCar(changeCarCustomer.interestedCarId);
-    const newCar = getCar(changeCarNewId);
-    const hasConfirmedDeal = !!(changeCarCustomer.cashWorkOrder || changeCarCustomer.loanWorkOrder);
-    const storeUpdateCar = useStore.getState().updateCar;
+  const IN_FLIGHT_CASE_STATUSES_LIST = ['pending', 'under_review', 'need_more_info', 'appeal'];
 
-    updateCustomer(changeCarCustomer.id, {
-      interestedCarId: changeCarNewId,
-      ...(changeCarCustomer.cashWorkOrder ? { cashWorkOrder: { ...changeCarCustomer.cashWorkOrder, carId: changeCarNewId } } : {}),
-      ...(changeCarCustomer.loanWorkOrder ? { loanWorkOrder: { ...changeCarCustomer.loanWorkOrder, carId: changeCarNewId } } : {}),
-      lastActionAt: new Date().toISOString(),
-    });
-
-    loanCases
-      .filter(lc => lc.customerId === changeCarCustomer.id)
-      .filter(lc => (changeCarCaseChoices[lc.id] ?? (lc.status === 'approved' ? 'change' : 'remain')) === 'change')
-      .forEach(lc => {
-        const followUp = { fromCarId: lc.carId ?? '', toCarId: changeCarNewId, flaggedAt: new Date().toISOString() };
-        if (lc.status === 'approved') {
-          // Relink immediately (this is the live path to Confirm Deal) but flag it —
-          // the bank approved a specific car+amount, so the LOU still needs reissuing.
-          updateLoanCase(lc.id, { carId: changeCarNewId, carChangeFollowUp: { type: 'lou_update', ...followUp } });
-        } else {
-          // Don't touch closed/rejected history — flag it so the salesperson can decide
-          // whether it's worth a fresh submission for the new car.
-          updateLoanCase(lc.id, { carChangeFollowUp: { type: 'resubmit', ...followUp } });
-        }
-      });
-
-    // Release the old car — unless it turned out to already belong to someone else's completed sale
-    if (oldCar && oldCar.status !== 'delivered' && oldCar.status !== 'sold') {
-      storeUpdateCar(oldCar.id, { status: 'available', finalDeal: undefined });
+  // Per-case Change Car — click behavior depends on where the case stands with the bank.
+  const handleCaseChangeCarClick = (lc: LoanCase) => {
+    if (!lc.carSoldAlert && IN_FLIGHT_CASE_STATUSES_LIST.includes(lc.status)) {
+      setCarPickerConfirmCaseId(lc.id);
+      return;
     }
-
-    if (hasConfirmedDeal && newCar) {
-      storeUpdateCar(changeCarNewId, {
-        status: 'deal_pending',
-        finalDeal: {
-          submittedBy: currentUser?.name ?? '',
-          submittedAt: new Date().toISOString(),
-          dealPrice: changeCarCustomer.dealPrice ?? oldCar?.finalDeal?.dealPrice ?? 0,
-          bank: changeCarCustomer.loanWorkOrder?.bank ?? 'Cash',
-          approvalStatus: 'approved',
-          approvedBy: currentUser?.name,
-          approvedAt: new Date().toISOString(),
-        },
-      });
-    }
-
-    setChangeCarCustomer(null);
-    setChangeCarNewId('');
-    setChangeCarCaseChoices({});
+    setCarPickerCaseId(lc.id);
+    setCarPickerSearch('');
   };
 
-  // Resubmits a closed/rejected case to the same bank+banker for the car it was flagged to move to.
-  // The old case stays untouched as history; this creates a fresh one.
-  const handleResubmitForNewCar = (lc: LoanCase) => {
-    if (!lc.carChangeFollowUp) return;
+  // A car was picked for a given case — commits immediately for approved/in-flight cases;
+  // for closed cases (rejected/cancelled/withdrawn) routes to a resubmit confirm instead,
+  // since reusing a closed case's car reference isn't the same as reopening it.
+  const handleCasePickCar = (lc: LoanCase, newCarId: string) => {
+    if (['rejected', 'cancelled', 'withdrawn'].includes(lc.status)) {
+      setCarPickerCaseId(null);
+      setCarPickerResubmitCaseId({ caseId: lc.id, carId: newCarId });
+      return;
+    }
+
+    const flaggedAt = new Date().toISOString();
+    if (lc.status === 'approved') {
+      // Relink immediately (this is the live path to Confirm Deal) but flag it —
+      // the bank approved a specific car+amount, so the LOU still needs reissuing.
+      updateLoanCase(lc.id, { carId: newCarId, carChangeFollowUp: { type: 'lou_update', fromCarId: lc.carId ?? '', toCarId: newCarId, flaggedAt }, carSoldAlert: undefined });
+
+      const customer = customers.find(c => c.id === lc.customerId);
+      const currentDealCarId = customer?.loanWorkOrder?.carId ?? customer?.cashWorkOrder?.carId;
+      // Only touch the confirmed deal/car statuses if this case is the one the customer's
+      // live work order is actually built on — otherwise it's just one of several approved
+      // offers and shouldn't move any car status.
+      if (customer && currentDealCarId && currentDealCarId === lc.carId) {
+        const oldCar = getCar(currentDealCarId);
+        const newCar = getCar(newCarId);
+        const storeUpdateCar = useStore.getState().updateCar;
+        if (customer.loanWorkOrder) {
+          updateCustomer(customer.id, { interestedCarId: newCarId, loanWorkOrder: { ...customer.loanWorkOrder, carId: newCarId }, lastActionAt: flaggedAt });
+        } else if (customer.cashWorkOrder) {
+          updateCustomer(customer.id, { interestedCarId: newCarId, cashWorkOrder: { ...customer.cashWorkOrder, carId: newCarId }, lastActionAt: flaggedAt });
+        }
+        // Release the old car — unless it turned out to already belong to someone else's completed sale
+        if (oldCar && oldCar.status !== 'delivered' && oldCar.status !== 'sold') {
+          storeUpdateCar(oldCar.id, { status: 'available', finalDeal: undefined });
+        }
+        if (newCar) {
+          storeUpdateCar(newCarId, {
+            status: 'deal_pending',
+            finalDeal: {
+              submittedBy: currentUser?.name ?? '',
+              submittedAt: flaggedAt,
+              dealPrice: customer.dealPrice ?? oldCar?.finalDeal?.dealPrice ?? 0,
+              bank: customer.loanWorkOrder?.bank ?? 'Cash',
+              approvalStatus: 'approved',
+              approvedBy: currentUser?.name,
+              approvedAt: flaggedAt,
+            },
+          });
+        }
+      }
+    } else {
+      // In-flight with the bank: nothing approved yet, so just relink and leave a note
+      // for the banker rather than a follow-up task.
+      updateLoanCase(lc.id, { carId: newCarId, carSoldAlert: undefined });
+      const newCar = getCar(newCarId);
+      addLoanCaseActivity({
+        id: generateId(),
+        caseId: lc.id,
+        userId: currentUser?.id ?? '',
+        userName: currentUser?.name ?? '',
+        userRole: currentUser?.role ?? '',
+        type: 'remark',
+        content: `Car changed to ${newCar ? `${newCar.year} ${newCar.make} ${newCar.model}` : 'a different unit'} while this case was with the bank.`,
+        createdAt: flaggedAt,
+      });
+    }
+
+    setCarPickerCaseId(null);
+    setCarPickerSearch('');
+  };
+
+  // Creates a fresh pending case on the new car for a closed (rejected/cancelled/withdrawn)
+  // case — the old one stays untouched as accurate history of what was actually rejected.
+  const handleCaseResubmitConfirm = () => {
+    if (!carPickerResubmitCaseId) return;
+    const lc = loanCases.find(x => x.id === carPickerResubmitCaseId.caseId);
+    if (!lc) return;
     addLoanCase({
       id: generateId(),
       customerId: lc.customerId,
-      carId: lc.carChangeFollowUp.toCarId,
+      carId: carPickerResubmitCaseId.carId,
       salesmanId: currentUser?.id ?? lc.salesmanId,
       bankerId: lc.bankerId,
       bankerName: lc.bankerName,
@@ -913,7 +936,14 @@ export default function Customers() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
-    updateLoanCase(lc.id, { carChangeFollowUp: undefined });
+    setCarPickerResubmitCaseId(null);
+  };
+
+  // Early-stage direct car swap — for leads with no bank case yet, nothing else to keep in sync.
+  const handleEarlyStagePickCar = (customerId: string, newCarId: string) => {
+    updateCustomer(customerId, { interestedCarId: newCarId, lastActionAt: new Date().toISOString() });
+    setEarlyStagePickerCustomerId(null);
+    setEarlyStagePickerSearch('');
   };
 
   const handleLouUpdateSubmit = (lc: LoanCase) => {
@@ -1890,20 +1920,6 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                               <>
                                 <div className="fixed inset-0 z-[299]" onClick={() => setShowDetailMenu(false)} />
                                 <div className="absolute right-0 top-full mt-1 z-[300] w-52 bg-obsidian-800 border border-obsidian-400/60 rounded-2xl shadow-2xl overflow-hidden py-1">
-                                  {detailLead.interestedCarId && !detailLead.delivered && (() => {
-                                    const blocked = getBlockingLoanActivity(detailLead);
-                                    return (
-                                      <button
-                                        disabled={!!blocked}
-                                        title={blocked ?? undefined}
-                                        onClick={() => { setChangeCarCustomer(detailLead); setChangeCarNewId(''); setChangeCarSearch(''); setChangeCarCaseChoices({}); setShowDetailMenu(false); }}
-                                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-blue-400 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-obsidian-700/60 transition-colors touch-manipulation text-left"
-                                      >
-                                        <Repeat size={14} />
-                                        {blocked ? `Change Car (${blocked})` : 'Change Car'}
-                                      </button>
-                                    );
-                                  })()}
                                   {(detailLead.cashWorkOrder || detailLead.loanWorkOrder) && (!detailLead.delivered || isDirectorOrAdmin) && (
                                     <button onClick={() => { openEditWorkOrder(detailLead); setShowDetailMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gold-400 hover:bg-obsidian-700/60 transition-colors touch-manipulation text-left">
                                       <Edit2 size={14} />Edit Work Order
@@ -2294,27 +2310,80 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                   </div>
                 </div>
 
-                {/* Interested Car */}
-                {car && (
-                  <div className="space-y-2">
-                    <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Interested Car</p>
-                    <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl p-4 flex items-center gap-3">
-                      {car.photo ? (
-                        <img src={car.photo} alt="" className="w-16 h-16 rounded-xl object-cover shrink-0 border border-obsidian-400/40" />
-                      ) : (
-                        <div className="w-16 h-16 rounded-xl bg-gold-500/10 border border-gold-500/20 flex items-center justify-center shrink-0">
-                          <Car size={22} className="text-gold-400" />
+                {/* Interested Car — early-stage leads (no bank case yet) can change it directly here;
+                    once a bank case exists, the Loans tab's per-case Change Car is the way to do it. */}
+                {car && (() => {
+                  const isEarlyStage = loanCases.filter(lc => lc.customerId === detailLead.id).length === 0;
+                  const isPickerOpen = earlyStagePickerCustomerId === detailLead.id;
+                  return (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Interested Car</p>
+                        {isEarlyStage && !isShareHolder && !isPickerOpen && (
+                          <button
+                            onClick={() => { setEarlyStagePickerCustomerId(detailLead.id); setEarlyStagePickerSearch(''); }}
+                            className="text-xs text-gold-400 hover:text-gold-300 font-medium touch-manipulation"
+                          >
+                            Change Car
+                          </button>
+                        )}
+                      </div>
+                      <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl p-4 flex items-center gap-3">
+                        {car.photo ? (
+                          <img src={car.photo} alt="" className="w-16 h-16 rounded-xl object-cover shrink-0 border border-obsidian-400/40" />
+                        ) : (
+                          <div className="w-16 h-16 rounded-xl bg-gold-500/10 border border-gold-500/20 flex items-center justify-center shrink-0">
+                            <Car size={22} className="text-gold-400" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-white text-sm font-semibold">{car.year} {car.make} {car.model}</p>
+                          {car.variant && <p className="text-gray-400 text-xs mt-0.5">{car.variant}</p>}
+                          <p className="text-gray-500 text-xs mt-0.5">{car.colour} · {car.sellingPrice > 0 ? formatRM(car.sellingPrice) : 'TBD'}</p>
+                          {car.carPlate && <p className="text-gold-500/70 text-xs font-mono mt-0.5">{car.carPlate}</p>}
+                        </div>
+                      </div>
+                      {isPickerOpen && (
+                        <div className="space-y-2 rounded-xl border border-gold-500/30 bg-obsidian-800/60 p-2.5">
+                          <div className="relative">
+                            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-600" />
+                            <input
+                              type="text"
+                              value={earlyStagePickerSearch}
+                              onChange={e => setEarlyStagePickerSearch(e.target.value)}
+                              placeholder="Search make, model, plate…"
+                              autoFocus
+                              className="w-full bg-obsidian-700 border border-obsidian-500/50 rounded-lg pl-7 pr-2.5 py-1.5 text-white text-xs placeholder-gray-600 focus:outline-none focus:border-gold-500/50"
+                            />
+                          </div>
+                          <div className="space-y-1.5 max-h-52 overflow-y-auto">
+                            {cars.filter(c => {
+                              if (c.status === 'sold' || c.status === 'delivered' || c.status === 'deal_pending' || c.id === detailLead.interestedCarId) return false;
+                              if (!earlyStagePickerSearch) return true;
+                              const q = earlyStagePickerSearch.toLowerCase();
+                              return `${c.year} ${c.make} ${c.model} ${c.carPlate ?? ''}`.toLowerCase().includes(q);
+                            }).map(c => (
+                              <div
+                                key={c.id}
+                                onClick={() => handleEarlyStagePickCar(detailLead.id, c.id)}
+                                className="rounded-lg px-2.5 py-2 bg-obsidian-700/60 border border-obsidian-400/50 hover:border-gold-500/50 cursor-pointer"
+                              >
+                                <p className="text-white text-xs font-medium truncate">{c.year} {c.make} {c.model}</p>
+                                <p className="text-gray-500 text-[11px]">{c.colour} · {c.sellingPrice > 0 ? formatRM(c.sellingPrice) : 'TBD'}</p>
+                              </div>
+                            ))}
+                          </div>
+                          <div
+                            onClick={() => { setEarlyStagePickerCustomerId(null); setEarlyStagePickerSearch(''); }}
+                            className="text-center text-xs text-gray-500 hover:text-gray-300 py-1 cursor-pointer"
+                          >
+                            Cancel
+                          </div>
                         </div>
                       )}
-                      <div className="min-w-0">
-                        <p className="text-white text-sm font-semibold">{car.year} {car.make} {car.model}</p>
-                        {car.variant && <p className="text-gray-400 text-xs mt-0.5">{car.variant}</p>}
-                        <p className="text-gray-500 text-xs mt-0.5">{car.colour} · {car.sellingPrice > 0 ? formatRM(car.sellingPrice) : 'TBD'}</p>
-                        {car.carPlate && <p className="text-gold-500/70 text-xs font-mono mt-0.5">{car.carPlate}</p>}
-                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* Follow-up — always shown, inline date picker */}
                 <div className="space-y-2">
@@ -2477,8 +2546,22 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                   rejected: 'bg-red-500/15 text-red-300 border-red-500/30',
                   cancelled: 'bg-gray-500/15 text-gray-400 border-gray-500/30',
                 };
+                // If the customer's open cases point at more than one distinct car, surface
+                // that here — it's a signal of which models they're actually torn between.
+                const openCarIds = [...new Set(
+                  portalCases
+                    .filter(lc => !['rejected', 'cancelled', 'withdrawn'].includes(lc.status) && lc.carId)
+                    .map(lc => lc.carId!)
+                )];
+                const interestedCars = openCarIds.map(id => getCar(id)).filter((c): c is NonNullable<typeof c> => !!c);
+
                 return (
                   <div className="flex-1 overflow-y-auto min-h-0 p-5 pb-20 space-y-3">
+                    {interestedCars.length > 1 && (
+                      <p className="text-xs text-gray-400 bg-obsidian-700/40 border border-obsidian-400/40 rounded-xl px-3 py-2">
+                        Interested in: <span className="text-white font-medium">{interestedCars.map(c => `${c.year} ${c.make} ${c.model}`).join(', ')}</span>
+                      </p>
+                    )}
                     {portalCases.length === 0 && oldApps.length === 0 && (
                       <p className="text-center text-gray-500 text-sm pt-10">No bank submissions yet.</p>
                     )}
@@ -2614,6 +2697,10 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                       const lastActivity = loanCaseActivities
                         .filter(a => a.caseId === lc.id)
                         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+                      const isPickerOpen = carPickerCaseId === lc.id;
+                      const isConfirmOpen = carPickerConfirmCaseId === lc.id;
+                      const isResubmitOpen = carPickerResubmitCaseId?.caseId === lc.id;
+                      const resubmitCar = isResubmitOpen ? getCar(carPickerResubmitCaseId!.carId) : undefined;
                       return (
                         <button
                           key={lc.id}
@@ -2646,18 +2733,29 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                               <CheckCircle size={12} />Confirm Deal
                             </div>
                           )}
-                          {lc.carChangeFollowUp && !isShareHolder && (() => {
-                            const followUp = lc.carChangeFollowUp;
+                          {lc.carSoldAlert && !isShareHolder && (
+                            <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-2.5 space-y-2">
+                              <p className="text-red-300 text-xs font-medium">⚠️ This unit is sold.</p>
+                              {!isPickerOpen && (
+                                <div
+                                  onClick={e => { e.stopPropagation(); handleCaseChangeCarClick(lc); }}
+                                  className="w-full flex items-center justify-center py-1.5 rounded-lg bg-red-500/20 border border-red-500/40 text-red-300 text-xs font-semibold"
+                                >
+                                  Convert Car
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {lc.carChangeFollowUp?.type === 'lou_update' && !lc.carSoldAlert && !isShareHolder && (() => {
+                            const followUp = lc.carChangeFollowUp!;
                             const toCar = cars.find(c => c.id === followUp.toCarId);
                             const toCarLabel = toCar ? `${toCar.year} ${toCar.make} ${toCar.model}` : 'the new car';
                             return (
                               <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 space-y-2">
                                 <p className="text-amber-300 text-xs font-medium">
-                                  {followUp.type === 'lou_update'
-                                    ? `Car changed — ${lc.bank} needs to reissue the LOU for ${toCarLabel}.`
-                                    : `Customer moved to ${toCarLabel} — resubmit this rejected case to ${lc.bank}?`}
+                                  Car changed — {lc.bank} needs to reissue the LOU for {toCarLabel}.
                                 </p>
-                                {followUp.type === 'lou_update' && louUpdateCaseId === lc.id && (
+                                {louUpdateCaseId === lc.id && (
                                   <div onClick={e => e.stopPropagation()} className="space-y-2 pt-1 border-t border-amber-500/20">
                                     <p className="text-amber-200/70 text-[11px]">New approved terms from {lc.bank} for {toCarLabel}:</p>
                                     <div className="grid grid-cols-3 gap-1.5">
@@ -2701,40 +2799,109 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                                     </div>
                                   </div>
                                 )}
-                                <div className="flex gap-2">
-                                  {followUp.type === 'lou_update' ? (
-                                    louUpdateCaseId !== lc.id && (
-                                      <div
-                                        onClick={e => {
-                                          e.stopPropagation();
-                                          setLouUpdateCaseId(lc.id);
-                                          setLouUpdateForm({ amount: String(lc.loanAmount ?? ''), rate: lc.interestRate ? String(lc.interestRate) : '', tenure: lc.tenure ? String(lc.tenure) : '' });
-                                        }}
-                                        className="flex-1 flex items-center justify-center py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-semibold"
-                                      >
-                                        Mark LOU Updated
-                                      </div>
-                                    )
-                                  ) : (
-                                    <>
-                                      <div
-                                        onClick={e => { e.stopPropagation(); handleResubmitForNewCar(lc); }}
-                                        className="flex-1 flex items-center justify-center py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-semibold"
-                                      >
-                                        Resubmit to {lc.bank}
-                                      </div>
-                                      <div
-                                        onClick={e => { e.stopPropagation(); updateLoanCase(lc.id, { carChangeFollowUp: undefined }); }}
-                                        className="px-3 flex items-center justify-center py-1.5 rounded-lg border border-obsidian-400/40 text-gray-500 text-xs"
-                                      >
-                                        Dismiss
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
+                                {louUpdateCaseId !== lc.id && (
+                                  <div className="flex gap-2">
+                                    <div
+                                      onClick={e => {
+                                        e.stopPropagation();
+                                        setLouUpdateCaseId(lc.id);
+                                        setLouUpdateForm({ amount: String(lc.loanAmount ?? ''), rate: lc.interestRate ? String(lc.interestRate) : '', tenure: lc.tenure ? String(lc.tenure) : '' });
+                                      }}
+                                      className="flex-1 flex items-center justify-center py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-semibold"
+                                    >
+                                      Mark LOU Updated
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             );
                           })()}
+                          {isConfirmOpen && (
+                            <div onClick={e => e.stopPropagation()} className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-2.5 space-y-2">
+                              <p className="text-blue-300 text-xs">This case is still with the bank. Replace car now, or wait for the decision?</p>
+                              <div className="flex gap-2">
+                                <div
+                                  onClick={() => setCarPickerConfirmCaseId(null)}
+                                  className="flex-1 flex items-center justify-center py-1.5 rounded-lg border border-obsidian-400/40 text-gray-400 text-xs"
+                                >
+                                  Wait for Approval
+                                </div>
+                                <div
+                                  onClick={() => { setCarPickerConfirmCaseId(null); setCarPickerCaseId(lc.id); setCarPickerSearch(''); }}
+                                  className="flex-1 flex items-center justify-center py-1.5 rounded-lg bg-blue-500/20 border border-blue-500/40 text-blue-300 text-xs font-semibold"
+                                >
+                                  Replace Car
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          {isResubmitOpen && (
+                            <div onClick={e => e.stopPropagation()} className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 space-y-2">
+                              <p className="text-amber-300 text-xs font-medium">
+                                Resubmit to {lc.bank} for {resubmitCar ? `${resubmitCar.year} ${resubmitCar.make} ${resubmitCar.model}` : 'the new car'}?
+                              </p>
+                              <div className="flex gap-2">
+                                <div
+                                  onClick={() => setCarPickerResubmitCaseId(null)}
+                                  className="flex-1 flex items-center justify-center py-1.5 rounded-lg border border-obsidian-400/40 text-gray-400 text-xs"
+                                >
+                                  Cancel
+                                </div>
+                                <div
+                                  onClick={handleCaseResubmitConfirm}
+                                  className="flex-1 flex items-center justify-center py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-semibold"
+                                >
+                                  Resubmit to {lc.bank}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          {isPickerOpen && (
+                            <div onClick={e => e.stopPropagation()} className="space-y-2 rounded-xl border border-blue-500/30 bg-obsidian-800/60 p-2.5">
+                              <div className="relative">
+                                <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-600" />
+                                <input
+                                  type="text"
+                                  value={carPickerSearch}
+                                  onChange={e => setCarPickerSearch(e.target.value)}
+                                  placeholder="Search make, model, plate…"
+                                  autoFocus
+                                  className="w-full bg-obsidian-700 border border-obsidian-500/50 rounded-lg pl-7 pr-2.5 py-1.5 text-white text-xs placeholder-gray-600 focus:outline-none focus:border-blue-500/50"
+                                />
+                              </div>
+                              <div className="space-y-1.5 max-h-52 overflow-y-auto">
+                                {cars.filter(c => {
+                                  if (c.status === 'sold' || c.status === 'delivered' || c.status === 'deal_pending' || c.id === lc.carId) return false;
+                                  if (!carPickerSearch) return true;
+                                  const q = carPickerSearch.toLowerCase();
+                                  return `${c.year} ${c.make} ${c.model} ${c.carPlate ?? ''}`.toLowerCase().includes(q);
+                                }).map(c => (
+                                  <div
+                                    key={c.id}
+                                    onClick={() => handleCasePickCar(lc, c.id)}
+                                    className="rounded-lg px-2.5 py-2 bg-obsidian-700/60 border border-obsidian-400/50 hover:border-blue-500/50 cursor-pointer"
+                                  >
+                                    <p className="text-white text-xs font-medium truncate">{c.year} {c.make} {c.model}</p>
+                                    <p className="text-gray-500 text-[11px]">{c.colour} · {c.sellingPrice > 0 ? formatRM(c.sellingPrice) : 'TBD'}</p>
+                                  </div>
+                                ))}
+                              </div>
+                              <div
+                                onClick={() => { setCarPickerCaseId(null); setCarPickerSearch(''); }}
+                                className="text-center text-xs text-gray-500 hover:text-gray-300 py-1"
+                              >
+                                Cancel
+                              </div>
+                            </div>
+                          )}
+                          {!isShareHolder && !lc.carSoldAlert && !isPickerOpen && !isConfirmOpen && !isResubmitOpen && (
+                            <div
+                              onClick={e => { e.stopPropagation(); handleCaseChangeCarClick(lc); }}
+                              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-obsidian-400/40 text-gray-500 hover:text-gray-300 hover:border-obsidian-400/70 text-xs font-medium transition-colors"
+                            >
+                              <Repeat size={11} />Change Car
+                            </div>
+                          )}
                         </button>
                       );
                     })}
@@ -2992,127 +3159,6 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
 
           </div>
         )}
-      </Modal>
-
-      {/* ── Change Car Modal ──────────────────────────── */}
-      <Modal isOpen={!!changeCarCustomer} onClose={() => setChangeCarCustomer(null)} title="Change Car" maxWidth="max-w-lg">
-        {changeCarCustomer && (() => {
-          const currentCar = getCar(changeCarCustomer.interestedCarId);
-          const statusLabels: Record<string, string> = {
-            available: 'Available', ready: 'Ready', photo_complete: 'Photo Complete',
-            coming_soon: 'Coming Soon', in_workshop: 'In Workshop', submitted: 'Submitted', reserved: 'Reserved',
-          };
-          return (
-            <div className="space-y-4">
-              <p className="text-gray-400 text-sm">
-                Current car: {currentCar ? <span className="text-white font-medium">{currentCar.year} {currentCar.make} {currentCar.model}</span> : <span className="text-gray-600">none</span>}
-              </p>
-              <div className="relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" />
-                <input
-                  type="text"
-                  value={changeCarSearch}
-                  onChange={e => setChangeCarSearch(e.target.value)}
-                  placeholder="Search make, model, plate…"
-                  className="input rounded-lg pl-9 pr-3 py-2 text-sm w-full focus:outline-none focus:border-gold-500 transition-colors"
-                  autoFocus
-                />
-              </div>
-              <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                {cars.filter(c => {
-                  if (c.status === 'sold' || c.status === 'delivered' || c.status === 'deal_pending' || c.id === changeCarCustomer.interestedCarId) return false;
-                  if (!changeCarSearch) return true;
-                  const q = changeCarSearch.toLowerCase();
-                  return `${c.year} ${c.make} ${c.model} ${c.carPlate ?? ''}`.toLowerCase().includes(q);
-                }).map(c => {
-                  const isSelected = changeCarNewId === c.id;
-                  return (
-                    <button
-                      key={c.id}
-                      onClick={() => setChangeCarNewId(c.id)}
-                      className={`w-full text-left rounded-xl p-3 border transition-all ${isSelected ? 'bg-blue-500/10 border-blue-500/50' : 'bg-obsidian-700/60 border-obsidian-400/60 hover:border-[#3C321E]'}`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className={`text-sm font-medium truncate ${isSelected ? 'text-blue-300' : 'text-white'}`}>{c.year} {c.make} {c.model}</p>
-                          <p className="text-gray-500 text-xs mt-0.5">{c.colour} · {c.sellingPrice > 0 ? formatRM(c.sellingPrice) : 'TBD'}</p>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-xs px-2 py-0.5 rounded-full border text-gray-400 bg-gray-500/10 border-gray-500/20">{statusLabels[c.status] ?? c.status}</span>
-                          {isSelected && <span className="text-blue-400 text-xs font-medium">✓</span>}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {changeCarNewId && (() => {
-                const customerCases = loanCases.filter(lc => lc.customerId === changeCarCustomer.id);
-                if (customerCases.length === 0) return null;
-                const newCar = getCar(changeCarNewId);
-                const caseStatusColor: Record<string, string> = {
-                  approved: 'text-green-400 bg-green-500/10 border-green-500/30',
-                  rejected: 'text-red-400 bg-red-500/10 border-red-500/30',
-                  cancelled: 'text-gray-400 bg-gray-500/10 border-gray-500/30',
-                  withdrawn: 'text-gray-400 bg-gray-500/10 border-gray-500/30',
-                };
-                return (
-                  <div className="space-y-2 border-t border-obsidian-400/30 pt-4">
-                    <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest">Existing Bank Cases</p>
-                    <p className="text-gray-500 text-xs">
-                      Choose whether each case remains as-is, or flags a follow-up for {newCar ? `${newCar.year} ${newCar.make} ${newCar.model}` : 'the new car'} — approved cases relink now and need a fresh LOU; others get a resubmit prompt instead of being changed outright.
-                    </p>
-                    <div className="space-y-2">
-                      {customerCases.map(lc => {
-                        const caseCar = getCar(lc.carId);
-                        const choice = changeCarCaseChoices[lc.id] ?? (lc.status === 'approved' ? 'change' : 'remain');
-                        return (
-                          <div key={lc.id} className="bg-obsidian-700/40 border border-obsidian-400/40 rounded-xl p-3 space-y-2">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="min-w-0">
-                                <p className="text-white text-sm font-medium">{lc.bank}</p>
-                                <p className="text-gray-500 text-xs truncate">{caseCar ? `${caseCar.year} ${caseCar.make} ${caseCar.model}` : 'Unknown car'}</p>
-                              </div>
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full border shrink-0 ${caseStatusColor[lc.status] ?? 'text-gray-400 bg-gray-500/10 border-gray-500/30'}`}>
-                                {lc.status.replace('_', ' ')}
-                              </span>
-                            </div>
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => setChangeCarCaseChoices(prev => ({ ...prev, [lc.id]: 'remain' }))}
-                                className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors ${choice === 'remain' ? 'bg-gray-600/40 border-gray-400/60 text-white' : 'border-obsidian-400/40 text-gray-500 hover:text-gray-300'}`}
-                              >
-                                Remain
-                              </button>
-                              <button
-                                onClick={() => setChangeCarCaseChoices(prev => ({ ...prev, [lc.id]: 'change' }))}
-                                className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors ${choice === 'change' ? 'bg-blue-500/20 border-blue-500/50 text-blue-300' : 'border-obsidian-400/40 text-gray-500 hover:text-gray-300'}`}
-                              >
-                                Change
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              <div className="flex gap-3">
-                <button onClick={() => { setChangeCarCustomer(null); setChangeCarCaseChoices({}); }} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
-                <button
-                  onClick={handleChangeCar}
-                  disabled={!changeCarNewId}
-                  className="flex-1 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
-                >
-                  <Repeat size={14} />Confirm Change
-                </button>
-              </div>
-            </div>
-          );
-        })()}
       </Modal>
 
       {/* Add/Edit Customer Modal */}

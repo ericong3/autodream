@@ -167,6 +167,7 @@ export default function Inventory() {
   const cars = useStore((s) => s.cars);
   const users = useStore((s) => s.users);
   const customers = useStore((s) => s.customers);
+  const loanCases = useStore((s) => s.loanCases);
   const repairs = useStore((s) => s.repairs);
   const currentUser = useStore((s) => s.currentUser);
   const addJournalEntry = useStore((s) => s.addJournalEntry);
@@ -386,6 +387,18 @@ export default function Inventory() {
     }
     return map;
   }, [customers]);
+
+  // Ongoing bank cases per car — lets a director see demand on a unit before it sells
+  // out, so a same/near model can be lined up in advance for whoever loses the race.
+  const carCaseCounts = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const lc of loanCases) {
+      if (lc.carId && !['rejected', 'cancelled', 'withdrawn'].includes(lc.status)) {
+        map[lc.carId] = (map[lc.carId] ?? 0) + 1;
+      }
+    }
+    return map;
+  }, [loanCases]);
 
   // Final deal price per car (confirmed customers only)
   const confirmedDealPrice = useMemo(() => {
@@ -1539,18 +1552,24 @@ export default function Inventory() {
                 {/* Deal summary strip */}
                 {(() => {
                   const leadCount = carStats[car.id]?.leadCount ?? 0;
+                  const caseCount = carCaseCounts[car.id] ?? 0;
                   const submissions = car.loanSubmissions ?? [];
                   const approvedBanks = submissions.filter((s) => s.status === 'approved');
                   const pendingBanks  = submissions.filter((s) => s.status === 'submitted');
                   const deal = car.finalDeal;
 
-                  if (leadCount === 0 && submissions.length === 0 && !deal) return null;
+                  if (leadCount === 0 && caseCount === 0 && submissions.length === 0 && !deal) return null;
 
                   return (
                     <div className="mt-1.5 pt-1.5 border-t border-white/10 flex flex-wrap gap-x-2 gap-y-0.5">
                       {leadCount > 0 && (
                         <span className="flex items-center gap-0.5 text-[10px] text-gray-400">
                           <Users size={9} /> {leadCount} lead{leadCount > 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {caseCount > 0 && (
+                        <span className="flex items-center gap-0.5 text-[10px] text-purple-400">
+                          {caseCount} ongoing case{caseCount > 1 ? 's' : ''}
                         </span>
                       )}
                       {pendingBanks.length > 0 && (

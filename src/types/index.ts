@@ -57,6 +57,14 @@ export interface LoanCase {
     toCarId: string;
     flaggedAt: string;
   };
+  // Set automatically when this car sells out from under an open case (someone
+  // else's deal on it went to deal_pending/delivered first) — surfaces an
+  // urgent "unit sold, convert car" banner instead of the salesperson finding
+  // out only when they happen to check.
+  carSoldAlert?: {
+    soldCarId: string;
+    flaggedAt: string;
+  };
   createdAt: string;
   updatedAt: string;
 }

@@ -122,6 +122,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const cars = useStore((s) => s.cars);
   const users = useStore((s) => s.users);
   const customers = useStore((s) => s.customers);
+  const loanCases = useStore((s) => s.loanCases);
   const repairs = useStore((s) => s.repairs);
   const workshops = useStore((s) => s.workshops);
   const merchants = useStore((s) => s.merchants);
@@ -874,6 +875,14 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 <span className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_BADGE[car.status] ?? 'bg-gray-500/20 text-gray-400'}`}>
                   {STATUS_LABEL[car.status] ?? car.status}
                 </span>
+                {(() => {
+                  const caseCount = loanCases.filter(lc => lc.carId === car.id && !['rejected', 'cancelled', 'withdrawn'].includes(lc.status)).length;
+                  return caseCount > 0 ? (
+                    <span className="px-3 py-1 rounded-full text-sm font-medium bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                      {caseCount} ongoing case{caseCount > 1 ? 's' : ''}
+                    </span>
+                  ) : null;
+                })()}
               </div>
             </div>
 
