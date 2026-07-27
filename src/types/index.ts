@@ -675,6 +675,11 @@ export interface CarMovement {
   userName: string;
   reason?: string;
   notes?: string;
+  // Set when the movement is to/from an actual dealer or workshop (not the
+  // lightweight reasons like Test Drive) — lets the log render a real
+  // "AutoDream → X" trail instead of just a generic reason string.
+  destinationType?: 'dealer' | 'workshop';
+  destinationName?: string;
   createdAt: string;
 }
 

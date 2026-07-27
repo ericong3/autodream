@@ -407,6 +407,8 @@ function rowToCarMovement(r: any): CarMovement {
     userName: r.user_name,
     reason: r.reason ?? undefined,
     notes: r.notes ?? undefined,
+    destinationType: r.destination_type ?? undefined,
+    destinationName: r.destination_name ?? undefined,
     createdAt: r.created_at,
   };
 }
@@ -2243,6 +2245,8 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       user_name: m.userName,
       reason: m.reason ?? null,
       notes: m.notes ?? null,
+      destination_type: m.destinationType ?? null,
+      destination_name: m.destinationName ?? null,
       created_at: m.createdAt,
     }).select().single();
     if (error) {

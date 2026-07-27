@@ -1073,8 +1073,13 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className={`text-xs font-bold ${m.type === 'out' ? 'text-red-300' : 'text-green-300'}`}>{m.type === 'out' ? 'OUT' : 'IN'}</span>
                         <span className="text-gray-400 text-xs">{m.userName}</span>
-                        {m.reason && <span className="text-gray-500 text-xs">· {m.reason}</span>}
+                        {!m.destinationName && m.reason && <span className="text-gray-500 text-xs">· {m.reason}</span>}
                       </div>
+                      {m.destinationName ? (
+                        <p className="text-gray-300 text-xs mt-0.5 font-medium">
+                          {m.type === 'out' ? `AutoDream → ${m.destinationName}` : `${m.destinationName} → AutoDream`}
+                        </p>
+                      ) : null}
                       {m.notes && <p className="text-gray-500 text-xs mt-0.5">{m.notes}</p>}
                       <p className="text-gray-600 text-xs mt-0.5">{new Date(m.createdAt).toLocaleString('en-MY', { dateStyle: 'medium', timeStyle: 'short' })}</p>
                     </div>
