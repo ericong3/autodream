@@ -34,8 +34,9 @@ import {
 } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
-import { Car, Customer, LoanWorkOrder, CashWorkOrder, PostSaleChecklist, DealProgress } from '../types';
+import { Car, Customer, LoanWorkOrder, CashWorkOrder, PostSaleChecklist } from '../types';
 import ShipmentsPanel from '../components/ShipmentsPanel';
+import MiniCalendar from '../components/MiniCalendar';
 import {
   DndContext,
   DragOverlay,
@@ -230,7 +231,7 @@ export default function Inventory() {
   const [woSaving, setWoSaving] = useState(false);
   const [woCancelConfirm, setWoCancelConfirm] = useState(false);
   const [woDeliveryConfirm, setWoDeliveryConfirm] = useState(false);
-  const [woTab, setWoTab] = useState<'deal' | 'progress' | 'postsale'>('deal');
+  const [woTab, setWoTab] = useState<'deal' | 'postsale'>('deal');
   const [form, setForm] = useState(emptyForm);
   const [dragActiveId, setDragActiveId] = useState<string | null>(null);
   const [stockOrder, setStockOrder] = useState<string[]>([]);
@@ -846,10 +847,16 @@ export default function Inventory() {
                             <AlertCircle size={10} />Approval
                           </span>
                         )}
-                        {/* Post-it note — what's blocking this car from being marked Delivered */}
+                        {/* Post-it note — what's blocking this car from being marked Delivered.
+                            Jumps straight to Progress & Post-Sale, since that's where every one
+                            of these blockers actually gets resolved. */}
                         {blockers.length > 0 && (
                           <div
-                            onClick={(e) => { e.stopPropagation(); navigate(`/inventory/${car.id}`, { state: { inventoryTab } }); }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (buyer) { setWoTab('postsale'); setWoViewCar({ car, buyer }); }
+                              else navigate(`/inventory/${car.id}`, { state: { inventoryTab } });
+                            }}
                             className="absolute bottom-1.5 right-1.5 w-24 rotate-2 bg-yellow-300 hover:bg-yellow-200 text-obsidian-950 rounded-sm px-2 py-1 text-[10px] font-semibold leading-snug shadow-[2px_3px_6px_rgba(0,0,0,0.5)] cursor-pointer transition-transform hover:rotate-0 hover:scale-105"
                           >
                             <div className="text-center leading-none mb-0.5">📌</div>
@@ -968,7 +975,11 @@ export default function Inventory() {
                         )}
                         {blockers.length > 0 && (
                           <div
-                            onClick={(e) => { e.stopPropagation(); navigate(`/inventory/${car.id}`, { state: { inventoryTab } }); }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (buyer) { setWoTab('postsale'); setWoViewCar({ car, buyer }); }
+                              else navigate(`/inventory/${car.id}`, { state: { inventoryTab } });
+                            }}
                             className="absolute -bottom-1.5 -right-1.5 w-6 h-6 rotate-6 bg-yellow-300 hover:bg-yellow-200 rounded-sm shadow-[1px_2px_4px_rgba(0,0,0,0.5)] flex items-center justify-center text-[11px] cursor-pointer transition-transform hover:rotate-0 hover:scale-110"
                             title={blockers.join(' + ')}
                           >
@@ -1046,7 +1057,16 @@ export default function Inventory() {
                       </div>
                     )}
                     {blockers.length > 0 && (
-                      <p className="px-4 pb-3 text-[11px] text-yellow-300">📌 Need: {blockers.join(' + ')}</p>
+                      <p
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (buyer) { setWoTab('postsale'); setWoViewCar({ car, buyer }); }
+                          else navigate(`/inventory/${car.id}`, { state: { inventoryTab } });
+                        }}
+                        className="px-4 pb-3 text-[11px] text-yellow-300 cursor-pointer hover:text-yellow-200"
+                      >
+                        📌 Need: {blockers.join(' + ')}
+                      </p>
                     )}
                     </div>
                     </SortableCarItem>
@@ -2775,8 +2795,7 @@ export default function Inventory() {
             <div className="border-b border-obsidian-400/60 bg-[#0F0E0C] flex justify-center">
               <div className="flex gap-1">
                 <button onClick={() => setWoTab('deal')} className={`px-5 py-2.5 text-xs font-semibold transition-colors ${woTab === 'deal' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}>Work Order</button>
-                <button onClick={() => { setWoTab('progress'); setWoEditMode(false); }} className={`px-5 py-2.5 text-xs font-semibold transition-colors ${woTab === 'progress' ? 'text-white border-b-2 border-amber-500' : 'text-gray-500 hover:text-gray-300'}`}>Progress</button>
-                <button onClick={() => { setWoTab('postsale'); setWoEditMode(false); }} className={`px-5 py-2.5 text-xs font-semibold transition-colors ${woTab === 'postsale' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}>Post-Sale</button>
+                <button onClick={() => { setWoTab('postsale'); setWoEditMode(false); }} className={`px-5 py-2.5 text-xs font-semibold transition-colors ${woTab === 'postsale' ? 'text-white border-b-2 border-gold-500' : 'text-gray-500 hover:text-gray-300'}`}>Progress & Post-Sale</button>
               </div>
             </div>
 
@@ -3088,13 +3107,9 @@ export default function Inventory() {
 
             </div>}
 
-            {woTab === 'progress' && (
-              <DealProgressPanel car={car} isLoan={isLoan} />
-            )}
-
             {woTab === 'postsale' && (
               <div className="max-w-lg mx-auto px-4 py-5 space-y-4" style={{ paddingBottom: 'calc(2rem + env(safe-area-inset-bottom, 0px))' }}>
-                <PostSalePanel buyerId={buyer.id} />
+                <PostSalePanel buyerId={buyer.id} car={car} />
 
                 {/* Deliver — only show for undelivered cars */}
                 {car.status !== 'delivered' && (!woDeliveryConfirm ? (
@@ -3144,192 +3159,42 @@ export default function Inventory() {
   );
 }
 
-function DealProgressPanel({ car, isLoan }: { car: Car; isLoan: boolean }) {
-  const updateCar = useStore((s) => s.updateCar);
-  const [dp, setDp] = React.useState<DealProgress>(() => car.dealProgress ?? {});
-  const isDelivered = car.status === 'delivered';
-
-  const save = (patch: Partial<DealProgress>) => {
-    const next = { ...dp, ...patch };
-    setDp(next);
-    updateCar(car.id, { dealProgress: next });
-  };
-
-  const today = () => new Date().toISOString().slice(0, 10);
-
-  const stepCheck = (
-    label: string,
-    done: boolean,
-    onToggle: (v: boolean) => void,
-    subtitle?: string,
-  ) => (
-    <div className={`flex items-start gap-3 px-4 py-3 border-b border-obsidian-400/20 ${done ? 'opacity-80' : ''}`}>
-      <button
-        onClick={() => onToggle(!done)}
-        className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${done ? 'border-emerald-500 bg-emerald-500' : 'border-gray-600 hover:border-amber-400'}`}
-      >
-        {done && <Check size={11} className="text-white" />}
-      </button>
-      <div className="flex-1 min-w-0">
-        <p className={`text-sm font-medium ${done ? 'text-gray-400 line-through' : 'text-white'}`}>{label}</p>
-        {subtitle && <p className="text-gray-600 text-xs mt-0.5">{subtitle}</p>}
-      </div>
-    </div>
-  );
-
-  const dateStep = (
-    label: string,
-    value: string | undefined,
-    onSet: (v: string | undefined) => void,
-    subtitle?: string,
-  ) => (
-    <div className={`flex items-start gap-3 px-4 py-3 border-b border-obsidian-400/20 ${value ? 'opacity-80' : ''}`}>
-      <button
-        onClick={() => onSet(value ? undefined : today())}
-        className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${value ? 'border-emerald-500 bg-emerald-500' : 'border-gray-600 hover:border-amber-400'}`}
-      >
-        {value && <Check size={11} className="text-white" />}
-      </button>
-      <div className="flex-1 min-w-0">
-        <p className={`text-sm font-medium ${value ? 'text-gray-400' : 'text-white'}`}>{label}</p>
-        {subtitle && !value && <p className="text-gray-600 text-xs mt-0.5">{subtitle}</p>}
-        {value && (
-          <input
-            type="date"
-            value={value}
-            onClick={(e) => e.stopPropagation()}
-            onChange={(e) => onSet(e.target.value || undefined)}
-            className="mt-1 bg-transparent text-emerald-400 text-xs outline-none border-b border-emerald-500/30 focus:border-emerald-400"
-          />
-        )}
-      </div>
-    </div>
-  );
-
-  const loanSteps = (
-    <>
-      <p className="px-4 pt-4 pb-1 text-[10px] text-gray-600 uppercase tracking-widest font-semibold">Pre-Delivery</p>
-      {dateStep('Puspakom Booked', dp.puspakomBookedDate, v => save({ puspakomBookedDate: v }), 'Book inspection appointment')}
-      {dateStep('Puspakom Done', dp.puspakomDoneDate, v => save({ puspakomDoneDate: v }), 'B2 / B5 / B7 inspection completed')}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-obsidian-400/20">
-        <span className="text-gray-500 text-xs">Inspection type:</span>
-        {(['B2', 'B5', 'B7'] as const).map(t => (
-          <button
-            key={t}
-            onClick={() => {
-              const cur = dp.puspakomType ?? [];
-              save({ puspakomType: cur.includes(t) ? cur.filter(x => x !== t) : [...cur, t] });
-            }}
-            className={`px-2 py-0.5 rounded text-xs font-semibold border transition-colors ${dp.puspakomType?.includes(t) ? 'bg-blue-500/20 text-blue-300 border-blue-500/40' : 'border-obsidian-400/40 text-gray-500 hover:text-gray-300'}`}
-          >{t}</button>
-        ))}
-      </div>
-      {dateStep('eHak Requested', dp.ehakRequestedDate, v => save({ ehakRequestedDate: v }), 'Request eHak from bank')}
-      {dateStep('eHak Received', dp.ehakReceivedDate, v => save({ ehakReceivedDate: v }), 'eHak document from bank received')}
-      {stepCheck('Insurance Covernote Done', !!dp.insuranceCovernoteDone, v => save({ insuranceCovernoteDone: v }))}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-obsidian-400/20">
-        <span className="text-gray-500 text-xs">Name change:</span>
-        {(['eauto', 'jpj'] as const).map(m => (
-          <button
-            key={m}
-            onClick={() => save({ nameChangeMethod: dp.nameChangeMethod === m ? undefined : m })}
-            className={`px-2 py-0.5 rounded text-xs font-semibold border transition-colors ${dp.nameChangeMethod === m ? 'bg-violet-500/20 text-violet-300 border-violet-500/40' : 'border-obsidian-400/40 text-gray-500 hover:text-gray-300'}`}
-          >{m.toUpperCase()}</button>
-        ))}
-      </div>
-      {stepCheck('Name Change Done', !!dp.nameChangeDone, v => save({ nameChangeDone: v }), dp.nameChangeMethod === 'eauto' ? 'eAuto — seller thumbprint required' : dp.nameChangeMethod === 'jpj' ? 'JPJ — buyer + seller in person' : undefined)}
-
-      <p className="px-4 pt-4 pb-1 text-[10px] text-gray-600 uppercase tracking-widest font-semibold">Delivery & Disbursement</p>
-      {stepCheck('Delivery Order Signed', !!dp.deliveryOrderSigned, v => save({ deliveryOrderSigned: v }))}
-      {dateStep('Documents Submitted', dp.documentsSubmittedDate, v => save({ documentsSubmittedDate: v }), 'Delivery order + B5/B7 sent to bank')}
-      {stepCheck('Disbursement Received', !!dp.disbursementReceived, v => {
-        save({ disbursementReceived: v });
-        updateCar(car.id, { disbursementDate: v ? new Date().toISOString().slice(0, 10) : undefined });
-      })}
-    </>
-  );
-
-  const cashSteps = (
-    <>
-      <p className="px-4 pt-4 pb-1 text-[10px] text-gray-600 uppercase tracking-widest font-semibold">Pre-Delivery</p>
-      {dateStep('Puspakom Booked', dp.puspakomBookedDate, v => save({ puspakomBookedDate: v }), 'Book inspection appointment')}
-      {dateStep('Puspakom Done', dp.puspakomDoneDate, v => save({ puspakomDoneDate: v }), 'B2 / B5 / B7 inspection completed')}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-obsidian-400/20">
-        <span className="text-gray-500 text-xs">Inspection type:</span>
-        {(['B2', 'B5', 'B7'] as const).map(t => (
-          <button
-            key={t}
-            onClick={() => {
-              const cur = dp.puspakomType ?? [];
-              save({ puspakomType: cur.includes(t) ? cur.filter(x => x !== t) : [...cur, t] });
-            }}
-            className={`px-2 py-0.5 rounded text-xs font-semibold border transition-colors ${dp.puspakomType?.includes(t) ? 'bg-blue-500/20 text-blue-300 border-blue-500/40' : 'border-obsidian-400/40 text-gray-500 hover:text-gray-300'}`}
-          >{t}</button>
-        ))}
-      </div>
-      {stepCheck('Insurance Covernote Done', !!dp.insuranceCovernoteDone, v => save({ insuranceCovernoteDone: v }))}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-obsidian-400/20">
-        <span className="text-gray-500 text-xs">Name change:</span>
-        {(['eauto', 'jpj'] as const).map(m => (
-          <button
-            key={m}
-            onClick={() => save({ nameChangeMethod: dp.nameChangeMethod === m ? undefined : m })}
-            className={`px-2 py-0.5 rounded text-xs font-semibold border transition-colors ${dp.nameChangeMethod === m ? 'bg-violet-500/20 text-violet-300 border-violet-500/40' : 'border-obsidian-400/40 text-gray-500 hover:text-gray-300'}`}
-          >{m.toUpperCase()}</button>
-        ))}
-      </div>
-      {stepCheck('Name Change Done', !!dp.nameChangeDone, v => save({ nameChangeDone: v }), dp.nameChangeMethod === 'eauto' ? 'eAuto — seller thumbprint required' : dp.nameChangeMethod === 'jpj' ? 'JPJ — buyer + seller in person' : undefined)}
-
-      <p className="px-4 pt-4 pb-1 text-[10px] text-gray-600 uppercase tracking-widest font-semibold">Delivery</p>
-      {stepCheck('Delivery Order Signed', !!dp.deliveryOrderSigned, v => save({ deliveryOrderSigned: v }))}
-      {stepCheck('Full Payment Collected', !!dp.fullPaymentCollected, v => save({ fullPaymentCollected: v }))}
-    </>
-  );
-
-  const totalSteps = isLoan ? 9 : 6;
-  const doneCount = [
-    dp.puspakomBookedDate, dp.puspakomDoneDate, dp.insuranceCovernoteDone,
-    dp.nameChangeDone, dp.deliveryOrderSigned,
-    ...(isLoan ? [dp.ehakRequestedDate, dp.ehakReceivedDate, dp.documentsSubmittedDate, dp.disbursementReceived] : [dp.fullPaymentCollected]),
-  ].filter(Boolean).length;
-  const pct = Math.round((doneCount / totalSteps) * 100);
-
-  return (
-    <div className="max-w-lg mx-auto" style={{ paddingBottom: 'calc(2rem + env(safe-area-inset-bottom, 0px))' }}>
-      {/* Progress bar */}
-      <div className="px-4 pt-4 pb-3">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-white text-sm font-semibold">{isDelivered ? 'Post-deal progress' : 'Deal progress'}</span>
-          <span className="text-gray-400 text-xs">{doneCount}/{totalSteps} steps</span>
-        </div>
-        <div className="w-full h-2 rounded-full bg-obsidian-600">
-          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: pct === 100 ? '#10b981' : '#f59e0b' }} />
-        </div>
-        <div className="mt-3 flex items-center gap-2">
-          <button
-            onClick={() => updateCar(car.id, { sellerThumbprintSaved: !car.sellerThumbprintSaved })}
-            className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${car.sellerThumbprintSaved ? 'border-emerald-500 bg-emerald-500' : 'border-gray-600 hover:border-amber-400'}`}
-          >
-            {car.sellerThumbprintSaved && <Check size={11} className="text-white" />}
-          </button>
-          <span className="text-gray-400 text-xs">Seller thumbprint saved (eAuto)</span>
-        </div>
-      </div>
-
-      <div className="border-t border-obsidian-400/30">
-        {isLoan ? loanSteps : cashSteps}
-      </div>
-    </div>
-  );
-}
-
-function PostSalePanel({ buyerId }: { buyerId: string }) {
+function PostSalePanel({ buyerId, car }: { buyerId: string; car: Car }) {
   const buyer = useStore((s) => s.customers.find((c) => c.id === buyerId));
   const updateCustomer = useStore((s) => s.updateCustomer);
+  const updateCar = useStore((s) => s.updateCar);
   const addPersonalReminder = useStore((s) => s.addPersonalReminder);
+  const updatePersonalReminder = useStore((s) => s.updatePersonalReminder);
+  const deletePersonalReminder = useStore((s) => s.deletePersonalReminder);
+  const [showDeliveryCalendar, setShowDeliveryCalendar] = React.useState(false);
 
-  // Local state drives all toggles immediately — avoids realtime-overwrite flicker
-  const [cl, setCl] = React.useState<PostSaleChecklist>(() => buyer?.postSaleChecklist ?? {});
+  // Local state drives all toggles immediately — avoids realtime-overwrite flicker.
+  // Backfilled once from the legacy car-side "Deal Progress" checklist (retired —
+  // Puspakom/insurance/name-transfer used to be tracked twice, once here and once
+  // on Car.dealProgress, under different field names, so ticking one didn't tick
+  // the other). OR'd in so nobody's already-ticked steps look reset by the merge;
+  // every write from here on only ever goes to postSaleChecklist.
+  const [cl, setCl] = React.useState<PostSaleChecklist>(() => {
+    const ps = buyer?.postSaleChecklist ?? {};
+    const dp = car.dealProgress;
+    if (!dp) return ps;
+    return {
+      ...ps,
+      puspakomBooked: ps.puspakomBooked || !!dp.puspakomBookedDate,
+      puspakomDate: ps.puspakomDate ?? dp.puspakomBookedDate,
+      puspakomDone: ps.puspakomDone || !!dp.puspakomDoneDate,
+      puspakomType: ps.puspakomType ?? dp.puspakomType,
+      ehakRequestedDate: ps.ehakRequestedDate ?? dp.ehakRequestedDate,
+      ehakReceivedDate: ps.ehakReceivedDate ?? dp.ehakReceivedDate,
+      insuranceCoverNote: ps.insuranceCoverNote || !!dp.insuranceCovernoteDone,
+      nameChangeMethod: ps.nameChangeMethod ?? dp.nameChangeMethod,
+      nameTransferDone: ps.nameTransferDone || !!dp.nameChangeDone,
+      deliveryOrderSigned: ps.deliveryOrderSigned || !!dp.deliveryOrderSigned,
+      documentsSubmittedDate: ps.documentsSubmittedDate ?? dp.documentsSubmittedDate,
+      disbursementReceived: ps.disbursementReceived || !!dp.disbursementReceived,
+      fullPaymentCollected: ps.fullPaymentCollected || !!dp.fullPaymentCollected,
+    };
+  });
 
   // Auto-open calendar the moment "Book Puspakom" is first ticked
   const dateInputRef = React.useRef<HTMLInputElement>(null);
@@ -3345,11 +3210,42 @@ function PostSalePanel({ buyerId }: { buyerId: string }) {
 
   const isLoan = !!buyer.loanWorkOrder;
   const bankName = buyer.loanWorkOrder?.bank ?? '';
+  const today = () => new Date().toISOString().slice(0, 10);
 
   const update = (patch: Partial<PostSaleChecklist>) => {
     const newCl = { ...cl, ...patch };
     setCl(newCl);
     updateCustomer(buyerId, { postSaleChecklist: newCl });
+  };
+
+  // Keeps a PersonalReminder (shown on the assigned salesperson's dashboard) in sync
+  // with the estimated delivery date — updates the same reminder in place on change
+  // instead of creating a new one each time, and removes it if the date is cleared.
+  const setDeliveryDate = (d: string | undefined) => {
+    // Fire-and-forget — the store already applies these optimistically before its
+    // own network await, so awaiting here would just delay the calendar closing.
+    if (d) {
+      const title = `Deliver — ${car.year} ${car.make} ${car.model} to ${buyer.name}`;
+      if (cl.deliveryReminderId) {
+        updatePersonalReminder(cl.deliveryReminderId, { dueAt: d, title, isCompleted: false });
+        update({ estimatedDeliveryDate: d });
+      } else {
+        const reminderId = generateId();
+        addPersonalReminder({
+          id: reminderId,
+          userId: buyer.assignedSalesId,
+          title,
+          dueAt: d,
+          isCompleted: false,
+          createdAt: new Date().toISOString(),
+        });
+        update({ estimatedDeliveryDate: d, deliveryReminderId: reminderId });
+      }
+    } else {
+      if (cl.deliveryReminderId) deletePersonalReminder(cl.deliveryReminderId);
+      update({ estimatedDeliveryDate: undefined, deliveryReminderId: undefined });
+    }
+    setShowDeliveryCalendar(false);
   };
 
   // B5 (+ B7 for loan) are automatically obtained once Puspakom Done is ticked
@@ -3358,16 +3254,45 @@ function PostSalePanel({ buyerId }: { buyerId: string }) {
   const canInsurance = isLoan ? !!cl.eHakDone : puspakomDone;
   const canTransfer = !!cl.insuranceCoverNote;
 
+  const dateStep = (value: string | undefined, label: string, onSet: (v: string | undefined) => void, sub?: string) => (
+    <div className={`flex items-start gap-3 px-4 py-3 border-b border-obsidian-400/20 ${value ? 'opacity-80' : ''}`}>
+      <button
+        type="button"
+        onClick={() => onSet(value ? undefined : today())}
+        className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${value ? 'border-emerald-500 bg-emerald-500' : 'border-gray-600 hover:border-amber-400'}`}
+      >
+        {value && <Check size={11} className="text-white" />}
+      </button>
+      <div className="flex-1 min-w-0">
+        <p className={`text-sm font-medium ${value ? 'text-gray-400' : 'text-white'}`}>{label}</p>
+        {sub && !value && <p className="text-gray-600 text-xs mt-0.5">{sub}</p>}
+        {value && (
+          <input
+            type="date"
+            value={value}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => onSet(e.target.value || undefined)}
+            className="mt-1 bg-transparent text-emerald-400 text-xs outline-none border-b border-emerald-500/30 focus:border-emerald-400"
+          />
+        )}
+      </div>
+    </div>
+  );
+
   // Progress steps
   const allSteps: boolean[] = [
     !!cl.agreementSigned,
     !!cl.thumbprintDone,
+    !!car.sellerThumbprintSaved,
     !!cl.puspakomBooked,
     ...(cl.wantsCustomPlate ? [!!cl.b2Booked, !!cl.b2Obtained] : []),
     puspakomDone,
-    ...(isLoan ? [!!cl.eHakDone] : []),
+    ...(isLoan ? [!!cl.ehakRequestedDate, !!cl.ehakReceivedDate, !!cl.eHakDone] : []),
     !!cl.insuranceCoverNote,
     !!cl.nameTransferDone,
+    !!cl.deliveryOrderSigned,
+    !!cl.documentsSubmittedDate,
+    isLoan ? !!cl.disbursementReceived : !!cl.fullPaymentCollected,
   ];
   const doneCt = allSteps.filter(Boolean).length;
   const totalCt = allSteps.length;
@@ -3375,6 +3300,52 @@ function PostSalePanel({ buyerId }: { buyerId: string }) {
 
   return (
     <div className="space-y-4">
+      {/* Estimated Delivery Date — sets/updates a PersonalReminder on the assigned
+          salesperson's dashboard, kept in sync as this date changes or is cleared */}
+      <div className={`rounded-xl overflow-hidden transition-all ${
+        cl.estimatedDeliveryDate
+          ? 'bg-[#0F0E0C] border border-obsidian-400/60'
+          : 'bg-amber-500/10 border border-amber-500/50 shadow-[0_4px_18px_rgba(245,158,11,0.2)]'
+      }`}>
+        <button
+          type="button"
+          onClick={() => setShowDeliveryCalendar(v => !v)}
+          className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors ${cl.estimatedDeliveryDate ? 'hover:bg-obsidian-700/40' : 'hover:bg-amber-500/15'}`}
+        >
+          <div className="flex items-center gap-2.5">
+            <Calendar size={15} className={`shrink-0 ${cl.estimatedDeliveryDate ? 'text-gold-400' : 'text-amber-400'}`} />
+            <div>
+              <p className={`text-sm font-medium ${cl.estimatedDeliveryDate ? 'text-white' : 'text-amber-300'}`}>Estimated Delivery Date</p>
+              <p className={`text-xs mt-0.5 ${cl.estimatedDeliveryDate ? 'text-gray-500' : 'text-amber-400/80'}`}>
+                {cl.estimatedDeliveryDate
+                  ? new Date(cl.estimatedDeliveryDate + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })
+                  : 'Not set — tap to schedule'}
+              </p>
+            </div>
+          </div>
+          <span className={`text-xs font-medium shrink-0 ${cl.estimatedDeliveryDate ? 'text-gold-400' : 'text-amber-300'}`}>{cl.estimatedDeliveryDate ? 'Change' : '+ Set'}</span>
+        </button>
+        {showDeliveryCalendar && (
+          <div className={`border-t p-4 ${cl.estimatedDeliveryDate ? 'border-obsidian-400/30' : 'border-amber-500/30'}`}>
+            <MiniCalendar
+              date={cl.estimatedDeliveryDate ?? ''}
+              time=""
+              onDate={(d) => setDeliveryDate(d || undefined)}
+              onTime={() => {}}
+            />
+            {cl.estimatedDeliveryDate && (
+              <button
+                type="button"
+                onClick={() => setDeliveryDate(undefined)}
+                className="w-full mt-3 text-center text-xs text-red-400 hover:text-red-300 py-1.5"
+              >
+                Clear date
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
       <div className="flex items-center justify-between">
         <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest">Post-Sale Checklist</p>
         <span className={`text-xs font-bold ${pct === 100 ? 'text-green-400' : pct >= 60 ? 'text-gold-400' : 'text-gray-400'}`}>{doneCt}/{totalCt} · {pct}%</span>
@@ -3397,6 +3368,11 @@ function PostSalePanel({ buyerId }: { buyerId: string }) {
           done={!!cl.thumbprintDone}
           label="Buyer Thumbprint"
           onToggle={() => update({ thumbprintDone: !cl.thumbprintDone })}
+        />
+        <PSStep
+          done={!!car.sellerThumbprintSaved}
+          label="Seller Thumbprint (eAuto)"
+          onToggle={() => updateCar(car.id, { sellerThumbprintSaved: !car.sellerThumbprintSaved })}
         />
       </div>
 
@@ -3481,6 +3457,20 @@ function PostSalePanel({ buyerId }: { buyerId: string }) {
             <span className="text-xs text-green-400">{isLoan ? 'B5 + B7 obtained' : 'B5 obtained'}</span>
           </div>
         )}
+        {/* Which cert types were actually obtained — informational, doesn't gate anything */}
+        <div className="flex items-center gap-2 px-4 py-2.5 border-t border-obsidian-400/20">
+          <span className="text-gray-500 text-xs">Cert types obtained:</span>
+          {(['B2', 'B5', 'B7'] as const).map(t => (
+            <button
+              key={t}
+              onClick={() => {
+                const cur = cl.puspakomType ?? [];
+                update({ puspakomType: cur.includes(t) ? cur.filter(x => x !== t) : [...cur, t] });
+              }}
+              className={`px-2 py-0.5 rounded text-xs font-semibold border transition-colors ${cl.puspakomType?.includes(t) ? 'bg-blue-500/20 text-blue-300 border-blue-500/40' : 'border-obsidian-400/40 text-gray-500 hover:text-gray-300'}`}
+            >{t}</button>
+          ))}
+        </div>
       </div>
 
       {/* ── eHak (loan only) ── */}
@@ -3489,6 +3479,8 @@ function PostSalePanel({ buyerId }: { buyerId: string }) {
           <div className="px-4 py-2 bg-obsidian-700/40 border-b border-obsidian-400/30">
             <p className="text-white text-[10px] font-bold uppercase tracking-wide">eHak</p>
           </div>
+          {dateStep(cl.ehakRequestedDate, 'eHak Requested', v => update({ ehakRequestedDate: v }), 'Request eHak from bank')}
+          {dateStep(cl.ehakReceivedDate, 'eHak Received', v => update({ ehakReceivedDate: v }), 'eHak document from bank received')}
           <PSStep
             done={!!cl.eHakDone}
             locked={!canEHak}
@@ -3511,13 +3503,53 @@ function PostSalePanel({ buyerId }: { buyerId: string }) {
           sub={!canInsurance ? (isLoan ? 'Complete eHak first' : 'Complete Puspakom first') : undefined}
           onToggle={() => update({ insuranceCoverNote: !cl.insuranceCoverNote })}
         />
+        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-obsidian-400/20">
+          <span className="text-gray-500 text-xs">Transfer method:</span>
+          {(['eauto', 'jpj'] as const).map(m => (
+            <button
+              key={m}
+              onClick={() => update({ nameChangeMethod: cl.nameChangeMethod === m ? undefined : m })}
+              className={`px-2 py-0.5 rounded text-xs font-semibold border transition-colors ${cl.nameChangeMethod === m ? 'bg-violet-500/20 text-violet-300 border-violet-500/40' : 'border-obsidian-400/40 text-gray-500 hover:text-gray-300'}`}
+            >{m.toUpperCase()}</button>
+          ))}
+        </div>
         <PSStep
           done={!!cl.nameTransferDone}
           locked={!canTransfer}
-          label="Name Transfer (JPJ)"
-          sub={!canTransfer ? 'Requires insurance cover note' : undefined}
+          label="Name Transfer"
+          sub={!canTransfer ? 'Requires insurance cover note' : cl.nameChangeMethod === 'eauto' ? 'eAuto — seller thumbprint required' : cl.nameChangeMethod === 'jpj' ? 'JPJ — buyer + seller in person' : undefined}
           onToggle={() => update({ nameTransferDone: !cl.nameTransferDone })}
         />
+      </div>
+
+      {/* ── Delivery & Disbursement ── */}
+      <div className="bg-[#0F0E0C] border border-obsidian-400/60 rounded-xl overflow-hidden">
+        <div className="px-4 py-2 bg-obsidian-700/40 border-b border-obsidian-400/30">
+          <p className="text-white text-[10px] font-bold uppercase tracking-wide">Delivery{isLoan ? ' & Disbursement' : ''}</p>
+        </div>
+        <PSStep
+          done={!!cl.deliveryOrderSigned}
+          label="Delivery Order Signed"
+          onToggle={() => update({ deliveryOrderSigned: !cl.deliveryOrderSigned })}
+        />
+        {isLoan && dateStep(cl.documentsSubmittedDate, 'Documents Submitted', v => update({ documentsSubmittedDate: v }), 'Delivery order + B5/B7 sent to bank')}
+        {isLoan ? (
+          <PSStep
+            done={!!cl.disbursementReceived}
+            label="Disbursement Received"
+            onToggle={() => {
+              const next = !cl.disbursementReceived;
+              update({ disbursementReceived: next });
+              updateCar(car.id, { disbursementDate: next ? today() : undefined });
+            }}
+          />
+        ) : (
+          <PSStep
+            done={!!cl.fullPaymentCollected}
+            label="Full Payment Collected"
+            onToggle={() => update({ fullPaymentCollected: !cl.fullPaymentCollected })}
+          />
+        )}
       </div>
     </div>
   );

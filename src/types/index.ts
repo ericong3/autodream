@@ -547,18 +547,33 @@ export const DEFAULT_CHECKLIST_LABELS = [
   'Test Drive Completed',
 ];
 
+// Merged with what used to be the separate car-side "Deal Progress" checklist —
+// Puspakom/insurance/name-transfer were tracked twice (once here, once on
+// Car.dealProgress) under different field names, so ticking one didn't tick the
+// other. This is now the single source of truth; Car.dealProgress is legacy-only,
+// read once to backfill this on first open and never written to again.
 export interface PostSaleChecklist {
+  estimatedDeliveryDate?: string;
+  deliveryReminderId?: string; // links to a PersonalReminder, kept in sync when the date changes
   agreementSigned?: boolean;
   thumbprintDone?: boolean;
   puspakomBooked?: boolean;
   puspakomDate?: string;
+  puspakomType?: ('B2' | 'B5' | 'B7')[]; // inspection cert types actually obtained
   wantsCustomPlate?: boolean;
   b2Booked?: boolean;
   b2Obtained?: boolean;
   puspakomDone?: boolean;   // auto-implies b5 (+ b7 for loan) obtained
+  ehakRequestedDate?: string; // loan only
+  ehakReceivedDate?: string;  // loan only
   eHakDone?: boolean;       // loan only — hire purchase transfer, after puspakom
   insuranceCoverNote?: boolean;
+  nameChangeMethod?: 'eauto' | 'jpj';
   nameTransferDone?: boolean;
+  deliveryOrderSigned?: boolean;
+  documentsSubmittedDate?: string;
+  disbursementReceived?: boolean;  // loan
+  fullPaymentCollected?: boolean;  // cash
 }
 
 export interface Customer {
@@ -596,6 +611,8 @@ export interface Customer {
   commission?: number;
   dealType?: 'cash' | 'loan';
   bookingFee?: number;
+  bookingFeeReceiptUrl?: string;
+  bookingFeeRecordedAt?: string;
   createdAt: string;
 }
 

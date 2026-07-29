@@ -75,6 +75,7 @@ export default function Customers() {
   const addCustomer = useStore((s) => s.addCustomer);
   const updateCustomer = useStore((s) => s.updateCustomer);
   const deleteCustomer = useStore((s) => s.deleteCustomer);
+  const addPayment = useStore((s) => s.addPayment);
   const notifications = useStore((s) => s.notifications);
   const markNotificationsReadByRef = useStore((s) => s.markNotificationsReadByRef);
 
@@ -234,6 +235,16 @@ export default function Customers() {
   const [deliveryPhotoUrl, setDeliveryPhotoUrl] = useState('');
   const [deliveryUploading, setDeliveryUploading] = useState(false);
   const deliveryPhotoRef = useRef<HTMLInputElement>(null);
+  // Booking Fee modal
+  const [showBookingFeeModal, setShowBookingFeeModal] = useState(false);
+  const [bookingFeeAmount, setBookingFeeAmount] = useState('');
+  const [bookingFeeReceiptUrl, setBookingFeeReceiptUrl] = useState('');
+  const [bookingFeeUploading, setBookingFeeUploading] = useState(false);
+  const bookingFeeReceiptRef = useRef<HTMLInputElement>(null);
+  // Cancel Booking & Refund modal
+  const [showCancelBookingModal, setShowCancelBookingModal] = useState(false);
+  const [cancelRefundForm, setCancelRefundForm] = useState({ bank: '', accountNo: '', accountName: '' });
+  const [savingCancelRefund, setSavingCancelRefund] = useState(false);
   // Banker portal submission modal
   const [loanSubmitCustomer, setLoanSubmitCustomer] = useState<Customer | null>(null);
   const [loanSubmitInitial, setLoanSubmitInitial] = useState<{ carId?: string; amount?: number; banks?: string[] }>({});
@@ -521,6 +532,39 @@ export default function Customers() {
     const now = new Date().toISOString();
     updateCustomer(c.id, { isDead: true, deadAt: now, isTrashed: true, trashedAt: now });
     setDetailLead(null);
+  };
+
+  // ── Cancel Booking & Refund — creates a customer_refund Payment (same type/flow
+  // Payments → Refund Claims already handles for delivery-stage refunds), then kills
+  // the lead since cancelling a booking means the deal is off. Director transfers the
+  // money and uploads the receipt from Payments, same as every other refund claim.
+  const handleCancelBookingRefund = async (c: Customer) => {
+    if (!c.bookingFee) return;
+    setSavingCancelRefund(true);
+    try {
+      await addPayment({
+        id: generateId(),
+        type: 'customer_refund',
+        carId: c.interestedCarId,
+        recipientType: 'customer',
+        recipientId: c.id,
+        recipientName: c.name,
+        amount: c.bookingFee,
+        description: `Booking fee refund — ${c.name} cancelled`,
+        bankName: cancelRefundForm.bank.trim(),
+        accountNumber: cancelRefundForm.accountNo.trim(),
+        accountHolder: cancelRefundForm.accountName.trim(),
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      });
+      const now = new Date().toISOString();
+      await updateCustomer(c.id, { isDead: true, deadAt: now, isTrashed: true, trashedAt: now });
+      setShowCancelBookingModal(false);
+      setCancelRefundForm({ bank: '', accountNo: '', accountName: '' });
+      setDetailLead(null);
+    } finally {
+      setSavingCancelRefund(false);
+    }
   };
 
   const handleReviveLead = async (c: Customer) => {
@@ -1194,12 +1238,22 @@ export default function Customers() {
                         </span>
                       )}
                     </div>
-                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border shrink-0 ${
-                      c.leadStatus === 'contacted'      ? 'bg-blue-500/15 border-blue-500/30 text-blue-400' :
-                      c.leadStatus === 'test_drive'     ? 'bg-yellow-500/15 border-yellow-500/30 text-yellow-400' :
-                      c.leadStatus === 'follow_up'      ? 'bg-gold-500/15 border-gold-500/30 text-gold-400' :
-                                                          'bg-green-500/15 border-green-500/30 text-green-400'
-                    }`}>{LEAD_STATUS_LABELS[c.leadStatus]}</span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {(() => {
+                        const bookingFee = c.bookingFee ?? c.loanWorkOrder?.bookingFee ?? c.cashWorkOrder?.bookingFee;
+                        return bookingFee ? (
+                          <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-emerald-500/15 border-emerald-500/30 text-emerald-400">
+                            <Banknote size={10} />Booked
+                          </span>
+                        ) : null;
+                      })()}
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                        c.leadStatus === 'contacted'      ? 'bg-blue-500/15 border-blue-500/30 text-blue-400' :
+                        c.leadStatus === 'test_drive'     ? 'bg-yellow-500/15 border-yellow-500/30 text-yellow-400' :
+                        c.leadStatus === 'follow_up'      ? 'bg-gold-500/15 border-gold-500/30 text-gold-400' :
+                                                            'bg-green-500/15 border-green-500/30 text-green-400'
+                      }`}>{LEAD_STATUS_LABELS[c.leadStatus]}</span>
+                    </div>
                   </div>
 
                   {/* Info: phone · source · salesman · car */}
@@ -1495,10 +1549,18 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                   <div className="flex items-start gap-3 px-4 py-4 hover:bg-obsidian-700/30 transition-colors cursor-pointer" onClick={() => { setDetailLead(c); markNotificationsReadByRef(c.id); }}>
                     <div className="flex-1 min-w-0">
                       {/* Name + phone */}
-                      <div className="flex items-center gap-2 mb-1.5">
+                      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                         <span className="text-white text-sm font-semibold">{c.name}</span>
                         <span className="text-gray-500 text-xs hidden sm:inline">{c.phone}</span>
                         {isDirectorLevel && <span className="text-gray-600 text-xs hidden lg:inline">{getSalesName(c.assignedSalesId)}</span>}
+                        {(() => {
+                          const bookingFee = c.bookingFee ?? c.loanWorkOrder?.bookingFee ?? c.cashWorkOrder?.bookingFee;
+                          return bookingFee ? (
+                            <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-emerald-500/15 border-emerald-500/30 text-emerald-400">
+                              <Banknote size={10} />Booked
+                            </span>
+                          ) : null;
+                        })()}
                       </div>
 
                       {/* Car badge */}
@@ -2460,27 +2522,56 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                 {/* Booking Fee */}
                 <div className="space-y-2">
                   <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Booking Fee</p>
-                  <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl px-4 py-3 flex items-center gap-3">
-                    <span className="text-gray-500 text-xs">RM</span>
-                    <input
-                      type="number"
-                      className="flex-1 bg-transparent text-white text-sm outline-none border-b border-transparent focus:border-gold-500/60 transition-colors"
-                      placeholder="0"
-                      defaultValue={detailLead.bookingFee ?? ''}
-                      onBlur={e => {
-                        const val = e.target.value ? Number(e.target.value) : undefined;
-                        if (val !== detailLead.bookingFee) {
-                          updateCustomer(detailLead.id, { bookingFee: val, lastActionAt: new Date().toISOString() });
-                        }
-                      }}
-                      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                    />
-                    {detailLead.bookingFee ? (
-                      <span className="text-gold-400 text-xs font-semibold">{formatRM(detailLead.bookingFee)}</span>
-                    ) : (
-                      <span className="text-gray-600 text-xs">Not recorded</span>
-                    )}
-                  </div>
+                  {detailLead.bookingFee ? (
+                    <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+                      <div>
+                        <span className="text-gold-400 text-sm font-semibold">{formatRM(detailLead.bookingFee)}</span>
+                        {detailLead.bookingFeeRecordedAt && (
+                          <p className="text-gray-600 text-[11px] mt-0.5">
+                            {new Date(detailLead.bookingFeeRecordedAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {detailLead.bookingFeeReceiptUrl && (
+                          <a
+                            href={detailLead.bookingFeeReceiptUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
+                          >
+                            <FileText size={12} />Receipt
+                          </a>
+                        )}
+                        <button
+                          onClick={() => {
+                            setBookingFeeAmount(String(detailLead.bookingFee));
+                            setBookingFeeReceiptUrl(detailLead.bookingFeeReceiptUrl ?? '');
+                            setShowBookingFeeModal(true);
+                          }}
+                          className="text-xs text-gold-400 hover:text-gold-300 font-medium"
+                        >
+                          Edit
+                        </button>
+                        {!isShareHolder && (
+                          <button
+                            onClick={() => { setCancelRefundForm({ bank: '', accountNo: '', accountName: '' }); setShowCancelBookingModal(true); }}
+                            className="text-xs text-red-400 hover:text-red-300 font-medium"
+                          >
+                            Cancel & Refund
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => { setBookingFeeAmount(''); setBookingFeeReceiptUrl(''); setShowBookingFeeModal(true); }}
+                      className="w-full flex items-center justify-center gap-2 bg-obsidian-700/60 border border-dashed border-obsidian-400/70 hover:border-gold-500/50 rounded-xl px-4 py-3 text-gray-400 hover:text-gold-400 transition-colors text-sm font-medium"
+                    >
+                      <Banknote size={14} />+ Add Booking Fee
+                    </button>
+                  )}
                 </div>
 
                 {/* Payment method — only show when not yet tagged */}
@@ -3016,6 +3107,122 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
               <button onClick={() => setShowDeliveryModal(false)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
               <button onClick={() => handleDeliveryConfirm(detailLead)} className="flex-1 flex items-center justify-center gap-2 btn-gold px-4 py-2.5 rounded-lg text-sm font-medium">
                 <Truck size={14} />Confirm Delivery
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Booking Fee Modal ──────────────────────────── */}
+      <Modal isOpen={showBookingFeeModal} onClose={() => setShowBookingFeeModal(false)} title="Booking Fee" maxWidth="max-w-sm">
+        {detailLead && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-gray-300 text-xs font-medium mb-1.5">Amount (RM)</label>
+              <div className="bg-obsidian-700/60 border border-obsidian-400/70 rounded-lg px-3 py-2.5 flex items-center gap-2">
+                <span className="text-gray-500 text-sm">RM</span>
+                <input
+                  type="number"
+                  autoFocus
+                  className="flex-1 bg-transparent text-white text-sm outline-none"
+                  placeholder="0"
+                  value={bookingFeeAmount}
+                  onChange={e => setBookingFeeAmount(e.target.value)}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-gray-300 text-xs font-medium mb-1.5">Receipt <span className="text-gray-600">(optional)</span></label>
+              {bookingFeeReceiptUrl ? (
+                <div className="relative inline-block w-full">
+                  <img src={bookingFeeReceiptUrl} alt="Receipt" className="w-full h-40 object-cover rounded-lg border border-obsidian-400/60" />
+                  <button onClick={() => setBookingFeeReceiptUrl('')} className="absolute top-2 right-2 bg-black/60 text-white rounded-full p-0.5"><X size={12} /></button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => bookingFeeReceiptRef.current?.click()}
+                  disabled={bookingFeeUploading}
+                  className="w-full border-2 border-dashed border-obsidian-400/60 hover:border-gold-500/50 rounded-lg p-4 flex flex-col items-center gap-2 text-gray-600 hover:text-gold-400 transition-colors"
+                >
+                  {bookingFeeUploading ? <span className="text-xs">Uploading...</span> : <><Upload size={18} /><span className="text-xs">Upload receipt</span></>}
+                </button>
+              )}
+              <input ref={bookingFeeReceiptRef} type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setBookingFeeUploading(true);
+                try {
+                  const url = await uploadToStorage(file, 'booking-receipts');
+                  setBookingFeeReceiptUrl(url);
+                } finally {
+                  setBookingFeeUploading(false);
+                }
+                e.target.value = '';
+              }} />
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowBookingFeeModal(false)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
+              <button
+                disabled={!bookingFeeAmount || Number(bookingFeeAmount) <= 0}
+                onClick={() => {
+                  updateCustomer(detailLead.id, {
+                    bookingFee: Number(bookingFeeAmount),
+                    bookingFeeReceiptUrl: bookingFeeReceiptUrl || undefined,
+                    bookingFeeRecordedAt: new Date().toISOString(),
+                    lastActionAt: new Date().toISOString(),
+                  });
+                  setShowBookingFeeModal(false);
+                }}
+                className="flex-1 flex items-center justify-center gap-2 btn-gold px-4 py-2.5 rounded-lg text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Banknote size={14} />Save
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Cancel Booking & Refund Modal ─────────────────
+          Creates a customer_refund Payment — same type/flow Payments → Refund Claims
+          already handles — then kills the lead, since a cancelled booking means the
+          deal is off. Director transfers the money and uploads the receipt from
+          Payments, same as every other refund claim in the app. */}
+      <Modal isOpen={showCancelBookingModal} onClose={() => setShowCancelBookingModal(false)} title="Cancel Booking & Refund" maxWidth="max-w-sm">
+        {detailLead && (
+          <div className="space-y-4">
+            <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2.5">
+              <p className="text-red-300 text-xs">
+                This refunds <span className="font-semibold">{formatRM(detailLead.bookingFee ?? 0)}</span> to {detailLead.name} and marks this lead as cancelled (dead). The director will see this under Payments → Refund Claims to transfer the money and upload the receipt.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <input
+                value={cancelRefundForm.bank}
+                onChange={e => setCancelRefundForm(f => ({ ...f, bank: e.target.value }))}
+                placeholder="Bank name (e.g. Maybank)"
+                className="w-full px-3 py-2 rounded-lg bg-obsidian-700/40 border border-obsidian-400/40 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-gold-500/50 transition-colors"
+              />
+              <input
+                value={cancelRefundForm.accountNo}
+                onChange={e => setCancelRefundForm(f => ({ ...f, accountNo: e.target.value }))}
+                placeholder="Account number"
+                className="w-full px-3 py-2 rounded-lg bg-obsidian-700/40 border border-obsidian-400/40 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-gold-500/50 font-mono tracking-wider transition-colors"
+              />
+              <input
+                value={cancelRefundForm.accountName}
+                onChange={e => setCancelRefundForm(f => ({ ...f, accountName: e.target.value }))}
+                placeholder="Account holder name"
+                className="w-full px-3 py-2 rounded-lg bg-obsidian-700/40 border border-obsidian-400/40 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-gold-500/50 transition-colors"
+              />
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowCancelBookingModal(false)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Back</button>
+              <button
+                disabled={savingCancelRefund || !cancelRefundForm.bank.trim() || !cancelRefundForm.accountNo.trim() || !cancelRefundForm.accountName.trim()}
+                onClick={() => handleCancelBookingRefund(detailLead)}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-red-500 hover:bg-red-600 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {savingCancelRefund ? 'Submitting…' : 'Confirm Cancellation'}
               </button>
             </div>
           </div>

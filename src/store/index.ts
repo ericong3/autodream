@@ -677,6 +677,8 @@ function rowToCustomer(r: any): Customer {
     commission: r.commission ?? undefined,
     dealType: r.deal_type ?? undefined,
     bookingFee: r.booking_fee ?? undefined,
+    bookingFeeReceiptUrl: r.booking_fee_receipt_url ?? undefined,
+    bookingFeeRecordedAt: r.booking_fee_recorded_at ?? undefined,
     createdAt: r.created_at,
   };
 }
@@ -717,6 +719,8 @@ function customerToRow(c: Partial<Customer>) {
   if (c.commission !== undefined) row.commission = c.commission;
   if (c.dealType !== undefined) row.deal_type = c.dealType;
   if (c.bookingFee !== undefined) row.booking_fee = c.bookingFee;
+  if (c.bookingFeeReceiptUrl !== undefined) row.booking_fee_receipt_url = c.bookingFeeReceiptUrl;
+  if (c.bookingFeeRecordedAt !== undefined) row.booking_fee_recorded_at = c.bookingFeeRecordedAt;
   if (c.createdAt !== undefined) row.created_at = c.createdAt;
   return row;
 }
