@@ -528,18 +528,49 @@ export default function Inventory() {
   }, [filtered, stockOrder, unreadCarIds]);
   const ownStockOrdered      = useMemo(() => filteredOrdered.filter(c => !c.consignment), [filteredOrdered]);
   const outOrdered           = useMemo(() => filteredOrdered.filter(c => {
-    // Unpriced consignment intakes live in their own tab regardless of out/in status
-    if (!c.consignment || !c.purchasePrice) return false;
+    if (!c.consignment) return false;
     const movements = carMovements
       .filter(m => m.carId === c.id || (c.carPlate && m.carPlate === c.carPlate))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     return movements[0]?.type === 'out';
   }), [filteredOrdered, carMovements]);
   const outCarIds            = useMemo(() => new Set(outOrdered.map(c => c.id)), [outOrdered]);
-  // Consignment intakes with no purchase price yet live in their own "Unpriced" bucket
-  // instead of Consignment, until a director fills the price in via Edit Car.
-  const unpricedOrdered      = useMemo(() => filteredOrdered.filter(c => !!c.consignment && !c.purchasePrice), [filteredOrdered]);
-  const consignmentOrdered   = useMemo(() => filteredOrdered.filter(c => !!c.consignment && !!c.purchasePrice && !outCarIds.has(c.id)), [filteredOrdered, outCarIds]);
+  const consignmentOrdered   = useMemo(() => filteredOrdered.filter(c => !!c.consignment && !outCarIds.has(c.id)), [filteredOrdered, outCarIds]);
+  // "Unpriced" is a director to-do overlay, not a bucket — a car stays visible in
+  // Consignment/Out regardless of pricing, and also shows up here until it's
+  // actually priced. A selling price is always required to sell it; a purchase
+  // price is only required for fixed_amount terms (profit_split has no fixed cost
+  // to the dealer, so purchasePrice can legitimately stay 0 forever).
+  const unpricedOrdered      = useMemo(() => filteredOrdered.filter(c =>
+    !!c.consignment && (!c.sellingPrice || (c.consignment.terms === 'fixed_amount' && !c.purchasePrice))
+  ), [filteredOrdered]);
+  // Post-it note on each Unpriced card — spells out exactly what a director still
+  // needs to key in via Edit Car, instead of just "this car has no price yet".
+  const missingPriceFields = (c: Car): string[] => {
+    const missing: string[] = [];
+    if (!c.sellingPrice) missing.push('Selling Price');
+    if (c.consignment?.terms === 'fixed_amount' && !c.purchasePrice) missing.push("Dealer's Fixed Amount");
+    return missing;
+  };
+  // Same post-it concept on Pending Delivery — what's actually blocking this car from
+  // being marked Delivered, mirroring the same customerBalance formula CarDetail uses.
+  const deliveryBlockers = (c: Car, buyer?: Customer): string[] => {
+    const blockers: string[] = [];
+    if (c.finalDeal?.approvalStatus === 'pending') blockers.push('Director Approval');
+    if (!c.greenCard) blockers.push('Green Card');
+    if (!c.sellerThumbprintSaved) blockers.push('Thumbprint');
+    const wo = buyer?.loanWorkOrder ?? buyer?.cashWorkOrder;
+    if (wo) {
+      const addItems = (wo.additionalItems ?? []).reduce((s, i) => s + i.amount, 0);
+      const total = (wo.sellingPrice - (wo.discount ?? 0)) + (wo.insurance ?? 0) + (wo.bankProduct ?? 0) + addItems - (wo.bookingFee ?? 0);
+      const balance = buyer?.loanWorkOrder
+        ? total - (c.disbursementAmount ?? buyer.loanWorkOrder.loanAmount ?? 0)
+        : total - ((buyer?.cashWorkOrder as any)?.downpayment ?? 0);
+      if (balance > 0) blockers.push(`Collect RM${balance.toLocaleString()}`);
+      else if (balance < 0) blockers.push(`Refund RM${Math.abs(balance).toLocaleString()}`);
+    }
+    return blockers;
+  };
   const comingSoonOrdered = useMemo(() => {
     const ordered = comingSoonOrder.map(id => comingSoonFiltered.find(c => c.id === id)).filter(Boolean) as Car[];
     return [...ordered].sort((a, b) => (unreadCarIds.has(a.id) ? 0 : 1) - (unreadCarIds.has(b.id) ? 0 : 1));
@@ -786,6 +817,7 @@ export default function Inventory() {
                     const unreadNotifs = carNotifs(car.id);
                     const hasUnread = unreadNotifs.length > 0;
                     const latestUnread = unreadNotifs[0] ?? null;
+                    const blockers = deliveryBlockers(car, buyer);
                     return (
                       <SortableCarItem key={car.id} id={car.id}>
                         <div className="relative">
@@ -813,6 +845,16 @@ export default function Inventory() {
                           <span className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
                             <AlertCircle size={10} />Approval
                           </span>
+                        )}
+                        {/* Post-it note — what's blocking this car from being marked Delivered */}
+                        {blockers.length > 0 && (
+                          <div
+                            onClick={(e) => { e.stopPropagation(); navigate(`/inventory/${car.id}`, { state: { inventoryTab } }); }}
+                            className="absolute bottom-1.5 right-1.5 w-24 rotate-2 bg-yellow-300 hover:bg-yellow-200 text-obsidian-950 rounded-sm px-2 py-1 text-[10px] font-semibold leading-snug shadow-[2px_3px_6px_rgba(0,0,0,0.5)] cursor-pointer transition-transform hover:rotate-0 hover:scale-105"
+                          >
+                            <div className="text-center leading-none mb-0.5">📌</div>
+                            {blockers.join(' + ')}
+                          </div>
                         )}
                       </div>
                       {/* Info */}
@@ -907,6 +949,7 @@ export default function Inventory() {
                   const unreadNotifs = carNotifs(car.id);
                   const hasUnread = unreadNotifs.length > 0;
                   const latestUnread = unreadNotifs[0] ?? null;
+                  const blockers = deliveryBlockers(car, buyer);
                   return (
                     <SortableCarItem key={car.id} id={car.id}>
                     <div
@@ -915,13 +958,24 @@ export default function Inventory() {
                     >
                     <div className="flex gap-4 p-4">
                       {/* Car photo */}
-                      {car.photo ? (
-                        <img src={car.photo} alt="" className="w-20 h-14 rounded-xl object-cover shrink-0" />
-                      ) : (
-                        <div className="w-20 h-14 rounded-xl bg-obsidian-700/60 flex items-center justify-center shrink-0">
-                          <CarIcon size={20} className="text-gray-600" />
-                        </div>
-                      )}
+                      <div className="relative shrink-0">
+                        {car.photo ? (
+                          <img src={car.photo} alt="" className="w-20 h-14 rounded-xl object-cover" />
+                        ) : (
+                          <div className="w-20 h-14 rounded-xl bg-obsidian-700/60 flex items-center justify-center">
+                            <CarIcon size={20} className="text-gray-600" />
+                          </div>
+                        )}
+                        {blockers.length > 0 && (
+                          <div
+                            onClick={(e) => { e.stopPropagation(); navigate(`/inventory/${car.id}`, { state: { inventoryTab } }); }}
+                            className="absolute -bottom-1.5 -right-1.5 w-6 h-6 rotate-6 bg-yellow-300 hover:bg-yellow-200 rounded-sm shadow-[1px_2px_4px_rgba(0,0,0,0.5)] flex items-center justify-center text-[11px] cursor-pointer transition-transform hover:rotate-0 hover:scale-110"
+                            title={blockers.join(' + ')}
+                          >
+                            📌
+                          </div>
+                        )}
+                      </div>
 
                       {/* Info */}
                       <div className="flex-1 min-w-0">
@@ -990,6 +1044,9 @@ export default function Inventory() {
                         <span className="text-red-300 text-xs truncate">{latestUnread.title}{latestUnread.body ? ` — ${latestUnread.body}` : ''}</span>
                         {unreadNotifs.length > 1 && <span className="ml-auto shrink-0 text-red-400 text-[10px] font-bold">+{unreadNotifs.length - 1}</span>}
                       </div>
+                    )}
+                    {blockers.length > 0 && (
+                      <p className="px-4 pb-3 text-[11px] text-yellow-300">📌 Need: {blockers.join(' + ')}</p>
                     )}
                     </div>
                     </SortableCarItem>
@@ -1317,14 +1374,16 @@ export default function Inventory() {
           Out
           {outOrdered.length > 0 && <span className="text-[10px] font-bold bg-red-500/30 text-red-300 px-1.5 py-0.5 rounded-full">{outOrdered.length}</span>}
         </button>
-        <button
-          onClick={() => setStockView('unpriced')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${stockView === 'unpriced' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40' : 'text-gray-500 hover:text-gray-300'}`}
-        >
-          <AlertCircle size={14} />
-          Unpriced
-          {unpricedOrdered.length > 0 && <span className="text-[10px] font-bold bg-blue-500/30 text-blue-300 px-1.5 py-0.5 rounded-full">{unpricedOrdered.length}</span>}
-        </button>
+        {isDirectorView && (
+          <button
+            onClick={() => setStockView('unpriced')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${stockView === 'unpriced' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40' : 'text-gray-500 hover:text-gray-300'}`}
+          >
+            <AlertCircle size={14} />
+            Unpriced
+            {unpricedOrdered.length > 0 && <span className="text-[10px] font-bold bg-blue-500/30 text-blue-300 px-1.5 py-0.5 rounded-full">{unpricedOrdered.length}</span>}
+          </button>
+        )}
         {(stockView === 'consignment' || stockView === 'out' || stockView === 'unpriced') && isDirector && (
           <button
             onClick={() => setShowQR(true)}
@@ -1513,6 +1572,21 @@ export default function Inventory() {
                 );
               })()}
 
+              {/* Post-it note — stuck on the photo, not a banner below it */}
+              {stockView === 'unpriced' && (() => {
+                const missing = missingPriceFields(car);
+                if (missing.length === 0) return null;
+                return (
+                  <div
+                    onClick={(e) => { e.stopPropagation(); navigate(`/inventory/${car.id}`, { state: { inventoryTab, openEditForPricing: true } }); }}
+                    className="absolute top-9 right-2 w-24 rotate-3 bg-yellow-300 hover:bg-yellow-200 text-obsidian-950 rounded-sm px-2 py-1.5 text-[10px] font-semibold leading-snug shadow-[2px_3px_6px_rgba(0,0,0,0.5)] cursor-pointer transition-transform hover:rotate-0 hover:scale-105"
+                  >
+                    <div className="text-center leading-none mb-1">📌</div>
+                    Need: {missing.join(' + ')}
+                  </div>
+                );
+              })()}
+
               {/* Bottom info overlay */}
               <div className="absolute bottom-0 left-0 right-0 p-3">
                 <p className="text-white font-semibold text-sm leading-tight line-clamp-1">
@@ -1662,6 +1736,7 @@ export default function Inventory() {
             const unreadNotifs = carNotifs(car.id);
             const hasUnread = unreadNotifs.length > 0;
             const latestUnread = unreadNotifs[0] ?? null;
+            const missing = stockView === 'unpriced' ? missingPriceFields(car) : [];
 
             return (
               <SortableCarItem key={car.id} id={car.id}>
@@ -1671,7 +1746,8 @@ export default function Inventory() {
               >
               <div className="flex items-center gap-4">
                 {/* Thumbnail */}
-                <div className="w-24 h-16 bg-obsidian-700/60 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center relative">
+                <div className="relative flex-shrink-0">
+                <div className="w-24 h-16 bg-obsidian-700/60 rounded-lg overflow-hidden flex items-center justify-center relative">
                   {car.photo
                     ? <img src={thumbUrl(car.photo, 300, 72)!} alt={`${car.make} ${car.model}`} className="w-full h-full object-cover" loading="lazy" />
                     : <CarIcon size={20} className="text-gray-600" />
@@ -1681,6 +1757,18 @@ export default function Inventory() {
                       <span className="text-[9px] font-bold text-red-400 border border-red-500/60 rounded px-1 py-0.5 rotate-[-15deg] tracking-widest">SOLD</span>
                     </div>
                   )}
+                </div>
+                {/* Post-it pin — full note is too small to read stuck on a 96x64 thumbnail,
+                    so this is a "stuck on the photo" cue; the readable note sits beside it */}
+                {missing.length > 0 && (
+                  <div
+                    onClick={(e) => { e.stopPropagation(); navigate(`/inventory/${car.id}`, { state: { inventoryTab, openEditForPricing: true } }); }}
+                    className="absolute -bottom-1.5 -right-1.5 w-6 h-6 rotate-6 bg-yellow-300 hover:bg-yellow-200 rounded-sm shadow-[1px_2px_4px_rgba(0,0,0,0.5)] flex items-center justify-center text-[11px] cursor-pointer transition-transform hover:rotate-0 hover:scale-110"
+                    title={`Need: ${missing.join(' + ')}`}
+                  >
+                    📌
+                  </div>
+                )}
                 </div>
 
                 {/* Car name + details */}
@@ -1764,6 +1852,9 @@ export default function Inventory() {
                   <span className="text-red-300 text-xs truncate">{latestUnread.title}{latestUnread.body ? ` — ${latestUnread.body}` : ''}</span>
                   {unreadNotifs.length > 1 && <span className="ml-auto shrink-0 text-red-400 text-[10px] font-bold">+{unreadNotifs.length - 1}</span>}
                 </div>
+              )}
+              {missing.length > 0 && (
+                <p className="mt-1.5 text-[11px] text-yellow-300">📌 Need: {missing.join(' + ')}</p>
               )}
               </div>
               </SortableCarItem>

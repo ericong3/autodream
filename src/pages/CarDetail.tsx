@@ -163,6 +163,25 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const [editForm, setEditForm] = useState<Partial<Car>>({});
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
 
+  // Deep-link from the Inventory "Unpriced" sticky note — jump straight into Edit Car
+  // with the missing price field(s) highlighted red, instead of just opening the page.
+  // Must run before the `if (!car) return` guard below (Rules of Hooks), so it sets
+  // form state directly rather than calling openEdit (defined further down). Guarded
+  // by a ref, not just checking car, so it fires once per navigation — not every time
+  // `car` gets a new reference, e.g. from the edit this itself triggers.
+  const openedEditForPricingRef = useRef(false);
+  useEffect(() => {
+    if (!openedEditForPricingRef.current && (location.state as any)?.openEditForPricing && car) {
+      openedEditForPricingRef.current = true;
+      const missing: string[] = [];
+      if (!car.sellingPrice) missing.push('sellingPrice');
+      if (car.consignment?.terms === 'fixed_amount' && !car.purchasePrice) missing.push('purchasePrice');
+      setEditForm({ ...car });
+      setEditErrors(Object.fromEntries(missing.map((f) => [f, 'Required'])));
+      setShowEditModal(true);
+    }
+  }, [car, location.state]);
+
   // ── Add/Complete Repair Modal ──
   const [showRepairModal, setShowRepairModal] = useState(false);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
@@ -444,9 +463,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const allSalespeoplePhotosDone = salespeople.length > 0 && salespeople.every((sp) => photoTakenBy.includes(sp.id));
 
   // ── Edit Car ──
-  const openEdit = () => {
+  const openEdit = (highlightFields: string[] = []) => {
     setEditForm({ ...car });
-    setEditErrors({});
+    setEditErrors(Object.fromEntries(highlightFields.map((f) => [f, 'Required'])));
     setShowEditModal(true);
   };
 
@@ -716,7 +735,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           )}
           {isDirector && (
             <button
-              onClick={openEdit}
+              onClick={() => openEdit()}
               className="flex items-center gap-2 btn-gold text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
             >
               <Edit size={15} />
@@ -1996,6 +2015,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           <FormField label="Model" error={editErrors.model}>
             <input className={inputCls(editErrors.model)} value={editForm.model ?? ''} onChange={(e) => setEditForm({ ...editForm, model: e.target.value })} />
           </FormField>
+          <FormField label="Variant" className="col-span-2">
+            <input className={inputCls()} value={editForm.variant ?? ''} onChange={(e) => setEditForm({ ...editForm, variant: e.target.value })} placeholder="e.g. 1.5 Advance" />
+          </FormField>
           <FormField label="Year">
             <input type="number" className={inputCls()} value={editForm.year ?? ''} onChange={(e) => setEditForm({ ...editForm, year: Number(e.target.value) })} />
           </FormField>
@@ -2019,8 +2041,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           <FormField label="Purchase Price (RM)" error={editErrors.purchasePrice}>
             <input type="number" className={inputCls(editErrors.purchasePrice)} value={editForm.purchasePrice ?? ''} onChange={(e) => setEditForm({ ...editForm, purchasePrice: Number(e.target.value) })} />
           </FormField>
-          <FormField label="Selling Price (RM)">
-            <input type="number" className={inputCls()} value={editForm.sellingPrice ?? ''} onChange={(e) => setEditForm({ ...editForm, sellingPrice: Number(e.target.value) })} />
+          <FormField label="Selling Price (RM)" error={editErrors.sellingPrice}>
+            <input type="number" className={inputCls(editErrors.sellingPrice)} value={editForm.sellingPrice ?? ''} onChange={(e) => setEditForm({ ...editForm, sellingPrice: Number(e.target.value) })} />
           </FormField>
           {isDirector && (
             <FormField label="Floor Price (RM) — Lowest acceptable deal" className="col-span-2">
