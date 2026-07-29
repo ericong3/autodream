@@ -281,6 +281,31 @@ export default function Customers() {
 
   const closeDetail = () => setDetailLead(null);
 
+  const compressImage = (file: File, maxWidth = 900, quality = 0.78): Promise<Blob> =>
+    new Promise((resolve) => {
+      const img = document.createElement('img');
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const scale = Math.min(1, maxWidth / img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        canvas.toBlob((blob) => resolve(blob ?? file), 'image/jpeg', quality);
+      };
+      img.src = url;
+    });
+
+  const uploadToStorage = async (file: File, folder: string): Promise<string> => {
+    const compressed = await compressImage(file);
+    const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+    const { error } = await supabase.storage.from('car-photos').upload(path, compressed, { contentType: 'image/jpeg' });
+    if (error) throw new Error(error.message);
+    const { data } = supabase.storage.from('car-photos').getPublicUrl(path);
+    return data.publicUrl;
+  };
+
   const myCustomers = useMemo(() =>
     customers
       .filter(c => {
@@ -555,17 +580,13 @@ export default function Customers() {
   // ── Work order ────────────────────────────────────────────
   const handleWoPhoto = (e: React.ChangeEvent<HTMLInputElement>, field: 'tradeIn' | 'greenCard') => {
     const files = Array.from(e.target.files ?? []);
-    files.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = ev => {
-        const url = ev.target?.result as string;
-        if (field === 'tradeIn') {
-          setWoForm(f => ({ ...f, tradeInPhotos: [...f.tradeInPhotos, url] }));
-        } else {
-          setWoForm(f => ({ ...f, greenCardPhoto: url }));
-        }
-      };
-      reader.readAsDataURL(file);
+    files.forEach(async file => {
+      const url = await uploadToStorage(file, field === 'tradeIn' ? 'trade-in' : 'greencards');
+      if (field === 'tradeIn') {
+        setWoForm(f => ({ ...f, tradeInPhotos: [...f.tradeInPhotos, url] }));
+      } else {
+        setWoForm(f => ({ ...f, greenCardPhoto: url }));
+      }
     });
     if (e.target) e.target.value = '';
   };
@@ -2978,13 +2999,16 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                   {deliveryUploading ? <span className="text-xs">Uploading...</span> : <><Upload size={18} /><span className="text-xs">Upload delivery photo</span></>}
                 </button>
               )}
-              <input ref={deliveryPhotoRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
+              <input ref={deliveryPhotoRef} type="file" accept="image/*" className="hidden" onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
                 setDeliveryUploading(true);
-                const reader = new FileReader();
-                reader.onload = ev => { setDeliveryPhotoUrl(ev.target?.result as string); setDeliveryUploading(false); };
-                reader.readAsDataURL(file);
+                try {
+                  const url = await uploadToStorage(file, 'delivery');
+                  setDeliveryPhotoUrl(url);
+                } finally {
+                  setDeliveryUploading(false);
+                }
                 e.target.value = '';
               }} />
             </div>

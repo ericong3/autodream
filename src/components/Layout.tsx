@@ -141,6 +141,7 @@ export default function Layout() {
 
   const { status: pushStatus, requestPermission } = usePushNotifications();
   const loadAll = useStore((s) => s.loadAll);
+  const phase2Loaded = useStore((s) => s.phase2Loaded);
   const mainRef = useRef<HTMLElement>(null);
   const handleRefresh = useCallback(() => loadAll(true), [loadAll]);
   const { pullDistance, isRefreshing } = usePullToRefresh(mainRef, handleRefresh);
@@ -195,6 +196,15 @@ export default function Layout() {
               </p>
             </div>
           </button>
+
+          {/* Syncing indicator — payments/ledger/dealers/etc. are still loading in
+              the background, so blank fields elsewhere on the page reflect this, not a bug */}
+          {!phase2Loaded && (
+            <div className="hidden md:flex items-center gap-1.5 text-[11px] text-gray-500 ml-3">
+              <Loader2 size={11} className="animate-spin" />
+              <span>Syncing…</span>
+            </div>
+          )}
 
           {/* Right: actions */}
           <div className="flex items-center gap-1">

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
 import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, ClaimCategory, LedgerAccount, JournalEntry, JournalLine, MiscCost, ExternalSalesman, Banker, LoanCase, LoanCaseDocument, LoanCaseActivity, Payment, AppNotification, InvestorTransaction, Shipment, CarMovement } from '../types';
 import { sendPush } from '../utils/sendPush';
@@ -23,6 +23,34 @@ function scheduledNotifAllowed(): boolean {
   if (localStorage.getItem(SCHED_KEY) === today) return false;
   localStorage.setItem(SCHED_KEY, today);
   return true;
+}
+
+// Runs query-producing thunks with at most `concurrency` in flight at once, instead of
+// all at once. loadAll's data is now cached locally and rendered before this ever runs
+// (see the persist config below), so nothing is waiting on this anymore — it's a
+// background refresh. The project's compute tier has a small connection limit and has
+// been observed hitting multi-minute statement timeouts under bursty concurrent load,
+// so there's no upside left to firing all ~26 queries in one wave.
+//
+// This is a worker-pool, NOT fixed sequential chunks — each of the `concurrency` lanes
+// pulls the next thunk as soon as it's free. A first version used sequential chunks
+// (wait for a whole group of N to finish before starting the next N), which meant one
+// query hitting a multi-minute timeout blocked every later chunk from even starting —
+// journal_entries/loan_case_activity/loan_case_documents/payments happened to land in
+// later chunks behind cars/loan_cases, which are the queries most often hit by the
+// timeout, so loan case and accounting data was the most visibly delayed. With a pool,
+// a stuck query only ties up its own lane; the other lanes keep pulling independently.
+async function runBatched<T>(thunks: (() => PromiseLike<T>)[], concurrency: number): Promise<T[]> {
+  const results: T[] = new Array(thunks.length);
+  let next = 0;
+  async function lane() {
+    while (next < thunks.length) {
+      const i = next++;
+      results[i] = await thunks[i]();
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, thunks.length) }, lane));
+  return results;
 }
 
 interface StoreState {
@@ -53,6 +81,7 @@ interface StoreState {
   notifications: AppNotification[];
   bankerOpenCaseId: string | null;
   loaded: boolean;
+  phase2Loaded: boolean;
   lastFetched: number | null;
 
   // Init
@@ -1016,6 +1045,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   bankerOpenCaseId: null,
   viewPreference: {},
   loaded: false,
+  phase2Loaded: false,
   lastFetched: null,
 
   loadAll: async (force = false) => {
@@ -1037,15 +1067,15 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     const runPhase1 = async (isRetry = false): Promise<boolean> => {
       try {
         const [users, cars, repairs, customers, externalSalesmenResult, bankersResult, loanCasesResult] =
-          await Promise.all([
-            supabase.from('users').select('*'),
-            supabase.from('cars').select('*').neq('status', 'delivered'),
-            supabase.from('repairs').select('*'),
-            supabase.from('customers').select('*'),
-            supabase.from('external_salesmen').select('*'),
-            supabase.from('bankers').select('*'),
-            supabase.from('loan_cases').select('*').not('status', 'in', '(rejected,cancelled,withdrawn)'),
-          ]);
+          await runBatched([
+            () => supabase.from('users').select('*'),
+            () => supabase.from('cars').select('*').neq('status', 'delivered'),
+            () => supabase.from('repairs').select('*'),
+            () => supabase.from('customers').select('*'),
+            () => supabase.from('external_salesmen').select('*'),
+            () => supabase.from('bankers').select('*'),
+            () => supabase.from('loan_cases').select('*').not('status', 'in', '(rejected,cancelled,withdrawn)'),
+          ], 4);
 
         allCars = (cars.data ?? []).map(rowToCar);
         allCustomers = (customers.data ?? []).map(rowToCustomer);
@@ -1077,12 +1107,18 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
 
         set((s) => ({
           users:           users.data              ? allUsers                                                            : s.users,
-          cars:            cars.data               ? mergePendingCars(allCars, s.cars)                                   : s.cars,
+          // Phase 1 only fetches non-delivered cars — merging in just `allCars` would wipe
+          // out delivered ones (previously fetched by phase 2, or restored from the local
+          // cache) until phase 2 re-adds them a moment later. Preserve existing delivered
+          // cars across this update so they don't visibly flash away and reappear.
+          cars:            cars.data               ? mergePendingCars([...allCars, ...s.cars.filter(c => c.status === 'delivered')], s.cars) : s.cars,
           repairs:         repairs.data            ? repairs.data.map(rowToRepair)                                       : s.repairs,
           customers:       customers.data          ? allCustomers                                                        : s.customers,
           externalSalesmen:externalSalesmenResult.data ? externalSalesmenResult.data.map(rowToExternalSalesman)          : s.externalSalesmen,
           bankers:         bankersResult.data      ? bankersResult.data.map(rowToBanker)                                 : s.bankers,
-          loanCases:       loanCasesResult.data    ? loanCasesResult.data.map(rowToLoanCase)                             : s.loanCases,
+          // Same reasoning as cars above — phase 1 only fetches active loan cases, so
+          // preserve any already-loaded closed/rejected/cancelled/withdrawn ones here.
+          loanCases:       loanCasesResult.data    ? [...loanCasesResult.data.map(rowToLoanCase), ...s.loanCases.filter(lc => ['rejected','cancelled','withdrawn'].includes(lc.status))] : s.loanCases,
           loaded: true,
           lastFetched: Date.now(),
         }));
@@ -1097,10 +1133,15 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       }
     };
 
-    const phase1Ok = await runPhase1();
-    if (!phase1Ok) return;
+    // Fire phase 1 and phase 2 off at the same time — phase 2's queries have no data
+    // dependency on phase 1 (only the scheduled-notifications side effect below does,
+    // and it awaits phase1Promise itself before running). Previously phase 2 was only
+    // started after `await runPhase1()`, so its ~19 queries paid phase 1's round trip
+    // as pure added latency, and if phase 1 failed twice, phase 2 never ran at all —
+    // leaving payments/ledger/dealers/etc. blank for the rest of the session.
+    const phase1Promise = runPhase1();
 
-    // Load notifications in parallel with phase 2 (non-blocking for the UI)
+    // Load notifications in parallel too (non-blocking for the UI)
     const currentUser = get().currentUser;
     if (currentUser) {
       supabase.from('notifications').select('*')
@@ -1115,27 +1156,27 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     // Wrapped so a rejected query (network blip, PWA waking from background, etc.) doesn't
     // silently blackhole delivered cars / quotations / instructions / payments / etc. for the
     // rest of the session — `loaded` is already true from phase 1, so nothing else retries this.
-    const runPhase2 = (isRetry = false): Promise<void> => Promise.all([
-      supabase.from('cars').select('*').eq('status', 'delivered'),
-      supabase.from('loan_cases').select('*').in('status', ['rejected', 'cancelled', 'withdrawn']),
-      supabase.from('quotations').select('*'),
-      supabase.from('instructions').select('*'),
-      supabase.from('test_drives').select('*'),
-      supabase.from('personal_reminders').select('*'),
-      supabase.from('dealers').select('*'),
-      supabase.from('workshops').select('*'),
-      supabase.from('suppliers').select('*'),
-      supabase.from('merchants').select('*'),
-      supabase.from('claim_categories').select('*'),
-      supabase.from('ledger_accounts').select('*'),
-      supabase.from('journal_entries').select('*').order('date', { ascending: false }),
-      supabase.from('loan_case_documents').select('*'),
-      supabase.from('loan_case_activity').select('*'),
-      supabase.from('payments').select('*').order('created_at', { ascending: false }),
-      supabase.from('investor_transactions').select('*').order('created_at', { ascending: true }),
-      supabase.from('shipments').select('*').order('eta', { ascending: true }),
-      supabase.from('car_movements').select('*').order('created_at', { ascending: false }),
-    ]).then(([deliveredCarsResult, closedCasesResult, quotations, instructions, testDrives, reminders, dealers, workshops, suppliers, merchants, claimCategories, ledgerAccounts, journalEntries, loanCaseDocsResult, loanCaseActivitiesResult, paymentsResult, investorTxnsResult, shipmentsResult, carMovementsResult]) => {
+    const runPhase2 = (isRetry = false): Promise<void> => runBatched([
+      () => supabase.from('cars').select('*').eq('status', 'delivered'),
+      () => supabase.from('loan_cases').select('*').in('status', ['rejected', 'cancelled', 'withdrawn']),
+      () => supabase.from('quotations').select('*'),
+      () => supabase.from('instructions').select('*'),
+      () => supabase.from('test_drives').select('*'),
+      () => supabase.from('personal_reminders').select('*'),
+      () => supabase.from('dealers').select('*'),
+      () => supabase.from('workshops').select('*'),
+      () => supabase.from('suppliers').select('*'),
+      () => supabase.from('merchants').select('*'),
+      () => supabase.from('claim_categories').select('*'),
+      () => supabase.from('ledger_accounts').select('*'),
+      () => supabase.from('journal_entries').select('*').order('date', { ascending: false }),
+      () => supabase.from('loan_case_documents').select('*'),
+      () => supabase.from('loan_case_activity').select('*'),
+      () => supabase.from('payments').select('*').order('created_at', { ascending: false }),
+      () => supabase.from('investor_transactions').select('*').order('created_at', { ascending: true }),
+      () => supabase.from('shipments').select('*').order('eta', { ascending: true }),
+      () => supabase.from('car_movements').select('*').order('created_at', { ascending: false }),
+    ], 5).then(async ([deliveredCarsResult, closedCasesResult, quotations, instructions, testDrives, reminders, dealers, workshops, suppliers, merchants, claimCategories, ledgerAccounts, journalEntries, loanCaseDocsResult, loanCaseActivitiesResult, paymentsResult, investorTxnsResult, shipmentsResult, carMovementsResult]) => {
       const allQuotations  = (quotations.data ?? []).map(rowToQuotation);
       const allTestDrives  = (testDrives.data ?? []).map(rowToTestDrive);
       const deliveredCars  = (deliveredCarsResult.data ?? []).map(rowToCar);
@@ -1169,10 +1210,14 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         investorTransactions:investorTxnsResult.data   ? investorTxnsResult.data.map(rowToInvestorTxn)                          : s.investorTransactions,
         shipments:           shipmentsResult.data      ? shipmentsResult.data.map(rowToShipment)                                : s.shipments,
         carMovements:        carMovementsResult.data   ? carMovementsResult.data.map(rowToCarMovement)                           : s.carMovements,
+        phase2Loaded: true,
       }));
 
       // ── Scheduled notifications (once per day, after secondary data is ready) ──
-      if (scheduledNotifAllowed()) {
+      // Needs phase 1's allCustomers/allUsers, so wait for that here — this only
+      // delays the notification side effect, not the phase 2 data landing above.
+      const phase1Succeeded = await phase1Promise;
+      if (phase1Succeeded && scheduledNotifAllowed()) {
         const today    = new Date().toDateString();
         const tomorrow = new Date(Date.now() + 86400000).toDateString();
 
@@ -1206,8 +1251,12 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     }).catch((err) => {
       console.error('loadAll phase 2 failed:', err);
       if (!isRetry) setTimeout(() => { runPhase2(true).catch(() => {}); }, 4000);
+      else set({ phase2Loaded: true }); // give up — stop any "still loading" UI from waiting forever
     });
     runPhase2();
+
+    const phase1Ok = await phase1Promise;
+    if (!phase1Ok) return;
 
     // Real-time subscriptions — set up once only; calling loadAll again (e.g. pull-to-refresh)
     // must not create duplicate channels or the server may reset the socket on seeing
@@ -1570,7 +1619,19 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     return false;
   },
 
-  logout: () => set({ currentUser: null }),
+  // Also wipes the cached data (not just the session), since it's now persisted to
+  // localStorage for instant reload — a shared device must not show the next person
+  // who opens the browser this user's cars/customers/payments before they even log in.
+  logout: () => set({
+    currentUser: null,
+    users: [], cars: [], repairs: [], quotations: [], instructions: [], customers: [],
+    testDrives: [], personalReminders: [], dealers: [], workshops: [], suppliers: [],
+    merchants: [], claimCategories: [], ledgerAccounts: [], journalEntries: [],
+    externalSalesmen: [], bankers: [], shipments: [], carMovements: [], loanCases: [],
+    loanCaseDocuments: [], loanCaseActivities: [], payments: [], investorTransactions: [],
+    notifications: [],
+    loaded: false, phase2Loaded: false, lastFetched: null,
+  }),
 
   // Cars
   addCar: async (car) => {
@@ -2519,8 +2580,53 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   },
 }), {
   name: 'autodream-session',
+  // Wrapped so a full localStorage quota (large dataset on a device already near its
+  // limit) degrades to "no cache, always fetch fresh" instead of crashing the app.
+  storage: createJSONStorage(() => ({
+    getItem: (name) => localStorage.getItem(name),
+    setItem: (name, value) => {
+      try {
+        localStorage.setItem(name, value);
+      } catch (e) {
+        console.warn('Caching app data locally failed (storage full?) — will reload from network next time.', e);
+      }
+    },
+    removeItem: (name) => localStorage.removeItem(name),
+  })),
+  // Cache real data too (not just session), so a reload renders instantly from the
+  // last-known snapshot instead of blocking on a fresh ~26-query fetch — loadAll()
+  // still runs in the background right after and silently patches in fresh data.
+  // `lastFetched` is deliberately NOT persisted, so that background refetch always
+  // fires on a fresh app boot regardless of the 5-minute TTL below.
   partialize: (state) => ({
     currentUser: state.currentUser,
     viewPreference: state.viewPreference,
+    loaded: state.loaded,
+    phase2Loaded: state.phase2Loaded,
+    users: state.users,
+    cars: state.cars,
+    repairs: state.repairs,
+    quotations: state.quotations,
+    instructions: state.instructions,
+    customers: state.customers,
+    testDrives: state.testDrives,
+    personalReminders: state.personalReminders,
+    dealers: state.dealers,
+    workshops: state.workshops,
+    suppliers: state.suppliers,
+    merchants: state.merchants,
+    claimCategories: state.claimCategories,
+    ledgerAccounts: state.ledgerAccounts,
+    journalEntries: state.journalEntries,
+    externalSalesmen: state.externalSalesmen,
+    bankers: state.bankers,
+    shipments: state.shipments,
+    carMovements: state.carMovements,
+    loanCases: state.loanCases,
+    loanCaseDocuments: state.loanCaseDocuments,
+    loanCaseActivities: state.loanCaseActivities,
+    payments: state.payments,
+    investorTransactions: state.investorTransactions,
+    notifications: state.notifications,
   }),
 }));
