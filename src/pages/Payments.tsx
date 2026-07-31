@@ -27,6 +27,8 @@ async function uploadReceipt(file: File): Promise<string> {
 const TYPE_LABELS: Record<PaymentType, string> = {
   salesman_commission:    'Commission',
   intake_bonus:           'Intake Bonus',
+  salary:                 'Basic Salary',
+  allowance:              'Allowance',
   source_commission:      'Source Comm.',
   repair:                 'Workshop',
   misc_cost:              'Misc Cost',
@@ -43,6 +45,8 @@ const TYPE_LABELS: Record<PaymentType, string> = {
 const TYPE_COLORS: Record<PaymentType, string> = {
   salesman_commission:    'bg-gold-500/20 text-gold-300 border-gold-500/20',
   intake_bonus:           'bg-purple-500/20 text-purple-300 border-purple-500/20',
+  salary:                 'bg-sky-500/20 text-sky-300 border-sky-500/20',
+  allowance:              'bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/20',
   source_commission:      'bg-blue-500/20 text-blue-300 border-blue-500/20',
   repair:                 'bg-orange-500/20 text-orange-300 border-orange-500/20',
   misc_cost:              'bg-pink-500/20 text-pink-300 border-pink-500/20',

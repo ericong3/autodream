@@ -24,6 +24,7 @@ import {
   Wallet,
   Wrench,
   Receipt,
+  PiggyBank,
 } from 'lucide-react';
 import { useStore } from '../store';
 
@@ -40,6 +41,7 @@ const directorItems: NavItem[] = [
 
 const directorBottomItems: NavItem[] = [
   { to: '/finance',    icon: TrendingUp,    label: 'Accounting'    },
+  { to: '/payroll',    icon: PiggyBank,     label: 'Payroll'       },
   { to: '/team',       icon: UsersRound,    label: 'Team Members'  },
   { to: '/investors',  icon: Briefcase,     label: 'Investors / Consignment' },
   { to: '/data',       icon: Database,      label: 'Data'          },
@@ -307,7 +309,7 @@ function SidebarLogo({ collapsed, onToggle }: { collapsed?: boolean; onToggle?: 
     <div className={`border-b border-gold-500/[0.12] flex items-center gap-2 ${collapsed ? 'flex-col py-3 px-2' : 'justify-between py-4 px-3'}`}>
       <div className={`flex items-center gap-3 min-w-0 ${collapsed ? 'justify-center' : ''}`}>
         <div className="relative w-10 h-10 rounded-xl overflow-hidden shrink-0 shadow-gold-sm">
-          <img src="/logo.png?v=2" alt="Logo" className="w-full h-full object-contain" />
+          <img src="/logo.png?v=3" alt="Logo" className="w-full h-full object-contain" />
         </div>
         {!collapsed && (
           <div className="min-w-0">

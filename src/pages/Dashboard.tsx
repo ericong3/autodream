@@ -14,6 +14,7 @@ import {
 import { useStore } from '../store';
 import StatCard from '../components/StatCard';
 import Sparkline from '../components/Sparkline';
+import MyPayslipCard from '../components/MyPayslipCard';
 import { formatRM } from '../utils/format';
 import { useAnimatedCounter } from '../hooks/useAnimatedCounter';
 import { useAnimatedRM } from '../hooks/useAnimatedRM';
@@ -126,6 +127,8 @@ export default function Dashboard() {
           Live
         </div>
       </div>
+
+      <MyPayslipCard />
 
       {/* ── Today's Test Drives ─────────────────────────────── */}
       {todayTestDrives.length > 0 && (

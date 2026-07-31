@@ -15,6 +15,7 @@ import CarDetail from './pages/CarDetail';
 import Quotations from './pages/Quotations';
 import Workshop from './pages/Workshop';
 import Finance from './pages/Finance';
+import Payroll from './pages/Payroll';
 import TeamMembers from './pages/TeamMembers';
 import Reminders from './pages/Reminders';
 import History from './pages/History';
@@ -161,6 +162,7 @@ export default function App() {
           <Route path="/sales-dashboard" element={<RequireSalesOrDirector><SalesDashboard /></RequireSalesOrDirector>} />
           <Route path="/loan-cases" element={<RequireSalesOrDirector><LoanCases /></RequireSalesOrDirector>} />
           <Route path="/finance" element={<RequireDirector><Finance /></RequireDirector>} />
+          <Route path="/payroll" element={<RequireDirector><Payroll /></RequireDirector>} />
           <Route path="/team" element={<RequireDirector><TeamMembers /></RequireDirector>} />
           <Route path="/data" element={<RequireDataAccess><Data /></RequireDataAccess>} />
           <Route path="/investors" element={<RequireDirector><Investors /></RequireDirector>} />

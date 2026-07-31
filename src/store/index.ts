@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
-import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, ClaimCategory, LedgerAccount, JournalEntry, JournalLine, MiscCost, ExternalSalesman, Banker, LoanCase, LoanCaseDocument, LoanCaseActivity, Payment, AppNotification, InvestorTransaction, Shipment, CarMovement, KanbanColumn } from '../types';
+import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, ClaimCategory, LedgerAccount, JournalEntry, JournalLine, MiscCost, ExternalSalesman, Banker, LoanCase, LoanCaseDocument, LoanCaseActivity, Payment, AppNotification, InvestorTransaction, Shipment, CarMovement, KanbanColumn, Payslip } from '../types';
 import { sendPush } from '../utils/sendPush';
 import { hashPassword, verifyPassword } from '../utils/password';
 
@@ -213,6 +213,10 @@ interface StoreState {
   addInvestorTransaction: (txn: InvestorTransaction) => Promise<void>;
   updateInvestorTransaction: (id: string, updates: Partial<InvestorTransaction>) => Promise<void>;
 
+  // Payslips — immutable once generated, no update/delete
+  payslips: Payslip[];
+  addPayslip: (p: Payslip) => Promise<void>;
+
   // Notifications
   markNotificationsReadByRef: (referenceId: string) => Promise<void>;
   markNotificationReadById: (id: string) => Promise<void>;
@@ -266,6 +270,8 @@ function rowToCar(r: any): Car {
     priceFloor: r.price_floor ?? undefined,
     isStaffSale: r.is_staff_sale ?? false,
     waiveCommission: r.waive_commission ?? false,
+    commissionCreditedEarly: r.commission_credited_early ?? false,
+    commissionCreditedMonth: r.commission_credited_month ?? undefined,
     miscCosts: parseJsonField<any[]>(r.misc_costs) ?? [],
     investorId: r.investor_id ?? undefined,
     investorSplit: r.investor_split ?? undefined,
@@ -516,6 +522,8 @@ function carToRow(c: Partial<Car>) {
   if (c.priceFloor !== undefined) row.price_floor = c.priceFloor;
   if ('isStaffSale' in c) row.is_staff_sale = c.isStaffSale ?? false;
   if ('waiveCommission' in c) row.waive_commission = c.waiveCommission ?? false;
+  if ('commissionCreditedEarly' in c) row.commission_credited_early = c.commissionCreditedEarly ?? false;
+  if ('commissionCreditedMonth' in c) row.commission_credited_month = c.commissionCreditedMonth ?? null;
   if (c.miscCosts !== undefined) row.misc_costs = c.miscCosts;
   if (c.investorId !== undefined) row.investor_id = c.investorId;
   if (c.investorSplit !== undefined) row.investor_split = c.investorSplit;
@@ -767,6 +775,15 @@ function rowToUser(r: any): User {
     phone: r.phone,
     monthlyTarget: r.monthly_target,
     carsInMonth: r.cars_in_month,
+    employmentType: r.employment_type ?? undefined,
+    basicSalary: r.basic_salary ?? undefined,
+    allowance: r.allowance ?? undefined,
+    salaryIncrement: r.salary_increment ?? undefined,
+    temporaryBoost: r.temporary_boost ?? undefined,
+    temporaryBoostUntil: r.temporary_boost_until ?? undefined,
+    employeeId: r.employee_id ?? undefined,
+    department: r.department ?? undefined,
+    joiningDate: r.joining_date ?? undefined,
     capitalAmount: r.capital_amount ?? undefined,
     banks: r.banks ?? [],
     avatar: r.avatar ?? undefined,
@@ -793,6 +810,15 @@ function userToRow(u: Partial<User>) {
   if (u.phone !== undefined) row.phone = u.phone;
   if (u.monthlyTarget !== undefined) row.monthly_target = u.monthlyTarget;
   if (u.carsInMonth !== undefined) row.cars_in_month = u.carsInMonth;
+  if (u.employmentType !== undefined) row.employment_type = u.employmentType;
+  if (u.basicSalary !== undefined) row.basic_salary = u.basicSalary;
+  if (u.allowance !== undefined) row.allowance = u.allowance;
+  if (u.salaryIncrement !== undefined) row.salary_increment = u.salaryIncrement;
+  if (u.temporaryBoost !== undefined) row.temporary_boost = u.temporaryBoost;
+  if (u.temporaryBoostUntil !== undefined) row.temporary_boost_until = u.temporaryBoostUntil;
+  if (u.employeeId !== undefined) row.employee_id = u.employeeId;
+  if (u.department !== undefined) row.department = u.department;
+  if (u.joiningDate !== undefined) row.joining_date = u.joiningDate;
   if (u.capitalAmount !== undefined) row.capital_amount = u.capitalAmount;
   if (u.banks !== undefined) row.banks = u.banks;
   if (u.avatar !== undefined) row.avatar = u.avatar;
@@ -1021,6 +1047,60 @@ function investorTxnToRow(t: Partial<InvestorTransaction>) {
   return row;
 }
 
+function rowToPayslip(r: any): Payslip {
+  return {
+    id: r.id,
+    userId: r.user_id,
+    payslipNo: r.payslip_no,
+    payPeriodStart: r.pay_period_start,
+    payPeriodEnd: r.pay_period_end,
+    payDate: r.pay_date,
+    paymentMethod: r.payment_method,
+    basicSalary: r.basic_salary,
+    salesCommission: r.sales_commission,
+    performanceBonus: r.performance_bonus,
+    allowance: r.allowance,
+    epfEmployee: r.epf_employee,
+    socsoEmployee: r.socso_employee,
+    eisEmployee: r.eis_employee,
+    pcbTax: r.pcb_tax,
+    otherDeduction: r.other_deduction,
+    epfEmployer: r.epf_employer,
+    socsoEmployer: r.socso_employer,
+    eisEmployer: r.eis_employer,
+    onProbation: r.on_probation,
+    createdAt: r.created_at,
+    createdBy: r.created_by ?? undefined,
+  };
+}
+
+function payslipToRow(p: Payslip) {
+  return {
+    id: p.id,
+    user_id: p.userId,
+    payslip_no: p.payslipNo,
+    pay_period_start: p.payPeriodStart,
+    pay_period_end: p.payPeriodEnd,
+    pay_date: p.payDate,
+    payment_method: p.paymentMethod,
+    basic_salary: p.basicSalary,
+    sales_commission: p.salesCommission,
+    performance_bonus: p.performanceBonus,
+    allowance: p.allowance,
+    epf_employee: p.epfEmployee,
+    socso_employee: p.socsoEmployee,
+    eis_employee: p.eisEmployee,
+    pcb_tax: p.pcbTax,
+    other_deduction: p.otherDeduction,
+    epf_employer: p.epfEmployer,
+    socso_employer: p.socsoEmployer,
+    eis_employer: p.eisEmployer,
+    on_probation: p.onProbation,
+    created_at: p.createdAt,
+    created_by: p.createdBy ?? null,
+  };
+}
+
 // Guard: realtime channels are set up only once per session, regardless of how many
 // times loadAll is called (e.g. pull-to-refresh creates duplicate channels otherwise).
 let realtimeSubscribed = false;
@@ -1076,6 +1156,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   loanCaseActivities: [],
   payments: [],
   investorTransactions: [],
+  payslips: [],
   notifications: [],
   toastQueue: [],
   bankerOpenCaseId: null,
@@ -1220,7 +1301,8 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       () => supabase.from('investor_transactions').select('*').order('created_at', { ascending: true }),
       () => supabase.from('shipments').select('*').order('eta', { ascending: true }),
       () => supabase.from('car_movements').select('*').order('created_at', { ascending: false }),
-    ], 5).then(async ([deliveredCarsResult, closedCasesResult, quotations, instructions, testDrives, reminders, dealers, workshops, suppliers, merchants, claimCategories, ledgerAccounts, journalEntries, loanCaseDocsResult, loanCaseActivitiesResult, paymentsResult, investorTxnsResult, shipmentsResult, carMovementsResult]) => {
+      () => supabase.from('payslips').select('*').order('created_at', { ascending: false }),
+    ], 5).then(async ([deliveredCarsResult, closedCasesResult, quotations, instructions, testDrives, reminders, dealers, workshops, suppliers, merchants, claimCategories, ledgerAccounts, journalEntries, loanCaseDocsResult, loanCaseActivitiesResult, paymentsResult, investorTxnsResult, shipmentsResult, carMovementsResult, payslipsResult]) => {
       const allQuotations  = (quotations.data ?? []).map(rowToQuotation);
       const allTestDrives  = (testDrives.data ?? []).map(rowToTestDrive);
       const deliveredCars  = (deliveredCarsResult.data ?? []).map(rowToCar);
@@ -1254,6 +1336,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         investorTransactions:investorTxnsResult.data   ? investorTxnsResult.data.map(rowToInvestorTxn)                          : s.investorTransactions,
         shipments:           shipmentsResult.data      ? shipmentsResult.data.map(rowToShipment)                                : s.shipments,
         carMovements:        carMovementsResult.data   ? carMovementsResult.data.map(rowToCarMovement)                           : s.carMovements,
+        payslips:            payslipsResult.data       ? payslipsResult.data.map(rowToPayslip)                                    : s.payslips,
         phase2Loaded: true,
       }));
 
@@ -1673,7 +1756,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     merchants: [], claimCategories: [], ledgerAccounts: [], journalEntries: [],
     externalSalesmen: [], bankers: [], shipments: [], carMovements: [], loanCases: [],
     loanCaseDocuments: [], loanCaseActivities: [], payments: [], investorTransactions: [],
-    notifications: [], kanbanColumns: [],
+    payslips: [], notifications: [], kanbanColumns: [],
     loaded: false, phase2Loaded: false, lastFetched: null,
   }),
 
@@ -2614,6 +2697,16 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     }
   },
 
+  addPayslip: async (p) => {
+    set((s) => ({ payslips: [p, ...s.payslips] }));
+    const { error } = await supabase.from('payslips').insert(payslipToRow(p));
+    if (error) {
+      set((s) => ({ payslips: s.payslips.filter((x) => x.id !== p.id) }));
+      throw new Error(error.message);
+    }
+    sendPush([p.userId], '🧾 Payslip issued', `${p.payslipNo} is ready to view`, '/payroll', p.id);
+  },
+
   addMiscCost: async (carId, misc) => {
     const car = get().cars.find((c) => c.id === carId);
     if (!car) return;
@@ -2688,6 +2781,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     loanCaseActivities: state.loanCaseActivities,
     payments: state.payments,
     investorTransactions: state.investorTransactions,
+    payslips: state.payslips,
     notifications: state.notifications,
   }),
 }));

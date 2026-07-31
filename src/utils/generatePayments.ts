@@ -4,6 +4,24 @@ import { generateId } from './format';
 type AddPayment = (p: Payment) => Promise<void>;
 type UpdatePayment = (id: string, u: Partial<Payment>) => Promise<void>;
 
+// Single source of truth for "which month does this car's commission count
+// toward" — used everywhere commission gets tallied (Commission page, sales
+// dashboards, Payroll/Payslip, team member stats). Previously each of those
+// five places computed this independently via customer/work-order lookups
+// keyed off deliveredAt, which silently diverged from what the Delivered
+// (History) page's own month-grouping and drag-to-reassign feature actually
+// uses (finalDeal.submittedAt / dateAdded) — dragging a car to a different
+// month there never touched deliveredAt, so commission stayed stuck on the
+// old month. This mirrors History.tsx's own grouping logic exactly, so
+// wherever a car is filed in the Delivered tab is where it counts here too.
+// commissionCreditedEarly + commissionCreditedMonth is the one carve-out —
+// an explicit director choice for a not-yet-delivered car — and takes
+// priority when set.
+export function getCommissionMonth(car: Car): string {
+  if (car.commissionCreditedEarly && car.commissionCreditedMonth) return car.commissionCreditedMonth;
+  return (car.finalDeal?.submittedAt ?? car.dateAdded).slice(0, 7);
+}
+
 // ── Duplicate guard ───────────────────────────────────────────────────────────
 function exists(
   payments: Payment[],
@@ -463,6 +481,90 @@ export function collectMissingPayments(data: {
       bankName: ws?.bankName, accountNumber: ws?.bankAccountNumber, accountHolder: ws?.bankAccountHolder,
       amount, description: `${repair.typeOfRepair} repair`, status: 'pending', createdAt: repair.createdAt,
     });
+  }
+
+  return result;
+}
+
+// Basic salary for a given month = the fixed base, plus a permanent increment
+// (a raise — stays as its own line rather than being folded into basicSalary,
+// so there's a record of "base vs raise"), plus a temporary boost that only
+// counts for months up to and including temporaryBoostUntil — once that month
+// passes, it stops applying on its own without anyone having to remember to
+// remove it. This is what makes a past month safe to backfill even after a
+// raise: as long as temporaryBoostUntil/salaryIncrement reflect what was
+// actually true for that month, this returns the right number for it.
+export function effectiveMonthlyBasic(u: User, month: string): number {
+  const boostActive = !!u.temporaryBoost && !!u.temporaryBoostUntil && month <= u.temporaryBoostUntil;
+  return (u.basicSalary ?? 0) + (u.salaryIncrement ?? 0) + (boostActive ? u.temporaryBoost! : 0);
+}
+
+// Payroll applies to actual staff, not external parties who happen to have a
+// User row (investors, shareholders, bankers) — those aren't paid by this
+// dealership. Directors get the same mechanism as everyone else, just under
+// "Director Fee" wording/ledger account instead of "Basic Salary", since
+// director's fees are a distinct statutory category from employee salary.
+export const PAYROLL_ELIGIBLE_ROLES: User['role'][] = ['director', 'salesperson', 'mechanic', 'admin'];
+
+export function basicPayLabel(role: User['role']): string {
+  return role === 'director' ? 'Director Fee' : 'Basic Salary';
+}
+
+function describeBasicBreakdown(u: User, month: string): string | undefined {
+  const parts: string[] = [];
+  if ((u.basicSalary ?? 0) > 0) parts.push(`Base RM${u.basicSalary}`);
+  if ((u.salaryIncrement ?? 0) > 0) parts.push(`Increment RM${u.salaryIncrement}`);
+  const boostActive = !!u.temporaryBoost && !!u.temporaryBoostUntil && month <= u.temporaryBoostUntil;
+  if (boostActive) parts.push(`Temp Boost RM${u.temporaryBoost} (until ${u.temporaryBoostUntil})`);
+  return parts.length > 1 ? parts.join(' + ') : undefined;
+}
+
+// Payroll is a deliberate, month-scoped action (a director picks a month and
+// runs it), not a passive backfill like collectMissingPayments above — so it's
+// kept separate and only ever looks at the one month it's asked for. Dedup is
+// by description (which encodes the month) rather than createdAt, since a
+// backfilled run for a past month would otherwise collide with itself.
+export function collectMonthlyPayroll(opts: {
+  month: string; // 'YYYY-MM'
+  users: User[];
+  payments: Payment[];
+}): Payment[] {
+  const { month, users, payments } = opts;
+  const now = new Date().toISOString();
+  const monthLabel = new Date(`${month}-01T00:00:00`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const result: Payment[] = [];
+
+  const already = (type: 'salary' | 'allowance', recipientId: string, description: string) =>
+    payments.some(p => p.type === type && p.recipientId === recipientId && p.description === description) ||
+    result.some(p => p.type === type && p.recipientId === recipientId && p.description === description);
+
+  for (const u of users) {
+    if (!PAYROLL_ELIGIBLE_ROLES.includes(u.role) || u.employmentType !== 'full_time') continue;
+
+    const basicAmount = effectiveMonthlyBasic(u, month);
+    if (basicAmount > 0) {
+      const description = `${basicPayLabel(u.role)} — ${monthLabel}`;
+      if (!already('salary', u.id, description)) {
+        result.push({
+          id: generateId(), type: 'salary',
+          recipientType: 'user', recipientId: u.id, recipientName: u.name,
+          bankName: u.bankName, accountNumber: u.bankAccountNumber, accountHolder: u.bankAccountHolder,
+          amount: basicAmount, description, notes: describeBasicBreakdown(u, month), status: 'pending', createdAt: now,
+        });
+      }
+    }
+
+    if ((u.allowance ?? 0) > 0) {
+      const description = `Allowance — ${monthLabel}`;
+      if (!already('allowance', u.id, description)) {
+        result.push({
+          id: generateId(), type: 'allowance',
+          recipientType: 'user', recipientId: u.id, recipientName: u.name,
+          bankName: u.bankName, accountNumber: u.bankAccountNumber, accountHolder: u.bankAccountHolder,
+          amount: u.allowance!, description, status: 'pending', createdAt: now,
+        });
+      }
+    }
   }
 
   return result;

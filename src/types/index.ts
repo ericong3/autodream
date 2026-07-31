@@ -7,6 +7,24 @@ export interface User {
   phone: string;
   monthlyTarget: number;
   carsInMonth: number;
+  // Payroll — full-time salespeople get a fixed monthly basic + allowance on
+  // top of per-deal commission; commission-only salespeople have neither.
+  employmentType?: 'full_time' | 'commission_only';
+  basicSalary?: number;
+  allowance?: number;
+  // A raise on top of basicSalary, kept as its own line rather than folded
+  // into basicSalary directly — permanent (no expiry) unlike temporaryBoost.
+  salaryIncrement?: number;
+  // Time-limited top-up — applies to payroll months up to and including
+  // temporaryBoostUntil ('YYYY-MM'), then stops counting on its own without
+  // needing to be manually removed.
+  temporaryBoost?: number;
+  temporaryBoostUntil?: string;
+  // Payslip identity fields — separate from position/bio, since those are
+  // profile-card display text while these are formal HR record fields.
+  employeeId?: string;
+  department?: string;
+  joiningDate?: string; // 'YYYY-MM-DD'
   capitalAmount?: number; // investor total capital in RM
   banks?: string[];       // for banker role — which banks they handle
   // Profile / name card fields
@@ -436,6 +454,15 @@ export interface Car {
   collectionReceiptUrl?: string;
   isStaffSale?: boolean;
   waiveCommission?: boolean;
+  // Per-car exception to the normal "commission counts once delivered" rule —
+  // a director can flag a specific deal to count toward commission before the
+  // car has physically been delivered. Doesn't change the rule for any other
+  // car. commissionCreditedMonth ('YYYY-MM') is the director's explicit
+  // choice of which month it counts toward — a dedicated field rather than
+  // reusing dateAdded/finalDeal, since those mean other things (inventory
+  // intake date, days-in-stock) that shouldn't shift just for this.
+  commissionCreditedEarly?: boolean;
+  commissionCreditedMonth?: string;
   sellerThumbprintSaved?: boolean;
   dealProgress?: DealProgress;
 }
@@ -655,6 +682,8 @@ export interface KanbanColumn {
 export type PaymentType =
   | 'salesman_commission'
   | 'intake_bonus'
+  | 'salary'
+  | 'allowance'
   | 'source_commission'
   | 'repair'
   | 'misc_cost'
@@ -686,6 +715,40 @@ export interface InvestorTransaction {
   approvedBy?: string;
   rejectedBy?: string;
   rejectedAt?: string;
+}
+
+// A generated payslip snapshot — deliberately immutable (like a JournalEntry)
+// once created, since it's a record of what was actually issued to someone,
+// not a live-editable form. EPF/SOCSO/EIS are stored as whatever the director
+// confirmed at generation time (auto-calculated suggestions, editable before
+// saving) rather than recomputed later, so a past payslip never silently
+// changes if rates or someone's rate profile changes afterward.
+export interface Payslip {
+  id: string;
+  userId: string;
+  payslipNo: string;
+  payPeriodStart: string; // 'YYYY-MM-DD'
+  payPeriodEnd: string;   // 'YYYY-MM-DD'
+  payDate: string;        // 'YYYY-MM-DD'
+  paymentMethod: string;
+  // Earnings
+  basicSalary: number;
+  salesCommission: number;
+  performanceBonus: number;
+  allowance: number;
+  // Deductions — employee side
+  epfEmployee: number;
+  socsoEmployee: number;
+  eisEmployee: number;
+  pcbTax: number;
+  otherDeduction: number;
+  // Employer contributions — shown on the payslip, not part of net pay
+  epfEmployer: number;
+  socsoEmployer: number;
+  eisEmployer: number;
+  onProbation: boolean; // EPF/SOCSO/EIS intentionally not declared yet
+  createdAt: string;
+  createdBy: string;
 }
 
 export interface AppNotification {

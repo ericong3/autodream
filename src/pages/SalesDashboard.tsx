@@ -4,12 +4,16 @@ import { Car, Users, Calendar, Bell, ChevronDown, ChevronUp, AlertCircle, Plus, 
 import { useStore } from '../store';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
+import MyPayslipCard from '../components/MyPayslipCard';
 import { formatRM, generateId } from '../utils/format';
+import { verifyPassword } from '../utils/password';
+import { effectiveMonthlyBasic, basicPayLabel, getCommissionMonth } from '../utils/generatePayments';
 
 export default function SalesDashboard() {
   const cars = useStore((s) => s.cars);
   const repairs = useStore((s) => s.repairs);
   const currentUser = useStore((s) => s.currentUser);
+  const phase2Loaded = useStore((s) => s.phase2Loaded);
   const customers = useStore((s) => s.customers);
   const testDrives = useStore((s) => s.testDrives);
   const personalReminders = useStore((s) => s.personalReminders);
@@ -54,8 +58,8 @@ export default function SalesDashboard() {
     }
   };
 
-  const handlePinSubmit = () => {
-    if (pinInput === currentUser?.password) {
+  const handlePinSubmit = async () => {
+    if (currentUser?.password && await verifyPassword(pinInput, currentUser.password)) {
       setPinVerified(true);
       setSalaryVisible(true);
       setShowPinModal(false);
@@ -95,11 +99,6 @@ export default function SalesDashboard() {
     return 1500;
   };
 
-  const getSaleDate = (car: typeof cars[0]): string => {
-    const wo = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
-    return wo?.deliveredAt ?? wo?.loanWorkOrder?.createdAt ?? wo?.cashWorkOrder?.createdAt ?? car.dateAdded;
-  };
-
   const myCustomers = useMemo(() => customers.filter(c => c.assignedSalesId === myId), [customers, myId]);
   const activeLeads = useMemo(() => myCustomers.filter(c => !c.isDead && !c.isTrashed), [myCustomers]);
   const followUpList = myCustomers.filter(c => !c.isDead && !c.isTrashed && c.followUpDate);
@@ -123,13 +122,13 @@ export default function SalesDashboard() {
   };
 
   const mySoldCars = useMemo(() => cars.filter(c => {
-    if (c.status !== 'delivered') return false;
+    if (c.status !== 'delivered' && !c.commissionCreditedEarly) return false;
     if (c.assignedSalesperson === myId) return true;
     // Fall back to buyer's assignedSalesId when car.assignedSalesperson wasn't stamped
     const buyer = customers.find(cu => cu.interestedCarId === c.id && (cu.loanWorkOrder || cu.cashWorkOrder));
     return buyer?.assignedSalesId === myId;
   }), [cars, customers, myId]);
-  const mySoldCarsMonth = useMemo(() => mySoldCars.filter(c => getSaleDate(c).startsWith(monthFilter)), [mySoldCars, monthFilter, customers]);
+  const mySoldCarsMonth = useMemo(() => mySoldCars.filter(c => getCommissionMonth(c) === monthFilter), [mySoldCars, monthFilter]);
   const totalCommission = useMemo(() => mySoldCars.reduce((s, c) => s + calcDealCommission(c), 0), [mySoldCars, customers, repairs]);
   const monthCommission = useMemo(() => mySoldCarsMonth.reduce((s, c) => s + calcDealCommission(c), 0), [mySoldCarsMonth, customers, repairs]);
 
@@ -149,7 +148,14 @@ export default function SalesDashboard() {
   const totalIntakeComm = myIntakeCars.reduce((s, c) => s + (c.intakeCommission ?? 0), 0);
   const monthIntakeComm = myIntakeCarsMonth.reduce((s, c) => s + (c.intakeCommission ?? 0), 0);
 
-  const totalMonthSalary = monthCommission + monthSourcingComm + monthIntakeComm;
+  // Flat monthly rate for full-time salespeople — same "what you're entitled to"
+  // figure Commission.tsx shows, not what's actually been paid out yet (that's
+  // tracked separately in Payments once a director runs payroll for the month).
+  const isFullTime = currentUser?.employmentType === 'full_time';
+  const monthBasic = isFullTime && currentUser ? effectiveMonthlyBasic(currentUser, monthFilter) : 0;
+  const monthAllowance = isFullTime ? (currentUser?.allowance ?? 0) : 0;
+
+  const totalMonthSalary = monthCommission + monthSourcingComm + monthIntakeComm + monthBasic + monthAllowance;
   const totalAllTime = totalCommission + totalSourcingComm + totalIntakeComm;
 
   const myReminders = useMemo(() => personalReminders.filter(r => r.userId === myId), [personalReminders, myId]);
@@ -226,13 +232,20 @@ export default function SalesDashboard() {
               </button>
             </div>
             <p className="text-gray-600 text-xs mt-1">All-time: {salaryVisible ? formatRM(totalAllTime) : '****'}</p>
+            {/* Delivered cars (car-sold commission) land in a slightly-delayed
+                background fetch after first paint — without this, a fresh
+                login briefly shows RM0.00 that's indistinguishable from
+                "genuinely no commission" rather than "still loading". */}
+            {!phase2Loaded && (
+              <p className="text-amber-400/80 text-[10px] mt-1">Still loading sales history — commission may be incomplete</p>
+            )}
           </div>
 
           {/* Divider */}
           <div className="border-t border-obsidian-500/40 my-4" />
 
           {/* Breakdown pills */}
-          <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className={`grid ${isFullTime ? 'grid-cols-3' : 'grid-cols-2'} gap-3 mb-4`}>
             <div className="text-center">
               <p className="text-gray-500 text-[10px] uppercase tracking-wide mb-1">Car Sold</p>
               <p className="text-emerald-400 font-bold text-sm">{mask(formatRM(monthCommission))}</p>
@@ -243,6 +256,13 @@ export default function SalesDashboard() {
               <p className="text-blue-400 font-bold text-sm">{mask(formatRM(monthSourcingComm))}</p>
               <p className="text-gray-600 text-[10px]">{mySourcingCarsMonth.length} car{mySourcingCarsMonth.length !== 1 ? 's' : ''}</p>
             </div>
+            {isFullTime && (
+              <div className="text-center border-l border-obsidian-500/40">
+                <p className="text-gray-500 text-[10px] uppercase tracking-wide mb-1">{basicPayLabel(currentUser!.role)} + Allowance</p>
+                <p className="text-sky-400 font-bold text-sm">{mask(formatRM(monthBasic + monthAllowance))}</p>
+                <p className="text-gray-600 text-[10px]">fixed/mo</p>
+              </div>
+            )}
           </div>
 
           {/* Expand breakdown toggle */}
@@ -283,7 +303,7 @@ export default function SalesDashboard() {
                             <p className="text-white text-xs font-medium">{c.year} {c.make} {c.model}</p>
                             <p className="text-gray-600 text-[10px]">{c.colour}</p>
                           </td>
-                          <td className="px-3 py-2.5 text-gray-500 text-xs">{new Date(getSaleDate(c)).toLocaleDateString('en-MY')}</td>
+                          <td className="px-3 py-2.5 text-gray-500 text-xs">{new Date(c.finalDeal?.submittedAt ?? c.dateAdded).toLocaleDateString('en-MY')}</td>
                           <td className="px-3 py-2.5 text-right text-emerald-400 font-semibold text-xs">{mask(formatRM(calcDealCommission(c)))}</td>
                         </tr>
                       ))}
@@ -344,6 +364,8 @@ export default function SalesDashboard() {
           </div>
         )}
       </div>
+
+      <MyPayslipCard />
 
       {/* ── QUICK STATS ── */}
       <div className="grid grid-cols-3 gap-3">

@@ -105,8 +105,8 @@ function EmployeeDetailModal({ member, onClose, currentUserId }: { member: User;
     const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
     return car.assignedSalesperson || dealCustomer?.assignedSalesId;
   };
-  const soldCars = cars.filter((c) => c.status === 'delivered' && getDealSalespersonId(c) === member.id);
-  const activeCars = cars.filter((c) => c.status !== 'delivered' && c.assignedSalesperson === member.id);
+  const soldCars = cars.filter((c) => (c.status === 'delivered' || c.commissionCreditedEarly) && getDealSalespersonId(c) === member.id);
+  const activeCars = cars.filter((c) => c.status !== 'delivered' && !c.commissionCreditedEarly && c.assignedSalesperson === member.id);
 
   const calcCommission = (car: typeof cars[0]): number => {
     if (car.outgoingConsignment) return 0;
@@ -425,7 +425,7 @@ export default function TeamMembers() {
   const updateUser = useStore((s) => s.updateUser);
   const deleteUser = useStore((s) => s.deleteUser);
 
-  const soldCars = cars.filter((c) => c.status === 'delivered');
+  const soldCars = cars.filter((c) => c.status === 'delivered' || c.commissionCreditedEarly);
 
   const getDealSalespersonId = (car: typeof cars[0]): string | undefined => {
     const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
@@ -897,6 +897,10 @@ export default function TeamMembers() {
               />
             </FormField>
           )}
+
+          {/* Employment type + payroll rates now live on the dedicated
+              Payroll page (Accounting), not here — keeps this form focused
+              on identity/contact/bank details. */}
 
           {/* Banks — only for admin */}
           {form.role === 'admin' && (

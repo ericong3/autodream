@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { AlertTriangle, Lock } from 'lucide-react';
 import Modal from './Modal';
 import { useStore } from '../store';
+import { verifyPassword } from '../utils/password';
 
 interface DeleteConfirmModalProps {
   isOpen: boolean;
@@ -27,7 +28,7 @@ export default function DeleteConfirmModal({ isOpen, onClose, onConfirm, itemNam
   }, [isOpen]);
 
   const handleConfirm = async () => {
-    if (password !== currentUser?.password) {
+    if (!currentUser?.password || !(await verifyPassword(password, currentUser.password))) {
       setError('Incorrect password.');
       return;
     }

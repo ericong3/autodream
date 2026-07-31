@@ -436,7 +436,7 @@ export default function Finance() {
                 if (!currentUser) return;
                 setBackfilling(true);
                 try {
-                  const missing = collectMissingJournalEntries({ cars, customers, repairs, payments, journalEntries, createdBy: currentUser.id });
+                  const missing = collectMissingJournalEntries({ cars, customers, repairs, payments, journalEntries, users, createdBy: currentUser.id });
                   if (missing.length > 0) await batchAddJournalEntries(missing);
                   setBackfillResult(missing.length);
                 } finally {

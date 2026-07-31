@@ -1,4 +1,4 @@
-import { Car, Customer, JournalEntry, Payment, RepairJob } from '../types';
+import { Car, Customer, JournalEntry, Payment, RepairJob, User } from '../types';
 import { generateId } from './format';
 
 // Seeded Chart of Accounts ids (see supabase/migrations/20260720_ledger_accounts.sql).
@@ -19,6 +19,9 @@ export const LEDGER_ACCOUNTS = {
   expenseGeneral: 'acct-exp-general',
   expSalesmanComm: 'acct-exp-salesman-comm',
   expIntakeBonus: 'acct-exp-intake-bonus',
+  expSalary: 'acct-exp-salary',
+  expAllowance: 'acct-exp-allowance',
+  expDirectorFee: 'acct-exp-director-fee',
 } as const;
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -273,9 +276,10 @@ export function collectMissingJournalEntries(opts: {
   repairs: RepairJob[];
   payments: Payment[];
   journalEntries: JournalEntry[];
+  users: User[];
   createdBy: string;
 }): JournalEntry[] {
-  const { cars, customers, repairs, payments, journalEntries, createdBy } = opts;
+  const { cars, customers, repairs, payments, journalEntries, users, createdBy } = opts;
   const result: JournalEntry[] = [];
   const hasEntry = (sourceType: string, sourceId: string) =>
     journalEntries.some(e => e.sourceType === sourceType && e.sourceId === sourceId) ||
@@ -357,6 +361,36 @@ export function collectMissingJournalEntries(opts: {
         description: `Refund paid — ${refundPayment.recipientName}`,
         car, sourceType: 'customer_refund_paid', sourceId: refundPayment.id, createdBy,
         payableAccountId: LEDGER_ACCOUNTS.customerRefundsPayable,
+      }));
+    }
+  }
+
+  // Payroll (salary/allowance) — not tied to a car, so walked separately from
+  // the per-car loop above. Keyed by payment.id rather than a car id, since
+  // that's the only stable identifier a monthly payroll run produces.
+  for (const payment of payments) {
+    if (payment.type !== 'salary' && payment.type !== 'allowance') continue;
+    // Director's fees are a distinct statutory/tax category from staff salary
+    // in Malaysia, so they're booked to their own expense account — same
+    // mechanism, different line in the books.
+    const isDirector = payment.type === 'salary' && users.find(u => u.id === payment.recipientId)?.role === 'director';
+    const expenseAccountId = payment.type === 'allowance' ? LEDGER_ACCOUNTS.expAllowance
+      : isDirector ? LEDGER_ACCOUNTS.expDirectorFee
+      : LEDGER_ACCOUNTS.expSalary;
+    const label = payment.type === 'salary' ? (isDirector ? 'Director Fee' : 'Salary') : 'Allowance';
+    if (!hasEntry(payment.type, payment.id)) {
+      result.push(buildPayableRecognizedEntry({
+        expenseAccountId,
+        amount: payment.amount,
+        description: payment.description || `${label} — ${payment.recipientName}`,
+        sourceType: payment.type, sourceId: payment.id, createdBy,
+      }));
+    }
+    if (payment.status === 'transferred' && !hasEntry(`${payment.type}_paid`, payment.id)) {
+      result.push(buildPayablePaidEntry({
+        amount: payment.amount,
+        description: `${label} paid — ${payment.recipientName}`,
+        sourceType: `${payment.type}_paid`, sourceId: payment.id, createdBy,
       }));
     }
   }

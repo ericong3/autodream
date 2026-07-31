@@ -2084,6 +2084,37 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   <p className="text-xs opacity-60 mt-0.5">Commission set to RM 0, profit calculated normally</p>
                 </div>
               </button>
+              {car.status !== 'delivered' && (
+                <button
+                  type="button"
+                  onClick={() => setEditForm({
+                    ...editForm,
+                    commissionCreditedEarly: !editForm.commissionCreditedEarly,
+                    commissionCreditedMonth: !editForm.commissionCreditedEarly
+                      ? (editForm.commissionCreditedMonth ?? new Date().toISOString().slice(0, 7))
+                      : editForm.commissionCreditedMonth,
+                  })}
+                  className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${editForm.commissionCreditedEarly ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
+                >
+                  <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${editForm.commissionCreditedEarly ? 'bg-emerald-500 border-emerald-500' : 'border-gray-600'}`}>
+                    {editForm.commissionCreditedEarly && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Credit Commission Early — Before Delivery</p>
+                    <p className="text-xs opacity-60 mt-0.5">Counts toward this salesman's commission the month the deal closed, even though the car hasn't been delivered yet</p>
+                  </div>
+                </button>
+              )}
+              {car.status !== 'delivered' && editForm.commissionCreditedEarly && (
+                <FormField label="Counts Toward Month">
+                  <input
+                    type="month"
+                    className={inputCls()}
+                    value={editForm.commissionCreditedMonth ?? new Date().toISOString().slice(0, 7)}
+                    onChange={(e) => setEditForm({ ...editForm, commissionCreditedMonth: e.target.value })}
+                  />
+                </FormField>
+              )}
             </div>
           )}
           <FormField label="Transmission">

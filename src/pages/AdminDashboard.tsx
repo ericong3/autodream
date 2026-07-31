@@ -2,6 +2,7 @@ import { useState, useMemo, useRef } from 'react';
 import { CreditCard, FileText, CheckCircle, Clock, ClipboardCheck, Fingerprint, Contact, Upload } from 'lucide-react';
 import { useStore } from '../store';
 import LoanCaseDetail from './LoanCaseDetail';
+import MyPayslipCard from '../components/MyPayslipCard';
 import { formatRM } from '../utils/format';
 import { supabase } from '../lib/supabase';
 
@@ -179,6 +180,8 @@ export default function AdminDashboard() {
           <p className="text-xs text-gray-400 mt-0.5">{myBanks.join(' · ')}</p>
         )}
       </div>
+
+      <MyPayslipCard />
 
       {/* Tab bar */}
       <div className="flex gap-2 border-b border-obsidian-400/30 pb-0">

@@ -4,6 +4,7 @@ import { useStore } from '../store';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, generateId } from '../utils/format';
+import { getCommissionMonth } from '../utils/generatePayments';
 
 type EditState = { carId: string; field: 'deal' | 'intake' | 'source'; customerId?: string; value: string };
 
@@ -18,7 +19,6 @@ export default function Commission() {
   const addPersonalReminder = useStore((s) => s.addPersonalReminder);
   const updatePersonalReminder = useStore((s) => s.updatePersonalReminder);
   const deletePersonalReminder = useStore((s) => s.deletePersonalReminder);
-
   const isDirector = currentUser?.role === 'director';
   const [tab, setTab] = useState<'commission' | 'reminders'>('commission');
   const [salesFilter, setSalesFilter] = useState<string>(isDirector ? '' : (currentUser?.id ?? ''));
@@ -31,7 +31,10 @@ export default function Commission() {
 
   const salespeople = users.filter(u => u.role === 'salesperson');
 
-  const allSoldCars = cars.filter(c => c.status === 'delivered');
+  // A director can flag a specific car to count toward commission before
+  // delivery (commissionCreditedEarly) — an exception, not a rule change,
+  // for deals that closed but haven't physically handed over yet.
+  const allSoldCars = cars.filter(c => c.status === 'delivered' || c.commissionCreditedEarly);
 
   const getDealCustomer = (car: typeof cars[0]) =>
     customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
@@ -39,14 +42,6 @@ export default function Commission() {
   const getDealSalespersonId = (car: typeof cars[0]): string | undefined => {
     const dealCustomer = getDealCustomer(car);
     return car.assignedSalesperson || dealCustomer?.assignedSalesId;
-  };
-
-  const getSaleDate = (car: typeof cars[0]): string => {
-    const dealCustomer = getDealCustomer(car);
-    return dealCustomer?.deliveredAt
-      ?? dealCustomer?.loanWorkOrder?.createdAt
-      ?? dealCustomer?.cashWorkOrder?.createdAt
-      ?? car.dateAdded;
   };
 
   const calcCommission = (car: typeof cars[0]): number => {
@@ -80,7 +75,7 @@ export default function Commission() {
 
   const filteredSoldCars = useMemo(() => allSoldCars.filter(c => {
     const matchSales = !salesFilter || getDealSalespersonId(c) === salesFilter;
-    const matchMonth = !monthFilter || getSaleDate(c).startsWith(monthFilter);
+    const matchMonth = !monthFilter || getCommissionMonth(c) === monthFilter;
     return matchSales && matchMonth;
   }), [allSoldCars, salesFilter, monthFilter, customers]);
 
@@ -252,7 +247,7 @@ export default function Commission() {
                           <p className="text-white font-medium">{c.year} {c.make} {c.model}</p>
                           <p className="text-gray-500 text-xs capitalize">{c.colour} · {c.transmission}</p>
                         </td>
-                        <td className="px-5 py-3 text-gray-400">{new Date(getSaleDate(c)).toLocaleDateString('en-MY')}</td>
+                        <td className="px-5 py-3 text-gray-400">{new Date(c.finalDeal?.submittedAt ?? c.dateAdded).toLocaleDateString('en-MY')}</td>
                         {isDirector && <td className="px-5 py-3 text-gray-400">{getSalesName(getDealSalespersonId(c))}</td>}
                         <td className="px-5 py-3 text-right text-gold-400 font-semibold">
                           {formatRM(c.finalDeal?.dealPrice ?? c.sellingPrice)}
