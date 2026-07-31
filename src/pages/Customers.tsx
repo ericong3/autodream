@@ -2,9 +2,20 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
-import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList, Truck, Upload, Lock, Skull, Clock, RotateCcw, MoreVertical, FileText, Download, Search, Repeat } from 'lucide-react';
+import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList, Truck, Upload, Lock, Skull, Clock, RotateCcw, MoreVertical, FileText, Download, Search, Repeat, Columns, GripVertical } from 'lucide-react';
+import {
+  DndContext,
+  DragOverlay,
+  MouseSensor,
+  useSensor,
+  useSensors,
+  useDroppable,
+  useDraggable,
+  closestCenter,
+  type DragEndEvent,
+} from '@dnd-kit/core';
 import { useStore } from '../store';
-import { Customer, CashWorkOrder, LoanWorkOrder, LoanCase, WorkOrderItem, BANKS } from '../types';
+import { Customer, CashWorkOrder, LoanWorkOrder, LoanCase, WorkOrderItem, BANKS, KanbanColumn, Car as CarType } from '../types';
 import LoanSubmitModal from './LoanSubmitModal';
 import LoanCaseDetail from './LoanCaseDetail';
 import Modal from '../components/Modal';
@@ -76,6 +87,10 @@ export default function Customers() {
   const updateCustomer = useStore((s) => s.updateCustomer);
   const deleteCustomer = useStore((s) => s.deleteCustomer);
   const addPayment = useStore((s) => s.addPayment);
+  const kanbanColumns = useStore((s) => s.kanbanColumns);
+  const addKanbanColumn = useStore((s) => s.addKanbanColumn);
+  const updateKanbanColumn = useStore((s) => s.updateKanbanColumn);
+  const deleteKanbanColumn = useStore((s) => s.deleteKanbanColumn);
   const notifications = useStore((s) => s.notifications);
   const markNotificationsReadByRef = useStore((s) => s.markNotificationsReadByRef);
 
@@ -245,6 +260,11 @@ export default function Customers() {
   const [showCancelBookingModal, setShowCancelBookingModal] = useState(false);
   const [cancelRefundForm, setCancelRefundForm] = useState({ bank: '', accountNo: '', accountName: '' });
   const [savingCancelRefund, setSavingCancelRefund] = useState(false);
+  // Personal Kanban board — private per-user, columns don't correspond to real
+  // leadStatus, so dragging cards is pure personal organization, not a status change.
+  // Defaults on (for Leads/Loan) from the restored tab, not just future tab clicks —
+  // otherwise a refresh always lands back on the plain list regardless of this default.
+  const [boardView, setBoardView] = useState(() => (tab === 'leads' || tab === 'loan') && !isShareHolder);
   // Banker portal submission modal
   const [loanSubmitCustomer, setLoanSubmitCustomer] = useState<Customer | null>(null);
   const [loanSubmitInitial, setLoanSubmitInitial] = useState<{ carId?: string; amount?: number; banks?: string[] }>({});
@@ -257,6 +277,10 @@ export default function Customers() {
   const [applicantText, setApplicantText] = useState('');
   const [applicantUploading, setApplicantUploading] = useState(false);
   const applicantFileRef = useRef<HTMLInputElement>(null);
+  const [additionalUploading, setAdditionalUploading] = useState(false);
+  const additionalFileRef = useRef<HTMLInputElement>(null);
+  const [showEditAdditional, setShowEditAdditional] = useState(false);
+  const [additionalText, setAdditionalText] = useState('');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [oldAppUpdateBank, setOldAppUpdateBank] = useState<string | null>(null);
   const [oldAppNewStatus, setOldAppNewStatus] = useState<'approved' | 'rejected'>('approved');
@@ -273,6 +297,8 @@ export default function Customers() {
     setGuarantorText('');
     setShowEditApplicant(false);
     setApplicantText('');
+    setShowEditAdditional(false);
+    setAdditionalText('');
   }, [detailLead?.id]);
 
   // Open customer detail from URL param (e.g. navigated from LoanCases "Confirm Deal")
@@ -1039,7 +1065,7 @@ export default function Customers() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1 bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-1">
           <button
-            onClick={() => { setTab('leads'); setStatusFilter('all'); setCarGroupFilter('all'); setCarIdFilter('all'); setSearch(''); }}
+            onClick={() => { setTab('leads'); setStatusFilter('all'); setCarGroupFilter('all'); setCarIdFilter('all'); setSearch(''); setBoardView(!isShareHolder); }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${tab === 'leads' ? 'bg-gold-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
             Leads
@@ -1047,33 +1073,43 @@ export default function Customers() {
             {leadsUnreadCount > 0 && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
           </button>
           <button
-            onClick={() => { setTab('cash'); setStatusFilter('all'); setSearch(''); }}
+            onClick={() => { setTab('cash'); setStatusFilter('all'); setSearch(''); setBoardView(false); }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${tab === 'cash' ? 'bg-green-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
             Cash <span className={`text-xs px-1.5 py-0.5 rounded-full ${tab === 'cash' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => c.dealType === 'cash' && !c.cashWorkOrder && !c.isDead && !c.isTrashed).length}</span>
             {cashUnreadCount > 0 && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
           </button>
           <button
-            onClick={() => { setTab('loan'); setStatusFilter('all'); setCarGroupFilter('all'); setCarIdFilter('all'); setLoanBankFilter('all'); setSearch(''); }}
+            onClick={() => { setTab('loan'); setStatusFilter('all'); setCarGroupFilter('all'); setCarIdFilter('all'); setLoanBankFilter('all'); setSearch(''); setBoardView(!isShareHolder); }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${tab === 'loan' ? 'bg-purple-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
             Loan <span className={`text-xs px-1.5 py-0.5 rounded-full ${tab === 'loan' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus === 'loan_submitted' && !c.isTrashed).length}</span>
             {loanUnreadCount > 0 && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
           </button>
           <button
-            onClick={() => { setTab('confirmed'); setStatusFilter('all'); setSearch(''); }}
+            onClick={() => { setTab('confirmed'); setStatusFilter('all'); setSearch(''); setBoardView(false); }}
             className={`px-5 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${tab === 'confirmed' ? 'bg-violet-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
             Confirmed <span className={`text-xs px-1.5 py-0.5 rounded-full ${tab === 'confirmed' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !c.isTrashed && !!(c.cashWorkOrder || c.loanWorkOrder)).length}</span>
             {confirmedUnreadCount > 0 && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
           </button>
           <button
-            onClick={() => { setTab('bin'); setStatusFilter('all'); setSearch(''); }}
+            onClick={() => { setTab('bin'); setStatusFilter('all'); setSearch(''); setBoardView(false); }}
             className={`px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${tab === 'bin' ? 'bg-red-500/80 text-white shadow' : 'text-gray-400 hover:text-white'}`}
             title="Rejected / Trashed Cases"
           >
             <Trash2 size={14} />
           </button>
+          {!isShareHolder && (
+            <button
+              onClick={() => setBoardView(v => !v)}
+              className={`px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${boardView ? 'bg-gold-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+              title="My Board — personal drag-and-drop Kanban view"
+            >
+              <Columns size={14} />
+              <span className="hidden sm:inline">My Board</span>
+            </button>
+          )}
         </div>
         {tab === 'leads' && !isShareHolder && (
           <button onClick={openAdd} className="flex items-center gap-2 btn-gold px-4 py-2.5 rounded-lg text-sm">
@@ -1126,7 +1162,7 @@ export default function Customers() {
       )}
 
 
-      {tab === 'leads' && (<>
+      {!boardView && tab === 'leads' && (<>
         {/* Status filter pills */}
         <div className="flex gap-1.5 flex-wrap">
           {LEAD_STAGES.map(s => {
@@ -1378,7 +1414,7 @@ export default function Customers() {
         )}
       </>)}
 
-      {tab === 'cash' && (() => {
+      {!boardView && tab === 'cash' && (() => {
         const cashLeads = myCustomers.filter(c => c.dealType === 'cash' && !c.cashWorkOrder && !c.isDead && !c.isTrashed)
           .filter(c => !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search))
           .sort((a, b) => (b.lastActionAt ?? b.createdAt).localeCompare(a.lastActionAt ?? a.createdAt));
@@ -1474,7 +1510,7 @@ export default function Customers() {
         );
       })()}
 
-      {tab === 'loan' && (<>
+      {!boardView && tab === 'loan' && (<>
         {/* Loan search + filters */}
         <div className="flex gap-2">
           <input
@@ -1680,7 +1716,7 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
       </>)}
 
       {/* ── Bin tab ── */}
-      {tab === 'bin' && (<>
+      {!boardView && tab === 'bin' && (<>
         <div className="flex items-center gap-3">
           <input
             type="text"
@@ -1768,7 +1804,7 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
       </>)}
 
       {/* ── Confirmed Cases tab ── */}
-      {tab === 'confirmed' && (<>
+      {!boardView && tab === 'confirmed' && (<>
         <div className="flex gap-2">
           <input
             type="text"
@@ -1907,6 +1943,19 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
           );
         })()}
       </>)}
+
+      {boardView && (
+        <KanbanBoard
+          customers={myCustomers.filter(c => !c.isTrashed && !c.isDead && !c.cashWorkOrder && !c.loanWorkOrder)}
+          currentUserId={currentUser!.id}
+          columns={kanbanColumns}
+          addKanbanColumn={addKanbanColumn}
+          updateKanbanColumn={updateKanbanColumn}
+          deleteKanbanColumn={deleteKanbanColumn}
+          getCar={getCar}
+          onOpenCustomer={c => { setDetailLead(c); setDetailTab('details'); markNotificationsReadByRef(c.id); }}
+        />
+      )}
 
       {/* ── Lead Detail Modal ────────────────────────── */}
       {detailLead && (() => {
@@ -2197,6 +2246,7 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                   if (!primaryCase) return null;
                   const applicantDocs = loanCaseDocuments.filter(d => d.caseId === primaryCase.id && d.type === 'applicant');
                   const guarantorDocs = loanCaseDocuments.filter(d => d.caseId === primaryCase.id && d.type === 'guarantor');
+                  const additionalDocs = loanCaseDocuments.filter(d => d.caseId === primaryCase.id && d.type === 'additional');
                   const hasGuarantor = !!primaryCase.guarantorInterviewText || guarantorDocs.length > 0;
 
                   const DocRow = ({ doc, onDownload, onDelete }: { doc: typeof applicantDocs[0]; onDownload: () => void; onDelete?: () => void }) => (
@@ -2219,7 +2269,7 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                     await deleteLoanCaseDocument(doc.id);
                   };
 
-                  const uploadDocs = async (files: File[], type: 'applicant' | 'guarantor', setUploading: (v: boolean) => void, fileInput: HTMLInputElement | null) => {
+                  const uploadDocs = async (files: File[], type: 'applicant' | 'guarantor' | 'additional', setUploading: (v: boolean) => void, fileInput: HTMLInputElement | null) => {
                     if (!files.length) return;
                     setUploading(true);
                     try {
@@ -2348,6 +2398,67 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                           {guarantorDocs.length > 0
                             ? guarantorDocs.map(doc => <DocRow key={doc.id} doc={doc} onDownload={makeDownload(doc)} onDelete={canEditLoanDocs ? makeDelete(doc) : undefined} />)
                             : !hasGuarantor && !showAddGuarantor && <p className="px-4 py-3 text-xs text-gray-600">No guarantor added</p>
+                          }
+                        </div>
+                      </section>
+
+                      {/* Additional Docs — amber. For whatever else a bank asks
+                          for on top of the standard applicant/guarantor paperwork;
+                          same edit/notes pattern as those two sections. */}
+                      <section className="rounded-2xl border border-amber-500/40 overflow-hidden">
+                        <div className="flex items-center gap-2 px-4 py-3 bg-amber-500/10 border-b border-amber-500/20">
+                          <div className="p-1 rounded-lg bg-amber-500/15">
+                            <FileText size={13} className="text-amber-300" />
+                          </div>
+                          <span className="text-sm font-semibold text-white">Additional Docs</span>
+                          <div className="ml-auto flex items-center gap-2.5">
+                            <span className="text-[11px] text-gray-500">{additionalDocs.length} doc{additionalDocs.length !== 1 ? 's' : ''}</span>
+                            {canEditLoanDocs && !showEditAdditional && (
+                              <button
+                                onClick={() => { setAdditionalText(primaryCase.additionalInterviewText ?? ''); setShowEditAdditional(true); }}
+                                className="text-xs text-gold-400 hover:text-gold-300 font-medium touch-manipulation flex items-center gap-1"
+                              >
+                                <Edit2 size={11} />Edit
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {showEditAdditional && (
+                          <div className="px-4 py-4 space-y-3 border-b border-amber-500/15">
+                            <textarea
+                              className="w-full bg-obsidian-600/60 border border-obsidian-400/50 rounded-xl p-3 text-white text-sm outline-none focus:border-amber-500/50 resize-none"
+                              rows={3}
+                              placeholder="Notes on additional documents..."
+                              value={additionalText}
+                              onChange={e => setAdditionalText(e.target.value)}
+                            />
+                            <input ref={additionalFileRef} type="file" className="hidden" multiple
+                              onChange={e => uploadDocs(Array.from(e.target.files ?? []), 'additional', setAdditionalUploading, additionalFileRef.current)}
+                            />
+                            <div className="flex gap-2">
+                              <button onClick={() => additionalFileRef.current?.click()} disabled={additionalUploading} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-obsidian-600/60 border border-obsidian-400/50 text-gray-300 text-xs font-medium touch-manipulation disabled:opacity-50">
+                                <Upload size={12} />{additionalUploading ? 'Uploading...' : 'Upload'}
+                              </button>
+                              <button onClick={async () => { await updateLoanCase(primaryCase.id, { additionalInterviewText: additionalText.trim() }); setShowEditAdditional(false); }} className="flex-1 py-2 rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-semibold touch-manipulation">Save</button>
+                              <button onClick={() => { setShowEditAdditional(false); setAdditionalText(''); }} className="px-3 py-2 rounded-xl bg-obsidian-600/60 border border-obsidian-400/50 text-gray-500 text-xs touch-manipulation">Cancel</button>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="divide-y divide-amber-500/10">
+                          {primaryCase.additionalInterviewText && (
+                            <details>
+                              <summary className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-amber-500/5 transition-colors list-none">
+                                <span className="text-xs text-amber-300/80 font-medium">Notes</span>
+                                <ChevronRight size={13} className="text-amber-400/50 rotate-90" />
+                              </summary>
+                              <pre className="text-xs text-gray-300 whitespace-pre-wrap font-sans leading-relaxed px-4 pb-4 max-h-48 overflow-y-auto">{primaryCase.additionalInterviewText}</pre>
+                            </details>
+                          )}
+                          {additionalDocs.length > 0
+                            ? additionalDocs.map(doc => <DocRow key={doc.id} doc={doc} onDownload={makeDownload(doc)} onDelete={canEditLoanDocs ? makeDelete(doc) : undefined} />)
+                            : !primaryCase.additionalInterviewText && <p className="px-4 py-3 text-xs text-gray-600">No additional documents</p>
                           }
                         </div>
                       </section>
@@ -4007,6 +4118,447 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
           document.body
         );
       })()}
+    </div>
+  );
+}
+
+
+// ── Personal Kanban board (Leads/Cash/Loan) ─────────────────────────────────
+// Columns are fully user-defined — not tied to leadStatus — so a column IS the
+// personal tag/grouping (an "Urgent" column serves the same purpose a separate
+// tag field would). Dragging a card is pure personal organization and never
+// changes the customer's real pipeline data. Private per user: only the columns
+// belonging to currentUserId render here, and loadAll only ever fetches the
+// logged-in user's own kanban_columns rows (see store/index.ts).
+//
+// Uses plain useDraggable/useDroppable, NOT useSortable/SortableContext. The
+// sortable primitives are built for reordering a single list and are known to
+// resolve drops unreliably once you mix them with useDroppable containers for
+// cross-container moves — cards kept snapping back to Unsorted instead of
+// landing in the target column. Draggable+droppable is simpler and built
+// exactly for "move an item to a different container", which is all this
+// needs; the tradeoff is new arrivals always land at the end of a column
+// rather than at a precise drop position.
+
+// Column color is stored as a hex string, applied via inline styles rather than
+// Tailwind classes — Tailwind only ships classes it can see as static strings at
+// build time, so a genuinely free-pick color (from the native color wheel below)
+// can't be expressed as a `bg-${color}-500`-style class. DEFAULT_COLUMN_COLOR
+// matches this app's own gold accent (see tailwind.config.js).
+const DEFAULT_COLUMN_COLOR = '#EAB820';
+const PRESET_COLORS = [
+  '#EAB820', '#EF4444', '#F97316', '#F59E0B', '#22C55E', '#10B981',
+  '#3B82F6', '#0EA5E9', '#8B5CF6', '#A855F7', '#EC4899', '#6B7280',
+];
+// Columns created before this became a free color picker stored a palette key
+// (e.g. "gold", "red") instead of a hex value — map those to a hex so old
+// columns still render instead of falling through to black/invalid CSS.
+const LEGACY_COLOR_KEYS: Record<string, string> = {
+  gold: '#EAB820', red: '#EF4444', orange: '#F97316', amber: '#F59E0B',
+  green: '#22C55E', emerald: '#10B981', blue: '#3B82F6', sky: '#0EA5E9',
+  violet: '#8B5CF6', purple: '#A855F7', pink: '#EC4899', gray: '#6B7280',
+};
+function resolveColumnColor(color?: string): string {
+  if (!color) return DEFAULT_COLUMN_COLOR;
+  if (color.startsWith('#')) return color;
+  return LEGACY_COLOR_KEYS[color] ?? DEFAULT_COLUMN_COLOR;
+}
+
+// Explicit rgba() rather than an appended hex alpha suffix (#rrggbbaa) — more
+// reliably interpreted the same way everywhere than relying on 8-digit hex support.
+function hexToRgba(hex: string, alpha: number): string {
+  const clean = hex.replace('#', '');
+  const r = parseInt(clean.substring(0, 2), 16);
+  const g = parseInt(clean.substring(2, 4), 16);
+  const b = parseInt(clean.substring(4, 6), 16);
+  if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return `rgba(234,184,32,${alpha})`;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// Recently-used swatches are shared across every column's picker (it's "colors
+// I've used before", not a per-column thing) and persisted so they survive a
+// reload. Capped at 15 + the wheel itself = 16 cells total, laid out 8-per-row
+// so it reads as two rows. Oldest entry drops off (FIFO) once a new wheel pick
+// would push the list past the cap — including original presets, which are
+// just the seed values and are just as evictable as anything picked later.
+const COLOR_HISTORY_KEY = 'kanban-color-history';
+const MAX_HISTORY_COLORS = 15;
+
+function loadColorHistory(): string[] {
+  try {
+    const raw = localStorage.getItem(COLOR_HISTORY_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (Array.isArray(parsed) && parsed.every(c => typeof c === 'string') && parsed.length > 0) {
+      return parsed.slice(-MAX_HISTORY_COLORS);
+    }
+  } catch { /* ignore corrupt/missing storage, fall back to presets */ }
+  return [...PRESET_COLORS];
+}
+
+// Bumps `hex` to the end (most-recently-used) and evicts from the front once
+// over the cap. Only called for wheel picks — clicking an existing swatch just
+// selects it, it doesn't reorder the history.
+function pushColorHistory(hex: string): string[] {
+  const withoutDupe = loadColorHistory().filter(c => c.toLowerCase() !== hex.toLowerCase());
+  const next = [...withoutDupe, hex].slice(-MAX_HISTORY_COLORS);
+  localStorage.setItem(COLOR_HISTORY_KEY, JSON.stringify(next));
+  return next;
+}
+
+// `onChange` fires on every drag tick — callers must treat it as cheap/local-only
+// (e.g. a preview, not a network write). `onDone(color)` fires once, when the user
+// has actually finished picking — that's the only place a caller should persist.
+// The final color is passed directly to onDone rather than read back out of state,
+// since state set inside the same synchronous click handler (presets) hasn't
+// flushed yet when onDone would otherwise run — reading it there would be stale.
+function ColorSwatchPicker({ value, onChange, onDone }: { value: string; onChange: (color: string) => void; onDone?: (color: string) => void }) {
+  const resolved = resolveColumnColor(value);
+  const [historyColors, setHistoryColors] = useState<string[]>(() => loadColorHistory());
+
+  const handleWheelDone = (hex: string) => {
+    setHistoryColors(pushColorHistory(hex));
+    onDone?.(hex);
+  };
+
+  return (
+    <div className="grid grid-cols-8 gap-1.5 w-fit">
+      {historyColors.map(hex => (
+        <button
+          key={hex}
+          type="button"
+          onClick={() => { onChange(hex); onDone?.(hex); }}
+          title={hex}
+          style={{ backgroundColor: hex }}
+          className={`w-6 h-6 rounded-full transition-transform hover:scale-110 ${resolved.toLowerCase() === hex.toLowerCase() ? 'ring-2 ring-white ring-offset-2 ring-offset-obsidian-800' : ''}`}
+        />
+      ))}
+      {/* Native color wheel — full spectrum, not limited to the swatches above.
+          Always renders as the rainbow wheel itself, never swapped out for a solid
+          swatch of the current color — that solid-swap used to make the wheel look
+          like it "disappeared" once you picked a custom color. Picking a color now
+          adds it as its own swatch above instead of consuming the wheel's own look.
+          onChange fires repeatedly while the native picker is still open (not just
+          once you're done), so it must NOT close the popover — that would yank the
+          underlying input out of the DOM mid-pick and the wheel would vanish before
+          you could use it. Only close via onBlur, once the browser actually reports
+          you've finished with the native dialog. */}
+      <label
+        title="Custom color"
+        className="relative w-6 h-6 rounded-full cursor-pointer transition-transform hover:scale-110 flex items-center justify-center overflow-hidden bg-[conic-gradient(from_0deg,red,yellow,lime,cyan,blue,magenta,red)]"
+      >
+        <input
+          type="color"
+          value={resolved}
+          onChange={e => onChange(e.target.value)}
+          onBlur={e => handleWheelDone(e.target.value)}
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+        />
+      </label>
+    </div>
+  );
+}
+
+function KanbanBoard({
+  customers, currentUserId, columns, addKanbanColumn, updateKanbanColumn, deleteKanbanColumn, getCar, onOpenCustomer,
+}: {
+  customers: Customer[];
+  currentUserId: string;
+  columns: KanbanColumn[];
+  addKanbanColumn: (c: KanbanColumn) => Promise<void>;
+  updateKanbanColumn: (id: string, patch: Partial<KanbanColumn>) => Promise<void>;
+  deleteKanbanColumn: (id: string) => Promise<void>;
+  getCar: (id?: string) => CarType | undefined;
+  onOpenCustomer: (c: Customer) => void;
+}) {
+  const myColumns = useMemo(
+    () => columns.filter(c => c.userId === currentUserId).sort((a, b) => a.sortOrder - b.sortOrder),
+    [columns, currentUserId]
+  );
+  const customersById = useMemo(() => new Map(customers.map(c => [c.id, c])), [customers]);
+  const placedIds = useMemo(() => new Set(myColumns.flatMap(c => c.cardIds)), [myColumns]);
+  const unsortedCustomers = useMemo(() => customers.filter(c => !placedIds.has(c.id)), [customers, placedIds]);
+
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [showAddColumn, setShowAddColumn] = useState(false);
+  const [newColumnName, setNewColumnName] = useState('');
+  const [newColumnColor, setNewColumnColor] = useState(DEFAULT_COLUMN_COLOR);
+  const [deleteColumnTarget, setDeleteColumnTarget] = useState<KanbanColumn | null>(null);
+
+  const sensors = useSensors(useSensor(MouseSensor, { activationConstraint: { distance: 8 } }));
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveId(null);
+    const { active, over } = event;
+    if (!over) return;
+    const draggedId = String(active.id);
+    // over.id is always a column's (or "unsorted"'s) own droppable id now —
+    // only columns are droppable, cards are draggable-only, so there is no
+    // ambiguity to resolve here like there was with sortable items.
+    const toContainer = String(over.id);
+    const fromContainer = unsortedCustomers.some(c => c.id === draggedId)
+      ? 'unsorted'
+      : myColumns.find(c => c.cardIds.includes(draggedId))?.id ?? 'unsorted';
+
+    if (fromContainer === toContainer) return;
+
+    if (fromContainer !== 'unsorted') {
+      const fromCol = myColumns.find(c => c.id === fromContainer);
+      if (fromCol) updateKanbanColumn(fromCol.id, { cardIds: fromCol.cardIds.filter(id => id !== draggedId) });
+    }
+    if (toContainer !== 'unsorted') {
+      const toCol = myColumns.find(c => c.id === toContainer);
+      if (toCol && !toCol.cardIds.includes(draggedId)) {
+        updateKanbanColumn(toCol.id, { cardIds: [...toCol.cardIds, draggedId] });
+      }
+    }
+  };
+
+  const activeCustomer = activeId ? customersById.get(activeId) : null;
+
+  return (
+    <div className="space-y-3">
+      <p className="text-gray-500 text-xs">
+        Your personal board — drag cards into your own columns however you like. Only you see this arrangement; it doesn't change the lead's real status.
+      </p>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={e => setActiveId(String(e.active.id))}
+        onDragEnd={handleDragEnd}
+        onDragCancel={() => setActiveId(null)}
+      >
+        <div className="flex gap-3 overflow-x-auto pb-3">
+          <KanbanColumnView
+            id="unsorted"
+            title="Unsorted"
+            cards={unsortedCustomers}
+            getCar={getCar}
+            onOpenCustomer={onOpenCustomer}
+            isUnsorted
+          />
+          {myColumns.map(col => (
+            <KanbanColumnView
+              key={col.id}
+              id={col.id}
+              title={col.name}
+              color={col.color}
+              onColorChange={c => updateKanbanColumn(col.id, { color: c })}
+              cards={col.cardIds.map(cid => customersById.get(cid)).filter((c): c is Customer => !!c)}
+              getCar={getCar}
+              onOpenCustomer={onOpenCustomer}
+              onDelete={() => setDeleteColumnTarget(col)}
+            />
+          ))}
+          <div className="shrink-0 w-64">
+            {showAddColumn ? (
+              <div className="bg-obsidian-800/60 border border-obsidian-400/40 rounded-xl p-3 space-y-3">
+                <input
+                  autoFocus
+                  value={newColumnName}
+                  onChange={e => setNewColumnName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && newColumnName.trim()) {
+                      addKanbanColumn({ id: generateId(), userId: currentUserId, name: newColumnName.trim(), color: newColumnColor, cardIds: [], sortOrder: myColumns.length, createdAt: new Date().toISOString() });
+                      setNewColumnName('');
+                      setNewColumnColor(DEFAULT_COLUMN_COLOR);
+                      setShowAddColumn(false);
+                    }
+                    if (e.key === 'Escape') { setShowAddColumn(false); setNewColumnName(''); setNewColumnColor(DEFAULT_COLUMN_COLOR); }
+                  }}
+                  placeholder="Column name, e.g. Urgent"
+                  className="w-full px-3 py-2 rounded-lg bg-obsidian-700/60 border border-obsidian-400/40 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-gold-500/50"
+                />
+                <ColorSwatchPicker value={newColumnColor} onChange={setNewColumnColor} />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setShowAddColumn(false); setNewColumnName(''); setNewColumnColor(DEFAULT_COLUMN_COLOR); }}
+                    className="flex-1 px-3 py-1.5 text-xs text-gray-400 hover:text-white border border-obsidian-400/40 rounded-lg"
+                  >Cancel</button>
+                  <button
+                    disabled={!newColumnName.trim()}
+                    onClick={() => {
+                      addKanbanColumn({ id: generateId(), userId: currentUserId, name: newColumnName.trim(), color: newColumnColor, cardIds: [], sortOrder: myColumns.length, createdAt: new Date().toISOString() });
+                      setNewColumnName('');
+                      setNewColumnColor(DEFAULT_COLUMN_COLOR);
+                      setShowAddColumn(false);
+                    }}
+                    className="flex-1 px-3 py-1.5 text-xs font-semibold text-obsidian-950 bg-gold-500 hover:bg-gold-400 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                  >Add</button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowAddColumn(true)}
+                className="w-full h-12 flex items-center justify-center gap-2 border-2 border-dashed border-obsidian-400/50 hover:border-gold-500/50 rounded-xl text-gray-500 hover:text-gold-400 text-sm font-medium transition-colors"
+              >
+                <Plus size={16} />Add Column
+              </button>
+            )}
+          </div>
+        </div>
+        <DragOverlay>
+          {activeCustomer && <KanbanCardContent customer={activeCustomer} car={getCar(activeCustomer.interestedCarId)} overlay />}
+        </DragOverlay>
+      </DndContext>
+
+      <DeleteConfirmModal
+        isOpen={!!deleteColumnTarget}
+        onClose={() => setDeleteColumnTarget(null)}
+        onConfirm={async () => {
+          if (deleteColumnTarget) await deleteKanbanColumn(deleteColumnTarget.id);
+          setDeleteColumnTarget(null);
+        }}
+        itemName={deleteColumnTarget ? `the "${deleteColumnTarget.name}" column` : 'this column'}
+      />
+    </div>
+  );
+}
+
+function KanbanColumnView({
+  id, title, color, onColorChange, cards, getCar, onOpenCustomer, isUnsorted, onDelete,
+}: {
+  id: string;
+  title: string;
+  color?: string;
+  onColorChange?: (color: string) => void;
+  cards: Customer[];
+  getCar: (id?: string) => CarType | undefined;
+  onOpenCustomer: (c: Customer) => void;
+  isUnsorted?: boolean;
+  onDelete?: () => void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  // Live preview while the wheel is being dragged — kept purely local so dragging
+  // never touches the store/network. Committing on every drag tick (which is what
+  // happens if this writes straight through onColorChange) forces the whole board
+  // to re-render and re-persist to Supabase dozens of times a second, which is what
+  // made the wheel feel laggy. Only onDone (see ColorSwatchPicker) actually commits.
+  const [previewColor, setPreviewColor] = useState<string | null>(null);
+  const hex = resolveColumnColor(previewColor ?? color);
+
+  // Close the popover on any click outside it — otherwise it just stays open
+  // forever once opened, since nothing else in the app was closing it. Commits
+  // whatever was last picked rather than discarding it: the native color wheel's
+  // own "done" signal is onBlur, but clicking away to dismiss it removes the
+  // input from the DOM in the same tick, which can beat the native blur/change
+  // event — relying on that event alone silently lost the pick. Committing here
+  // instead of discarding makes outside-click behave like every other color
+  // picker (closing keeps your last pick, it doesn't cancel it).
+  const pickerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showColorPicker) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        if (previewColor && onColorChange) {
+          pushColorHistory(previewColor); // same bookkeeping ColorSwatchPicker's own onBlur path does — this route skips that component's handleWheelDone entirely, so it has to be done here too
+          onColorChange(previewColor);
+        }
+        setShowColorPicker(false);
+        setPreviewColor(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showColorPicker, previewColor, onColorChange]);
+
+  return (
+    <div className="shrink-0 w-64 flex flex-col">
+      <div ref={pickerRef} className="flex items-center justify-between px-1 mb-2 relative">
+        <div className="flex items-center gap-1.5 min-w-0">
+          {onColorChange && (
+            <button
+              onClick={() => setShowColorPicker(v => !v)}
+              style={{ backgroundColor: hex }}
+              className="w-3 h-3 rounded-full shrink-0"
+              title="Change column color"
+            />
+          )}
+          <p
+            style={isUnsorted ? undefined : { color: hex }}
+            className={`text-xs font-semibold uppercase tracking-wide truncate ${isUnsorted ? 'text-gray-500' : ''}`}
+          >
+            {title} <span className="text-gray-600 font-normal">{cards.length}</span>
+          </p>
+        </div>
+        {onDelete && (
+          <button onClick={onDelete} className="text-gray-600 hover:text-red-400 transition-colors shrink-0" title="Delete column">
+            <Trash2 size={12} />
+          </button>
+        )}
+        {showColorPicker && onColorChange && (
+          <div className="absolute top-6 left-0 z-10 bg-obsidian-800 border border-obsidian-400/60 rounded-xl p-2.5 shadow-xl">
+            <ColorSwatchPicker
+              value={hex}
+              onChange={setPreviewColor}
+              onDone={finalColor => {
+                onColorChange?.(finalColor);
+                setShowColorPicker(false);
+                setPreviewColor(null);
+              }}
+            />
+          </div>
+        )}
+      </div>
+      <div
+        ref={setNodeRef}
+        style={isOver || isUnsorted ? undefined : { backgroundColor: hexToRgba(hex, 0.16), borderColor: hexToRgba(hex, 0.5) }}
+        className={`flex-1 min-h-[120px] space-y-2 rounded-xl p-2 transition-colors border ${
+          isOver ? 'bg-gold-500/10 border-gold-500/40' : isUnsorted ? 'bg-obsidian-800/40 border-obsidian-400/20' : ''
+        }`}
+      >
+        {cards.map(c => (
+          <DraggableCustomerCard key={c.id} customer={c} car={getCar(c.interestedCarId)} onOpen={() => onOpenCustomer(c)} />
+        ))}
+        {cards.length === 0 && (
+          <p className="text-gray-700 text-xs text-center py-6">Drop cards here</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DraggableCustomerCard({ customer, car, onOpen }: { customer: Customer; car?: CarType; onOpen: () => void }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: customer.id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+        opacity: isDragging ? 0.3 : 1,
+        userSelect: 'none',
+        zIndex: isDragging ? 10 : undefined,
+        position: isDragging ? 'relative' : undefined,
+      }}
+      {...attributes}
+      {...listeners}
+      onClick={onOpen}
+      onDragStart={(e) => e.preventDefault()}
+      className="cursor-grab active:cursor-grabbing touch-none"
+    >
+      <KanbanCardContent customer={customer} car={car} />
+    </div>
+  );
+}
+
+function KanbanCardContent({ customer, car, overlay }: { customer: Customer; car?: CarType; overlay?: boolean }) {
+  // Solid opaque background, not the app's usual translucent bg-card-gradient —
+  // that lets the column's colored background bleed straight through and tint the
+  // card the same color, making it blend into the box instead of standing out in
+  // front of it. A shadow adds a bit of visible lift on top of that.
+  return (
+    <div className={`bg-obsidian-700 shadow-card border border-obsidian-400/60 rounded-lg p-3 transition-colors ${overlay ? 'shadow-2xl rotate-2 w-60' : 'hover:border-gold-500/40'}`}>
+      <div className="flex items-start gap-2">
+        <GripVertical size={13} className="text-gray-700 mt-0.5 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-white text-sm font-semibold truncate">{customer.name}</p>
+          <p className="text-gray-500 text-xs truncate">{customer.phone}</p>
+          {car && <p className="text-gray-400 text-xs truncate mt-0.5">{car.year} {car.make} {car.model}</p>}
+          <span className="inline-block mt-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-obsidian-700/60 text-gray-400 border border-obsidian-500/30 capitalize">
+            {customer.leadStatus.replace('_', ' ')}
+          </span>
+        </div>
+      </div>
     </div>
   );
 }

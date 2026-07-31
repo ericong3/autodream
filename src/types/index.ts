@@ -42,6 +42,7 @@ export interface LoanCase {
   loanAmount: number;
   applicantInterviewText?: string;
   guarantorInterviewText?: string;
+  additionalInterviewText?: string;
   status: LoanCaseStatus;
   // Approval details (filled in when status = approved)
   approvedAmount?: number;
@@ -633,6 +634,21 @@ export interface PersonalReminder {
   title: string;
   dueAt: string;
   isCompleted: boolean;
+  createdAt: string;
+}
+
+// Personal Kanban board for Leads/Cash/Loan — fully user-defined columns (not tied to
+// leadStatus), so dragging a card between columns is pure personal organization and
+// never changes the customer's real pipeline status. Each user has their own set of
+// columns; a customer not yet placed in any of the current user's columns shows in an
+// "Unsorted" bucket computed client-side, not stored.
+export interface KanbanColumn {
+  id: string;
+  userId: string;
+  name: string;
+  color: string; // key into COLUMN_COLORS palette, e.g. 'gold' | 'red' | 'blue' — user-picked
+  cardIds: string[]; // customer ids, in this column's display order
+  sortOrder: number;
   createdAt: string;
 }
 

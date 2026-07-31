@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
-import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, ClaimCategory, LedgerAccount, JournalEntry, JournalLine, MiscCost, ExternalSalesman, Banker, LoanCase, LoanCaseDocument, LoanCaseActivity, Payment, AppNotification, InvestorTransaction, Shipment, CarMovement } from '../types';
+import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, ClaimCategory, LedgerAccount, JournalEntry, JournalLine, MiscCost, ExternalSalesman, Banker, LoanCase, LoanCaseDocument, LoanCaseActivity, Payment, AppNotification, InvestorTransaction, Shipment, CarMovement, KanbanColumn } from '../types';
 import { sendPush } from '../utils/sendPush';
 import { hashPassword, verifyPassword } from '../utils/password';
 
@@ -63,6 +63,7 @@ interface StoreState {
   customers: Customer[];
   testDrives: TestDrive[];
   personalReminders: PersonalReminder[];
+  kanbanColumns: KanbanColumn[];
   dealers: Dealer[];
   workshops: Workshop[];
   suppliers: Supplier[];
@@ -130,6 +131,11 @@ interface StoreState {
   addPersonalReminder: (reminder: PersonalReminder) => Promise<void>;
   updatePersonalReminder: (id: string, reminder: Partial<PersonalReminder>) => Promise<void>;
   deletePersonalReminder: (id: string) => Promise<void>;
+
+  // Personal Kanban columns (Leads/Cash/Loan board)
+  addKanbanColumn: (column: KanbanColumn) => Promise<void>;
+  updateKanbanColumn: (id: string, patch: Partial<KanbanColumn>) => Promise<void>;
+  deleteKanbanColumn: (id: string) => Promise<void>;
 
   // Dealers
   addDealer: (dealer: Dealer) => Promise<void>;
@@ -815,6 +821,7 @@ function rowToLoanCase(r: any): LoanCase {
     loanAmount: r.loan_amount,
     applicantInterviewText: r.applicant_interview_text ?? undefined,
     guarantorInterviewText: r.guarantor_interview_text ?? undefined,
+    additionalInterviewText: r.additional_interview_text ?? undefined,
     status: r.status,
     approvedAmount: r.approved_amount ?? undefined,
     interestRate: r.interest_rate ?? undefined,
@@ -885,6 +892,30 @@ function reminderToRow(r: Partial<PersonalReminder>) {
   if (r.dueAt !== undefined) row.due_at = r.dueAt;
   if (r.isCompleted !== undefined) row.is_completed = r.isCompleted;
   if (r.createdAt !== undefined) row.created_at = r.createdAt;
+  return row;
+}
+
+function rowToKanbanColumn(r: any): KanbanColumn {
+  return {
+    id: r.id,
+    userId: r.user_id,
+    name: r.name,
+    color: r.color ?? 'gold',
+    cardIds: r.card_ids ?? [],
+    sortOrder: r.sort_order ?? 0,
+    createdAt: r.created_at,
+  };
+}
+
+function kanbanColumnToRow(c: Partial<KanbanColumn>) {
+  const row: any = {};
+  if (c.id !== undefined) row.id = c.id;
+  if (c.userId !== undefined) row.user_id = c.userId;
+  if (c.name !== undefined) row.name = c.name;
+  if (c.color !== undefined) row.color = c.color;
+  if (c.cardIds !== undefined) row.card_ids = c.cardIds;
+  if (c.sortOrder !== undefined) row.sort_order = c.sortOrder;
+  if (c.createdAt !== undefined) row.created_at = c.createdAt;
   return row;
 }
 
@@ -1028,6 +1059,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   customers: [],
   testDrives: [],
   personalReminders: [],
+  kanbanColumns: [],
   dealers: [],
   workshops: [],
   suppliers: [],
@@ -1153,6 +1185,14 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         .order('created_at', { ascending: false }).limit(200)
         .then(({ data: notifs }) => {
           if (notifs) set({ notifications: notifs.map(rowToNotification) });
+        });
+      // Personal Kanban columns are user-scoped at fetch time (not just filtered
+      // client-side) — no reason to ship one salesperson's private board layout to
+      // every other logged-in client.
+      supabase.from('kanban_columns').select('*')
+        .eq('user_id', currentUser.id).order('sort_order', { ascending: true })
+        .then(({ data: cols }) => {
+          if (cols) set({ kanbanColumns: cols.map(rowToKanbanColumn) });
         });
     }
 
@@ -1633,7 +1673,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     merchants: [], claimCategories: [], ledgerAccounts: [], journalEntries: [],
     externalSalesmen: [], bankers: [], shipments: [], carMovements: [], loanCases: [],
     loanCaseDocuments: [], loanCaseActivities: [], payments: [], investorTransactions: [],
-    notifications: [],
+    notifications: [], kanbanColumns: [],
     loaded: false, phase2Loaded: false, lastFetched: null,
   }),
 
@@ -2075,6 +2115,20 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     await supabase.from('personal_reminders').delete().eq('id', id);
   },
 
+  addKanbanColumn: async (column) => {
+    set((s) => ({ kanbanColumns: [...s.kanbanColumns, column] }));
+    const { error } = await supabase.from('kanban_columns').insert(kanbanColumnToRow(column));
+    if (error) console.error('addKanbanColumn failed:', error.message);
+  },
+  updateKanbanColumn: async (id, patch) => {
+    set((s) => ({ kanbanColumns: s.kanbanColumns.map((c) => (c.id === id ? { ...c, ...patch } : c)) }));
+    await supabase.from('kanban_columns').update(kanbanColumnToRow(patch)).eq('id', id);
+  },
+  deleteKanbanColumn: async (id) => {
+    set((s) => ({ kanbanColumns: s.kanbanColumns.filter((c) => c.id !== id) }));
+    await supabase.from('kanban_columns').delete().eq('id', id);
+  },
+
   markNotificationsReadByRef: async (referenceId) => {
     const userId = get().currentUser?.id;
     if (!userId) return;
@@ -2357,6 +2411,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       loan_amount: loanCase.loanAmount,
       applicant_interview_text: loanCase.applicantInterviewText ?? null,
       guarantor_interview_text: loanCase.guarantorInterviewText ?? null,
+      additional_interview_text: loanCase.additionalInterviewText ?? null,
       status: loanCase.status,
       created_at: loanCase.createdAt,
       updated_at: loanCase.updatedAt,
@@ -2386,6 +2441,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     if (updates.status !== undefined) dbRow.status = updates.status;
     if (updates.applicantInterviewText !== undefined) dbRow.applicant_interview_text = updates.applicantInterviewText;
     if (updates.guarantorInterviewText !== undefined) dbRow.guarantor_interview_text = updates.guarantorInterviewText;
+    if (updates.additionalInterviewText !== undefined) dbRow.additional_interview_text = updates.additionalInterviewText;
     if (updates.bankerName !== undefined) dbRow.banker_name = updates.bankerName;
     if (updates.approvedAmount !== undefined) dbRow.approved_amount = updates.approvedAmount;
     if (updates.interestRate !== undefined) dbRow.interest_rate = updates.interestRate;
@@ -2615,6 +2671,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     customers: state.customers,
     testDrives: state.testDrives,
     personalReminders: state.personalReminders,
+    kanbanColumns: state.kanbanColumns,
     dealers: state.dealers,
     workshops: state.workshops,
     suppliers: state.suppliers,
