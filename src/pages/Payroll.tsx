@@ -4,7 +4,7 @@ import { useStore } from '../store';
 import Modal from '../components/Modal';
 import PayslipPreviewOverlay from '../components/PayslipPreviewOverlay';
 import { formatRM, generateId } from '../utils/format';
-import { collectMonthlyPayroll, effectiveMonthlyBasic, basicPayLabel, PAYROLL_ELIGIBLE_ROLES, getCommissionMonth } from '../utils/generatePayments';
+import { collectMonthlyPayroll, effectiveMonthlyBasic, basicPayLabel, PAYROLL_ELIGIBLE_ROLES, getCommissionMonth, getProrationFactor } from '../utils/generatePayments';
 import { collectMissingJournalEntries } from '../utils/generateJournalEntries';
 import { generatePayslipNo, findExistingPayslip, computePayslipDraft, computeYtdForPayslip } from '../utils/payslip';
 import { User, Payslip } from '../types';
@@ -78,6 +78,7 @@ export default function Payroll() {
   const [monthFilter, setMonthFilter] = useState(new Date().toISOString().slice(0, 7));
   const [runningPayroll, setRunningPayroll] = useState(false);
   const [payrollResult, setPayrollResult] = useState<number | null>(null);
+  const [payrollSkipped, setPayrollSkipped] = useState<string[]>([]);
   const [editTarget, setEditTarget] = useState<User | null>(null);
   const [form, setForm] = useState(emptyRateForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -91,14 +92,23 @@ export default function Payroll() {
     next.has(role) ? next.delete(role) : next.add(role);
     return next;
   });
+  const [expandedCommission, setExpandedCommission] = useState<Set<string>>(new Set());
+  const toggleCommission = (userId: string) => setExpandedCommission((prev) => {
+    const next = new Set(prev);
+    next.has(userId) ? next.delete(userId) : next.add(userId);
+    return next;
+  });
+  const [expandedPayments, setExpandedPayments] = useState<Set<string>>(new Set());
+  const togglePayments = (userId: string) => setExpandedPayments((prev) => {
+    const next = new Set(prev);
+    next.has(userId) ? next.delete(userId) : next.add(userId);
+    return next;
+  });
 
   const staff = users
     .filter((u) => PAYROLL_ELIGIBLE_ROLES.includes(u.role))
     .sort((a, b) => a.name.localeCompare(b.name));
   const fullTimeStaff = staff.filter((u) => u.employmentType === 'full_time');
-  const monthTotalPayroll = fullTimeStaff.reduce(
-    (s, u) => s + effectiveMonthlyBasic(u, monthFilter) + (u.allowance ?? 0), 0
-  );
 
   // Deal commission — same calc as the Commission page, just scoped per
   // person here so it can sit alongside their payroll rate as one combined
@@ -115,9 +125,10 @@ export default function Payroll() {
     if (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) return 1000;
     return 1500;
   };
-  const monthSoldCars = cars.filter(c => (c.status === 'delivered' || c.commissionCreditedEarly) && getCommissionMonth(c) === monthFilter);
+  const monthSoldCars = cars.filter(c => (c.status === 'delivered' || c.commissionCreditedEarly) && getCommissionMonth(c, customers) === monthFilter);
+  const monthSoldCarsFor = (userId: string) => monthSoldCars.filter(c => getDealSalespersonId(c) === userId);
   const monthCommission = (userId: string) =>
-    monthSoldCars.filter(c => getDealSalespersonId(c) === userId).reduce((s, c) => s + calcCommission(c), 0);
+    monthSoldCarsFor(userId).reduce((s, c) => s + calcCommission(c), 0);
   const monthTotalCommission = staff
     .filter(u => u.role === 'salesperson')
     .reduce((s, u) => s + monthCommission(u.id), 0);
@@ -126,6 +137,24 @@ export default function Payroll() {
   const monthPayrollPayments = payments.filter(
     (p) => (p.type === 'salary' || p.type === 'allowance') && p.description?.endsWith(monthLabel)
   );
+  // Once Run Payroll has actually created a payment for this person+month,
+  // that's the frozen source of truth for that month from then on — editing
+  // their rate afterward (even same-month) must not change what already ran.
+  // Only a month with no recorded payment yet falls back to a live preview
+  // from their current rate (useful for planning ahead before running it).
+  const payrollAmountsFor = (u: User): { basic: number; allowance: number } => {
+    const basicPayment = monthPayrollPayments.find((p) => p.recipientId === u.id && p.type === 'salary');
+    const allowancePayment = monthPayrollPayments.find((p) => p.recipientId === u.id && p.type === 'allowance');
+    if (basicPayment || allowancePayment) {
+      return { basic: basicPayment?.amount ?? 0, allowance: allowancePayment?.amount ?? 0 };
+    }
+    if (u.employmentType !== 'full_time') return { basic: 0, allowance: 0 };
+    return { basic: effectiveMonthlyBasic(u, monthFilter), allowance: Math.round((u.allowance ?? 0) * getProrationFactor(u, monthFilter) * 100) / 100 };
+  };
+  const monthTotalPayroll = staff.reduce((s, u) => {
+    const { basic, allowance } = payrollAmountsFor(u);
+    return s + basic + allowance;
+  }, 0);
 
   const prevMonth = () => setMonthFilter((m) => {
     const d = new Date(m + '-01'); d.setMonth(d.getMonth() - 1); return d.toISOString().slice(0, 7);
@@ -179,16 +208,44 @@ export default function Payroll() {
     if (!currentUser) return;
     setRunningPayroll(true);
     try {
-      const missing = collectMonthlyPayroll({ month: monthFilter, users, payments });
+      const missing = collectMonthlyPayroll({ month: monthFilter, users, payments, cars, customers });
       if (missing.length > 0) await batchAddPayments(missing);
       const newEntries = collectMissingJournalEntries({
         cars, customers, repairs, payments: [...payments, ...missing], journalEntries, users, createdBy: currentUser.id,
       });
       if (newEntries.length > 0) await batchAddJournalEntries(newEntries);
+
+      // Payslips too — one for every full-time staff member who doesn't
+      // already have one for this month, auto-calculated the same way
+      // self-service generation works (no manual editing, since this runs
+      // unattended). Anyone missing an Employee ID gets skipped, not
+      // silently failed — their name comes back so it's obvious who still
+      // needs one set before their payslip can be generated.
+      const skipped: string[] = [];
+      for (const u of staff) {
+        if (u.employmentType !== 'full_time') continue;
+        if (findExistingPayslip(payslips, u.id, monthFilter)) continue;
+        if (!u.employeeId) { skipped.push(u.name); continue; }
+        const [year, monthNum] = monthFilter.split('-');
+        const salesCommission = u.role === 'salesperson' ? monthCommission(u.id) : 0;
+        const draft = computePayslipDraft({ user: u, month: monthFilter, salesCommission });
+        const payslip: Payslip = {
+          ...draft,
+          id: generateId(),
+          payslipNo: generatePayslipNo(u.employeeId, year, monthNum),
+          payDate: new Date().toISOString().slice(0, 10),
+          paymentMethod: 'Bank Transfer',
+          onProbation: false,
+          createdAt: new Date().toISOString(),
+          createdBy: currentUser.id,
+        };
+        await addPayslip(payslip);
+      }
+      setPayrollSkipped(skipped);
       setPayrollResult(missing.length);
     } finally {
       setRunningPayroll(false);
-      setTimeout(() => setPayrollResult(null), 4000);
+      setTimeout(() => { setPayrollResult(null); setPayrollSkipped([]); }, 6000);
     }
   };
 
@@ -296,11 +353,16 @@ export default function Payroll() {
         <button
           onClick={handleRunPayroll}
           disabled={runningPayroll}
-          title="Creates this month's payments for every full-time staff member and posts them straight to the ledger — no separate Run Backfill needed"
+          title="Creates this month's Basic/Allowance for every full-time staff member plus any missing commission (delivered or credited-early cars), and posts them straight to the ledger — one action for everything owed this month"
           className="text-sm px-4 py-2 rounded-lg bg-sky-500/15 border border-sky-500/40 text-sky-300 hover:bg-sky-500/25 transition-colors disabled:opacity-50 font-medium"
         >
           {runningPayroll ? 'Running...' : payrollResult !== null ? (payrollResult > 0 ? `Created ${payrollResult} payment${payrollResult !== 1 ? 's' : ''}` : 'Already up to date') : `Run Payroll — ${monthLabel}`}
         </button>
+        {payrollSkipped.length > 0 && (
+          <p className="text-amber-400 text-xs w-full">
+            Payslip skipped (no Employee ID set) for: {payrollSkipped.join(', ')}
+          </p>
+        )}
       </div>
 
       {/* Staff rates — grouped into its own section per role, rather than one
@@ -312,9 +374,9 @@ export default function Payroll() {
           const RoleIcon = ROLE_ICON[role] ?? Settings;
           const isCollapsed = collapsedRoles.has(role);
           const roleTotal = roleStaff.reduce((s, u) => {
-            const basic = u.employmentType === 'full_time' ? effectiveMonthlyBasic(u, monthFilter) + (u.allowance ?? 0) : 0;
+            const { basic, allowance } = payrollAmountsFor(u);
             const comm = u.role === 'salesperson' ? monthCommission(u.id) : 0;
-            return s + basic + comm;
+            return s + basic + allowance + comm;
           }, 0);
           return (
             <div key={role} className="space-y-2.5">
@@ -328,12 +390,16 @@ export default function Payroll() {
               </button>
               {!isCollapsed && roleStaff.map((u) => {
                 const isFullTime = u.employmentType === 'full_time';
-                const effectiveBasic = isFullTime ? effectiveMonthlyBasic(u, monthFilter) : 0;
-                const boostActive = isFullTime && !!u.temporaryBoost && !!u.temporaryBoostUntil && monthFilter <= u.temporaryBoostUntil;
-                const commission = u.role === 'salesperson' ? monthCommission(u.id) : 0;
-                const totalPay = effectiveBasic + (isFullTime ? (u.allowance ?? 0) : 0) + commission;
+                const wasRun = monthPayrollPayments.some((p) => p.recipientId === u.id);
+                const { basic: effectiveBasic, allowance: allowanceAmount } = payrollAmountsFor(u);
+                const boostActive = !wasRun && isFullTime && !!u.temporaryBoost && !!u.temporaryBoostUntil && monthFilter <= u.temporaryBoostUntil;
+                const commissionCars = u.role === 'salesperson' ? monthSoldCarsFor(u.id) : [];
+                const commission = commissionCars.reduce((s, c) => s + calcCommission(c), 0);
+                const totalPay = effectiveBasic + allowanceAmount + commission;
+                const isCommissionExpanded = expandedCommission.has(u.id);
                 return (
-                  <div key={u.id} className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-4 flex items-center gap-4 flex-wrap">
+                  <div key={u.id} className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-4">
+                  <div className="flex items-center gap-4 flex-wrap">
                     <div className="w-10 h-10 rounded-full bg-obsidian-600/60 border border-obsidian-400/40 flex items-center justify-center shrink-0">
                       <RoleIcon size={16} className="text-gray-400" />
                     </div>
@@ -343,21 +409,32 @@ export default function Payroll() {
                     </div>
                     <div className="flex-1 min-w-[200px] space-y-1">
                       <div className="flex items-center gap-4 flex-wrap text-xs">
-                        {isFullTime ? (
+                        {effectiveBasic > 0 || allowanceAmount > 0 ? (
                           <>
-                            <span className="text-gray-400">{basicPayLabel(u.role)}: <span className="text-white font-medium">{formatRM(effectiveBasic)}</span></span>
-                            {(u.allowance ?? 0) > 0 && <span className="text-gray-400">Allowance: <span className="text-white font-medium">{formatRM(u.allowance!)}</span></span>}
-                            {(u.salaryIncrement ?? 0) > 0 && <span className="text-purple-400">+{formatRM(u.salaryIncrement!)} increment</span>}
+                            {effectiveBasic > 0 && <span className="text-gray-400">{basicPayLabel(u.role)}: <span className="text-white font-medium">{formatRM(effectiveBasic)}</span></span>}
+                            {allowanceAmount > 0 && <span className="text-gray-400">Allowance: <span className="text-white font-medium">{formatRM(allowanceAmount)}</span></span>}
+                            {!wasRun && (u.salaryIncrement ?? 0) > 0 && <span className="text-purple-400">+{formatRM(u.salaryIncrement!)} increment</span>}
                             {boostActive && <span className="text-amber-400">+{formatRM(u.temporaryBoost!)} boost (until {u.temporaryBoostUntil})</span>}
                           </>
                         ) : (
-                          <span className="text-gray-600">No fixed pay configured</span>
+                          <span className="text-gray-600">{isFullTime ? 'Not run for this month' : 'No fixed pay configured'}</span>
                         )}
                         {u.role === 'salesperson' && (
-                          <span className="text-teal-400">Commission: <span className="font-medium">{formatRM(commission)}</span></span>
+                          commissionCars.length > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => toggleCommission(u.id)}
+                              className="text-teal-400 hover:text-teal-300 flex items-center gap-1"
+                            >
+                              Commission: <span className="font-medium">{formatRM(commission)}</span>
+                              <ChevronDown size={11} className={`transition-transform ${isCommissionExpanded ? 'rotate-180' : ''}`} />
+                            </button>
+                          ) : (
+                            <span className="text-teal-400">Commission: <span className="font-medium">{formatRM(commission)}</span></span>
+                          )
                         )}
                       </div>
-                      {(isFullTime || commission > 0) && (
+                      {(effectiveBasic > 0 || allowanceAmount > 0 || commission > 0) && (
                         <p className="text-gray-500 text-[11px]">Total this month: <span className="text-white font-semibold">{formatRM(totalPay)}</span></p>
                       )}
                     </div>
@@ -376,6 +453,20 @@ export default function Payroll() {
                       </button>
                     </div>
                   </div>
+                  {isCommissionExpanded && commissionCars.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-obsidian-400/30 space-y-1.5">
+                      {commissionCars.map((c) => (
+                        <div key={c.id} className="flex items-center justify-between text-xs px-1">
+                          <span className="text-gray-400">
+                            {c.year} {c.make} {c.model}{c.carPlate ? ` (${c.carPlate})` : ''}
+                            {c.commissionCreditedEarly && <span className="text-emerald-400 ml-1.5">· credited early</span>}
+                          </span>
+                          <span className="text-teal-400 font-medium">{formatRM(calcCommission(c))}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  </div>
                 );
               })}
             </div>
@@ -383,30 +474,72 @@ export default function Payroll() {
         })}
       </div>
 
-      {/* This month's payroll payments */}
-      {monthPayrollPayments.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-gray-400 text-xs font-semibold uppercase tracking-wide">Payments — {monthLabel}</p>
-          <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card divide-y divide-obsidian-400/30">
-            {monthPayrollPayments.map((p) => (
-              <div key={p.id} className="flex items-center justify-between px-4 py-3 text-sm">
-                <div>
-                  <p className="text-white font-medium">{p.recipientName}</p>
-                  <p className="text-gray-500 text-xs">{p.description}</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-white font-semibold">{formatRM(p.amount)}</span>
-                  {p.status === 'transferred' ? (
-                    <span className="flex items-center gap-1 text-emerald-400 text-xs"><CheckCircle2 size={13} />Paid</span>
-                  ) : (
-                    <span className="flex items-center gap-1 text-amber-400 text-xs"><Clock size={13} />Pending</span>
-                  )}
-                </div>
-              </div>
-            ))}
+      {/* This month's payments, grouped per person — basic/allowance/commission
+          are separate Payment records under the hood (different ledger
+          expense accounts, different trigger points), but what actually goes
+          out is one bank transfer per person, so that's what's shown up
+          front — click to see which payments make it up. */}
+      {(() => {
+        const monthCommissionPayments = payments.filter(
+          (p) => p.type === 'salesman_commission' && monthSoldCars.some((c) => c.id === p.carId)
+        );
+        const recipientIds = [...new Set([
+          ...monthPayrollPayments.map((p) => p.recipientId),
+          ...monthCommissionPayments.map((p) => p.recipientId),
+        ])];
+        if (recipientIds.length === 0) return null;
+        return (
+          <div className="space-y-2">
+            <p className="text-gray-400 text-xs font-semibold uppercase tracking-wide">Payments — {monthLabel}</p>
+            <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card divide-y divide-obsidian-400/30">
+              {recipientIds.map((uid) => {
+                const recipientPayments = [...monthPayrollPayments, ...monthCommissionPayments].filter((p) => p.recipientId === uid);
+                if (recipientPayments.length === 0) return null;
+                const total = recipientPayments.reduce((s, p) => s + p.amount, 0);
+                const paidCount = recipientPayments.filter((p) => p.status === 'transferred').length;
+                const payStatus = paidCount === recipientPayments.length ? 'paid' : paidCount === 0 ? 'pending' : 'partial';
+                const isExpanded = expandedPayments.has(uid);
+                return (
+                  <div key={uid} className="px-4 py-3">
+                    <button type="button" onClick={() => togglePayments(uid)} className="w-full flex items-center justify-between text-sm text-left">
+                      <div className="flex items-center gap-1.5">
+                        <ChevronDown size={13} className={`text-gray-500 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
+                        <div>
+                          <p className="text-white font-medium">{recipientPayments[0].recipientName}</p>
+                          <p className="text-gray-500 text-xs">Total Transfer</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-white font-semibold">{formatRM(total)}</span>
+                        {payStatus === 'paid' && <span className="flex items-center gap-1 text-emerald-400 text-xs"><CheckCircle2 size={13} />Paid</span>}
+                        {payStatus === 'pending' && <span className="flex items-center gap-1 text-amber-400 text-xs"><Clock size={13} />Pending</span>}
+                        {payStatus === 'partial' && <span className="flex items-center gap-1 text-amber-400 text-xs"><Clock size={13} />{paidCount}/{recipientPayments.length} Paid</span>}
+                      </div>
+                    </button>
+                    {isExpanded && (
+                      <div className="mt-2.5 pt-2.5 border-t border-obsidian-400/30 space-y-1.5 pl-[19px]">
+                        {recipientPayments.map((p) => (
+                          <div key={p.id} className="flex items-center justify-between text-xs">
+                            <span className="text-gray-400">{p.description}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-300 font-medium">{formatRM(p.amount)}</span>
+                              {p.status === 'transferred' ? (
+                                <span className="text-emerald-400">Paid</span>
+                              ) : (
+                                <span className="text-amber-400">Pending</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
 
       {/* Edit rate modal */}

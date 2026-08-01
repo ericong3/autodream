@@ -1,4 +1,5 @@
 import { Payslip, User } from '../types';
+import { getProrationFactor } from './generatePayments';
 
 // Approximate percentage-based Malaysian statutory calculations — EPF/SOCSO/EIS
 // actually use banded lookup tables with specific cut-off amounts, not pure
@@ -105,10 +106,14 @@ export function computePayslipDraft(opts: {
 > {
   const { user, month, salesCommission } = opts;
   const isFullTime = user.employmentType === 'full_time';
-  const basicSalary = isFullTime ? (user.basicSalary ?? 0) : 0;
-  const allowance = isFullTime ? (user.allowance ?? 0) : 0;
+  // Prorated for whichever month they joined in — e.g. joining on the 6th of
+  // a 30-day month means 25/30 of the full monthly rate for that one month.
+  const proration = getProrationFactor(user, month);
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const basicSalary = isFullTime ? round2((user.basicSalary ?? 0) * proration) : 0;
+  const allowance = isFullTime ? round2((user.allowance ?? 0) * proration) : 0;
   const boostActive = isFullTime && !!user.temporaryBoost && !!user.temporaryBoostUntil && month <= user.temporaryBoostUntil;
-  const performanceBonus = isFullTime ? (user.salaryIncrement ?? 0) + (boostActive ? user.temporaryBoost! : 0) : 0;
+  const performanceBonus = isFullTime ? round2(((user.salaryIncrement ?? 0) + (boostActive ? user.temporaryBoost! : 0)) * proration) : 0;
   const wage = basicSalary + allowance;
   const grossTaxable = basicSalary + salesCommission + performanceBonus + allowance;
   const epfEmployee = calcEpfEmployee(wage);

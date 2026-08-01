@@ -4,22 +4,58 @@ import { generateId } from './format';
 type AddPayment = (p: Payment) => Promise<void>;
 type UpdatePayment = (id: string, u: Partial<Payment>) => Promise<void>;
 
-// Single source of truth for "which month does this car's commission count
-// toward" — used everywhere commission gets tallied (Commission page, sales
-// dashboards, Payroll/Payslip, team member stats). Previously each of those
-// five places computed this independently via customer/work-order lookups
-// keyed off deliveredAt, which silently diverged from what the Delivered
-// (History) page's own month-grouping and drag-to-reassign feature actually
-// uses (finalDeal.submittedAt / dateAdded) — dragging a car to a different
-// month there never touched deliveredAt, so commission stayed stuck on the
-// old month. This mirrors History.tsx's own grouping logic exactly, so
-// wherever a car is filed in the Delivered tab is where it counts here too.
-// commissionCreditedEarly + commissionCreditedMonth is the one carve-out —
-// an explicit director choice for a not-yet-delivered car — and takes
-// priority when set.
-export function getCommissionMonth(car: Car): string {
-  if (car.commissionCreditedEarly && car.commissionCreditedMonth) return car.commissionCreditedMonth;
-  return (car.finalDeal?.submittedAt ?? car.dateAdded).slice(0, 7);
+// Single source of truth for "when did this car's sale actually complete" —
+// used by the Delivered (History) page's own display/grouping/sort AND
+// everywhere commission gets tallied (Commission page, sales dashboards,
+// Payroll/Payslip, team member stats). deliveredAt (the real handover
+// timestamp, set on the deal customer) wins — finalDeal.submittedAt is an
+// earlier milestone (when the deal paperwork/price was finalized) that can
+// predate actual delivery by weeks, which produced wrong months for cars
+// with a gap between the two. dateAdded (inventory intake) is the last
+// resort for cars with neither. commissionCreditedEarly +
+// commissionCreditedMonth is the one carve-out — an explicit director choice
+// for a not-yet-delivered car — and takes priority when set. History.tsx's
+// drag-to-reassign feature updates deliveredAt directly (see updateCar/
+// updateCustomer calls there) so a manual correction is honored everywhere
+// this function is used, not just in the Delivered tab's own display.
+export function getDeliveryDate(car: Car, customers: Customer[]): string {
+  if (car.commissionCreditedEarly && car.commissionCreditedMonth) return `${car.commissionCreditedMonth}-01`;
+  const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
+  return dealCustomer?.deliveredAt ?? car.finalDeal?.submittedAt ?? car.dateAdded;
+}
+export function getCommissionMonth(car: Car, customers: Customer[]): string {
+  return getDeliveryDate(car, customers).slice(0, 7);
+}
+
+// Sundays are the standing off-day for everyone — the divisor for proration
+// is working days in the month, not raw calendar days.
+function isWorkingDay(year: number, monthNum: number, day: number): boolean {
+  return new Date(year, monthNum - 1, day).getDay() !== 0; // 0 = Sunday
+}
+function countWorkingDays(year: number, monthNum: number, fromDay: number, toDay: number): number {
+  let count = 0;
+  for (let day = fromDay; day <= toDay; day++) {
+    if (isWorkingDay(year, monthNum, day)) count++;
+  }
+  return count;
+}
+
+// Prorates a monthly rate for whichever calendar month someone joined in —
+// e.g. July has 31 days minus 4 Sundays = 27 working days; joining on the
+// 6th (a working day before it counts too) means working days worked / 27
+// of the full rate for that one month. Only applies to the joining month
+// itself; every month after (or before joining) gets the full rate (factor
+// 1). No leaving-date equivalent exists yet — this only covers the start of
+// employment.
+export function getProrationFactor(u: User, month: string): number {
+  if (!u.joiningDate || !u.joiningDate.startsWith(month)) return 1;
+  const joinDay = Number(u.joiningDate.slice(8, 10));
+  const [year, monthNum] = month.split('-').map(Number);
+  const totalDaysInMonth = new Date(year, monthNum, 0).getDate();
+  const totalWorkingDays = countWorkingDays(year, monthNum, 1, totalDaysInMonth);
+  if (totalWorkingDays === 0) return 1;
+  const workingDaysWorked = countWorkingDays(year, monthNum, joinDay, totalDaysInMonth);
+  return Math.max(0, Math.min(1, workingDaysWorked / totalWorkingDays));
 }
 
 // ── Duplicate guard ───────────────────────────────────────────────────────────
@@ -496,7 +532,8 @@ export function collectMissingPayments(data: {
 // actually true for that month, this returns the right number for it.
 export function effectiveMonthlyBasic(u: User, month: string): number {
   const boostActive = !!u.temporaryBoost && !!u.temporaryBoostUntil && month <= u.temporaryBoostUntil;
-  return (u.basicSalary ?? 0) + (u.salaryIncrement ?? 0) + (boostActive ? u.temporaryBoost! : 0);
+  const full = (u.basicSalary ?? 0) + (u.salaryIncrement ?? 0) + (boostActive ? u.temporaryBoost! : 0);
+  return Math.round(full * getProrationFactor(u, month) * 100) / 100;
 }
 
 // Payroll applies to actual staff, not external parties who happen to have a
@@ -528,8 +565,10 @@ export function collectMonthlyPayroll(opts: {
   month: string; // 'YYYY-MM'
   users: User[];
   payments: Payment[];
+  cars: Car[];
+  customers: Customer[];
 }): Payment[] {
-  const { month, users, payments } = opts;
+  const { month, users, payments, cars, customers } = opts;
   const now = new Date().toISOString();
   const monthLabel = new Date(`${month}-01T00:00:00`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   const result: Payment[] = [];
@@ -565,6 +604,38 @@ export function collectMonthlyPayroll(opts: {
         });
       }
     }
+  }
+
+  // Commission — merged into the same run, covering both cars actually
+  // delivered this month and cars a director explicitly credited early.
+  // Previously commission relied entirely on a separate automatic-at-
+  // delivery trigger (plus a manual Backfill on Payments as a catch-up),
+  // completely disconnected from Run Payroll — so basic/allowance and
+  // commission could drift out of sync with each other for the same month.
+  // Now one click covers everything owed for the month, from either source.
+  const hasCommissionPayment = (carId: string) =>
+    payments.some(p => p.type === 'salesman_commission' && p.carId === carId) ||
+    result.some(p => p.type === 'salesman_commission' && p.carId === carId);
+  const monthCars = cars.filter(c =>
+    (c.status === 'delivered' || c.commissionCreditedEarly) && getCommissionMonth(c, customers) === month
+  );
+  for (const car of monthCars) {
+    if (car.outgoingConsignment || car.isStaffSale || car.waiveCommission || hasCommissionPayment(car.id)) continue;
+    const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
+    const spId = car.assignedSalesperson || dealCustomer?.assignedSalesId;
+    const sp = spId ? users.find(u => u.id === spId) : undefined;
+    if (!sp) continue;
+    const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
+    const dealPrice = (wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
+    const effectiveFloor = car.priceFloor ?? car.sellingPrice;
+    const amount = (car.consignment || dealPrice < effectiveFloor) ? 1000 : 1500;
+    const carLabel = `${car.year} ${car.make} ${car.model}${car.carPlate ? ` (${car.carPlate})` : ''}`;
+    result.push({
+      id: generateId(), type: 'salesman_commission', carId: car.id,
+      recipientType: 'user', recipientId: sp.id, recipientName: sp.name,
+      bankName: sp.bankName, accountNumber: sp.bankAccountNumber, accountHolder: sp.bankAccountHolder,
+      amount, description: `Commission — ${carLabel}`, status: 'pending', createdAt: now,
+    });
   }
 
   return result;

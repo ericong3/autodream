@@ -50,7 +50,7 @@ export default function MyPayslipCard() {
   };
   const monthCommission = currentUser.role === 'salesperson'
     ? cars
-        .filter(c => (c.status === 'delivered' || c.commissionCreditedEarly) && getCommissionMonth(c) === monthFilter && getDealSalespersonId(c) === currentUser.id)
+        .filter(c => (c.status === 'delivered' || c.commissionCreditedEarly) && getCommissionMonth(c, customers) === monthFilter && getDealSalespersonId(c) === currentUser.id)
         .reduce((s, c) => s + calcCommission(c), 0)
     : 0;
 

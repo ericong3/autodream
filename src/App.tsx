@@ -113,9 +113,17 @@ export default function App() {
     }
   }, []);
 
+  // Re-runs on every login/logout/user-switch (currentUser.id changing), not
+  // just once on the very first page load — otherwise fetchDone stays true
+  // forever after the first successful load, so the ready-gate below stops
+  // actually gating anything: logging out wipes the store's data arrays
+  // (see logout()) but nothing re-triggers loadAll(), so the app renders
+  // immediately with empty data until a manual browser refresh remounts
+  // App from scratch and this effect fires again for real.
   useEffect(() => {
+    setFetchDone(false);
     loadAll().finally(() => setFetchDone(true));
-  }, []);
+  }, [currentUser?.id]);
 
   const ready = hydrated && (storeLoaded || fetchDone);
 

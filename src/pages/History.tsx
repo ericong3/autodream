@@ -43,7 +43,7 @@ import { Car } from '../types';
 import { formatRM as _formatRM } from '../utils/format';
 import Modal from '../components/Modal';
 import { useStore } from '../store';
-import { generateLoanDisbursement } from '../utils/generatePayments';
+import { generateLoanDisbursement, getDeliveryDate } from '../utils/generatePayments';
 import { buildDisbursementReceivedEntry } from '../utils/generateJournalEntries';
 import { formatRM, formatMileage, shortName } from '../utils/format';
 import StatCard from '../components/StatCard';
@@ -149,6 +149,7 @@ export default function History() {
   const repairs = useStore((s) => s.repairs);
   const currentUser = useStore((s) => s.currentUser);
   const updateCar = useStore((s) => s.updateCar);
+  const updateCustomer = useStore((s) => s.updateCustomer);
   const payments = useStore((s) => s.payments);
   const addPayment = useStore((s) => s.addPayment);
   const addJournalEntry = useStore((s) => s.addJournalEntry);
@@ -197,7 +198,7 @@ export default function History() {
 
   const soldCars = useMemo(() => {
     let result = cars.filter((c) => c.status === 'delivered');
-    if (monthFilter) result = result.filter((c) => (c.finalDeal?.submittedAt ?? c.dateAdded).startsWith(monthFilter));
+    if (monthFilter) result = result.filter((c) => getDeliveryDate(c, customers).startsWith(monthFilter));
     if (filterMake !== 'All') result = result.filter((c) => c.make === filterMake);
     if (search) {
       const q = search.toLowerCase();
@@ -210,8 +211,8 @@ export default function History() {
           (c.carPlate ?? '').toLowerCase().includes(q)
       );
     }
-    return result.sort((a, b) => new Date(b.finalDeal?.submittedAt ?? b.dateAdded).getTime() - new Date(a.finalDeal?.submittedAt ?? a.dateAdded).getTime());
-  }, [cars, search, monthFilter, filterMake]);
+    return result.sort((a, b) => new Date(getDeliveryDate(b, customers)).getTime() - new Date(getDeliveryDate(a, customers)).getTime());
+  }, [cars, customers, search, monthFilter, filterMake]);
 
   // Sync drag order — preserve manual order, only add/remove changed cars
   useEffect(() => {
@@ -309,7 +310,15 @@ export default function History() {
       const [y, m] = monthFilter.split('-').map(Number);
       const target = new Date(y, m - 1 + dir, 1);
       const iso = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-01T00:00:00.000Z`;
-      if (car.finalDeal) {
+      // Updates the actual deliveredAt on the deal customer — the real
+      // source of truth getDeliveryDate() reads everywhere (Commission,
+      // Payroll, dashboards) — not finalDeal.submittedAt/dateAdded, which
+      // are earlier milestones that can predate actual delivery and used to
+      // make dragging here silently not affect commission attribution.
+      const dealCustomer = customers.find(cu => cu.interestedCarId === car.id && (cu.cashWorkOrder || cu.loanWorkOrder));
+      if (dealCustomer) {
+        updateCustomer(dealCustomer.id, { deliveredAt: iso });
+      } else if (car.finalDeal) {
         updateCar(car.id, { finalDeal: { ...car.finalDeal, submittedAt: iso } });
       } else {
         updateCar(car.id, { dateAdded: iso.split('T')[0] });

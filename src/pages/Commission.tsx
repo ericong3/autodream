@@ -4,7 +4,7 @@ import { useStore } from '../store';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, generateId } from '../utils/format';
-import { getCommissionMonth } from '../utils/generatePayments';
+import { getCommissionMonth, getDeliveryDate } from '../utils/generatePayments';
 
 type EditState = { carId: string; field: 'deal' | 'intake' | 'source'; customerId?: string; value: string };
 
@@ -75,7 +75,7 @@ export default function Commission() {
 
   const filteredSoldCars = useMemo(() => allSoldCars.filter(c => {
     const matchSales = !salesFilter || getDealSalespersonId(c) === salesFilter;
-    const matchMonth = !monthFilter || getCommissionMonth(c) === monthFilter;
+    const matchMonth = !monthFilter || getCommissionMonth(c, customers) === monthFilter;
     return matchSales && matchMonth;
   }), [allSoldCars, salesFilter, monthFilter, customers]);
 
@@ -247,7 +247,7 @@ export default function Commission() {
                           <p className="text-white font-medium">{c.year} {c.make} {c.model}</p>
                           <p className="text-gray-500 text-xs capitalize">{c.colour} · {c.transmission}</p>
                         </td>
-                        <td className="px-5 py-3 text-gray-400">{new Date(c.finalDeal?.submittedAt ?? c.dateAdded).toLocaleDateString('en-MY')}</td>
+                        <td className="px-5 py-3 text-gray-400">{new Date(getDeliveryDate(c, customers)).toLocaleDateString('en-MY')}</td>
                         {isDirector && <td className="px-5 py-3 text-gray-400">{getSalesName(getDealSalespersonId(c))}</td>}
                         <td className="px-5 py-3 text-right text-gold-400 font-semibold">
                           {formatRM(c.finalDeal?.dealPrice ?? c.sellingPrice)}

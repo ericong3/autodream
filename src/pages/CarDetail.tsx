@@ -2105,16 +2105,28 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   </div>
                 </button>
               )}
-              {car.status !== 'delivered' && editForm.commissionCreditedEarly && (
-                <FormField label="Counts Toward Month">
-                  <input
-                    type="month"
-                    className={inputCls()}
-                    value={editForm.commissionCreditedMonth ?? new Date().toISOString().slice(0, 7)}
-                    onChange={(e) => setEditForm({ ...editForm, commissionCreditedMonth: e.target.value })}
-                  />
-                </FormField>
-              )}
+              {car.status !== 'delivered' && editForm.commissionCreditedEarly && (() => {
+                const monthVal = editForm.commissionCreditedMonth ?? new Date().toISOString().slice(0, 7);
+                const shiftMonth = (dir: 1 | -1) => {
+                  const [y, m] = monthVal.split('-').map(Number);
+                  const d = new Date(y, m - 1 + dir, 1);
+                  setEditForm({ ...editForm, commissionCreditedMonth: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` });
+                };
+                const monthLabel = new Date(monthVal + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+                return (
+                  <FormField label="Counts Toward Month">
+                    <div className="flex items-center gap-1 bg-obsidian-700/60 border border-obsidian-400/60 rounded-lg px-1 py-1">
+                      <button type="button" onClick={() => shiftMonth(-1)} className="p-1.5 text-gray-500 hover:text-white hover:bg-obsidian-500/60 rounded-md transition-colors">
+                        <ChevronLeft size={15} />
+                      </button>
+                      <span className="flex-1 text-white text-sm font-medium text-center">{monthLabel}</span>
+                      <button type="button" onClick={() => shiftMonth(1)} className="p-1.5 text-gray-500 hover:text-white hover:bg-obsidian-500/60 rounded-md transition-colors">
+                        <ChevronRight size={15} />
+                      </button>
+                    </div>
+                  </FormField>
+                );
+              })()}
             </div>
           )}
           <FormField label="Transmission">

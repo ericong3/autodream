@@ -39,9 +39,10 @@ export default function PayslipPreviewOverlay({ payslip, employee, ytd, onClose 
       </div>
       <style>{`
         @media print {
+          @page { size: A4; margin: 8mm; }
           body * { visibility: hidden; }
           #payslip-print-area, #payslip-print-area * { visibility: visible; }
-          #payslip-print-area { position: absolute; top: 0; left: 0; width: 100%; }
+          #payslip-print-area { position: absolute; top: 0; left: 0; width: 100%; box-shadow: none !important; border-radius: 0 !important; }
           .no-print { display: none !important; }
         }
       `}</style>

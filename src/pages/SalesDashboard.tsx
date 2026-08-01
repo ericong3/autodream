@@ -7,7 +7,7 @@ import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import MyPayslipCard from '../components/MyPayslipCard';
 import { formatRM, generateId } from '../utils/format';
 import { verifyPassword } from '../utils/password';
-import { effectiveMonthlyBasic, basicPayLabel, getCommissionMonth } from '../utils/generatePayments';
+import { effectiveMonthlyBasic, basicPayLabel, getCommissionMonth, getDeliveryDate, getProrationFactor } from '../utils/generatePayments';
 
 export default function SalesDashboard() {
   const cars = useStore((s) => s.cars);
@@ -22,6 +22,7 @@ export default function SalesDashboard() {
   const deletePersonalReminder = useStore((s) => s.deletePersonalReminder);
   const updateTestDrive = useStore((s) => s.updateTestDrive);
   const updateCustomer = useStore((s) => s.updateCustomer);
+  const payments = useStore((s) => s.payments);
   const [showFollowUpList, setShowFollowUpList] = useState(false);
   const [followUpSelected, setFollowUpSelected] = useState<typeof customers[0] | null>(null);
 
@@ -128,7 +129,7 @@ export default function SalesDashboard() {
     const buyer = customers.find(cu => cu.interestedCarId === c.id && (cu.loanWorkOrder || cu.cashWorkOrder));
     return buyer?.assignedSalesId === myId;
   }), [cars, customers, myId]);
-  const mySoldCarsMonth = useMemo(() => mySoldCars.filter(c => getCommissionMonth(c) === monthFilter), [mySoldCars, monthFilter]);
+  const mySoldCarsMonth = useMemo(() => mySoldCars.filter(c => getCommissionMonth(c, customers) === monthFilter), [mySoldCars, monthFilter, customers]);
   const totalCommission = useMemo(() => mySoldCars.reduce((s, c) => s + calcDealCommission(c), 0), [mySoldCars, customers, repairs]);
   const monthCommission = useMemo(() => mySoldCarsMonth.reduce((s, c) => s + calcDealCommission(c), 0), [mySoldCarsMonth, customers, repairs]);
 
@@ -148,12 +149,22 @@ export default function SalesDashboard() {
   const totalIntakeComm = myIntakeCars.reduce((s, c) => s + (c.intakeCommission ?? 0), 0);
   const monthIntakeComm = myIntakeCarsMonth.reduce((s, c) => s + (c.intakeCommission ?? 0), 0);
 
-  // Flat monthly rate for full-time salespeople — same "what you're entitled to"
-  // figure Commission.tsx shows, not what's actually been paid out yet (that's
-  // tracked separately in Payments once a director runs payroll for the month).
+  // Basic/allowance have no history — once Run Payroll has actually created
+  // a payment for this month, that's the frozen source of truth from then
+  // on, regardless of any later rate edits (even same-month). A month with
+  // no recorded payment yet falls back to a live preview from the current
+  // rate — otherwise setting an allowance today would silently appear on
+  // every past month you scroll back to, even ones from before it existed.
   const isFullTime = currentUser?.employmentType === 'full_time';
-  const monthBasic = isFullTime && currentUser ? effectiveMonthlyBasic(currentUser, monthFilter) : 0;
-  const monthAllowance = isFullTime ? (currentUser?.allowance ?? 0) : 0;
+  const monthBasicPayment = payments.find(p => p.recipientId === currentUser?.id && p.type === 'salary' && p.description?.endsWith(monthLabel));
+  const monthAllowancePayment = payments.find(p => p.recipientId === currentUser?.id && p.type === 'allowance' && p.description?.endsWith(monthLabel));
+  const wasRun = !!monthBasicPayment || !!monthAllowancePayment;
+  const monthBasic = wasRun
+    ? (monthBasicPayment?.amount ?? 0)
+    : (isFullTime && currentUser ? effectiveMonthlyBasic(currentUser, monthFilter) : 0);
+  const monthAllowance = wasRun
+    ? (monthAllowancePayment?.amount ?? 0)
+    : (isFullTime && currentUser ? Math.round((currentUser.allowance ?? 0) * getProrationFactor(currentUser, monthFilter) * 100) / 100 : 0);
 
   const totalMonthSalary = monthCommission + monthSourcingComm + monthIntakeComm + monthBasic + monthAllowance;
   const totalAllTime = totalCommission + totalSourcingComm + totalIntakeComm;
@@ -245,7 +256,8 @@ export default function SalesDashboard() {
           <div className="border-t border-obsidian-500/40 my-4" />
 
           {/* Breakdown pills */}
-          <div className={`grid ${isFullTime ? 'grid-cols-3' : 'grid-cols-2'} gap-3 mb-4`}>
+          {(() => { const showBasicPill = isFullTime || monthBasic > 0 || monthAllowance > 0; return (
+          <div className={`grid ${showBasicPill ? 'grid-cols-3' : 'grid-cols-2'} gap-3 mb-4`}>
             <div className="text-center">
               <p className="text-gray-500 text-[10px] uppercase tracking-wide mb-1">Car Sold</p>
               <p className="text-emerald-400 font-bold text-sm">{mask(formatRM(monthCommission))}</p>
@@ -256,7 +268,7 @@ export default function SalesDashboard() {
               <p className="text-blue-400 font-bold text-sm">{mask(formatRM(monthSourcingComm))}</p>
               <p className="text-gray-600 text-[10px]">{mySourcingCarsMonth.length} car{mySourcingCarsMonth.length !== 1 ? 's' : ''}</p>
             </div>
-            {isFullTime && (
+            {showBasicPill && (
               <div className="text-center border-l border-obsidian-500/40">
                 <p className="text-gray-500 text-[10px] uppercase tracking-wide mb-1">{basicPayLabel(currentUser!.role)} + Allowance</p>
                 <p className="text-sky-400 font-bold text-sm">{mask(formatRM(monthBasic + monthAllowance))}</p>
@@ -264,6 +276,7 @@ export default function SalesDashboard() {
               </div>
             )}
           </div>
+          ); })()}
 
           {/* Expand breakdown toggle */}
           <button
@@ -303,7 +316,7 @@ export default function SalesDashboard() {
                             <p className="text-white text-xs font-medium">{c.year} {c.make} {c.model}</p>
                             <p className="text-gray-600 text-[10px]">{c.colour}</p>
                           </td>
-                          <td className="px-3 py-2.5 text-gray-500 text-xs">{new Date(c.finalDeal?.submittedAt ?? c.dateAdded).toLocaleDateString('en-MY')}</td>
+                          <td className="px-3 py-2.5 text-gray-500 text-xs">{new Date(getDeliveryDate(c, customers)).toLocaleDateString('en-MY')}</td>
                           <td className="px-3 py-2.5 text-right text-emerald-400 font-semibold text-xs">{mask(formatRM(calcDealCommission(c)))}</td>
                         </tr>
                       ))}
