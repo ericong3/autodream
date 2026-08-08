@@ -792,12 +792,16 @@ export default function Customers() {
     const approvedApp = bankName
       ? c.loanApplications?.find(a => a.bank === bankName && a.status === 'approved')
       : c.loanApplications?.find(a => a.status === 'approved');
-    const car = getCar(c.interestedCarId);
+    const resolvedCarId = carIdOverride ?? c.interestedCarId ?? '';
+    const car = getCar(resolvedCarId);
     const prev = c.loanWorkOrder ?? c.cashWorkOrder;
+    // Only trust the previous work order's selling price if it was actually quoted against
+    // this same car — otherwise (car changed since) it's a stale price from the old unit.
+    const prevPriceCarMatches = prev?.carId === resolvedCarId;
     const lo = c.loanOrder; // pre-fill from Loan Order if available
     setWoForm({
       ...emptyWorkOrder,
-      sellingPrice: prev?.sellingPrice ?? lo?.sellingPrice ?? car?.sellingPrice ?? 0,
+      sellingPrice: (prevPriceCarMatches ? prev?.sellingPrice : undefined) ?? lo?.sellingPrice ?? car?.sellingPrice ?? 0,
       insurance: prev?.insurance ?? lo?.insurance ?? 0,
       bankProduct: prev?.bankProduct ?? lo?.bankProduct ?? 0,
       bankProductItems: prev?.bankProductItems ?? (() => { const approvedCase = loanCases.find(lc => lc.customerId === c.id && lc.status === 'approved' && (!bankName || lc.bank === bankName)); return approvedCase?.bankProducts?.map(bp => ({ label: bp.name, amount: bp.amount })) ?? []; })(),
@@ -963,10 +967,21 @@ export default function Customers() {
         const oldCar = getCar(currentDealCarId);
         const newCar = getCar(newCarId);
         const storeUpdateCar = useStore.getState().updateCar;
+        // The work order's selling price (and total deal price) were locked in against the
+        // OLD car — carrying them over as-is left the deal quoting the wrong car's price.
+        // Re-price against the new car's selling price when relinking.
+        const newSellingPrice = newCar?.sellingPrice ?? 0;
+        let newDealPrice = customer.dealPrice ?? oldCar?.finalDeal?.dealPrice ?? 0;
         if (customer.loanWorkOrder) {
-          updateCustomer(customer.id, { interestedCarId: newCarId, loanWorkOrder: { ...customer.loanWorkOrder, carId: newCarId }, lastActionAt: flaggedAt });
+          const wo = customer.loanWorkOrder;
+          const additionalTotal = wo.additionalItems.reduce((s, x) => s + (x.amount || 0), 0);
+          newDealPrice = newSellingPrice + wo.insurance + wo.bankProduct + additionalTotal - wo.discount;
+          updateCustomer(customer.id, { interestedCarId: newCarId, loanWorkOrder: { ...wo, carId: newCarId, sellingPrice: newSellingPrice }, dealPrice: newDealPrice, lastActionAt: flaggedAt });
         } else if (customer.cashWorkOrder) {
-          updateCustomer(customer.id, { interestedCarId: newCarId, cashWorkOrder: { ...customer.cashWorkOrder, carId: newCarId }, lastActionAt: flaggedAt });
+          const wo = customer.cashWorkOrder;
+          const additionalTotal = wo.additionalItems.reduce((s, x) => s + (x.amount || 0), 0);
+          newDealPrice = newSellingPrice + wo.insurance + wo.bankProduct + additionalTotal - wo.discount;
+          updateCustomer(customer.id, { interestedCarId: newCarId, cashWorkOrder: { ...wo, carId: newCarId, sellingPrice: newSellingPrice }, dealPrice: newDealPrice, lastActionAt: flaggedAt });
         }
         // Release the old car — unless it turned out to already belong to someone else's completed sale
         if (oldCar && oldCar.status !== 'delivered' && oldCar.status !== 'sold') {
@@ -978,7 +993,7 @@ export default function Customers() {
             finalDeal: {
               submittedBy: currentUser?.name ?? '',
               submittedAt: flaggedAt,
-              dealPrice: customer.dealPrice ?? oldCar?.finalDeal?.dealPrice ?? 0,
+              dealPrice: newDealPrice,
               bank: customer.loanWorkOrder?.bank ?? 'Cash',
               approvalStatus: 'approved',
               approvedBy: currentUser?.name,
@@ -989,9 +1004,15 @@ export default function Customers() {
       }
     } else {
       // In-flight with the bank: nothing approved yet, so just relink and leave a note
-      // for the banker rather than a follow-up task.
+      // for the banker rather than a follow-up task. Still keep interestedCarId in sync
+      // with the case's car — otherwise a later Confirm Deal ends up pricing off one car
+      // (interestedCarId) while saving the work order against another (the case's carId).
       updateLoanCase(lc.id, { carId: newCarId, carSoldAlert: undefined });
       const newCar = getCar(newCarId);
+      const customer = customers.find(c => c.id === lc.customerId);
+      if (customer && customer.interestedCarId === lc.carId) {
+        updateCustomer(customer.id, { interestedCarId: newCarId, lastActionAt: flaggedAt });
+      }
       addLoanCaseActivity({
         id: generateId(),
         caseId: lc.id,
