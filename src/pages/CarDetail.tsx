@@ -23,6 +23,8 @@ import {
   Clock,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Download,
   Image,
   FileText,
@@ -45,6 +47,7 @@ import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, formatMileage, generateId, shortName } from '../utils/format';
 import { generateDeliveryPayments, generateRepairPayment, generateMiscCostPayment, generatePanelChargePayment } from '../utils/generatePayments';
 import { buildCarSaleEntry, buildPayableRecognizedEntry, LEDGER_ACCOUNTS } from '../utils/generateJournalEntries';
+import { getCaseCompletion } from '../utils/caseCompletion';
 
 
 const STATUS_BADGE: Record<string, string> = {
@@ -213,6 +216,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   // ── Repair / Loans tab ──
   const [jobTab, setJobTab] = useState<'repairs' | 'loans' | 'final_deal' | 'misc'>(initialTab ?? 'repairs');
   const [dealView, setDealView] = useState<'salesman' | 'director'>('salesman');
+  const [collectionExpanded, setCollectionExpanded] = useState(false);
   const [showConsignment, setShowConsignment] = useState(false);
   const carMovements = useStore((s) => s.carMovements);
   const [outgoingConsignModal, setOutgoingConsignModal] = useState<{ dealer: string; terms: 'fixed_amount' | 'profit_split'; fixedAmount: number; splitPercent: number } | null>(null);
@@ -233,7 +237,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     const addItems = (wo.additionalItems ?? []).reduce((s: number, i: WorkOrderItem) => s + i.amount, 0);
     const total = (wo.sellingPrice - (wo.discount ?? 0)) + (wo.insurance ?? 0) + (wo.bankProduct ?? 0) + addItems - (wo.bookingFee ?? 0);
     if (dealCustomer.loanWorkOrder) {
-      const loanAmt = car.disbursementAmount ?? dealCustomer.loanWorkOrder.loanAmount ?? 0;
+      const loanAmt = car.disbursementExpectedAmount ?? car.disbursementAmount ?? dealCustomer.loanWorkOrder.loanAmount ?? 0;
       return total - loanAmt;
     }
     return total - ((dealCustomer.cashWorkOrder as any)?.downpayment ?? 0);
@@ -443,7 +447,13 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const _discount = _wo ? (_wo.discount ?? 0) : 0;
   const _intakeCommission = car.intakeCommission ?? 0;
   const _sourceCommission = car.sourceCommission ?? 0;
-  const _profitBeforeComm = _dealPrice - car.purchasePrice - totalRepairCost - totalMiscCost;
+  // Customer add-ons (insurance, bank product, other line items) are money the
+  // customer paid to us on top of the car price — real revenue, not just a pass-through.
+  const _addOnRevenue = (_wo?.insurance ?? 0) + (_wo?.bankProduct ?? 0) + (_wo?.additionalItems ?? []).reduce((s, i) => s + i.amount, 0);
+  // Bank/panel deductions taken out of the disbursed loan amount — a real cost to us,
+  // separate from the customer-facing deal terms.
+  const _disbursementCharges = (car.disbursementCharges ?? []).reduce((s, c) => s + c.amount, 0);
+  const _profitBeforeComm = _dealPrice + _addOnRevenue - car.purchasePrice - totalRepairCost - totalMiscCost - _disbursementCharges;
   const _commission = (car.outgoingConsignment || car.isStaffSale || car.waiveCommission) ? 0 : (car.consignment || (car.priceFloor != null && _dealPrice < car.priceFloor)) ? 1000 : 1500;
   const netProfit = car.isStaffSale ? 0 : _profitBeforeComm - _commission - _intakeCommission - _sourceCommission;
 
@@ -624,7 +634,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     if (!car.consignment && !car.outgoingConsignment && currentUser) {
       const dealPrice = ((dealWo?.sellingPrice ?? car.sellingPrice) - (dealWo?.discount ?? 0)) || car.sellingPrice;
       const cost = (car.purchasePrice ?? 0) + totalRepairCost + totalMiscCost;
-      const loanAmount = dealIsLoan ? (car.disbursementAmount ?? dealCustomer?.loanWorkOrder?.loanAmount ?? 0) : 0;
+      const loanAmount = dealIsLoan ? (car.disbursementExpectedAmount ?? car.disbursementAmount ?? dealCustomer?.loanWorkOrder?.loanAmount ?? 0) : 0;
       const bookingFee = dealWo?.bookingFee ?? 0;
       await addJournalEntry(buildCarSaleEntry({ car, dealPrice, cost, isLoan: dealIsLoan, loanAmount, bookingFee, createdBy: currentUser.id }));
 
@@ -1482,16 +1492,34 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           const balance = sellingPrice - discount + insurance + bankProduct + additionalTotal - loanAmount - bookingFee;
 
 
-          // Director profit
+          // Director profit — money collected from the customer (deal price + add-ons)
+          // minus expenses, disbursement charges, and commission.
           const dealNetPrice = sellingPrice - discount;
-          const profitBeforeCommission = dealNetPrice - purchasePrice - totalRepairCost - totalMiscCost;
+          const addOnTotal = insurance + bankProduct + additionalTotal;
+          const moneyIn = dealNetPrice + addOnTotal;
+          const disbursementChargesTotal = (car.disbursementCharges ?? []).reduce((s, c) => s + c.amount, 0);
+          const profitBeforeCommission = moneyIn - purchasePrice - totalRepairCost - totalMiscCost - disbursementChargesTotal;
           const commission = (car.outgoingConsignment || car.isStaffSale || car.waiveCommission) ? 0 : (car.consignment || (car.priceFloor != null && dealNetPrice < car.priceFloor)) ? 1000 : 1500;
           const dealIntakeCommission = car.intakeCommission ?? 0;
           const dealSourceCommission = car.sourceCommission ?? 0;
           const netProfit = car.isStaffSale ? 0 : profitBeforeCommission - commission - dealIntakeCommission - dealSourceCommission;
 
+          const caseCompletion = getCaseCompletion({ car, customers, payments });
+
           return (
             <div className="divide-y-0">
+              {/* Case completion rollup — the two independent "is this actually
+                  done" signals (disbursement, customer balance) combined into
+                  one answer, since either alone can hide the other being open. */}
+              <div className={`px-5 py-3 flex items-center gap-2 border-b ${caseCompletion.complete ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-amber-500/10 border-amber-500/20'}`}>
+                {caseCompletion.complete
+                  ? <CheckCircle size={16} className="text-emerald-400 flex-shrink-0" />
+                  : <Clock size={16} className="text-amber-400 flex-shrink-0" />}
+                <span className={`text-sm font-semibold ${caseCompletion.complete ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {caseCompletion.complete ? 'Case Complete' : `Open: ${caseCompletion.openItems.join(' · ')}`}
+                </span>
+              </div>
+
               {/* Deal approval summary */}
               <Section title="Deal Approval">
                 <DRow label="Status" value={
@@ -1528,9 +1556,36 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 </div>
               )}
 
-              {/* ── Salesman View: collection balance (loan only) ── */}
-              {(dealView === 'salesman' || !isDirectorView) && isLoan && wo && (
-                <Section title="Collection Balance">
+              {/* Collection balance — what the salesman actually submitted (selling price,
+                  add-ons, loan amount). Shown first regardless of view so a director sees
+                  the real work order before the internal P&L below it. Collapses to a
+                  one-line summary once settled/refunded so old closed cases don't clutter
+                  the page — expand on demand. */}
+              {isLoan && wo && (() => {
+                const isSettled = Math.abs(balance) < 0.01
+                  ? true
+                  : balance < 0
+                    ? refundClaim?.status === 'transferred'
+                    : !!car.collectionReceiptUrl;
+                const showExpanded = collectionExpanded || !isSettled;
+                return (
+                  <div className="px-5 py-4 border-b border-obsidian-400/30 last:border-0">
+                    <button
+                      type="button"
+                      onClick={() => isSettled && setCollectionExpanded(e => !e)}
+                      className={`w-full flex items-center justify-between ${isSettled ? 'cursor-pointer' : 'cursor-default'}`}
+                    >
+                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Collection Balance</span>
+                      {isSettled && (
+                        <span className="flex items-center gap-1.5 text-xs font-medium text-green-400">
+                          <CheckCircle size={12} />
+                          {Math.abs(balance) < 0.01 ? 'Balanced' : balance < 0 ? `Refunded ${formatRM(Math.abs(balance))}` : `Collected ${formatRM(balance)}`}
+                          {collectionExpanded ? <ChevronUp size={12} className="text-gray-500" /> : <ChevronDown size={12} className="text-gray-500" />}
+                        </span>
+                      )}
+                    </button>
+                    {showExpanded && (
+                <div className="mt-3">
                   <DRow label="Selling Price" value={formatRM(sellingPrice)} valueClass="text-gold-400 font-bold" />
                   {discount > 0 && <DRow label="− Discount" value={formatRM(discount)} valueClass="text-red-400" />}
                   {insurance > 0 && <DRow label="+ Insurance" value={formatRM(insurance)} valueClass="text-white" />}
@@ -1538,14 +1593,18 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   {additionalItems.map((item, i) => (
                     <DRow key={i} label={`+ ${item.label}`} value={formatRM(item.amount)} valueClass="text-white" />
                   ))}
+                  <div className="flex justify-between items-center pt-2 mt-1 border-t border-obsidian-400/40">
+                    <span className="text-gray-300 text-sm font-semibold">Total Balance</span>
+                    <span className="text-gold-300 text-sm font-bold">{formatRM(sellingPrice - discount + insurance + bankProduct + additionalTotal)}</span>
+                  </div>
                   {bookingFee > 0 && <DRow label="− Deposit / Booking Fee" value={formatRM(bookingFee)} valueClass="text-red-400" />}
                   {loanAmount > 0 && <DRow label="− Loan Amount" value={formatRM(loanAmount)} valueClass="text-red-400" />}
-                  <div className={`flex justify-between items-center pt-3 mt-1 border-t-2 ${Math.abs(balance) < 0.01 ? 'border-green-500/40' : balance < 0 ? 'border-sky-500/40' : 'border-orange-500/40'}`}>
+                  <div className={`flex justify-between items-center pt-3 mt-1 border-t-2 ${Math.abs(balance) < 0.01 || isSettled ? 'border-green-500/40' : balance < 0 ? 'border-sky-500/40' : 'border-orange-500/40'}`}>
                     <span className="text-white font-semibold text-sm">
-                      {Math.abs(balance) < 0.01 ? 'Balance' : balance < 0 ? 'Refund to Customer' : 'Collect from Customer'}
+                      {Math.abs(balance) < 0.01 ? 'Balance' : isSettled ? (balance < 0 ? 'Refunded to Customer' : 'Collected from Customer') : balance < 0 ? 'Refund to Customer' : 'Collect from Customer'}
                     </span>
-                    <span className={`text-lg font-bold ${Math.abs(balance) < 0.01 ? 'text-green-400' : balance < 0 ? 'text-sky-300' : 'text-orange-400'}`}>
-                      {Math.abs(balance) < 0.01 ? '✓ Balanced' : formatRM(Math.abs(balance))}
+                    <span className={`text-lg font-bold ${Math.abs(balance) < 0.01 || isSettled ? 'text-green-400' : balance < 0 ? 'text-sky-300' : 'text-orange-400'}`}>
+                      {Math.abs(balance) < 0.01 ? '✓ Balanced' : isSettled ? `✓ Paid ${formatRM(Math.abs(balance))}` : formatRM(Math.abs(balance))}
                     </span>
                   </div>
                   {/* ── Refund to customer: submit bank details, tracked as a Payments claim ── */}
@@ -1649,23 +1708,22 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                       )}
                     </div>
                   )}
-                </Section>
-              )}
+                </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* ── Director View: profit breakdown ── */}
               {(dealView === 'director' && isDirectorView) && (
                 <Section title="Deal Financials">
-                  {car.priceFloor != null && (
-                    <div className="flex justify-between items-center px-5 py-1.5 mb-1 bg-blue-500/5 rounded-lg border border-blue-500/20 mx-5">
-                      <span className="text-blue-400 text-xs font-medium">Floor Price</span>
-                      <span className="text-blue-400 text-xs font-bold">{formatRM(car.priceFloor)}</span>
-                    </div>
-                  )}
                   <DRow label="Selling Price" value={formatRM(sellingPrice)} valueClass="text-gold-400 font-bold" />
                   {discount > 0 && <DRow label="− Discount" value={formatRM(discount)} valueClass="text-red-400" />}
+                  {addOnTotal > 0 && <DRow label="+ Customer Add-ons" value={formatRM(addOnTotal)} valueClass="text-emerald-400" />}
                   <DRow label="− Purchase Price" value={formatRM(purchasePrice + dealSourceCommission)} valueClass="text-red-400" />
                   {totalRepairCost > 0 && <DRow label="− Repair Expenses" value={formatRM(totalRepairCost)} valueClass="text-red-400" />}
                   {totalMiscCost > 0 && <DRow label="− Misc Costs" value={formatRM(totalMiscCost)} valueClass="text-red-400" />}
+                  {disbursementChargesTotal > 0 && <DRow label="− Disbursement Charges" value={formatRM(disbursementChargesTotal)} valueClass="text-red-400" />}
                   {car.isStaffSale ? (
                     <DRow label="− Salesman Commission" value="Staff Sale — Waived" valueClass="text-amber-400" />
                   ) : car.waiveCommission ? (
@@ -1964,6 +2022,12 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                     <span className="text-sm font-medium text-gold-300">{formatRM(_dealPrice)}</span>
                   </div>
                 )}
+                {_addOnRevenue > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-500 text-xs">Customer Add-ons</span>
+                    <span className="text-sm font-medium text-emerald-400">+ {formatRM(_addOnRevenue)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center">
                   <span className="text-gray-500 text-xs">Purchase Price</span>
                   <span className="text-sm font-medium text-white">− {formatRM(car.purchasePrice + (_sourceCommission))}</span>
@@ -1976,6 +2040,12 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   <span className="text-gray-500 text-xs">Misc Costs</span>
                   <span className="text-sm font-medium text-purple-400">− {formatRM(totalMiscCost)}</span>
                 </div>
+                {_disbursementCharges > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-500 text-xs">Disbursement Charges</span>
+                    <span className="text-sm font-medium text-red-400">− {formatRM(_disbursementCharges)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center">
                   <span className="text-gray-500 text-xs">Commission</span>
                   <span className={`text-sm font-medium ${car.isStaffSale || car.waiveCommission ? 'text-amber-400' : 'text-gray-300'}`}>

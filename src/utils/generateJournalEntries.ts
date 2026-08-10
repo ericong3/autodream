@@ -185,16 +185,31 @@ export function buildCarSaleEntry(opts: {
 }
 
 // The moment a loan disbursement (or confirmed cash collection) actually
-// lands — converts the receivable booked at sale into real cash.
-export function buildDisbursementReceivedEntry(opts: { car: Car; amount: number; createdBy: string }): JournalEntry {
-  const { car, amount, createdBy } = opts;
+// lands — converts the receivable booked at sale into real cash. The
+// receivable clears at the full (gross/expected) amount regardless — that's
+// what the deal called for — but only the net amount actually lands in
+// Bank; whatever the bank/panel deducted along the way (processing fee,
+// service charge, insurance cover note, etc.) books as its own itemized
+// expense line instead of quietly vanishing or being folded into an
+// unrelated misc cost. netAmount + sum(charges) must equal amount for this
+// to balance — callers are expected to enforce that before building it.
+export function buildDisbursementReceivedEntry(opts: {
+  car: Car;
+  amount: number;
+  netAmount: number;
+  charges?: { accountId: string; amount: number }[];
+  createdBy: string;
+}): JournalEntry {
+  const { car, amount, netAmount, createdBy } = opts;
+  const charges = opts.charges ?? [];
   const isInvestorCar = !!car.investorId;
   return {
     id: generateId(),
     date: today(),
     description: `Disbursement received — ${carLabel(car)}`,
     lines: [
-      { accountId: isInvestorCar ? LEDGER_ACCOUNTS.bankInvestor : LEDGER_ACCOUNTS.bankOperating, debit: amount, credit: 0 },
+      { accountId: isInvestorCar ? LEDGER_ACCOUNTS.bankInvestor : LEDGER_ACCOUNTS.bankOperating, debit: netAmount, credit: 0 },
+      ...charges.filter(c => c.amount > 0).map(c => ({ accountId: c.accountId, debit: c.amount, credit: 0 })),
       { accountId: LEDGER_ACCOUNTS.accountsReceivable, debit: 0, credit: amount },
     ],
     sourceType: 'disbursement_received',
@@ -300,7 +315,7 @@ export function collectMissingJournalEntries(opts: {
       if (wo) {
         const isLoan = !!dealCustomer!.loanWorkOrder;
         const dealPrice = ((wo.sellingPrice ?? car.sellingPrice) - (wo.discount ?? 0)) || car.sellingPrice;
-        const loanAmount = isLoan ? (car.disbursementAmount ?? dealCustomer!.loanWorkOrder!.loanAmount ?? 0) : 0;
+        const loanAmount = isLoan ? (car.disbursementExpectedAmount ?? car.disbursementAmount ?? dealCustomer!.loanWorkOrder!.loanAmount ?? 0) : 0;
         const bookingFee = wo.bookingFee ?? 0;
         const repairCost = repairs.filter(r => r.carId === car.id && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
         const miscCost = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
@@ -308,7 +323,17 @@ export function collectMissingJournalEntries(opts: {
         result.push(buildCarSaleEntry({ car, dealPrice, cost, isLoan, loanAmount, bookingFee, createdBy }));
 
         if (isLoan && car.moneyReceived && (car.disbursementAmount ?? 0) > 0 && !hasEntry('disbursement_received', car.id)) {
-          result.push(buildDisbursementReceivedEntry({ car, amount: car.disbursementAmount!, createdBy }));
+          // No dynamic per-label ledger accounts available in this backfill
+          // context — lump any itemized charges into general expense instead.
+          const chargesTotal = (car.disbursementCharges ?? []).reduce((s, c) => s + c.amount, 0);
+          const grossAmount = car.disbursementExpectedAmount ?? (car.disbursementAmount! + chargesTotal);
+          result.push(buildDisbursementReceivedEntry({
+            car,
+            amount: grossAmount,
+            netAmount: car.disbursementAmount!,
+            charges: chargesTotal > 0 ? [{ accountId: LEDGER_ACCOUNTS.expenseGeneral, amount: chargesTotal }] : [],
+            createdBy,
+          }));
         }
       }
     }
@@ -445,7 +470,7 @@ export function findStaleLoanSaleEntries(opts: {
       .map((c) => ({
         customerId: c.id,
         customerName: c.name,
-        loanAmount: car.disbursementAmount ?? c.loanWorkOrder!.loanAmount ?? 0,
+        loanAmount: car.disbursementExpectedAmount ?? car.disbursementAmount ?? c.loanWorkOrder!.loanAmount ?? 0,
         bookingFee: c.loanWorkOrder!.bookingFee ?? 0,
       }));
     results.push({ entry, car, dealPrice, cost, candidates });

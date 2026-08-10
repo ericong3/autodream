@@ -209,6 +209,15 @@ export default function Customers() {
   const [earlyStagePickerCustomerId, setEarlyStagePickerCustomerId] = useState<string | null>(null);
   const [earlyStagePickerSearch, setEarlyStagePickerSearch] = useState('');
 
+  // Mandatory re-price form shown every time a case's car changes — picking a new car no
+  // longer commits silently; the salesman must confirm/edit the deal numbers for the new
+  // unit first, so pricing can never be carried forward from a car that's no longer selected.
+  const [carChangePending, setCarChangePending] = useState<{ lc: LoanCase; newCarId: string } | null>(null);
+  const [carChangeForm, setCarChangeForm] = useState({
+    sellingPrice: 0, insurance: 0, bankProduct: 0, discount: 0,
+    additionalItems: [] as WorkOrderItem[],
+  });
+
   // LOU re-approval form (resolving a car-change follow-up on an approved case)
   const [louUpdateCaseId, setLouUpdateCaseId] = useState<string | null>(null);
   const [louUpdateForm, setLouUpdateForm] = useState({ amount: '', rate: '', tenure: '' });
@@ -799,31 +808,35 @@ export default function Customers() {
     // this same car — otherwise (car changed since) it's a stale price from the old unit.
     const prevPriceCarMatches = prev?.carId === resolvedCarId;
     const lo = c.loanOrder; // pre-fill from Loan Order if available
+    // Same staleness guard as the work order above — a Loan Order is a snapshot taken
+    // when the application was first submitted; if Change Car moved this case to a
+    // different unit since, its price/add-ons belong to the old car and must not leak in.
+    const loMatchesCar = lo?.carId === resolvedCarId;
     setWoForm({
       ...emptyWorkOrder,
-      sellingPrice: (prevPriceCarMatches ? prev?.sellingPrice : undefined) ?? lo?.sellingPrice ?? car?.sellingPrice ?? 0,
-      insurance: prev?.insurance ?? lo?.insurance ?? 0,
-      bankProduct: prev?.bankProduct ?? lo?.bankProduct ?? 0,
+      sellingPrice: (prevPriceCarMatches ? prev?.sellingPrice : undefined) ?? (loMatchesCar ? lo?.sellingPrice : undefined) ?? car?.sellingPrice ?? 0,
+      insurance: prev?.insurance ?? (loMatchesCar ? lo?.insurance : undefined) ?? 0,
+      bankProduct: prev?.bankProduct ?? (loMatchesCar ? lo?.bankProduct : undefined) ?? 0,
       bankProductItems: prev?.bankProductItems ?? (() => { const approvedCase = loanCases.find(lc => lc.customerId === c.id && lc.status === 'approved' && (!bankName || lc.bank === bankName)); return approvedCase?.bankProducts?.map(bp => ({ label: bp.name, amount: bp.amount })) ?? []; })(),
-      additionalItems: prev?.additionalItems ?? lo?.additionalItems ?? [],
-      discount: prev?.discount ?? lo?.discount ?? 0,
+      additionalItems: prev?.additionalItems ?? (loMatchesCar ? lo?.additionalItems : undefined) ?? [],
+      discount: prev?.discount ?? (loMatchesCar ? lo?.discount : undefined) ?? 0,
       bookingFee: c.bookingFee ?? prev?.bookingFee ?? 0,
       approvedBank: approvedApp?.bank ?? bankName ?? (c.loanWorkOrder?.bank ?? ''),
-      loanAmount: bankAmount ?? approvedApp?.approvedAmount ?? c.loanWorkOrder?.loanAmount ?? lo?.requestedLoanAmount ?? 0,
+      loanAmount: bankAmount ?? approvedApp?.approvedAmount ?? c.loanWorkOrder?.loanAmount ?? (loMatchesCar ? lo?.requestedLoanAmount : undefined) ?? 0,
       customerName: prev?.customerName ?? c.name,
       customerIc: prev?.customerIc ?? c.ic ?? '',
       customerPhone: prev?.customerPhone ?? c.phone,
       customerEmail: prev?.customerEmail ?? c.email ?? '',
       customerAddress: prev?.customerAddress ?? '',
-      hasTradeIn: prev?.hasTradeIn ?? lo?.hasTradeIn ?? false,
+      hasTradeIn: prev?.hasTradeIn ?? (loMatchesCar ? lo?.hasTradeIn : undefined) ?? false,
       tradeInPhotos: prev?.tradeInPhotos ?? [],
       greenCardPhoto: prev?.greenCardPhoto ?? '',
-      tradeInPlate: prev?.tradeInPlate ?? lo?.tradeInPlate ?? '',
-      tradeInMake: prev?.tradeInMake ?? lo?.tradeInMake ?? '',
-      tradeInModel: prev?.tradeInModel ?? lo?.tradeInModel ?? '',
-      tradeInVariant: prev?.tradeInVariant ?? lo?.tradeInVariant ?? '',
-      tradeInPrice: prev?.tradeInPrice ?? lo?.tradeInPrice ?? 0,
-      settlementFigure: prev?.settlementFigure ?? lo?.settlementFigure ?? 0,
+      tradeInPlate: prev?.tradeInPlate ?? (loMatchesCar ? lo?.tradeInPlate : undefined) ?? '',
+      tradeInMake: prev?.tradeInMake ?? (loMatchesCar ? lo?.tradeInMake : undefined) ?? '',
+      tradeInModel: prev?.tradeInModel ?? (loMatchesCar ? lo?.tradeInModel : undefined) ?? '',
+      tradeInVariant: prev?.tradeInVariant ?? (loMatchesCar ? lo?.tradeInVariant : undefined) ?? '',
+      tradeInPrice: prev?.tradeInPrice ?? (loMatchesCar ? lo?.tradeInPrice : undefined) ?? 0,
+      settlementFigure: prev?.settlementFigure ?? (loMatchesCar ? lo?.settlementFigure : undefined) ?? 0,
     });
     setWorkOrderCarId(carIdOverride ?? c.interestedCarId ?? '');
     setWorkOrderCustomer(c);
@@ -942,9 +955,10 @@ export default function Customers() {
     setCarPickerSearch('');
   };
 
-  // A car was picked for a given case — commits immediately for approved/in-flight cases;
-  // for closed cases (rejected/cancelled/withdrawn) routes to a resubmit confirm instead,
-  // since reusing a closed case's car reference isn't the same as reopening it.
+  // A car was picked for a given case — for closed cases (rejected/cancelled/withdrawn)
+  // routes to a resubmit confirm instead, since reusing a closed case's car reference isn't
+  // the same as reopening it. For approved/in-flight cases, nothing commits yet: it opens the
+  // mandatory re-price form so the deal numbers always get confirmed against the new car.
   const handleCasePickCar = (lc: LoanCase, newCarId: string) => {
     if (['rejected', 'cancelled', 'withdrawn'].includes(lc.status)) {
       setCarPickerCaseId(null);
@@ -952,36 +966,69 @@ export default function Customers() {
       return;
     }
 
-    const flaggedAt = new Date().toISOString();
-    if (lc.status === 'approved') {
-      // Relink immediately (this is the live path to Confirm Deal) but flag it —
-      // the bank approved a specific car+amount, so the LOU still needs reissuing.
-      updateLoanCase(lc.id, { carId: newCarId, carChangeFollowUp: { type: 'lou_update', fromCarId: lc.carId ?? '', toCarId: newCarId, flaggedAt }, carSoldAlert: undefined });
+    const customer = customers.find(c => c.id === lc.customerId);
+    const newCar = getCar(newCarId);
+    const wo = customer?.loanWorkOrder ?? customer?.cashWorkOrder;
+    const lo = customer?.loanOrder;
+    // Pre-fill from whatever numbers already exist so this isn't a blank form every time —
+    // but selling price always defaults to the NEW car's price, never the old one.
+    setCarChangeForm({
+      sellingPrice: newCar?.sellingPrice ?? 0,
+      insurance: wo?.insurance ?? lo?.insurance ?? 0,
+      bankProduct: wo?.bankProduct ?? lo?.bankProduct ?? 0,
+      discount: wo?.discount ?? lo?.discount ?? 0,
+      additionalItems: wo?.additionalItems ?? lo?.additionalItems ?? [],
+    });
+    setCarPickerCaseId(null);
+    setCarPickerConfirmCaseId(null);
+    setCarPickerSearch('');
+    setCarChangePending({ lc, newCarId });
+  };
 
-      const customer = customers.find(c => c.id === lc.customerId);
+  // Commits a pending car change once the mandatory re-price form is filled in — this is
+  // the only place that actually relinks a case's car, so pricing can never silently
+  // carry forward from a car that's no longer selected.
+  const commitCarChange = () => {
+    if (!carChangePending) return;
+    const { lc, newCarId } = carChangePending;
+    const form = carChangeForm;
+    const additionalTotal = form.additionalItems.reduce((s, x) => s + (x.amount || 0), 0);
+    const newDealTotal = form.sellingPrice + form.insurance + form.bankProduct + additionalTotal - form.discount;
+    const flaggedAt = new Date().toISOString();
+    const customer = customers.find(c => c.id === lc.customerId);
+
+    if (lc.status === 'approved') {
+      const newCar = getCar(newCarId);
+      const oldCarForLog = getCar(lc.carId ?? '');
+      // Log what this case used to say before overwriting it, so a salesman can still see
+      // the previous approval later — then just replace the car and amount on this same case.
+      addLoanCaseActivity({
+        id: generateId(), caseId: lc.id, userId: currentUser?.id ?? '', userName: currentUser?.name ?? '', userRole: currentUser?.role ?? '',
+        type: 'remark',
+        content: `Car changed from ${oldCarForLog ? `${oldCarForLog.year} ${oldCarForLog.make} ${oldCarForLog.model}` : 'previous unit'} (was ${formatRM(lc.loanAmount)}) to ${newCar ? `${newCar.year} ${newCar.make} ${newCar.model}` : 'new unit'} (now ${formatRM(newDealTotal)}).`,
+        createdAt: flaggedAt,
+      });
+      updateLoanCase(lc.id, { carId: newCarId, loanAmount: newDealTotal, carSoldAlert: undefined });
+
       const currentDealCarId = customer?.loanWorkOrder?.carId ?? customer?.cashWorkOrder?.carId;
       // Only touch the confirmed deal/car statuses if this case is the one the customer's
       // live work order is actually built on — otherwise it's just one of several approved
       // offers and shouldn't move any car status.
       if (customer && currentDealCarId && currentDealCarId === lc.carId) {
         const oldCar = getCar(currentDealCarId);
-        const newCar = getCar(newCarId);
         const storeUpdateCar = useStore.getState().updateCar;
-        // The work order's selling price (and total deal price) were locked in against the
-        // OLD car — carrying them over as-is left the deal quoting the wrong car's price.
-        // Re-price against the new car's selling price when relinking.
-        const newSellingPrice = newCar?.sellingPrice ?? 0;
-        let newDealPrice = customer.dealPrice ?? oldCar?.finalDeal?.dealPrice ?? 0;
         if (customer.loanWorkOrder) {
-          const wo = customer.loanWorkOrder;
-          const additionalTotal = wo.additionalItems.reduce((s, x) => s + (x.amount || 0), 0);
-          newDealPrice = newSellingPrice + wo.insurance + wo.bankProduct + additionalTotal - wo.discount;
-          updateCustomer(customer.id, { interestedCarId: newCarId, loanWorkOrder: { ...wo, carId: newCarId, sellingPrice: newSellingPrice }, dealPrice: newDealPrice, lastActionAt: flaggedAt });
+          updateCustomer(customer.id, { interestedCarId: newCarId, loanWorkOrder: { ...customer.loanWorkOrder, carId: newCarId, sellingPrice: form.sellingPrice, insurance: form.insurance, bankProduct: form.bankProduct, discount: form.discount, additionalItems: form.additionalItems }, dealPrice: newDealTotal, lastActionAt: flaggedAt });
         } else if (customer.cashWorkOrder) {
-          const wo = customer.cashWorkOrder;
-          const additionalTotal = wo.additionalItems.reduce((s, x) => s + (x.amount || 0), 0);
-          newDealPrice = newSellingPrice + wo.insurance + wo.bankProduct + additionalTotal - wo.discount;
-          updateCustomer(customer.id, { interestedCarId: newCarId, cashWorkOrder: { ...wo, carId: newCarId, sellingPrice: newSellingPrice }, dealPrice: newDealPrice, lastActionAt: flaggedAt });
+          updateCustomer(customer.id, { interestedCarId: newCarId, cashWorkOrder: { ...customer.cashWorkOrder, carId: newCarId, sellingPrice: form.sellingPrice, insurance: form.insurance, bankProduct: form.bankProduct, discount: form.discount, additionalItems: form.additionalItems }, dealPrice: newDealTotal, lastActionAt: flaggedAt });
+        } else {
+          // No work order committed yet, but this is still the customer's live interested
+          // car — stash the confirmed numbers as a Loan Order so Confirm Deal picks them up.
+          updateCustomer(customer.id, {
+            interestedCarId: newCarId,
+            loanOrder: { carId: newCarId, sellingPrice: form.sellingPrice, insurance: form.insurance, bankProduct: form.bankProduct, discount: form.discount, additionalItems: form.additionalItems, requestedLoanAmount: newDealTotal, hasTradeIn: customer.loanOrder?.hasTradeIn ?? false, submittedBy: currentUser?.name ?? '', createdAt: flaggedAt },
+            lastActionAt: flaggedAt,
+          });
         }
         // Release the old car — unless it turned out to already belong to someone else's completed sale
         if (oldCar && oldCar.status !== 'delivered' && oldCar.status !== 'sold') {
@@ -993,7 +1040,7 @@ export default function Customers() {
             finalDeal: {
               submittedBy: currentUser?.name ?? '',
               submittedAt: flaggedAt,
-              dealPrice: newDealPrice,
+              dealPrice: newDealTotal,
               bank: customer.loanWorkOrder?.bank ?? 'Cash',
               approvalStatus: 'approved',
               approvedBy: currentUser?.name,
@@ -1001,17 +1048,27 @@ export default function Customers() {
             },
           });
         }
+      } else if (customer) {
+        // Not the customer's live deal car — still stash a fresh Loan Order snapshot for
+        // this case's new car, so a later Confirm Deal on THIS case prices correctly.
+        updateCustomer(customer.id, {
+          loanOrder: { carId: newCarId, sellingPrice: form.sellingPrice, insurance: form.insurance, bankProduct: form.bankProduct, discount: form.discount, additionalItems: form.additionalItems, requestedLoanAmount: newDealTotal, hasTradeIn: customer.loanOrder?.hasTradeIn ?? false, submittedBy: currentUser?.name ?? '', createdAt: flaggedAt },
+          lastActionAt: flaggedAt,
+        });
       }
     } else {
       // In-flight with the bank: nothing approved yet, so just relink and leave a note
       // for the banker rather than a follow-up task. Still keep interestedCarId in sync
-      // with the case's car — otherwise a later Confirm Deal ends up pricing off one car
-      // (interestedCarId) while saving the work order against another (the case's carId).
+      // with the case's car, and stash the confirmed numbers as a Loan Order so Confirm
+      // Deal never falls back to a stale snapshot from the old car.
       updateLoanCase(lc.id, { carId: newCarId, carSoldAlert: undefined });
       const newCar = getCar(newCarId);
-      const customer = customers.find(c => c.id === lc.customerId);
-      if (customer && customer.interestedCarId === lc.carId) {
-        updateCustomer(customer.id, { interestedCarId: newCarId, lastActionAt: flaggedAt });
+      if (customer) {
+        updateCustomer(customer.id, {
+          ...(customer.interestedCarId === lc.carId ? { interestedCarId: newCarId } : {}),
+          loanOrder: { carId: newCarId, sellingPrice: form.sellingPrice, insurance: form.insurance, bankProduct: form.bankProduct, discount: form.discount, additionalItems: form.additionalItems, requestedLoanAmount: newDealTotal, hasTradeIn: customer.loanOrder?.hasTradeIn ?? false, submittedBy: currentUser?.name ?? '', createdAt: flaggedAt },
+          lastActionAt: flaggedAt,
+        });
       }
       addLoanCaseActivity({
         id: generateId(),
@@ -1020,13 +1077,12 @@ export default function Customers() {
         userName: currentUser?.name ?? '',
         userRole: currentUser?.role ?? '',
         type: 'remark',
-        content: `Car changed to ${newCar ? `${newCar.year} ${newCar.make} ${newCar.model}` : 'a different unit'} while this case was with the bank.`,
+        content: `Car changed to ${newCar ? `${newCar.year} ${newCar.make} ${newCar.model}` : 'a different unit'} while this case was with the bank. Re-priced at ${formatRM(form.sellingPrice)}.`,
         createdAt: flaggedAt,
       });
     }
 
-    setCarPickerCaseId(null);
-    setCarPickerSearch('');
+    setCarChangePending(null);
   };
 
   // Creates a fresh pending case on the new car for a closed (rejected/cancelled/withdrawn)
@@ -2946,10 +3002,19 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                       const isResubmitOpen = carPickerResubmitCaseId?.caseId === lc.id;
                       const resubmitCar = isResubmitOpen ? getCar(carPickerResubmitCaseId!.carId) : undefined;
                       return (
-                        <button
+                        // A plain div, not a <button> — it wraps other interactive
+                        // elements (the car search input, Change Car, Confirm Deal...),
+                        // and a <button> can't legally contain nested interactive content.
+                        // Nesting an <input> inside a real <button> broke the DOM enough
+                        // that pressing Space while typing in the search box triggered this
+                        // card's own click handler instead of typing a space character.
+                        <div
                           key={lc.id}
+                          role="button"
+                          tabIndex={0}
                           onClick={() => setSelectedLoanCaseId(lc.id)}
-                          className="w-full text-left rounded-2xl border border-obsidian-400/40 bg-obsidian-700/30 p-4 space-y-2 hover:border-gold-500/30 active:scale-[0.99] transition-all touch-manipulation"
+                          onKeyDown={e => { if (e.key === 'Enter') setSelectedLoanCaseId(lc.id); }}
+                          className="w-full text-left rounded-2xl border border-obsidian-400/40 bg-obsidian-700/30 p-4 space-y-2 hover:border-gold-500/30 active:scale-[0.99] transition-all touch-manipulation cursor-pointer"
                         >
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2 flex-wrap">
@@ -3115,7 +3180,10 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                               </div>
                               <div className="space-y-1.5 max-h-52 overflow-y-auto">
                                 {cars.filter(c => {
-                                  if (c.status === 'sold' || c.status === 'delivered' || c.status === 'deal_pending' || c.id === lc.carId) return false;
+                                  // Still list the car already on this case — picking it again is how
+                                  // you re-price a deal without actually switching to a different unit.
+                                  const isCurrent = c.id === lc.carId;
+                                  if (!isCurrent && (c.status === 'sold' || c.status === 'delivered' || c.status === 'deal_pending')) return false;
                                   if (!carPickerSearch) return true;
                                   const q = carPickerSearch.toLowerCase();
                                   return `${c.year} ${c.make} ${c.model} ${c.carPlate ?? ''}`.toLowerCase().includes(q);
@@ -3125,7 +3193,9 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                                     onClick={() => handleCasePickCar(lc, c.id)}
                                     className="rounded-lg px-2.5 py-2 bg-obsidian-700/60 border border-obsidian-400/50 hover:border-blue-500/50 cursor-pointer"
                                   >
-                                    <p className="text-white text-xs font-medium truncate">{c.year} {c.make} {c.model}</p>
+                                    <p className="text-white text-xs font-medium truncate">
+                                      {c.year} {c.make} {c.model}{c.id === lc.carId ? ' (current)' : ''}
+                                    </p>
                                     <p className="text-gray-500 text-[11px]">{c.colour} · {c.sellingPrice > 0 ? formatRM(c.sellingPrice) : 'TBD'}</p>
                                   </div>
                                 ))}
@@ -3146,7 +3216,7 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                               <Repeat size={11} />Change Car
                             </div>
                           )}
-                        </button>
+                        </div>
                       );
                     })}
                     {!isShareHolder && (
@@ -4139,6 +4209,119 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
           document.body
         );
       })()}
+
+      {/* Mandatory re-price form — every car change (approved or in-flight) routes through
+          here before anything commits, so pricing is always confirmed against the new unit. */}
+      <Modal
+        isOpen={!!carChangePending}
+        onClose={() => setCarChangePending(null)}
+        title="Confirm Deal for New Car"
+        footer={
+          <div className="flex gap-3">
+            <button onClick={() => setCarChangePending(null)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
+            <button
+              onClick={commitCarChange}
+              disabled={!carChangeForm.sellingPrice}
+              className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Confirm Change
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          {carChangePending && (() => {
+            const newCar = getCar(carChangePending.newCarId);
+            return newCar ? (
+              <div className="rounded-xl border border-gold-500/30 bg-gold-500/5 px-4 py-3">
+                <p className="text-white text-sm font-semibold">{newCar.year} {newCar.make} {newCar.model}</p>
+                <p className="text-gray-500 text-xs mt-0.5">{newCar.colour} · List price {formatRM(newCar.sellingPrice)}</p>
+              </div>
+            ) : null;
+          })()}
+          <p className="text-xs text-gray-500">
+            Confirm the deal numbers for this car before the change is saved — this keeps the selling price from silently carrying over from the old unit.
+          </p>
+
+          <div className="space-y-1.5">
+            <label className="text-xs text-gray-400 font-medium">Selling Price (RM)</label>
+            <input
+              type="number"
+              value={carChangeForm.sellingPrice || ''}
+              onChange={e => setCarChangeForm(f => ({ ...f, sellingPrice: Number(e.target.value) }))}
+              className="w-full bg-obsidian-700 border border-obsidian-500/40 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-gold-500/50"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-xs text-gray-400 font-medium">Insurance (RM)</label>
+              <input
+                type="number"
+                value={carChangeForm.insurance || ''}
+                onChange={e => setCarChangeForm(f => ({ ...f, insurance: Number(e.target.value) }))}
+                className="w-full bg-obsidian-700 border border-obsidian-500/40 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-gold-500/50"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs text-gray-400 font-medium">Bank Product (RM)</label>
+              <input
+                type="number"
+                value={carChangeForm.bankProduct || ''}
+                onChange={e => setCarChangeForm(f => ({ ...f, bankProduct: Number(e.target.value) }))}
+                className="w-full bg-obsidian-700 border border-obsidian-500/40 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-gold-500/50"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs text-gray-400 font-medium">Discount (RM)</label>
+            <input
+              type="number"
+              value={carChangeForm.discount || ''}
+              onChange={e => setCarChangeForm(f => ({ ...f, discount: Number(e.target.value) }))}
+              className="w-full bg-obsidian-700 border border-obsidian-500/40 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-gold-500/50"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs text-gray-400 font-medium block">Additional Items</label>
+            {carChangeForm.additionalItems.map((item, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={item.label}
+                  onChange={e => setCarChangeForm(f => ({ ...f, additionalItems: f.additionalItems.map((x, idx) => idx === i ? { ...x, label: e.target.value } : x) }))}
+                  placeholder="Item description"
+                  className="flex-1 bg-obsidian-700 border border-obsidian-500/40 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-gold-500/50"
+                />
+                <input
+                  type="number"
+                  value={item.amount || ''}
+                  onChange={e => setCarChangeForm(f => ({ ...f, additionalItems: f.additionalItems.map((x, idx) => idx === i ? { ...x, amount: Number(e.target.value) } : x) }))}
+                  placeholder="RM"
+                  className="w-24 bg-obsidian-700 border border-obsidian-500/40 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-gold-500/50 text-right"
+                />
+                <button onClick={() => setCarChangeForm(f => ({ ...f, additionalItems: f.additionalItems.filter((_, idx) => idx !== i) }))} className="text-gray-600 hover:text-red-400 text-xs shrink-0">✕</button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setCarChangeForm(f => ({ ...f, additionalItems: [...f.additionalItems, { label: '', amount: 0 }] }))}
+              className="text-xs text-gold-400 hover:text-gold-300 font-medium"
+            >
+              + Add item
+            </button>
+          </div>
+
+          <div className="flex justify-between items-center pt-3 mt-1 border-t border-obsidian-400/30">
+            <span className="text-white font-semibold text-sm">Total</span>
+            <span className="text-gold-400 font-bold text-base">
+              {formatRM(carChangeForm.sellingPrice + carChangeForm.insurance + carChangeForm.bankProduct + carChangeForm.additionalItems.reduce((s, x) => s + (x.amount || 0), 0) - carChangeForm.discount)}
+            </span>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -284,12 +284,16 @@ function rowToCar(r: any): Car {
     carInDate: r.car_in_date ?? undefined,
     disbursementAmount: r.disbursement_amount ?? undefined,
     disbursementDate: r.disbursement_date ?? undefined,
+    disbursementStatus: r.disbursement_status ?? undefined,
+    disbursementExpectedAmount: r.disbursement_expected_amount ?? undefined,
+    disbursementCharges: r.disbursement_charges ?? undefined,
     comingSoonType: r.coming_soon_type ?? undefined,
     shipmentId: r.shipment_id ?? undefined,
     panelDealerId: r.panel_dealer_id ?? undefined,
     panelChargeAmount: r.panel_charge_amount ?? undefined,
     sellerThumbprintSaved: r.seller_thumbprint_saved ?? false,
     dealProgress: parseJsonField<any>(r.deal_progress) ?? undefined,
+    collectionReceiptUrl: r.collection_receipt_url ?? undefined,
   };
 }
 
@@ -536,12 +540,16 @@ function carToRow(c: Partial<Car>) {
   if (c.carInDate !== undefined) row.car_in_date = c.carInDate;
   if (c.disbursementAmount !== undefined) row.disbursement_amount = c.disbursementAmount;
   if (c.disbursementDate !== undefined) row.disbursement_date = c.disbursementDate;
+  if (c.disbursementStatus !== undefined) row.disbursement_status = c.disbursementStatus;
+  if (c.disbursementExpectedAmount !== undefined) row.disbursement_expected_amount = c.disbursementExpectedAmount;
+  if (c.disbursementCharges !== undefined) row.disbursement_charges = c.disbursementCharges;
   if (c.comingSoonType !== undefined) row.coming_soon_type = c.comingSoonType;
   if ('shipmentId' in c) row.shipment_id = c.shipmentId ?? null;
   if (c.panelDealerId !== undefined) row.panel_dealer_id = c.panelDealerId;
   if (c.panelChargeAmount !== undefined) row.panel_charge_amount = c.panelChargeAmount;
   if (c.sellerThumbprintSaved !== undefined) row.seller_thumbprint_saved = c.sellerThumbprintSaved;
   if ('dealProgress' in c) row.deal_progress = c.dealProgress ?? null;
+  if (c.collectionReceiptUrl !== undefined) row.collection_receipt_url = c.collectionReceiptUrl;
   return row;
 }
 

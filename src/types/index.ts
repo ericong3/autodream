@@ -445,8 +445,21 @@ export interface Car {
   sourceCommission?: number;     // commission paid to source person (external fee or internal sourcing bonus)
   intakeCommission?: number;     // in-house salesman bonus when external source: 0 | 500 | 1000
   carInDate?: string;            // date director clicked "Car In" — commission counts from this date
-  disbursementAmount?: number;   // loan disbursement from bank (RM)
+  disbursementAmount?: number;   // actual net amount that landed in the bank (RM) — after any bank/panel deductions
   disbursementDate?: string;     // date bank sent the money
+  // Pending (default) -> Processing (submitted, bank is working on it, no
+  // money yet) -> Disbursed (money actually landed). moneyReceived stays in
+  // sync (true only once disbursed) since existing code elsewhere still
+  // reads that boolean directly.
+  disbursementStatus?: 'pending' | 'processing' | 'disbursed';
+  // The full amount the deal calls for (from the loan work order) — what the
+  // bank should have paid out before any deductions. disbursementAmount (net)
+  // plus the sum of disbursementCharges should add back up to this.
+  disbursementExpectedAmount?: number;
+  // Itemized bank/panel deductions (processing fee, service charge, insurance
+  // cover note, etc.) — varies per bank/panel, so it's an open-ended list
+  // rather than a fixed set of fields. Each posts as its own ledger expense.
+  disbursementCharges?: { label: string; amount: number }[];
   comingSoonType?: 'trade_in' | 'direct_purchase' | 'pending_shipment' | 'in_shipment';
   shipmentId?: string;
   panelDealerId?: string;        // dealer whose bank panel was used for loan submission

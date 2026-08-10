@@ -565,7 +565,7 @@ export default function Inventory() {
       const addItems = (wo.additionalItems ?? []).reduce((s, i) => s + i.amount, 0);
       const total = (wo.sellingPrice - (wo.discount ?? 0)) + (wo.insurance ?? 0) + (wo.bankProduct ?? 0) + addItems - (wo.bookingFee ?? 0);
       const balance = buyer?.loanWorkOrder
-        ? total - (c.disbursementAmount ?? buyer.loanWorkOrder.loanAmount ?? 0)
+        ? total - (c.disbursementExpectedAmount ?? c.disbursementAmount ?? buyer.loanWorkOrder.loanAmount ?? 0)
         : total - ((buyer?.cashWorkOrder as any)?.downpayment ?? 0);
       if (balance > 0) blockers.push(`Collect RM${balance.toLocaleString()}`);
       else if (balance < 0) blockers.push(`Refund RM${Math.abs(balance).toLocaleString()}`);
