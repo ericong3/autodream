@@ -20,6 +20,7 @@ import {
   Lock,
   Unlock,
   Clock,
+  Pencil,
 } from 'lucide-react';
 import {
   DndContext,
@@ -155,6 +156,8 @@ export default function History() {
   const payments = useStore((s) => s.payments);
   const addPayment = useStore((s) => s.addPayment);
   const addJournalEntry = useStore((s) => s.addJournalEntry);
+  const journalEntries = useStore((s) => s.journalEntries);
+  const voidJournalEntry = useStore((s) => s.voidJournalEntry);
   const ledgerAccounts = useStore((s) => s.ledgerAccounts);
   const addLedgerAccount = useStore((s) => s.addLedgerAccount);
   const updatePayment = useStore((s) => s.updatePayment);
@@ -291,6 +294,30 @@ export default function History() {
   // itemize the difference); cash stays a single-tap toggle. moneyReceived
   // is kept in sync (true only once Disbursed) since other code still reads
   // it directly.
+  // Shared by both the first-time "Processing → Disbursed" tap and the later "Edit" action
+  // on an already-disbursed car — same form, pre-filled from whatever's already saved.
+  const openDisbursalModal = (car: typeof cars[0]) => {
+    const wo = getDealCustomer(car)?.loanWorkOrder;
+    const expected = car.disbursementExpectedAmount ?? wo?.loanAmount ?? car.disbursementAmount ?? car.finalDeal?.dealPrice ?? 0;
+    setDisbursalDealInfo(wo ? {
+      bank: wo.bank,
+      sellingPrice: wo.sellingPrice ?? 0,
+      discount: wo.discount ?? 0,
+      insurance: wo.insurance ?? 0,
+      bankProduct: wo.bankProduct ?? 0,
+      additionalTotal: (wo.additionalItems ?? []).reduce((s, i) => s + (i.amount || 0), 0),
+      bookingFee: wo.bookingFee ?? 0,
+      loanAmount: wo.loanAmount ?? 0,
+    } : null);
+    setDisbursalForm({
+      expected: String(expected || ''),
+      actual: String(car.disbursementAmount ?? ''),
+      date: car.disbursementDate ?? '',
+      charges: (car.disbursementCharges ?? []).map(c => ({ label: c.label, amount: String(c.amount) })),
+    });
+    setDisbursalCarId(car.id);
+  };
+
   const handleMoneyStatusClick = (car: typeof cars[0]) => {
     if (car.moneyReceived) { navigate(`/history/${car.id}`); return; }
     const { type } = getPaymentType(car);
@@ -299,25 +326,7 @@ export default function History() {
       if (status === 'pending') {
         updateCar(car.id, { disbursementStatus: 'processing' });
       } else {
-        const wo = getDealCustomer(car)?.loanWorkOrder;
-        const expected = car.disbursementExpectedAmount ?? wo?.loanAmount ?? car.disbursementAmount ?? car.finalDeal?.dealPrice ?? 0;
-        setDisbursalDealInfo(wo ? {
-          bank: wo.bank,
-          sellingPrice: wo.sellingPrice ?? 0,
-          discount: wo.discount ?? 0,
-          insurance: wo.insurance ?? 0,
-          bankProduct: wo.bankProduct ?? 0,
-          additionalTotal: (wo.additionalItems ?? []).reduce((s, i) => s + (i.amount || 0), 0),
-          bookingFee: wo.bookingFee ?? 0,
-          loanAmount: wo.loanAmount ?? 0,
-        } : null);
-        setDisbursalForm({
-          expected: String(expected || ''),
-          actual: String(car.disbursementAmount ?? ''),
-          date: car.disbursementDate ?? '',
-          charges: (car.disbursementCharges ?? []).map(c => ({ label: c.label, amount: String(c.amount) })),
-        });
-        setDisbursalCarId(car.id);
+        openDisbursalModal(car);
       }
     } else {
       updateCar(car.id, { moneyReceived: true });
@@ -335,6 +344,12 @@ export default function History() {
     const Icon = type === 'loan' ? Building2 : type === 'consignment' ? HeartHandshake : Banknote;
     return { icon: Icon, text: label, state: 'pending' };
   };
+
+  // Incoming consignment (a dealer's car, not ours) — once we've actually received the
+  // disbursement, this is the still-outstanding "pay the dealer their share" obligation
+  // that generateDeliveryPayments already created at delivery time.
+  const getConsignmentPayout = (car: typeof cars[0]) =>
+    car.consignment ? payments.find(p => p.type === 'consignment_payout' && p.carId === car.id && p.status === 'pending') : undefined;
 
   // Each distinct deduction label (Processing Fee, Service Charge, Insurance
   // Cover Note, ...) gets its own expense account so the ledger shows how
@@ -623,18 +638,44 @@ export default function History() {
                   {/* Money received button — all delivered cars */}
                   {isDirectorView && (() => {
                     const { icon: Icon, text, state } = getMoneyStatusDisplay(car);
+                    const { type } = getPaymentType(car);
+                    const editable = state === 'received' && (type === 'loan' || type === 'consignment');
+                    return (
+                      <div className="mt-1.5 flex items-center gap-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleMoneyStatusClick(car); }}
+                          className={`flex-1 flex items-center justify-center gap-1.5 py-1 rounded-lg border text-[10px] font-bold transition-colors ${
+                            state === 'received'
+                              ? 'bg-green-500/15 border-green-500/40 text-green-400 cursor-default'
+                              : state === 'processing'
+                              ? 'bg-sky-500/15 border-sky-500/40 text-sky-400 hover:border-green-500/40 hover:text-green-400'
+                              : 'bg-black/30 border-amber-500/30 text-amber-400 hover:border-green-500/40 hover:text-green-400'
+                          }`}
+                        >
+                          <Icon size={9} /> {text}
+                        </button>
+                        {editable && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); openDisbursalModal(car); }}
+                            title="Edit disbursement details"
+                            className="p-1 rounded-lg border border-green-500/40 text-green-400 hover:bg-green-500/15 transition-colors"
+                          >
+                            <Pencil size={9} />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {isDirectorView && car.moneyReceived && (() => {
+                    const payout = getConsignmentPayout(car);
+                    if (!payout) return null;
                     return (
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleMoneyStatusClick(car); }}
-                        className={`mt-1.5 w-full flex items-center justify-center gap-1.5 py-1 rounded-lg border text-[10px] font-bold transition-colors ${
-                          state === 'received'
-                            ? 'bg-green-500/15 border-green-500/40 text-green-400 cursor-default'
-                            : state === 'processing'
-                            ? 'bg-sky-500/15 border-sky-500/40 text-sky-400 hover:border-green-500/40 hover:text-green-400'
-                            : 'bg-black/30 border-amber-500/30 text-amber-400 hover:border-green-500/40 hover:text-green-400'
-                        }`}
+                        onClick={(e) => { e.stopPropagation(); navigate('/payments'); }}
+                        className="mt-1 w-full flex items-center justify-center gap-1.5 py-1 rounded-lg border border-indigo-500/40 bg-indigo-500/10 text-indigo-300 text-[10px] font-bold hover:bg-indigo-500/20 transition-colors"
                       >
-                        <Icon size={9} /> {text}
+                        <HeartHandshake size={9} /> Pay {payout.recipientName}: RM {payout.amount.toLocaleString()}
                       </button>
                     );
                   })()}
@@ -711,18 +752,44 @@ export default function History() {
                   {car.finalDeal?.bank && <p className="text-xs text-violet-400">{car.finalDeal.bank}</p>}
                   {isDirectorView && (() => {
                     const { icon: Icon, text, state } = getMoneyStatusDisplay(car);
+                    const { type } = getPaymentType(car);
+                    const editable = state === 'received' && (type === 'loan' || type === 'consignment');
+                    return (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleMoneyStatusClick(car); }}
+                          className={`flex items-center gap-1 text-[10px] font-bold transition-colors ${
+                            state === 'received'
+                              ? 'text-green-400 cursor-default'
+                              : state === 'processing'
+                              ? 'text-sky-400 hover:text-green-400'
+                              : 'text-amber-400 hover:text-green-400'
+                          }`}
+                        >
+                          <Icon size={9} /> {text}
+                        </button>
+                        {editable && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); openDisbursalModal(car); }}
+                            title="Edit disbursement details"
+                            className="text-green-400 hover:text-green-300 transition-colors"
+                          >
+                            <Pencil size={9} />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {isDirectorView && car.moneyReceived && (() => {
+                    const payout = getConsignmentPayout(car);
+                    if (!payout) return null;
                     return (
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleMoneyStatusClick(car); }}
-                        className={`flex items-center gap-1 text-[10px] font-bold transition-colors ${
-                          state === 'received'
-                            ? 'text-green-400 cursor-default'
-                            : state === 'processing'
-                            ? 'text-sky-400 hover:text-green-400'
-                            : 'text-amber-400 hover:text-green-400'
-                        }`}
+                        onClick={(e) => { e.stopPropagation(); navigate('/payments'); }}
+                        className="flex items-center gap-1 text-[10px] font-bold text-indigo-300 hover:text-indigo-200 transition-colors"
                       >
-                        <Icon size={9} /> {text}
+                        <HeartHandshake size={9} /> Pay {payout.recipientName}: RM {payout.amount.toLocaleString()}
                       </button>
                     );
                   })()}
@@ -815,6 +882,7 @@ export default function History() {
                   placeholder="e.g. 45000"
                   value={disbursalForm.expected}
                   onChange={e => setDisbursalForm(f => ({ ...f, expected: e.target.value }))}
+                  onKeyDown={e => { if (e.key === 'Enter') e.preventDefault(); }}
                   autoFocus
                 />
               </div>
@@ -826,6 +894,7 @@ export default function History() {
                   placeholder="e.g. 44200"
                   value={disbursalForm.actual}
                   onChange={e => setDisbursalForm(f => ({ ...f, actual: e.target.value }))}
+                  onKeyDown={e => { if (e.key === 'Enter') e.preventDefault(); }}
                 />
               </div>
               <div>
@@ -855,6 +924,7 @@ export default function History() {
                         placeholder="e.g. Processing Fee"
                         value={charge.label}
                         onChange={e => setDisbursalForm(f => ({ ...f, charges: f.charges.map((c, idx) => idx === i ? { ...c, label: e.target.value } : c) }))}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
                       />
                       <div className="flex gap-2 items-center">
                         <input
@@ -863,8 +933,10 @@ export default function History() {
                           placeholder="RM"
                           value={charge.amount}
                           onChange={e => setDisbursalForm(f => ({ ...f, charges: f.charges.map((c, idx) => idx === i ? { ...c, amount: e.target.value } : c) }))}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
                         />
                         <button
+                          type="button"
                           onClick={() => setDisbursalForm(f => ({ ...f, charges: f.charges.filter((_, idx) => idx !== i) }))}
                           className="text-gray-500 hover:text-red-400 text-xs px-2.5 py-2 rounded-lg border border-obsidian-400/40 hover:border-red-400/40"
                         >
@@ -875,6 +947,7 @@ export default function History() {
                   ))}
 
                   <button
+                    type="button"
                     onClick={() => setDisbursalForm(f => ({ ...f, charges: [...f.charges, { label: '', amount: '' }] }))}
                     className="text-xs text-sky-400 hover:text-sky-300 font-medium"
                   >
@@ -884,8 +957,9 @@ export default function History() {
               )}
 
               <div className="flex gap-3 pt-1">
-                <button onClick={() => { setDisbursalCarId(null); setDisbursalDealInfo(null); }} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
+                <button type="button" onClick={() => { setDisbursalCarId(null); setDisbursalDealInfo(null); }} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
                 <button
+                  type="button"
                   disabled={!canConfirm}
                   onClick={async () => {
                     if (!disbursalCarId) return;
@@ -911,6 +985,12 @@ export default function History() {
                         const resolvedCharges = [];
                         for (const c of chargeItems) {
                           resolvedCharges.push({ accountId: await getOrCreateChargeAccount(c.label), amount: c.amount });
+                        }
+                        // Editing an already-disbursed car re-runs this — void the old ledger
+                        // entry first so the correction doesn't double-count the disbursement.
+                        const existingEntry = journalEntries.find(e => e.sourceType === 'disbursement_received' && e.sourceId === disbCar.id && !e.voided);
+                        if (existingEntry) {
+                          await voidJournalEntry(existingEntry.id, currentUser.id, 'Disbursement details corrected');
                         }
                         await addJournalEntry(buildDisbursementReceivedEntry({
                           car: disbCar,

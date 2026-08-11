@@ -22,6 +22,16 @@ document.addEventListener('input', (e) => {
   }
 });
 
+// Scrolling the page while the cursor happens to sit over a focused number input
+// silently bumps the value up/down in most browsers — blur it first so a scroll
+// never edits an amount by accident. Amounts should only ever change by typing.
+document.addEventListener('wheel', (e) => {
+  const target = e.target as HTMLElement;
+  if (target.tagName === 'INPUT' && (target as HTMLInputElement).type === 'number' && document.activeElement === target) {
+    (target as HTMLInputElement).blur();
+  }
+}, { passive: true });
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />
