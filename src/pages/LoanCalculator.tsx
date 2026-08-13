@@ -8,6 +8,7 @@ const PRESET_TENURES = [5, 7, 9];
 const BANK_RATES = [
   { bank: 'Maybank', rate: 2.8 },
   { bank: 'Public Bank', rate: 2.8 },
+  { bank: 'AmBank', rate: 2.8 },
   { bank: 'CIMB', rate: 3.0 },
   { bank: 'HLB', rate: 3.0 },
   { bank: 'Aeon Credit', rate: 3.5 },
