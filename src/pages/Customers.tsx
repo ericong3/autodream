@@ -812,17 +812,20 @@ export default function Customers() {
     // when the application was first submitted; if Change Car moved this case to a
     // different unit since, its price/add-ons belong to the old car and must not leak in.
     const loMatchesCar = lo?.carId === resolvedCarId;
+    // Approved portal loan case (new system) for this customer/car/bank — take priority
+    // over the legacy loanApplications approval below, which isn't kept in sync with it.
+    const approvedCase = loanCases.find(lc => lc.customerId === c.id && lc.status === 'approved' && lc.carId === resolvedCarId && (!bankName || lc.bank === bankName));
     setWoForm({
       ...emptyWorkOrder,
       sellingPrice: (prevPriceCarMatches ? prev?.sellingPrice : undefined) ?? (loMatchesCar ? lo?.sellingPrice : undefined) ?? car?.sellingPrice ?? 0,
       insurance: prev?.insurance ?? (loMatchesCar ? lo?.insurance : undefined) ?? 0,
       bankProduct: prev?.bankProduct ?? (loMatchesCar ? lo?.bankProduct : undefined) ?? 0,
-      bankProductItems: prev?.bankProductItems ?? (() => { const approvedCase = loanCases.find(lc => lc.customerId === c.id && lc.status === 'approved' && (!bankName || lc.bank === bankName)); return approvedCase?.bankProducts?.map(bp => ({ label: bp.name, amount: bp.amount })) ?? []; })(),
+      bankProductItems: prev?.bankProductItems ?? (approvedCase?.bankProducts?.map(bp => ({ label: bp.name, amount: bp.amount })) ?? []),
       additionalItems: prev?.additionalItems ?? (loMatchesCar ? lo?.additionalItems : undefined) ?? [],
       discount: prev?.discount ?? (loMatchesCar ? lo?.discount : undefined) ?? 0,
       bookingFee: c.bookingFee ?? prev?.bookingFee ?? 0,
       approvedBank: approvedApp?.bank ?? bankName ?? (c.loanWorkOrder?.bank ?? ''),
-      loanAmount: bankAmount ?? approvedApp?.approvedAmount ?? c.loanWorkOrder?.loanAmount ?? (loMatchesCar ? lo?.requestedLoanAmount : undefined) ?? 0,
+      loanAmount: bankAmount ?? approvedCase?.approvedAmount ?? approvedApp?.approvedAmount ?? c.loanWorkOrder?.loanAmount ?? (loMatchesCar ? lo?.requestedLoanAmount : undefined) ?? 0,
       customerName: prev?.customerName ?? c.name,
       customerIc: prev?.customerIc ?? c.ic ?? '',
       customerPhone: prev?.customerPhone ?? c.phone,
@@ -3036,7 +3039,7 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                           )}
                           {lc.status === 'approved' && !detailLead.loanWorkOrder && !isShareHolder && (
                             <div
-                              onClick={e => { e.stopPropagation(); openFinalDeal(detailLead, lc.bank, lc.loanAmount, lc.carId); }}
+                              onClick={e => { e.stopPropagation(); openFinalDeal(detailLead, lc.bank, lc.approvedAmount ?? lc.loanAmount, lc.carId); }}
                               className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-green-500/15 border border-green-500/30 text-green-300 text-xs font-semibold"
                             >
                               <CheckCircle size={12} />Confirm Deal
