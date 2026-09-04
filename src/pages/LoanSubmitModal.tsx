@@ -68,12 +68,23 @@ export default function LoanSubmitModal({ customer, initialCarId, initialBanks, 
   const additionalTotal = additionalItems.reduce((s, i) => s + (i.amount || 0), 0);
   const totalLoan = sellingPrice + insurance + bankProduct + additionalTotal - discount;
 
+  // Banks that already have a live case for this customer — block resubmission
+  // to avoid duplicate cases at the same bank (use "Change Car" or wait for the
+  // bank to close the case out instead).
+  const activeCaseStatuses: LoanCase['status'][] = ['pending', 'under_review', 'approved', 'need_more_info', 'appeal'];
+  const banksAlreadySubmitted = new Set(
+    loanCases
+      .filter(c => c.customerId === customer.id && activeCaseStatuses.includes(c.status))
+      .map(c => c.bank)
+  );
+
   // ── Bank & banker selection ────────────────────────────────────
   // bankPicks: bank → bankerId (Banker.id or '' for none)
   const [bankPicks, setBankPicks] = useState<Record<string, string>>(() => {
     const picks: Record<string, string> = {};
     if (initialBanks && initialBanks.length > 0) {
       initialBanks.forEach(bank => {
+        if (banksAlreadySubmitted.has(bank)) return;
         const first = bankers.filter(b => b.bank === bank)[0];
         if (first) picks[bank] = first.id;
       });
@@ -112,6 +123,8 @@ export default function LoanSubmitModal({ customer, initialCarId, initialBanks, 
     if (selectedBanks.length === 0) { toast.error('Select at least one bank'); return; }
     if (!hasApplicantDocs) { toast.error('Please upload at least one applicant document'); return; }
     if (totalLoan <= 0) { toast.error('Loan amount must be greater than zero'); return; }
+    const duplicate = selectedBanks.find(b => banksAlreadySubmitted.has(b));
+    if (duplicate) { toast.error(`${duplicate} already has a submission for this customer`); return; }
 
     setSubmitting(true);
     try {
@@ -387,35 +400,42 @@ export default function LoanSubmitModal({ customer, initialCarId, initialBanks, 
               const bankersForBank = bankers.filter(b => b.bank === bank);
               const selectedBankerId = bankPicks[bank] ?? '';
               const isSelected = selectedBankerId !== '';
+              const alreadySubmitted = banksAlreadySubmitted.has(bank);
               return (
                 <div
                   key={bank}
                   className={`flex items-center gap-3 px-4 py-2.5 rounded-2xl border transition-all ${
-                    isSelected
-                      ? 'border-gold-500/50 bg-gold-500/5'
-                      : 'border-obsidian-500/30 bg-obsidian-700/30'
+                    alreadySubmitted
+                      ? 'border-obsidian-500/20 bg-obsidian-700/10 opacity-60'
+                      : isSelected
+                        ? 'border-gold-500/50 bg-gold-500/5'
+                        : 'border-obsidian-500/30 bg-obsidian-700/30'
                   }`}
                 >
                   <div className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 transition-all ${
-                    isSelected ? 'bg-gold-500 text-obsidian-900' : 'bg-obsidian-600/60 text-gray-400'
+                    isSelected && !alreadySubmitted ? 'bg-gold-500 text-obsidian-900' : 'bg-obsidian-600/60 text-gray-400'
                   }`}>
                     {bank[0]}
                   </div>
-                  <span className={`font-semibold text-sm flex-1 transition-colors ${isSelected ? 'text-white' : 'text-gray-400'}`}>
+                  <span className={`font-semibold text-sm flex-1 transition-colors ${isSelected && !alreadySubmitted ? 'text-white' : 'text-gray-400'}`}>
                     {bank}
                   </span>
-                  <select
-                    value={selectedBankerId}
-                    onChange={e => setBankPicks({ ...bankPicks, [bank]: e.target.value })}
-                    className="bg-obsidian-700 border border-obsidian-500/40 rounded-xl px-2 py-1.5 text-white text-xs focus:outline-none focus:border-gold-500/50 min-w-[130px]"
-                  >
-                    <option value="">— none —</option>
-                    {bankersForBank.map(b => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}{b.userId ? ' ✓' : ''}
-                      </option>
-                    ))}
-                  </select>
+                  {alreadySubmitted ? (
+                    <span className="text-[11px] text-gray-500 font-medium px-2 py-1.5">Already submitted</span>
+                  ) : (
+                    <select
+                      value={selectedBankerId}
+                      onChange={e => setBankPicks({ ...bankPicks, [bank]: e.target.value })}
+                      className="bg-obsidian-700 border border-obsidian-500/40 rounded-xl px-2 py-1.5 text-white text-xs focus:outline-none focus:border-gold-500/50 min-w-[130px]"
+                    >
+                      <option value="">— none —</option>
+                      {bankersForBank.map(b => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}{b.userId ? ' ✓' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               );
             })}

@@ -104,7 +104,7 @@ export default function Finance() {
   const calcCommission = (car: typeof cars[0]): number => {
     if (car.outgoingConsignment || car.isStaffSale) return 0;
     const wo = getWorkOrder(car);
-    const dealPrice = (wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
+    const dealPrice = ((wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0)) || car.sellingPrice;
     if (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) return 1000;
     return 1500;
   };
@@ -115,7 +115,7 @@ export default function Finance() {
     const repairCosts = getRepairCosts(car.id);
     const miscCosts = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
     const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
-    const dealPrice = (wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
+    const dealPrice = ((wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0)) || car.sellingPrice;
     const commission = calcCommission(car);
     const profit = car.isStaffSale ? 0 : dealPrice - car.purchasePrice - repairCosts - miscCosts - additionalTotal - commission;
     const sp = getSalesperson(getDealSalespersonId(car));

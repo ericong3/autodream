@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
-import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList, Truck, Upload, Lock, Skull, Clock, RotateCcw, MoreVertical, FileText, Download, Search, Repeat, Columns, GripVertical } from 'lucide-react';
+import { Plus, Users, MessageCircle, AlertCircle, Edit2, Trash2, ChevronRight, Car, Phone, ArrowRight, Banknote, CalendarCheck, X, Mail, Briefcase, CheckCircle, XCircle, Camera, ClipboardList, Truck, Upload, Lock, Skull, Clock, RotateCcw, MoreVertical, FileText, Download, Search, Repeat, Columns, GripVertical, Receipt } from 'lucide-react';
 import {
   DndContext,
   DragOverlay,
@@ -23,6 +23,8 @@ import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import MiniCalendar from '../components/MiniCalendar';
 import { generateId, formatRM } from '../utils/format';
 import { supabase } from '../lib/supabase';
+import { buildDepositReceiptPdf, uploadDepositReceipt } from '../utils/generateDepositReceipt';
+import { toast } from '../utils/toast';
 
 const LEAD_STATUS_LABELS: Record<Customer['leadStatus'], string> = {
   contacted: 'Contacted',
@@ -264,6 +266,7 @@ export default function Customers() {
   const [bookingFeeAmount, setBookingFeeAmount] = useState('');
   const [bookingFeeReceiptUrl, setBookingFeeReceiptUrl] = useState('');
   const [bookingFeeUploading, setBookingFeeUploading] = useState(false);
+  const [bookingFeeSubmitting, setBookingFeeSubmitting] = useState(false);
   const bookingFeeReceiptRef = useRef<HTMLInputElement>(null);
   // Cancel Booking & Refund modal
   const [showCancelBookingModal, setShowCancelBookingModal] = useState(false);
@@ -956,6 +959,40 @@ export default function Customers() {
     }
     setCarPickerCaseId(lc.id);
     setCarPickerSearch('');
+  };
+
+  // Statuses that count as a "live" submission for duplicate detection — mirrors
+  // LoanSubmitModal's banksAlreadySubmitted so the two stay in sync.
+  const DUPLICATE_CASE_STATUSES = ['pending', 'under_review', 'approved', 'need_more_info', 'appeal'];
+
+  // Duplicate bank submissions happen (double-tap, retry after a flaky save, etc.) — this
+  // keeps the chosen case untouched and cancels the sibling duplicates, logging why on each.
+  const handleKeepThisCase = (keepId: string, siblingIds: string[]) => {
+    const now = new Date().toISOString();
+    siblingIds.forEach(id => {
+      updateLoanCase(id, { status: 'cancelled' });
+      addLoanCaseActivity({
+        id: generateId(),
+        caseId: id,
+        userId: currentUser?.id ?? '',
+        userName: currentUser?.name ?? '',
+        userRole: currentUser?.role ?? '',
+        type: 'status_change',
+        content: 'Auto-cancelled — duplicate submission to this bank; another case was kept instead.',
+        newStatus: 'cancelled',
+        createdAt: now,
+      });
+    });
+    addLoanCaseActivity({
+      id: generateId(),
+      caseId: keepId,
+      userId: currentUser?.id ?? '',
+      userName: currentUser?.name ?? '',
+      userRole: currentUser?.role ?? '',
+      type: 'remark',
+      content: `Kept as the single active case for this bank — ${siblingIds.length} duplicate submission${siblingIds.length > 1 ? 's' : ''} cancelled.`,
+      createdAt: now,
+    });
   };
 
   // A car was picked for a given case — for closed cases (rejected/cancelled/withdrawn)
@@ -2090,7 +2127,12 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                               const d = detailLead.deliveredAt ? new Date(detailLead.deliveredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' }) : '';
                               return <p className="text-green-400 text-xs mt-0.5 font-medium">✓ Delivered{d ? ` · ${d}` : ''}</p>;
                             }
+                            const approvedCase = loanCases.find(lc => lc.customerId === detailLead.id && lc.status === 'approved');
                             const approvedApp = detailLead.loanApplications?.find(a => a.status === 'approved');
+                            if (approvedCase) {
+                              const amt = approvedCase.approvedAmount ? ` · RM ${approvedCase.approvedAmount.toLocaleString()}` : '';
+                              return <p className="text-green-400 text-xs mt-0.5 font-medium">✓ {approvedCase.bank} approved{amt}</p>;
+                            }
                             if (approvedApp) {
                               const amt = approvedApp.approvedAmount ? ` · RM ${approvedApp.approvedAmount.toLocaleString()}` : '';
                               return <p className="text-green-400 text-xs mt-0.5 font-medium">✓ {approvedApp.bank} approved{amt}</p>;
@@ -2732,19 +2774,36 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                             onClick={e => e.stopPropagation()}
                             className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
                           >
-                            <FileText size={12} />Receipt
+                            <FileText size={12} />Proof
                           </a>
                         )}
-                        <button
-                          onClick={() => {
-                            setBookingFeeAmount(String(detailLead.bookingFee));
-                            setBookingFeeReceiptUrl(detailLead.bookingFeeReceiptUrl ?? '');
-                            setShowBookingFeeModal(true);
-                          }}
-                          className="text-xs text-gold-400 hover:text-gold-300 font-medium"
-                        >
-                          Edit
-                        </button>
+                        {detailLead.bookingFeeDepositReceiptUrl && (
+                          <a
+                            href={detailLead.bookingFeeDepositReceiptUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            className="flex items-center gap-1 text-xs text-green-400 hover:text-green-300"
+                          >
+                            <Receipt size={12} />Deposit Receipt
+                          </a>
+                        )}
+                        {(!detailLead.bookingFeeLocked || isDirector) ? (
+                          <button
+                            onClick={() => {
+                              setBookingFeeAmount(String(detailLead.bookingFee));
+                              setBookingFeeReceiptUrl(detailLead.bookingFeeReceiptUrl ?? '');
+                              setShowBookingFeeModal(true);
+                            }}
+                            className="text-xs text-gold-400 hover:text-gold-300 font-medium"
+                          >
+                            Edit
+                          </button>
+                        ) : (
+                          <span className="flex items-center gap-1 text-xs text-gray-600" title="Submitted — only a director can edit">
+                            <Lock size={11} />Locked
+                          </span>
+                        )}
                         {!isShareHolder && (
                           <button
                             onClick={() => { setCancelRefundForm({ bank: '', accountNo: '', accountName: '' }); setShowCancelBookingModal(true); }}
@@ -2858,6 +2917,18 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                 )];
                 const interestedCars = openCarIds.map(id => getCar(id)).filter((c): c is NonNullable<typeof c> => !!c);
 
+                // Group live cases by bank — more than one live case at the same bank is a
+                // duplicate submission and must be resolved down to a single case.
+                const liveByBank = new Map<string, LoanCase[]>();
+                portalCases.filter(lc => DUPLICATE_CASE_STATUSES.includes(lc.status)).forEach(lc => {
+                  const arr = liveByBank.get(lc.bank) ?? [];
+                  arr.push(lc);
+                  liveByBank.set(lc.bank, arr);
+                });
+                const duplicateCaseIds = new Set(
+                  [...liveByBank.values()].filter(group => group.length > 1).flatMap(group => group.map(c => c.id))
+                );
+
                 return (
                   <div className="flex-1 overflow-y-auto min-h-0 p-5 pb-20 space-y-3">
                     {interestedCars.length > 1 && (
@@ -2865,6 +2936,28 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                         Interested in: <span className="text-white font-medium">{interestedCars.map(c => `${c.year} ${c.make} ${c.model}`).join(', ')}</span>
                       </p>
                     )}
+                    {[...liveByBank.entries()].filter(([, group]) => group.length > 1).map(([bank, group]) => (
+                      <div key={bank} onClick={e => e.stopPropagation()} className="rounded-2xl border border-red-500/40 bg-red-500/10 p-4 space-y-2.5">
+                        <p className="text-red-300 text-xs font-semibold">
+                          ⚠️ {group.length} duplicate submissions to {bank} — keep one, the rest will be cancelled.
+                        </p>
+                        <div className="space-y-1.5">
+                          {group.map(dc => (
+                            <div key={dc.id} className="flex items-center justify-between gap-2 bg-obsidian-800/50 border border-red-500/20 rounded-xl px-3 py-2">
+                              <span className="text-xs text-gray-300">
+                                RM {dc.loanAmount.toLocaleString()} · {new Date(dc.createdAt).toLocaleString('en-MY', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              <button
+                                onClick={() => handleKeepThisCase(dc.id, group.filter(x => x.id !== dc.id).map(x => x.id))}
+                                className="shrink-0 px-2.5 py-1 rounded-lg bg-red-500/20 border border-red-500/40 text-red-200 text-[11px] font-semibold hover:bg-red-500/30 transition-colors touch-manipulation"
+                              >
+                                Keep this one
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                     {portalCases.length === 0 && oldApps.length === 0 && (
                       <p className="text-center text-gray-500 text-sm pt-10">No bank submissions yet.</p>
                     )}
@@ -3017,7 +3110,9 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                           tabIndex={0}
                           onClick={() => setSelectedLoanCaseId(lc.id)}
                           onKeyDown={e => { if (e.key === 'Enter') setSelectedLoanCaseId(lc.id); }}
-                          className="w-full text-left rounded-2xl border border-obsidian-400/40 bg-obsidian-700/30 p-4 space-y-2 hover:border-gold-500/30 active:scale-[0.99] transition-all touch-manipulation cursor-pointer"
+                          className={`w-full text-left rounded-2xl border p-4 space-y-2 hover:border-gold-500/30 active:scale-[0.99] transition-all touch-manipulation cursor-pointer ${
+                            duplicateCaseIds.has(lc.id) ? 'border-red-500/20 bg-obsidian-700/15 opacity-60' : 'border-obsidian-400/40 bg-obsidian-700/30'
+                          }`}
                         >
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2 flex-wrap">
@@ -3025,6 +3120,11 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${LC_STATUS_COLORS[lc.status] ?? ''}`}>
                                 {LC_STATUS_LABELS[lc.status] ?? lc.status}
                               </span>
+                              {duplicateCaseIds.has(lc.id) && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-red-500/15 text-red-300 border-red-500/30">
+                                  Duplicate — resolve above
+                                </span>
+                              )}
                             </div>
                             <span className="text-[10px] text-gray-500 shrink-0">
                               {new Date(lc.createdAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}
@@ -3037,7 +3137,7 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                           {lastActivity && lastActivity.type !== 'status_change' && (
                             <p className="text-xs text-gray-500 italic line-clamp-2">{lastActivity.content}</p>
                           )}
-                          {lc.status === 'approved' && !detailLead.loanWorkOrder && !isShareHolder && (
+                          {lc.status === 'approved' && !detailLead.loanWorkOrder && !isShareHolder && !duplicateCaseIds.has(lc.id) && (
                             <div
                               onClick={e => { e.stopPropagation(); openFinalDeal(detailLead, lc.bank, lc.approvedAmount ?? lc.loanAmount, lc.carId); }}
                               className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-green-500/15 border border-green-500/30 text-green-300 text-xs font-semibold"
@@ -3337,7 +3437,8 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
               </div>
             </div>
             <div>
-              <label className="block text-gray-300 text-xs font-medium mb-1.5">Receipt <span className="text-gray-600">(optional)</span></label>
+              <label className="block text-gray-300 text-xs font-medium mb-1.5">Proof of Payment <span className="text-red-400">*</span></label>
+              <p className="text-gray-600 text-[11px] mb-1.5 -mt-1">Required to submit — once submitted this locks and only a director can edit it.</p>
               {bookingFeeReceiptUrl ? (
                 <div className="relative inline-block w-full">
                   <img src={bookingFeeReceiptUrl} alt="Receipt" className="w-full h-40 object-cover rounded-lg border border-obsidian-400/60" />
@@ -3368,19 +3469,41 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
             <div className="flex gap-3">
               <button onClick={() => setShowBookingFeeModal(false)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
               <button
-                disabled={!bookingFeeAmount || Number(bookingFeeAmount) <= 0}
-                onClick={() => {
-                  updateCustomer(detailLead.id, {
-                    bookingFee: Number(bookingFeeAmount),
-                    bookingFeeReceiptUrl: bookingFeeReceiptUrl || undefined,
-                    bookingFeeRecordedAt: new Date().toISOString(),
-                    lastActionAt: new Date().toISOString(),
-                  });
-                  setShowBookingFeeModal(false);
+                disabled={!bookingFeeAmount || Number(bookingFeeAmount) <= 0 || !bookingFeeReceiptUrl || bookingFeeSubmitting}
+                onClick={async () => {
+                  setBookingFeeSubmitting(true);
+                  try {
+                    const amount = Number(bookingFeeAmount);
+                    const car = cars.find(c => c.id === detailLead.interestedCarId);
+                    const carLabel = car ? `${car.year} ${car.make} ${car.model}${car.variant ? ' ' + car.variant : ''}` : undefined;
+                    const salesmanName = users.find(u => u.id === detailLead.assignedSalesId)?.name ?? currentUser?.name ?? '-';
+                    const bytes = await buildDepositReceiptPdf({
+                      customerName: detailLead.name,
+                      carLabel,
+                      carPlate: car?.carPlate,
+                      salesmanName,
+                      amount,
+                      generatedAt: new Date(),
+                    });
+                    const receiptUrl = await uploadDepositReceipt(bytes, detailLead.id, supabase.storage.from('car-photos'));
+                    await updateCustomer(detailLead.id, {
+                      bookingFee: amount,
+                      bookingFeeReceiptUrl,
+                      bookingFeeRecordedAt: new Date().toISOString(),
+                      bookingFeeLocked: true,
+                      bookingFeeDepositReceiptUrl: receiptUrl,
+                      lastActionAt: new Date().toISOString(),
+                    });
+                    setShowBookingFeeModal(false);
+                  } catch (err: any) {
+                    toast.error(err?.message ?? 'Failed to submit booking fee');
+                  } finally {
+                    setBookingFeeSubmitting(false);
+                  }
                 }}
                 className="flex-1 flex items-center justify-center gap-2 btn-gold px-4 py-2.5 rounded-lg text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <Banknote size={14} />Save
+                <Banknote size={14} />{bookingFeeSubmitting ? 'Submitting…' : 'Submit'}
               </button>
             </div>
           </div>

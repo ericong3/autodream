@@ -40,6 +40,7 @@ const TYPE_LABELS: Record<PaymentType, string> = {
   customer_collection:    'Cash Collection',
   loan_disbursement:      'Loan Disbursement',
   expense_claim:          'Expense Claim',
+  purchase_settlement:    'Settlement',
 };
 
 const TYPE_COLORS: Record<PaymentType, string> = {
@@ -58,6 +59,7 @@ const TYPE_COLORS: Record<PaymentType, string> = {
   customer_collection:    'bg-lime-500/20 text-lime-300 border-lime-500/20',
   loan_disbursement:      'bg-cyan-500/20 text-cyan-300 border-cyan-500/20',
   expense_claim:          'bg-amber-500/20 text-amber-300 border-amber-500/20',
+  purchase_settlement:    'bg-orange-500/20 text-orange-300 border-orange-500/20',
 };
 
 // Payments we RECEIVE (not pay out)
@@ -263,6 +265,123 @@ function TransferModal({ count, totalAmount, isCollect, onConfirm, onClose }: Tr
   );
 }
 
+// ── Bulk attach bills ──────────────────────────────────────────────────────────
+// Drop in a stack of bill photos, then quick-assign each one to the payment
+// record it belongs to — replaces attaching receipts one payment at a time.
+interface BulkAttachReceiptsModalProps {
+  payments: Payment[];
+  onConfirm: (assignments: { paymentId: string; file: File }[]) => Promise<void>;
+  onClose: () => void;
+}
+
+function BulkAttachReceiptsModal({ payments, onConfirm, onClose }: BulkAttachReceiptsModalProps) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [previews, setPreviews] = useState<string[]>([]);
+  const [assignments, setAssignments] = useState<(string | null)[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const addFiles = (picked: FileList | null) => {
+    if (!picked) return;
+    const newFiles = Array.from(picked);
+    setFiles(f => [...f, ...newFiles]);
+    setPreviews(p => [...p, ...newFiles.map(f => URL.createObjectURL(f))]);
+    setAssignments(a => [...a, ...newFiles.map(() => null)]);
+  };
+
+  const removeFile = (idx: number) => {
+    URL.revokeObjectURL(previews[idx]);
+    setFiles(f => f.filter((_, i) => i !== idx));
+    setPreviews(p => p.filter((_, i) => i !== idx));
+    setAssignments(a => a.filter((_, i) => i !== idx));
+  };
+
+  const assign = (idx: number, paymentId: string) => {
+    setAssignments(a => a.map((pid, i) => {
+      if (i === idx) return paymentId || null;
+      // A payment can only be assigned to one photo — bump it off whichever other photo held it.
+      return pid === paymentId && paymentId ? null : pid;
+    }));
+  };
+
+  const assignedCount = assignments.filter(Boolean).length;
+
+  const handleConfirm = async () => {
+    setSaving(true);
+    try {
+      const pairs = files
+        .map((file, i) => ({ file, paymentId: assignments[i] }))
+        .filter((x): x is { file: File; paymentId: string } => !!x.paymentId);
+      await onConfirm(pairs);
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full sm:max-w-lg bg-obsidian-800 sm:rounded-2xl rounded-t-2xl border border-white/[0.08] shadow-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.06] shrink-0">
+          <div>
+            <p className="text-white font-bold text-sm">Attach Bills</p>
+            <p className="text-gray-500 text-xs mt-0.5">Drop the bill photos, then assign each to a payment</p>
+          </div>
+          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-500 hover:text-white hover:bg-white/[0.06] transition-colors">
+            <X size={15} />
+          </button>
+        </div>
+
+        <div className="px-5 py-4 space-y-3 overflow-y-auto flex-1">
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="w-full border-2 border-dashed border-white/[0.1] hover:border-gold-500/40 rounded-lg p-4 flex flex-col items-center gap-2 text-gray-500 hover:text-gold-400 transition-colors"
+          >
+            <Camera size={18} />
+            <span className="text-xs">Add bill photos</span>
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
+
+          {files.length > 0 && (
+            <div className="space-y-2">
+              {files.map((file, i) => (
+                <div key={i} className="flex items-center gap-2.5 bg-obsidian-700/40 border border-white/[0.06] rounded-lg p-2">
+                  <img src={previews[i]} alt={file.name} className="w-12 h-12 object-cover rounded shrink-0" />
+                  <select
+                    value={assignments[i] ?? ''}
+                    onChange={e => assign(i, e.target.value)}
+                    className="flex-1 min-w-0 bg-obsidian-800 border border-white/[0.08] text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-gold-500/50"
+                  >
+                    <option value="">Assign to...</option>
+                    {payments.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.recipientName} — {formatRM(p.amount)}{assignments.includes(p.id) && assignments[i] !== p.id ? ' (assigned)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <button onClick={() => removeFile(i)} className="text-gray-600 hover:text-red-400 transition-colors shrink-0">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 py-4 border-t border-white/[0.06] shrink-0">
+          <button
+            onClick={handleConfirm}
+            disabled={assignedCount === 0 || saving}
+            className="w-full py-2.5 rounded-lg bg-gold-gradient text-obsidian-950 text-sm font-bold shadow-gold-sm hover:opacity-90 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {saving ? 'Attaching...' : `Attach ${assignedCount || ''} Bill${assignedCount === 1 ? '' : 's'}`.trim()}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 interface PaymentsProps { embedded?: boolean; }
 export default function Payments({ embedded }: PaymentsProps) {
@@ -300,6 +419,7 @@ export default function Payments({ embedded }: PaymentsProps) {
   const [monthFilter, setMonthFilter] = useState('');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [showBulkAttach, setShowBulkAttach] = useState(false);
   const [transferTarget, setTransferTarget] = useState<'single' | 'batch' | null>(null);
   const [singleId, setSingleId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
@@ -403,16 +523,33 @@ export default function Payments({ embedded }: PaymentsProps) {
         const claimCar = claim.carId ? cars.find(c => c.id === claim.carId) : undefined;
         return addJournalEntry(buildClaimPaidEntry({ claim, car: claimCar, createdBy: currentUser.id }));
       }));
-      // Commission/intake bonus were recognized (Dr expense / Cr payable) at
-      // delivery already — paying them out just clears that same payable.
-      // Refunds are the same shape, but clear Customer Refunds Payable
-      // instead (recognized at delivery inside the car-sale entry).
+      // Commission/intake bonus/source commission/repair/misc cost were all
+      // recognized (Dr expense-or-inventory / Cr payable) already, at
+      // delivery or when incurred — paying them out just clears that same
+      // payable. Refunds and investor payouts are the same shape, but clear
+      // their own dedicated payable instead of the general one. Settlement is
+      // only a real payable for non-consignment cars — consignment purchases
+      // were never posted to the ledger in the first place (see
+      // buildCarPurchaseEntry), so there's nothing to clear there.
       const payablesBeingPaid = ids
         .map(id => payments.find(p => p.id === id))
-        .filter((p): p is Payment => !!p && (p.type === 'salesman_commission' || p.type === 'intake_bonus' || p.type === 'customer_refund'));
+        .filter((p): p is Payment => !!p && (
+          p.type === 'salesman_commission' || p.type === 'intake_bonus' || p.type === 'customer_refund'
+          || p.type === 'source_commission' || p.type === 'repair' || p.type === 'misc_cost' || p.type === 'investor_payout'
+          || (p.type === 'purchase_settlement' && !cars.find(c => c.id === p.carId)?.consignment)
+        ));
+      const PAYABLE_LABELS: Partial<Record<PaymentType, string>> = {
+        salesman_commission: 'Commission', intake_bonus: 'Intake bonus', customer_refund: 'Refund',
+        source_commission: 'Source commission', repair: 'Repair', misc_cost: 'Misc cost',
+        investor_payout: 'Investor payout', purchase_settlement: 'Settlement',
+      };
+      const PAYABLE_ACCOUNT_OVERRIDES: Partial<Record<PaymentType, string>> = {
+        customer_refund: LEDGER_ACCOUNTS.customerRefundsPayable,
+        investor_payout: LEDGER_ACCOUNTS.investorPayable,
+      };
       await Promise.all(payablesBeingPaid.map(payable => {
         const payableCar = payable.carId ? cars.find(c => c.id === payable.carId) : undefined;
-        const label = payable.type === 'salesman_commission' ? 'Commission' : payable.type === 'intake_bonus' ? 'Intake bonus' : 'Refund';
+        const label = PAYABLE_LABELS[payable.type] ?? payable.type;
         return addJournalEntry(buildPayablePaidEntry({
           amount: payable.amount,
           description: `${label} paid — ${payable.recipientName}`,
@@ -420,7 +557,7 @@ export default function Payments({ embedded }: PaymentsProps) {
           sourceType: `${payable.type}_paid`,
           sourceId: payable.id,
           createdBy: currentUser.id,
-          ...(payable.type === 'customer_refund' ? { payableAccountId: LEDGER_ACCOUNTS.customerRefundsPayable } : {}),
+          ...(PAYABLE_ACCOUNT_OVERRIDES[payable.type] ? { payableAccountId: PAYABLE_ACCOUNT_OVERRIDES[payable.type] } : {}),
         }));
       }));
     }
@@ -445,6 +582,17 @@ export default function Payments({ embedded }: PaymentsProps) {
     }
     setTransferTarget(null);
     setSingleId(null);
+    setSelected(new Set());
+  };
+
+  // ── Bulk attach bills — upload each assigned photo and attach it to its
+  // payment's receiptUrl. Purely additive: doesn't touch status/transfer date,
+  // so it works whether done before or after marking payments paid. ──
+  const handleBulkAttach = async (assignments: { paymentId: string; file: File }[]) => {
+    await Promise.all(assignments.map(async ({ paymentId, file }) => {
+      const receiptUrl = await uploadReceipt(file);
+      await updatePayment(paymentId, { receiptUrl });
+    }));
     setSelected(new Set());
   };
 
@@ -992,6 +1140,13 @@ export default function Payments({ embedded }: PaymentsProps) {
               <p className="text-xs text-gray-400">{formatRM(selectedTotal)} total</p>
             </div>
             <button
+              onClick={() => setShowBulkAttach(true)}
+              className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-obsidian-700/60 border border-white/[0.08] text-gray-300 text-sm font-medium hover:text-white hover:border-gold-500/30 active:scale-95 transition-all"
+            >
+              <Camera size={15} />
+              Attach Bills
+            </button>
+            <button
               onClick={() => setTransferTarget('batch')}
               className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gold-gradient text-obsidian-950 text-sm font-bold shadow-gold-sm hover:opacity-90 active:scale-95 transition-all"
             >
@@ -1000,6 +1155,15 @@ export default function Payments({ embedded }: PaymentsProps) {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Bulk attach bills modal */}
+      {showBulkAttach && (
+        <BulkAttachReceiptsModal
+          payments={selectedPending}
+          onConfirm={handleBulkAttach}
+          onClose={() => setShowBulkAttach(false)}
+        />
       )}
 
       {/* Transfer modal */}

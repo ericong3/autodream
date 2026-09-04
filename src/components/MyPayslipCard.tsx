@@ -40,7 +40,7 @@ export default function MyPayslipCard() {
     if (car.outgoingConsignment) return 0;
     const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
     const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
-    const dealPrice = (wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
+    const dealPrice = ((wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0)) || car.sellingPrice;
     if (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) return 1000;
     return 1500;
   };

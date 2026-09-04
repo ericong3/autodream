@@ -85,7 +85,14 @@
       "mcp__claude_ai_Vercel__get_runtime_errors",
       "mcp__plugin_supabase_supabase__get_advisors",
       "Bash(xargs -I{} grep -Hm1 '^description:' {})",
-      "mcp__plugin_supabase_supabase__get_project"
+      "mcp__plugin_supabase_supabase__get_project",
+      "Bash(grep -n \"backgroundColor: \\\\`\\\\${hex}\" src/pages/Customers.tsx)",
+      "Bash(python3 -c ' *)",
+      "Bash(python -c ' *)",
+      "Bash(xargs -I{} sh -c 'echo ==={}===; cat {}')",
+      "Bash(rm -f _test_receipt_gen_tmp.mts _test_receipt_tmp.mjs test_receipt_local.pdf test_receipt_1_cardetail.png test_receipt_2_dealtab.png test_receipt_3_after.png)",
+      "Bash(rm -f \"C:\\\\Users\\\\ericl\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-ericl-OneDrive-Desktop-autodream\\\\1a7bb274-5ff1-43f8-80fb-50e0faebbb3a\\\\scratchpad\\\\test_receipt.mjs\")",
+      "Bash(taskkill *)"
     ]
   }
 }

@@ -22,6 +22,7 @@ export const LEDGER_ACCOUNTS = {
   expSalary: 'acct-exp-salary',
   expAllowance: 'acct-exp-allowance',
   expDirectorFee: 'acct-exp-director-fee',
+  expSourceComm: 'acct-exp-source-comm',
 } as const;
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -81,23 +82,91 @@ export function buildClaimPaidEntry(opts: { claim: Payment; car?: Car; createdBy
   };
 }
 
+// Same idea as buildClaimConfirmedEntry's car-tied branch, but for repair/
+// misc costs that never went through the Expense Claim flow (the older
+// direct "Add Repair"/"Add Misc Cost" forms on a car). Without this, that
+// cost only ever shows up when the car is sold (folded into COGS), with
+// nothing ever crediting Bank when it's actually paid — so paying it for
+// real would silently vanish from the books instead of clearing a payable.
+export function buildCarCostRecognizedEntry(opts: {
+  car: Car;
+  amount: number;
+  description: string;
+  sourceType: string;
+  sourceId: string;
+  createdBy: string;
+}): JournalEntry {
+  const { car, amount, description, sourceType, sourceId, createdBy } = opts;
+  const isInvestorCar = !!car.investorId;
+  return {
+    id: generateId(),
+    date: today(),
+    description,
+    lines: [
+      { accountId: isInvestorCar ? LEDGER_ACCOUNTS.inventoryInvestor : LEDGER_ACCOUNTS.inventoryOwn, debit: amount, credit: 0 },
+      { accountId: LEDGER_ACCOUNTS.accountsPayable, debit: 0, credit: amount },
+    ],
+    sourceType,
+    sourceId,
+    carId: car.id,
+    createdBy,
+    createdAt: new Date().toISOString(),
+  };
+}
+
 // A car being added to inventory is treated as acquired the moment it's
 // entered — dealer-consignment cars (someone else's car we're just selling
 // on their behalf) are excluded entirely by the caller, since we never
 // actually own or pay for those.
+//
+// If part of purchasePrice is a settlement paid to a lender instead of the
+// seller (settlementAmount), that portion hasn't left the bank yet — it's
+// recognized as a payable instead of being credited straight to Bank.
 export function buildCarPurchaseEntry(opts: { car: Car; createdBy: string }): JournalEntry {
   const { car, createdBy } = opts;
   const isInvestorCar = !!car.investorId;
   const amount = car.purchasePrice ?? 0;
+  const settlement = Math.min(car.settlementAmount ?? 0, amount);
+  const bankAccountId = isInvestorCar ? LEDGER_ACCOUNTS.bankInvestor : LEDGER_ACCOUNTS.bankOperating;
   return {
     id: generateId(),
     date: (car.dateAdded || today()).slice(0, 10),
     description: `Car purchased — ${carLabel(car)}`,
-    lines: [
-      { accountId: isInvestorCar ? LEDGER_ACCOUNTS.inventoryInvestor : LEDGER_ACCOUNTS.inventoryOwn, debit: amount, credit: 0 },
-      { accountId: isInvestorCar ? LEDGER_ACCOUNTS.bankInvestor : LEDGER_ACCOUNTS.bankOperating, debit: 0, credit: amount },
-    ],
+    lines: settlement > 0
+      ? [
+          { accountId: isInvestorCar ? LEDGER_ACCOUNTS.inventoryInvestor : LEDGER_ACCOUNTS.inventoryOwn, debit: amount, credit: 0 },
+          { accountId: bankAccountId, debit: 0, credit: amount - settlement },
+          { accountId: LEDGER_ACCOUNTS.accountsPayable, debit: 0, credit: settlement },
+        ]
+      : [
+          { accountId: isInvestorCar ? LEDGER_ACCOUNTS.inventoryInvestor : LEDGER_ACCOUNTS.inventoryOwn, debit: amount, credit: 0 },
+          { accountId: bankAccountId, debit: 0, credit: amount },
+        ],
     sourceType: 'car_purchased',
+    sourceId: car.id,
+    carId: car.id,
+    createdBy,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+// Reclassifies part of an already-posted car purchase from "paid in cash" to
+// "still owed" — used when a settlement is discovered/added after the car
+// was already booked in full (buildCarPurchaseEntry credited Bank for the
+// whole purchasePrice at the time).
+export function buildSettlementRecognizedEntry(opts: { car: Car; amount: number; createdBy: string }): JournalEntry {
+  const { car, amount, createdBy } = opts;
+  const isInvestorCar = !!car.investorId;
+  const bankAccountId = isInvestorCar ? LEDGER_ACCOUNTS.bankInvestor : LEDGER_ACCOUNTS.bankOperating;
+  return {
+    id: generateId(),
+    date: today(),
+    description: `Settlement recognized — ${carLabel(car)}`,
+    lines: [
+      { accountId: bankAccountId, debit: amount, credit: 0 },
+      { accountId: LEDGER_ACCOUNTS.accountsPayable, debit: 0, credit: amount },
+    ],
+    sourceType: 'purchase_settlement_recognized',
     sourceId: car.id,
     carId: car.id,
     createdBy,
@@ -376,6 +445,25 @@ export function collectMissingJournalEntries(opts: {
       }
     }
 
+    const sourceCommissionPayment = payments.find(p => p.type === 'source_commission' && p.carId === car.id);
+    if (sourceCommissionPayment) {
+      if (!hasEntry('source_commission', car.id)) {
+        result.push(buildPayableRecognizedEntry({
+          expenseAccountId: LEDGER_ACCOUNTS.expSourceComm,
+          amount: sourceCommissionPayment.amount,
+          description: `Source commission recognized — ${sourceCommissionPayment.recipientName}`,
+          car, sourceType: 'source_commission', sourceId: car.id, createdBy,
+        }));
+      }
+      if (sourceCommissionPayment.status === 'transferred' && !hasEntry('source_commission_paid', sourceCommissionPayment.id)) {
+        result.push(buildPayablePaidEntry({
+          amount: sourceCommissionPayment.amount,
+          description: `Source commission paid — ${sourceCommissionPayment.recipientName}`,
+          car, sourceType: 'source_commission_paid', sourceId: sourceCommissionPayment.id, createdBy,
+        }));
+      }
+    }
+
     // Refund owed is recognized inside buildCarSaleEntry itself (same
     // sourceType/sourceId as the sale) — only the "paid" side needs its own
     // catch-up here, once it's actually been transferred to the customer.
@@ -386,6 +474,19 @@ export function collectMissingJournalEntries(opts: {
         description: `Refund paid — ${refundPayment.recipientName}`,
         car, sourceType: 'customer_refund_paid', sourceId: refundPayment.id, createdBy,
         payableAccountId: LEDGER_ACCOUNTS.customerRefundsPayable,
+      }));
+    }
+
+    // Investor payout is recognized already, inside buildCarSaleEntry itself
+    // (credited straight to Investor Capital Payable) — only the "paid" side
+    // needs catching up here, same shape as the refund above.
+    const investorPayoutPayment = payments.find(p => p.type === 'investor_payout' && p.carId === car.id);
+    if (investorPayoutPayment && investorPayoutPayment.status === 'transferred' && !hasEntry('investor_payout_paid', investorPayoutPayment.id)) {
+      result.push(buildPayablePaidEntry({
+        amount: investorPayoutPayment.amount,
+        description: `Investor payout paid — ${investorPayoutPayment.recipientName}`,
+        car, sourceType: 'investor_payout_paid', sourceId: investorPayoutPayment.id, createdBy,
+        payableAccountId: LEDGER_ACCOUNTS.investorPayable,
       }));
     }
   }
@@ -416,6 +517,33 @@ export function collectMissingJournalEntries(opts: {
         amount: payment.amount,
         description: `${label} paid — ${payment.recipientName}`,
         sourceType: `${payment.type}_paid`, sourceId: payment.id, createdBy,
+      }));
+    }
+  }
+
+  // Repairs/misc costs added the direct way (not through an Expense Claim)
+  // never got their own recognized/paid pair — the cost only ever showed up
+  // folded into COGS at car-sale time, with no matching Bank credit when it
+  // was actually paid. Claim-originated repairs/misc are payment type
+  // 'expense_claim' (already handled by their own confirm/paid entries), so
+  // this loop naturally only catches the direct-added ones.
+  for (const payment of payments) {
+    if (payment.type !== 'repair' && payment.type !== 'misc_cost') continue;
+    const car = cars.find(c => c.id === payment.carId);
+    if (!car) continue;
+    const label = payment.type === 'repair' ? 'Repair' : 'Misc cost';
+    if (!hasEntry(payment.type, payment.id)) {
+      result.push(buildCarCostRecognizedEntry({
+        car, amount: payment.amount,
+        description: `${label} recognized — ${payment.recipientName}`,
+        sourceType: payment.type, sourceId: payment.id, createdBy,
+      }));
+    }
+    if (payment.status === 'transferred' && !hasEntry(`${payment.type}_paid`, payment.id)) {
+      result.push(buildPayablePaidEntry({
+        amount: payment.amount,
+        description: `${label} paid — ${payment.recipientName}`,
+        car, sourceType: `${payment.type}_paid`, sourceId: payment.id, createdBy,
       }));
     }
   }

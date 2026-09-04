@@ -49,7 +49,7 @@ export default function Commission() {
     const dealCustomer = getDealCustomer(car);
     if (dealCustomer?.commission != null) return dealCustomer.commission;
     const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
-    const dealPrice = (wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
+    const dealPrice = ((wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0)) || car.sellingPrice;
     if (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) return 1000;
     return 1500;
   };

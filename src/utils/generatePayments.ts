@@ -150,7 +150,7 @@ export async function generateDeliveryPayments(opts: {
     const c = car.consignment;
     let amount = 0;
     if (c.terms === 'fixed_amount' && c.fixedAmount) {
-      amount = c.fixedAmount;
+      amount = Math.max(0, c.fixedAmount - (car.settlementAmount ?? 0));
     } else if (c.terms === 'profit_split' && c.splitPercent) {
       amount = Math.max(0, (dealPrice - car.purchasePrice) * (c.splitPercent / 100));
     }
@@ -225,45 +225,53 @@ export async function generateDeliveryPayments(opts: {
 }
 
 // ── Repair payment ─────────────────────────────────────────────────────────────
+// Returns the created payment's id (or undefined if skipped) so the caller
+// can post a matching ledger entry against the same sourceId — needed since
+// this cost bypasses the Expense Claim flow, which normally does that itself.
 export async function generateRepairPayment(opts: {
   repair: RepairJob;
   payments: Payment[];
   workshops: Workshop[];
   addPayment: AddPayment;
-}) {
+}): Promise<string | undefined> {
   const { repair, payments, workshops, addPayment } = opts;
   if (!repair.location) return;
   if (exists(payments, 'repair', { repairJobId: repair.id })) return;
   const amount = repair.actualCost ?? repair.totalCost;
   if (amount <= 0) return;
   const ws = workshops.find(w => w.name.toLowerCase() === repair.location!.toLowerCase());
+  const id = generateId();
   await addPayment({
-    id: generateId(), type: 'repair', carId: repair.carId, repairJobId: repair.id,
+    id, type: 'repair', carId: repair.carId, repairJobId: repair.id,
     recipientType: 'workshop', recipientId: ws?.id ?? repair.location, recipientName: repair.location,
     bankName: ws?.bankName, accountNumber: ws?.bankAccountNumber, accountHolder: ws?.bankAccountHolder,
     amount, description: `${repair.typeOfRepair} repair`, status: 'pending', createdAt: new Date().toISOString(),
     receiptUrl: repair.receiptPhoto,
   });
+  return id;
 }
 
 // ── Misc cost payment ─────────────────────────────────────────────────────────
+// Same id-return reasoning as generateRepairPayment above.
 export async function generateMiscCostPayment(opts: {
   carId: string;
   misc: MiscCost;
   payments: Payment[];
   merchants: Merchant[];
   addPayment: AddPayment;
-}) {
+}): Promise<string | undefined> {
   const { carId, misc, payments, merchants, addPayment } = opts;
   if (!misc.merchant) return;
   if (exists(payments, 'misc_cost', { miscCostId: misc.id })) return;
   const merchant = merchants.find(m => m.name.toLowerCase() === misc.merchant!.toLowerCase());
+  const id = generateId();
   await addPayment({
-    id: generateId(), type: 'misc_cost', carId, miscCostId: misc.id,
+    id, type: 'misc_cost', carId, miscCostId: misc.id,
     recipientType: 'merchant', recipientId: merchant?.id ?? misc.merchant, recipientName: misc.merchant,
     bankName: merchant?.bankName, accountNumber: merchant?.bankAccountNumber, accountHolder: merchant?.bankAccountHolder,
     amount: misc.amount, description: misc.description || 'Misc cost', status: 'pending', createdAt: new Date().toISOString(),
   });
+  return id;
 }
 
 // ── Panel charge payment ──────────────────────────────────────────────────────
@@ -398,7 +406,7 @@ export function collectMissingPayments(data: {
     if (car.consignment && !alreadyExists('consignment_payout', { carId: car.id })) {
       const c = car.consignment;
       let amount = 0;
-      if (c.terms === 'fixed_amount' && c.fixedAmount) amount = c.fixedAmount;
+      if (c.terms === 'fixed_amount' && c.fixedAmount) amount = Math.max(0, c.fixedAmount - (car.settlementAmount ?? 0));
       else if (c.terms === 'profit_split' && c.splitPercent) amount = Math.max(0, (dealPrice - car.purchasePrice) * (c.splitPercent / 100));
       if (amount > 0) {
         const dealer = dealers.find(d => d.name.toLowerCase() === c.dealer.toLowerCase());
@@ -626,7 +634,7 @@ export function collectMonthlyPayroll(opts: {
     const sp = spId ? users.find(u => u.id === spId) : undefined;
     if (!sp) continue;
     const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
-    const dealPrice = (wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
+    const dealPrice = ((wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0)) || car.sellingPrice;
     const effectiveFloor = car.priceFloor ?? car.sellingPrice;
     const amount = (car.consignment || dealPrice < effectiveFloor) ? 1000 : 1500;
     const carLabel = `${car.year} ${car.make} ${car.model}${car.carPlate ? ` (${car.carPlate})` : ''}`;

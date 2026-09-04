@@ -121,14 +121,37 @@ export default function Payroll() {
     if (car.outgoingConsignment) return 0;
     const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
     const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
-    const dealPrice = (wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
+    const dealPrice = ((wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0)) || car.sellingPrice;
     if (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) return 1000;
     return 1500;
   };
   const monthSoldCars = cars.filter(c => (c.status === 'delivered' || c.commissionCreditedEarly) && getCommissionMonth(c, customers) === monthFilter);
   const monthSoldCarsFor = (userId: string) => monthSoldCars.filter(c => getDealSalespersonId(c) === userId);
+
+  // Trade-in intake commission — same criteria as the Commission page, keyed
+  // off carInDate rather than delivery, since intake happens before any sale.
+  const monthIntakeCarsFor = (userId: string) => cars.filter(c =>
+    (c.intakeCommission ?? 0) > 0 && c.assignedSalesperson === userId &&
+    c.status !== 'coming_soon' && c.carInDate && c.carInDate.startsWith(monthFilter)
+  );
+
+  // Internal sourcing commission — same criteria as the Commission page's
+  // sourcing table, also keyed off carInDate. Only counts cars that actually
+  // have an amount keyed in (sourceCommission is set manually on the
+  // Commission page — a listed car with no amount yet contributes nothing).
+  const monthSourcingCarsFor = (userId: string) => cars.filter(c =>
+    c.sourceType === 'internal' && c.sourceSalesmanId === userId &&
+    (c.sourceCommission ?? 0) > 0 &&
+    c.status !== 'coming_soon' && c.carInDate && c.carInDate.startsWith(monthFilter)
+  );
+
+  // Total commission = deal + trade-in intake + internal sourcing commission,
+  // folded together so it flows into the payslip's Sales Commission line
+  // without a separate field for each.
   const monthCommission = (userId: string) =>
-    monthSoldCarsFor(userId).reduce((s, c) => s + calcCommission(c), 0);
+    monthSoldCarsFor(userId).reduce((s, c) => s + calcCommission(c), 0) +
+    monthIntakeCarsFor(userId).reduce((s, c) => s + (c.intakeCommission ?? 0), 0) +
+    monthSourcingCarsFor(userId).reduce((s, c) => s + (c.sourceCommission ?? 0), 0);
   const monthTotalCommission = staff
     .filter(u => u.role === 'salesperson')
     .reduce((s, u) => s + monthCommission(u.id), 0);
@@ -394,7 +417,11 @@ export default function Payroll() {
                 const { basic: effectiveBasic, allowance: allowanceAmount } = payrollAmountsFor(u);
                 const boostActive = !wasRun && isFullTime && !!u.temporaryBoost && !!u.temporaryBoostUntil && monthFilter <= u.temporaryBoostUntil;
                 const commissionCars = u.role === 'salesperson' ? monthSoldCarsFor(u.id) : [];
-                const commission = commissionCars.reduce((s, c) => s + calcCommission(c), 0);
+                const intakeCars = u.role === 'salesperson' ? monthIntakeCarsFor(u.id) : [];
+                const sourcingCars = u.role === 'salesperson' ? monthSourcingCarsFor(u.id) : [];
+                const commission = commissionCars.reduce((s, c) => s + calcCommission(c), 0) +
+                  intakeCars.reduce((s, c) => s + (c.intakeCommission ?? 0), 0) +
+                  sourcingCars.reduce((s, c) => s + (c.sourceCommission ?? 0), 0);
                 const totalPay = effectiveBasic + allowanceAmount + commission;
                 const isCommissionExpanded = expandedCommission.has(u.id);
                 return (
@@ -420,7 +447,7 @@ export default function Payroll() {
                           <span className="text-gray-600">{isFullTime ? 'Not run for this month' : 'No fixed pay configured'}</span>
                         )}
                         {u.role === 'salesperson' && (
-                          commissionCars.length > 0 ? (
+                          commissionCars.length > 0 || intakeCars.length > 0 || sourcingCars.length > 0 ? (
                             <button
                               type="button"
                               onClick={() => toggleCommission(u.id)}
@@ -453,7 +480,7 @@ export default function Payroll() {
                       </button>
                     </div>
                   </div>
-                  {isCommissionExpanded && commissionCars.length > 0 && (
+                  {isCommissionExpanded && (commissionCars.length > 0 || intakeCars.length > 0 || sourcingCars.length > 0) && (
                     <div className="mt-3 pt-3 border-t border-obsidian-400/30 space-y-1.5">
                       {commissionCars.map((c) => (
                         <div key={c.id} className="flex items-center justify-between text-xs px-1">
@@ -462,6 +489,24 @@ export default function Payroll() {
                             {c.commissionCreditedEarly && <span className="text-emerald-400 ml-1.5">· credited early</span>}
                           </span>
                           <span className="text-teal-400 font-medium">{formatRM(calcCommission(c))}</span>
+                        </div>
+                      ))}
+                      {intakeCars.map((c) => (
+                        <div key={`intake-${c.id}`} className="flex items-center justify-between text-xs px-1">
+                          <span className="text-gray-400">
+                            {c.year} {c.make} {c.model}{c.carPlate ? ` (${c.carPlate})` : ''}
+                            <span className="text-blue-400 ml-1.5">· trade-in intake</span>
+                          </span>
+                          <span className="text-teal-400 font-medium">{formatRM(c.intakeCommission ?? 0)}</span>
+                        </div>
+                      ))}
+                      {sourcingCars.map((c) => (
+                        <div key={`source-${c.id}`} className="flex items-center justify-between text-xs px-1">
+                          <span className="text-gray-400">
+                            {c.year} {c.make} {c.model}{c.carPlate ? ` (${c.carPlate})` : ''}
+                            <span className="text-indigo-400 ml-1.5">· sourcing</span>
+                          </span>
+                          <span className="text-teal-400 font-medium">{formatRM(c.sourceCommission ?? 0)}</span>
                         </div>
                       ))}
                     </div>

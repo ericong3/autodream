@@ -8,6 +8,7 @@ import { hashPassword, verifyPassword } from '../utils/password';
 // ── Notification helpers ─────────────────────────────────────────────────────
 const dirIds      = (users: User[]) => users.filter(u => u.role === 'director').map(u => u.id);
 const mechIds     = (users: User[]) => users.filter(u => u.role === 'mechanic').map(u => u.id);
+const adminIds    = (users: User[]) => users.filter(u => u.role === 'admin').map(u => u.id);
 const mgmtIds     = (users: User[]) => users.filter(u => u.role === 'director' || u.role === 'shareholder' || u.role === 'admin').map(u => u.id);
 function instrRecipients(i: Instruction, users: User[]): string[] {
   if (i.toType === 'all') return users.filter(u => u.id !== i.fromId).map(u => u.id);
@@ -294,6 +295,10 @@ function rowToCar(r: any): Car {
     sellerThumbprintSaved: r.seller_thumbprint_saved ?? false,
     dealProgress: parseJsonField<any>(r.deal_progress) ?? undefined,
     collectionReceiptUrl: r.collection_receipt_url ?? undefined,
+    dealReceiptUrl: r.deal_receipt_url ?? undefined,
+    dealReceiptGeneratedAt: r.deal_receipt_generated_at ?? undefined,
+    settlementAmount: r.settlement_amount ?? undefined,
+    settlementRecipient: r.settlement_recipient ?? undefined,
   };
 }
 
@@ -550,6 +555,10 @@ function carToRow(c: Partial<Car>) {
   if (c.sellerThumbprintSaved !== undefined) row.seller_thumbprint_saved = c.sellerThumbprintSaved;
   if ('dealProgress' in c) row.deal_progress = c.dealProgress ?? null;
   if (c.collectionReceiptUrl !== undefined) row.collection_receipt_url = c.collectionReceiptUrl;
+  if (c.dealReceiptUrl !== undefined) row.deal_receipt_url = c.dealReceiptUrl;
+  if (c.dealReceiptGeneratedAt !== undefined) row.deal_receipt_generated_at = c.dealReceiptGeneratedAt;
+  if (c.settlementAmount !== undefined) row.settlement_amount = c.settlementAmount;
+  if (c.settlementRecipient !== undefined) row.settlement_recipient = c.settlementRecipient;
   return row;
 }
 
@@ -568,6 +577,9 @@ function rowToRepair(r: any): RepairJob {
     completedAt: r.completed_at,
     notes: r.notes,
     createdAt: r.created_at,
+    sentBy: r.sent_by ?? undefined,
+    collectedAt: r.collected_at ?? undefined,
+    collectedPhoto: r.collected_photo ?? undefined,
   };
 }
 
@@ -586,6 +598,9 @@ function repairToRow(r: Partial<RepairJob>) {
   if (r.completedAt !== undefined) row.completed_at = r.completedAt;
   if (r.notes !== undefined) row.notes = r.notes;
   if (r.createdAt !== undefined) row.created_at = r.createdAt;
+  if (r.sentBy !== undefined) row.sent_by = r.sentBy;
+  if (r.collectedAt !== undefined) row.collected_at = r.collectedAt;
+  if (r.collectedPhoto !== undefined) row.collected_photo = r.collectedPhoto;
   return row;
 }
 
@@ -701,6 +716,8 @@ function rowToCustomer(r: any): Customer {
     bookingFee: r.booking_fee ?? undefined,
     bookingFeeReceiptUrl: r.booking_fee_receipt_url ?? undefined,
     bookingFeeRecordedAt: r.booking_fee_recorded_at ?? undefined,
+    bookingFeeLocked: r.booking_fee_locked ?? undefined,
+    bookingFeeDepositReceiptUrl: r.booking_fee_deposit_receipt_url ?? undefined,
     createdAt: r.created_at,
   };
 }
@@ -743,6 +760,8 @@ function customerToRow(c: Partial<Customer>) {
   if (c.bookingFee !== undefined) row.booking_fee = c.bookingFee;
   if (c.bookingFeeReceiptUrl !== undefined) row.booking_fee_receipt_url = c.bookingFeeReceiptUrl;
   if (c.bookingFeeRecordedAt !== undefined) row.booking_fee_recorded_at = c.bookingFeeRecordedAt;
+  if (c.bookingFeeLocked !== undefined) row.booking_fee_locked = c.bookingFeeLocked;
+  if (c.bookingFeeDepositReceiptUrl !== undefined) row.booking_fee_deposit_receipt_url = c.bookingFeeDepositReceiptUrl;
   if (c.createdAt !== undefined) row.created_at = c.createdAt;
   return row;
 }
@@ -1938,11 +1957,17 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       const carName = `${car?.year ?? ''} ${car?.make ?? ''} ${car?.model ?? ''}`.trim();
       sendPush(dirIds(get().users), '✅ Repair completed', `${existing?.typeOfRepair} done for ${carName}`, '/inventory', existing?.carId);
     }
+    // Salesman marked the car collected — admin needs to key in the bill.
+    if (repair.status === 'awaiting_bill' && existing?.status !== 'awaiting_bill') {
+      const car = get().cars.find(c => c.id === existing?.carId);
+      const carName = `${car?.year ?? ''} ${car?.make ?? ''} ${car?.model ?? ''}`.trim();
+      sendPush(adminIds(get().users), '🧾 Bill needed', `${existing?.typeOfRepair} — ${carName} is back, bill pending entry`, '/admin', existing?.carId);
+    }
     set((s) => {
       const updatedRepairs = s.repairs.map((r) => (r.id === id ? { ...r, ...repair } : r));
       let updatedCars = s.cars;
       if (existing && !actorIsAdmin) {
-        if (repair.status === 'done') {
+        if (repair.status === 'done' || repair.status === 'awaiting_bill') {
           updatedCars = s.cars.map((c) =>
             c.id === existing.carId ? { ...c, currentLocation: 'Showroom' } : c
           );
@@ -2373,6 +2398,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       salesman_commission: 'Commission', intake_bonus: 'Intake Bonus',
       source_commission: 'Source Comm.', repair: 'Workshop', misc_cost: 'Misc Cost',
       consignment_payout: 'Consignment', panel_charge: 'Panel Charge',
+      purchase_settlement: 'Settlement',
     };
     const label = PAYMENT_TYPE_LABELS[payment.type] ?? payment.type;
     const amtStr = `RM ${payment.amount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

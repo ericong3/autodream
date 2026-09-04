@@ -173,6 +173,7 @@ export default function Inventory() {
   const currentUser = useStore((s) => s.currentUser);
   const addJournalEntry = useStore((s) => s.addJournalEntry);
   const addCar = useStore((s) => s.addCar);
+  const addPayment = useStore((s) => s.addPayment);
   const updateCar = useStore((s) => s.updateCar);
   const deleteCar = useStore((s) => s.deleteCar);
   const dealers = useStore((s) => s.dealers);
@@ -603,10 +604,15 @@ export default function Inventory() {
       return;
     }
 
+    const today = new Date().toISOString().split('T')[0];
     const newCar: Car = {
       ...form,
       id: generateId(),
-      dateAdded: new Date().toISOString().split('T')[0],
+      dateAdded: today,
+      // Cars added directly (not through Coming Soon) skip the "Car In" click
+      // that normally sets this — without it they'd never be eligible for
+      // sourcing/intake commission, since those are keyed off carInDate.
+      carInDate: isComingSoon ? undefined : today,
       consignment: form.consignment?.terms === 'fixed_amount'
         ? { ...form.consignment, fixedAmount: form.purchasePrice || 0 }
         : form.consignment,
@@ -620,6 +626,14 @@ export default function Inventory() {
       // them, we're just selling on that dealer's behalf (existing, separate flow).
       if (!newCar.consignment && (newCar.purchasePrice ?? 0) > 0 && currentUser) {
         await addJournalEntry(buildCarPurchaseEntry({ car: newCar, createdBy: currentUser.id }));
+      }
+      if ((newCar.settlementAmount ?? 0) > 0 && currentUser) {
+        await addPayment({
+          id: generateId(), type: 'purchase_settlement', carId: newCar.id,
+          recipientType: 'merchant', recipientId: newCar.settlementRecipient || 'Settlement', recipientName: newCar.settlementRecipient || 'Settlement',
+          amount: newCar.settlementAmount!, description: `Settlement — ${newCar.year} ${newCar.make} ${newCar.model}`,
+          status: 'pending', createdAt: new Date().toISOString(),
+        });
       }
       setShowModal(false);
       setForm(emptyForm);
@@ -876,7 +890,7 @@ export default function Inventory() {
                           </span>
                         </div>
                         <div className="mt-3 pt-3 border-t border-obsidian-400/40 space-y-1.5">
-                          <p className="text-white font-bold">{car.finalDeal ? formatRM(car.finalDeal.dealPrice) : '—'}</p>
+                          <p className="text-white font-bold">{formatRM(((wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0)) || car.sellingPrice)}</p>
                           {buyer && (
                             <div className="flex items-center gap-1.5">
                               <Users size={11} className="text-gray-500" />
@@ -996,7 +1010,7 @@ export default function Inventory() {
                             <p className="text-gray-500 text-xs mt-0.5">{car.carPlate ?? '—'} · {car.colour}</p>
                           </div>
                           <div className="text-right shrink-0">
-                            <p className="text-white font-bold text-sm">{car.finalDeal ? formatRM(car.finalDeal.dealPrice) : '—'}</p>
+                            <p className="text-white font-bold text-sm">{formatRM(((wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0)) || car.sellingPrice)}</p>
                             <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isLoan ? 'bg-blue-500/15 text-blue-400' : 'bg-green-500/15 text-green-400'}`}>
                               {isLoan ? (wo as any)?.bank ?? 'Loan' : 'Cash'}
                             </span>
@@ -1970,6 +1984,45 @@ export default function Inventory() {
               onChange={(e) => setForm({ ...form, purchasePrice: Number(e.target.value) })}
             />
           </FormField>
+          <div className="col-span-2">
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, settlementAmount: form.settlementAmount != null ? undefined : 0, settlementRecipient: form.settlementAmount != null ? undefined : form.settlementRecipient })}
+              className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${form.settlementAmount != null ? 'bg-orange-500/10 border-orange-500/40 text-orange-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
+            >
+              <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${form.settlementAmount != null ? 'bg-orange-500 border-orange-500' : 'border-gray-600'}`}>
+                {form.settlementAmount != null && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+              </div>
+              <div>
+                <p className="text-sm font-medium">Add Settlement</p>
+                <p className="text-xs opacity-60 mt-0.5">Part of the purchase price pays off an existing loan directly to the lender</p>
+              </div>
+            </button>
+            {form.settlementAmount != null && (
+              <div className="mt-3 space-y-3 pl-2 border-l-2 border-orange-500/30">
+                <FormField label="Settle To (bank / lender)">
+                  <input
+                    className={inputCls()}
+                    value={form.settlementRecipient ?? ''}
+                    onChange={(e) => setForm({ ...form, settlementRecipient: e.target.value })}
+                    placeholder="e.g. Public Bank"
+                  />
+                </FormField>
+                <FormField label="Settlement Amount (RM)">
+                  <input
+                    type="number"
+                    className={inputCls()}
+                    value={form.settlementAmount ?? 0}
+                    onChange={(e) => setForm({ ...form, settlementAmount: Number(e.target.value) })}
+                  />
+                </FormField>
+                <div className="flex items-center justify-between bg-obsidian-700/40 border border-obsidian-400/40 rounded-lg px-3 py-2.5">
+                  <p className="text-gray-400 text-xs">Net to Seller</p>
+                  <p className="text-orange-400 font-semibold text-sm">{formatRM(Math.max(0, (form.purchasePrice || 0) - (form.settlementAmount || 0)))}</p>
+                </div>
+              </div>
+            )}
+          </div>
           <FormField label={isDirector ? 'Selling Price (RM)' : 'Selling Price (RM) — Director only'} error={errors.sellingPrice}>
             <input
               type="number"
@@ -2100,7 +2153,7 @@ export default function Inventory() {
                 {form.consignment.terms === 'fixed_amount' && (
                   <div className="flex items-center justify-between bg-obsidian-700/40 border border-obsidian-400/40 rounded-lg px-3 py-2.5">
                     <p className="text-gray-400 text-xs">Dealer Takes Back</p>
-                    <p className="text-blue-400 font-semibold text-sm">{formatRM(form.purchasePrice || 0)}</p>
+                    <p className="text-blue-400 font-semibold text-sm">{formatRM(Math.max(0, (form.purchasePrice || 0) - (form.settlementAmount || 0)))}</p>
                   </div>
                 )}
 
@@ -2664,9 +2717,13 @@ export default function Inventory() {
           + extras.reduce((s, i) => s + (Number(i.amount) || 0), 0)
           - (src.hasTradeIn ? ((Number(src.tradeInPrice) || 0) - (Number(src.settlementFigure) || 0)) : 0);
 
+        // View mode (not editing) should reflect what the bank actually disbursed/expects,
+        // not the stale as-submitted work order figure — same fallback used in CarDetail's
+        // Collection Balance panel, so the two screens never disagree on the same deal.
+        const viewLoanAmount = car.disbursementExpectedAmount ?? car.disbursementAmount ?? lwo?.loanAmount ?? 0;
         const displayTotal = woEditMode
           ? calcTotal(woEditData, editExtras)
-          : calcTotal(activeWo, activeWo.additionalItems ?? []);
+          : calcTotal({ ...activeWo, loanAmount: viewLoanAmount }, activeWo.additionalItems ?? []);
 
         const setD = (patch: Record<string, any>) => setWoEditData((prev: any) => ({ ...prev, ...patch }));
 
@@ -2679,14 +2736,17 @@ export default function Inventory() {
             } else {
               await updateCustomer(buyer.id, { cashWorkOrder: updated as CashWorkOrder });
             }
-            // Re-queue for director approval whenever a salesman edits the deal
-            if (!isDirector && car.finalDeal) {
-              updateCar(car.id, {
+            // Keep finalDeal.dealPrice in sync with the edited selling price/discount —
+            // it's what the Pending Delivery card and profit calcs actually read, and
+            // was previously left stale (still whatever it was at submission) after an edit here.
+            // Also re-queue for director approval whenever a salesman edits the deal.
+            if (car.finalDeal) {
+              const newDealPrice = (Number(updated.sellingPrice) || 0) - (Number(updated.discount) || 0);
+              await updateCar(car.id, {
                 finalDeal: {
                   ...car.finalDeal,
-                  approvalStatus: 'pending',
-                  approvedBy: undefined,
-                  approvedAt: undefined,
+                  dealPrice: newDealPrice,
+                  ...(!isDirector ? { approvalStatus: 'pending' as const, approvedBy: undefined, approvedAt: undefined } : {}),
                 },
               });
             }
@@ -2907,7 +2967,7 @@ export default function Inventory() {
                           {isLoan && lwo && (
                             <div className="flex justify-between text-sm">
                               <span className="text-gray-400">Loan ({lwo.bank})</span>
-                              <span className="text-red-400 font-mono">− {formatRM(lwo.loanAmount)}</span>
+                              <span className="text-red-400 font-mono">− {formatRM(viewLoanAmount)}</span>
                             </div>
                           )}
                           {!isLoan && cwo && (cwo.downpayment ?? 0) > 0 && (

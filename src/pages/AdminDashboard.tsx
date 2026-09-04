@@ -1,10 +1,13 @@
 import { useState, useMemo, useRef } from 'react';
-import { CreditCard, FileText, CheckCircle, Clock, ClipboardCheck, Fingerprint, Contact, Upload } from 'lucide-react';
+import { CreditCard, FileText, CheckCircle, Clock, ClipboardCheck, Fingerprint, Contact, Upload, Wrench, Trash2, Plus, MapPin } from 'lucide-react';
 import { useStore } from '../store';
 import LoanCaseDetail from './LoanCaseDetail';
 import MyPayslipCard from '../components/MyPayslipCard';
+import Modal from '../components/Modal';
 import { formatRM } from '../utils/format';
 import { supabase } from '../lib/supabase';
+import { completeRepairJob } from '../utils/completeRepair';
+import { RepairJob } from '../types';
 
 const LOAN_STATUS_COLORS: Record<string, string> = {
   pending:        'bg-yellow-500/15 text-yellow-300 border-yellow-500/30',
@@ -28,7 +31,7 @@ const LOAN_STATUS_LABELS: Record<string, string> = {
   cancelled:      'Cancelled',
 };
 
-type TabType = 'loans' | 'payments' | 'intake';
+type TabType = 'loans' | 'payments' | 'repairs' | 'intake';
 
 export default function AdminDashboard() {
   const currentUser = useStore(s => s.currentUser)!;
@@ -41,8 +44,19 @@ export default function AdminDashboard() {
   const loanCases = useStore(s => s.loanCases);
   const loanCaseDocuments = useStore(s => s.loanCaseDocuments);
   const loanCaseActivities = useStore(s => s.loanCaseActivities);
+  const repairs = useStore(s => s.repairs);
+  const workshops = useStore(s => s.workshops);
+  const updateRepair = useStore(s => s.updateRepair);
+  const addPayment = useStore(s => s.addPayment);
+  const addJournalEntry = useStore(s => s.addJournalEntry);
 
   const [tab, setTab] = useState<TabType>('loans');
+  const [repairFilter, setRepairFilter] = useState<'pending' | 'done'>('pending');
+  const [billTarget, setBillTarget] = useState<RepairJob | null>(null);
+  const [billForm, setBillForm] = useState<{ parts: { name: string; cost: number }[]; labourCost: number; receiptPhoto: string }>({ parts: [{ name: '', cost: 0 }], labourCost: 0, receiptPhoto: '' });
+  const [billSubmitting, setBillSubmitting] = useState(false);
+  const [billUploading, setBillUploading] = useState(false);
+  const billPhotoRef = useRef<HTMLInputElement>(null);
   const [intakeFilter, setIntakeFilter] = useState<'pending' | 'done'>('pending');
   const greenCardInputRef = useRef<HTMLInputElement>(null);
   const [greenCardTargetId, setGreenCardTargetId] = useState<string | null>(null);
@@ -119,6 +133,54 @@ export default function AdminDashboard() {
     setMarkingId(id);
     await updatePayment(id, { status: 'transferred', transferredAt: new Date().toISOString() });
     setMarkingId(null);
+  };
+
+  // ── Repairs awaiting bill entry (salesman sent car out, collected it, now
+  // waiting on admin to key in the actual cost) ──
+  const repairsAwaitingBill = useMemo(() =>
+    repairs.filter(r => r.status === 'awaiting_bill')
+      .sort((a, b) => (a.collectedAt ?? a.createdAt).localeCompare(b.collectedAt ?? b.createdAt)),
+    [repairs]
+  );
+  const repairsDone = useMemo(() =>
+    repairs.filter(r => r.status === 'done')
+      .sort((a, b) => (b.completedAt ?? b.createdAt).localeCompare(a.completedAt ?? a.createdAt))
+      .slice(0, 30),
+    [repairs]
+  );
+
+  const openBillModal = (r: RepairJob) => {
+    setBillTarget(r);
+    setBillForm({ parts: [{ name: '', cost: 0 }], labourCost: 0, receiptPhoto: r.collectedPhoto ?? '' });
+  };
+  const addBillPartRow = () => setBillForm(f => ({ ...f, parts: [...f.parts, { name: '', cost: 0 }] }));
+  const updateBillPart = (idx: number, field: 'name' | 'cost', val: string | number) => {
+    setBillForm(f => {
+      const parts = [...f.parts];
+      parts[idx] = { ...parts[idx], [field]: val };
+      return { ...f, parts };
+    });
+  };
+  const removeBillPart = (idx: number) => setBillForm(f => ({ ...f, parts: f.parts.filter((_, i) => i !== idx) }));
+
+  const handleBillSubmit = async () => {
+    if (!billTarget) return;
+    const car = cars.find(c => c.id === billTarget.carId);
+    if (!car) return;
+    setBillSubmitting(true);
+    try {
+      const validParts = billForm.parts.filter(p => p.name.trim());
+      const actualCost = validParts.reduce((s, p) => s + p.cost, 0) + billForm.labourCost;
+      await updateRepair(billTarget.id, { parts: validParts, labourCost: billForm.labourCost, totalCost: actualCost });
+      await completeRepairJob({
+        repair: { ...billTarget, parts: validParts, labourCost: billForm.labourCost },
+        car, actualCost, receiptPhoto: billForm.receiptPhoto,
+        currentUserId: currentUser.id, payments, workshops, addPayment, updateRepair, addJournalEntry,
+      });
+      setBillTarget(null);
+    } finally {
+      setBillSubmitting(false);
+    }
   };
 
   // ── Intake checklist (own stock only — consignment is the other party's responsibility;
@@ -208,6 +270,18 @@ export default function AdminDashboard() {
           {pendingPayments.length > 0 && (
             <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${tab === 'payments' ? 'bg-gold-500/20 text-gold-300' : 'bg-red-500/30 text-red-400'}`}>
               {pendingPayments.length}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setTab('repairs')}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === 'repairs' ? 'border-gold-500 text-white' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
+        >
+          <Wrench size={14} />
+          Repairs
+          {repairsAwaitingBill.length > 0 && (
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${tab === 'repairs' ? 'bg-gold-500/20 text-gold-300' : 'bg-red-500/30 text-red-400'}`}>
+              {repairsAwaitingBill.length}
             </span>
           )}
         </button>
@@ -390,6 +464,73 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* ── Repairs tab ── */}
+      {tab === 'repairs' && (
+        <div className="space-y-3">
+          <p className="text-xs text-gray-500">Cars a salesman collected from a workshop — key in the actual bill to generate the payment.</p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setRepairFilter('pending')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${repairFilter === 'pending' ? 'bg-gold-gradient text-obsidian-950' : 'bg-obsidian-700/60 text-gray-400 border border-obsidian-400/30 hover:text-white'}`}
+            >
+              Awaiting Bill {repairsAwaitingBill.length > 0 && `(${repairsAwaitingBill.length})`}
+            </button>
+            <button
+              onClick={() => setRepairFilter('done')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${repairFilter === 'done' ? 'bg-gold-gradient text-obsidian-950' : 'bg-obsidian-700/60 text-gray-400 border border-obsidian-400/30 hover:text-white'}`}
+            >
+              Done {repairsDone.length > 0 && `(${repairsDone.length})`}
+            </button>
+          </div>
+
+          {(repairFilter === 'pending' ? repairsAwaitingBill : repairsDone).length === 0 ? (
+            <div className="text-center py-16 text-gray-500">
+              <Wrench size={40} className="mx-auto mb-3 opacity-30" />
+              <p className="text-sm">{repairFilter === 'pending' ? 'Nothing waiting on a bill right now.' : 'No completed repairs yet.'}</p>
+            </div>
+          ) : (repairFilter === 'pending' ? repairsAwaitingBill : repairsDone).map(r => {
+            const car = cars.find(c => c.id === r.carId);
+            const sentByUser = users.find(u => u.id === r.sentBy);
+            return (
+              <div key={r.id} className="bg-obsidian-800/60 border border-obsidian-400/30 rounded-xl p-4 flex items-center justify-between gap-3 flex-wrap">
+                <div className="min-w-0 flex-1">
+                  <p className="text-white text-sm font-medium truncate">{car ? `${car.year} ${car.make} ${car.model}` : '—'}{car?.carPlate ? ` · ${car.carPlate}` : ''}</p>
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <MapPin size={11} className="text-gray-600 shrink-0" />
+                    <p className="text-[11px] text-gray-500">{r.typeOfRepair} — {r.location}</p>
+                  </div>
+                  <p className="text-[11px] text-gray-600 mt-0.5">
+                    {sentByUser ? `Sent by ${sentByUser.name}` : ''}
+                    {r.collectedAt ? ` · collected ${new Date(r.collectedAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}` : ''}
+                  </p>
+                  {repairFilter === 'done' && r.actualCost !== undefined && (
+                    <p className="text-[11px] text-green-500 mt-0.5">Actual cost: {formatRM(r.actualCost)}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  {r.collectedPhoto && (
+                    <a href={r.collectedPhoto} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:underline">
+                      Bill Photo
+                    </a>
+                  )}
+                  {repairFilter === 'pending' ? (
+                    <button
+                      onClick={() => openBillModal(r)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 transition-colors"
+                    >
+                      <CheckCircle size={12} />
+                      Fill in Bill
+                    </button>
+                  ) : (
+                    <CheckCircle size={16} className="text-green-500" />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* ── Intake Checklist tab ── */}
       {tab === 'intake' && (
         <div className="space-y-3">
@@ -489,6 +630,102 @@ export default function AdminDashboard() {
           onClose={() => setSelectedCaseId(null)}
         />
       )}
+
+      {/* ── Fill in Bill Modal ── */}
+      <Modal isOpen={!!billTarget} onClose={() => setBillTarget(null)} title="Fill in Bill" maxWidth="max-w-xl">
+        {billTarget && (() => {
+          const car = cars.find(c => c.id === billTarget.carId);
+          const partsTotal = billForm.parts.filter(p => p.name.trim()).reduce((s, p) => s + p.cost, 0);
+          const total = partsTotal + billForm.labourCost;
+          return (
+            <div className="space-y-4">
+              <p className="text-gray-400 text-sm">
+                <span className="text-white font-medium">{billTarget.typeOfRepair}</span> — {car ? `${car.year} ${car.make} ${car.model}` : ''}{car?.carPlate ? ` · ${car.carPlate}` : ''} at <span className="text-white">{billTarget.location}</span>
+              </p>
+
+              <div>
+                <label className="block text-gray-300 text-xs font-medium mb-2">Parts</label>
+                <div className="space-y-2">
+                  {billForm.parts.map((part, i) => (
+                    <div key={i} className="flex gap-2">
+                      <input className="input flex-1" placeholder="Part name" value={part.name} onChange={e => updateBillPart(i, 'name', e.target.value)} />
+                      <input type="number" className="input w-28" placeholder="RM" value={part.cost} onChange={e => updateBillPart(i, 'cost', Number(e.target.value))} />
+                      {billForm.parts.length > 1 && (
+                        <button onClick={() => removeBillPart(i)} className="text-red-400 hover:text-red-300 transition-colors px-1"><Trash2 size={15} /></button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button onClick={addBillPartRow} className="text-gold-400 text-xs mt-2 flex items-center gap-1 hover:text-gold-300 transition-colors">
+                  <Plus size={13} /> Add part
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-gray-300 text-xs font-medium mb-1.5">Labour Cost (RM)</label>
+                <input type="number" className="input" value={billForm.labourCost} onChange={e => setBillForm(f => ({ ...f, labourCost: Number(e.target.value) }))} />
+              </div>
+
+              <div>
+                <label className="block text-gray-300 text-xs font-medium mb-1.5">Receipt Photo</label>
+                {billForm.receiptPhoto ? (
+                  <div className="relative inline-block">
+                    <img src={billForm.receiptPhoto} alt="Receipt" className="w-32 h-24 object-cover rounded-lg border border-obsidian-400/60" />
+                    <button onClick={() => setBillForm(f => ({ ...f, receiptPhoto: '' }))} className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-0.5">
+                      <Trash2 size={11} className="text-white" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => billPhotoRef.current?.click()}
+                    disabled={billUploading}
+                    className="border-2 border-dashed border-obsidian-400/60 hover:border-gold-500/50 rounded-lg p-4 flex flex-col items-center gap-2 text-gray-600 hover:text-gold-400 transition-colors w-full"
+                  >
+                    {billUploading ? <span className="text-xs">Uploading...</span> : <><Upload size={18} /><span className="text-xs">Upload receipt (or use the salesman's snapshot above)</span></>}
+                  </button>
+                )}
+                <input ref={billPhotoRef} type="file" accept="image/*" className="hidden" onChange={async e => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setBillUploading(true);
+                  try {
+                    const path = `repair-bills/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+                    const { error } = await supabase.storage.from('car-photos').upload(path, file, { contentType: file.type || 'image/jpeg' });
+                    if (!error) {
+                      const { data } = supabase.storage.from('car-photos').getPublicUrl(path);
+                      setBillForm(f => ({ ...f, receiptPhoto: data.publicUrl }));
+                    }
+                  } finally {
+                    setBillUploading(false);
+                  }
+                  e.target.value = '';
+                }} />
+                {billTarget.collectedPhoto && !billForm.receiptPhoto && (
+                  <p className="text-[11px] text-gray-600 mt-1.5">
+                    Using the salesman's pickup snapshot — <a href={billTarget.collectedPhoto} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">view it</a>, or upload a clearer scan above.
+                  </p>
+                )}
+              </div>
+
+              <div className="flex justify-between items-center pt-2 border-t border-obsidian-400/40">
+                <span className="text-gray-400 text-sm font-medium">Total</span>
+                <span className="text-white font-bold text-lg">{formatRM(total)}</span>
+              </div>
+
+              <div className="flex gap-3">
+                <button onClick={() => setBillTarget(null)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
+                <button
+                  onClick={handleBillSubmit}
+                  disabled={total <= 0 || billSubmitting}
+                  className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {billSubmitting ? 'Saving…' : 'Save & Generate Payment'}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
     </div>
   );
 }

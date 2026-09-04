@@ -465,6 +465,8 @@ export interface Car {
   panelDealerId?: string;        // dealer whose bank panel was used for loan submission
   panelChargeAmount?: number;    // fee charged by panel dealer (varies by bank)
   collectionReceiptUrl?: string;
+  dealReceiptUrl?: string;         // salesman-generated PDF snapshot of the Collection Balance breakdown
+  dealReceiptGeneratedAt?: string;
   isStaffSale?: boolean;
   waiveCommission?: boolean;
   // Per-car exception to the normal "commission counts once delivered" rule —
@@ -478,6 +480,12 @@ export interface Car {
   commissionCreditedMonth?: string;
   sellerThumbprintSaved?: boolean;
   dealProgress?: DealProgress;
+  // Portion of purchasePrice that pays off an existing loan on the car
+  // directly to the lender, rather than to the seller/consignor. Not an
+  // additional cost — purchasePrice already includes it; this just splits
+  // where the money goes (lender gets settlementAmount, seller gets the rest).
+  settlementAmount?: number;
+  settlementRecipient?: string;
 }
 
 export interface MiscCost {
@@ -497,13 +505,19 @@ export interface RepairJob {
   parts: { name: string; cost: number }[];
   labourCost: number;
   totalCost: number;
-  status: 'queued' | 'pending' | 'in_progress' | 'done';
+  status: 'queued' | 'pending' | 'awaiting_bill' | 'in_progress' | 'done';
   location?: string;
   receiptPhoto?: string;
   actualCost?: number;
   completedAt?: string;
   notes?: string;
   createdAt: string;
+  // Salesman-initiated "send to workshop" flow: who sent it, and their quick
+  // pickup snapshot of the physical bill — a backup, not the official bill
+  // entry (admin keys that in separately once it reaches 'awaiting_bill').
+  sentBy?: string;
+  collectedAt?: string;
+  collectedPhoto?: string;
 }
 
 export interface Quotation {
@@ -654,6 +668,11 @@ export interface Customer {
   bookingFee?: number;
   bookingFeeReceiptUrl?: string;
   bookingFeeRecordedAt?: string;
+  // Once a booking fee is submitted with proof of payment attached, it locks —
+  // only a director can edit it after that (salesperson can no longer alter
+  // the amount or swap the receipt).
+  bookingFeeLocked?: boolean;
+  bookingFeeDepositReceiptUrl?: string;   // auto-generated deposit receipt PDF, handed to the customer
   createdAt: string;
 }
 
@@ -707,7 +726,8 @@ export type PaymentType =
   | 'customer_refund'
   | 'customer_collection'
   | 'loan_disbursement'
-  | 'expense_claim';
+  | 'expense_claim'
+  | 'purchase_settlement';
 
 export type PaymentStatus = 'pending' | 'transferred';
 export type RecipientType = 'user' | 'external_salesman' | 'workshop' | 'dealer' | 'merchant' | 'customer';

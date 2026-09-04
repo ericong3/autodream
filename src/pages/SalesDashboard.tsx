@@ -1,13 +1,15 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Car, Users, Calendar, Bell, ChevronDown, ChevronUp, AlertCircle, Plus, CheckCircle, Circle, Trash2, ChevronLeft, ChevronRight, Eye, EyeOff, Lock, RefreshCw, Skull, X, CalendarCheck, Phone, MessageCircle } from 'lucide-react';
+import { Car, Users, Calendar, Bell, ChevronDown, ChevronUp, AlertCircle, Plus, CheckCircle, Circle, Trash2, ChevronLeft, ChevronRight, Eye, EyeOff, Lock, RefreshCw, Skull, X, CalendarCheck, Phone, MessageCircle, Wrench, Upload, MapPin } from 'lucide-react';
 import { useStore } from '../store';
+import { supabase } from '../lib/supabase';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import MyPayslipCard from '../components/MyPayslipCard';
 import { formatRM, generateId } from '../utils/format';
 import { verifyPassword } from '../utils/password';
 import { effectiveMonthlyBasic, basicPayLabel, getCommissionMonth, getDeliveryDate, getProrationFactor } from '../utils/generatePayments';
+import { RepairJob } from '../types';
 
 export default function SalesDashboard() {
   const cars = useStore((s) => s.cars);
@@ -23,6 +25,9 @@ export default function SalesDashboard() {
   const updateTestDrive = useStore((s) => s.updateTestDrive);
   const updateCustomer = useStore((s) => s.updateCustomer);
   const payments = useStore((s) => s.payments);
+  const workshops = useStore((s) => s.workshops);
+  const addRepair = useStore((s) => s.addRepair);
+  const updateRepair = useStore((s) => s.updateRepair);
   const [showFollowUpList, setShowFollowUpList] = useState(false);
   const [followUpSelected, setFollowUpSelected] = useState<typeof customers[0] | null>(null);
 
@@ -88,6 +93,22 @@ export default function SalesDashboard() {
   const [rescheduleTarget, setRescheduleTarget] = useState<{ tdId: string; customerName: string } | null>(null);
   const [deadLeadTarget, setDeadLeadTarget] = useState<{ tdId: string; customerId: string; customerName: string } | null>(null);
 
+  // Send Car to Workshop shortcut
+  const [showSendModal, setShowSendModal] = useState(false);
+  const [sendPlate, setSendPlate] = useState('');
+  const [sendMatchedCar, setSendMatchedCar] = useState<typeof cars[0] | null>(null);
+  const [sendPlateError, setSendPlateError] = useState('');
+  const [sendTypeOfRepair, setSendTypeOfRepair] = useState('');
+  const [sendWorkshop, setSendWorkshop] = useState('');
+  const [sendSubmitting, setSendSubmitting] = useState(false);
+
+  // Car Collected — quick bill snapshot
+  const [collectTarget, setCollectTarget] = useState<RepairJob | null>(null);
+  const [collectPhoto, setCollectPhoto] = useState('');
+  const [collectUploading, setCollectUploading] = useState(false);
+  const [collectSubmitting, setCollectSubmitting] = useState(false);
+  const collectPhotoRef = useRef<HTMLInputElement>(null);
+
   const myId = currentUser?.id ?? '';
   const today = new Date().toISOString().split('T')[0];
 
@@ -95,7 +116,7 @@ export default function SalesDashboard() {
     if (car.outgoingConsignment) return 0;
     const wo = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
     const workOrder = wo?.loanWorkOrder ?? wo?.cashWorkOrder;
-    const dealPrice = (workOrder?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (workOrder?.discount ?? 0);
+    const dealPrice = ((workOrder?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (workOrder?.discount ?? 0)) || car.sellingPrice;
     if (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) return 1000;
     return 1500;
   };
@@ -199,6 +220,83 @@ export default function SalesDashboard() {
   };
 
   const mask = (val: string) => salaryVisible ? val : '****';
+
+  // ── Cars sent to workshop by me, still open ──
+  const mySentRepairs = useMemo(() =>
+    repairs.filter(r => r.sentBy === myId && r.status !== 'done')
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [repairs, myId]
+  );
+
+  const sendRepairTypes = useMemo(() => Array.from(new Set(workshops.map(w => w.speciality).filter(Boolean))) as string[], [workshops]);
+  const sendFilteredWorkshops = useMemo(() => sendTypeOfRepair ? workshops.filter(w => w.speciality === sendTypeOfRepair) : [], [workshops, sendTypeOfRepair]);
+
+  const uploadRepairPhoto = async (file: File, folder: string): Promise<string> => {
+    const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+    const { error } = await supabase.storage.from('car-photos').upload(path, file, { contentType: file.type || 'image/jpeg' });
+    if (error) throw new Error(error.message);
+    return supabase.storage.from('car-photos').getPublicUrl(path).data.publicUrl;
+  };
+
+  const handlePlateLookup = () => {
+    const norm = (s: string) => s.replace(/[\s-]/g, '').toUpperCase();
+    const target = norm(sendPlate);
+    const match = target ? cars.find(c => c.carPlate && norm(c.carPlate) === target) : undefined;
+    if (!match) {
+      setSendPlateError('No car found with that plate');
+      setSendMatchedCar(null);
+      return;
+    }
+    setSendPlateError('');
+    setSendMatchedCar(match);
+  };
+
+  const resetSendModal = () => {
+    setShowSendModal(false);
+    setSendPlate(''); setSendMatchedCar(null); setSendPlateError('');
+    setSendTypeOfRepair(''); setSendWorkshop('');
+  };
+
+  const handleSendSubmit = async () => {
+    if (!sendMatchedCar || !sendTypeOfRepair || !sendWorkshop || !currentUser) return;
+    setSendSubmitting(true);
+    try {
+      const hasActive = repairs.some(r => r.carId === sendMatchedCar.id &&
+        (r.status === 'pending' || r.status === 'in_progress' || r.status === 'awaiting_bill'));
+      const newRepair: RepairJob = {
+        id: generateId(),
+        carId: sendMatchedCar.id,
+        typeOfRepair: sendTypeOfRepair,
+        location: sendWorkshop,
+        parts: [],
+        labourCost: 0,
+        totalCost: 0,
+        status: hasActive ? 'queued' : 'pending',
+        sentBy: currentUser.id,
+        createdAt: new Date().toISOString(),
+      };
+      await addRepair(newRepair);
+      resetSendModal();
+    } finally {
+      setSendSubmitting(false);
+    }
+  };
+
+  const handleCollectSubmit = async () => {
+    if (!collectTarget || !collectPhoto) return;
+    setCollectSubmitting(true);
+    try {
+      await updateRepair(collectTarget.id, {
+        status: 'awaiting_bill',
+        collectedAt: new Date().toISOString(),
+        collectedPhoto: collectPhoto,
+      });
+      setCollectTarget(null);
+      setCollectPhoto('');
+    } finally {
+      setCollectSubmitting(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -511,6 +609,70 @@ export default function SalesDashboard() {
         </div>
       </div>
 
+      {/* ── CARS AT WORKSHOP ── */}
+      <div className="card-surface rounded-xl p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-white font-semibold text-sm flex items-center gap-2">
+            <div className="w-6 h-6 bg-orange-500/10 rounded-lg flex items-center justify-center">
+              <Wrench size={13} className="text-orange-400" />
+            </div>
+            Cars at Workshop
+            {mySentRepairs.length > 0 && (
+              <span className="text-[10px] bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded-full leading-none font-bold">{mySentRepairs.length}</span>
+            )}
+          </h2>
+          <button
+            onClick={() => setShowSendModal(true)}
+            className="flex items-center gap-1 text-xs text-gold-400 hover:text-gold-300 transition-colors bg-gold-500/10 hover:bg-gold-500/15 px-2.5 py-1.5 rounded-lg"
+          >
+            <Plus size={12} />Send Car
+          </button>
+        </div>
+
+        {mySentRepairs.length === 0 ? (
+          <p className="text-gray-600 text-xs py-3 text-center">No cars out at a workshop</p>
+        ) : (
+          <div className="space-y-2">
+            {mySentRepairs.map(r => {
+              const rc = cars.find(c => c.id === r.carId);
+              const isAtWorkshop = r.status === 'pending' || r.status === 'in_progress';
+              const isQueued = r.status === 'queued';
+              return (
+                <div key={r.id} className="rounded-xl p-3 border bg-obsidian-700/30 border-obsidian-500/20 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-white text-xs font-semibold truncate">{rc ? `${rc.year} ${rc.make} ${rc.model}` : '—'}{rc?.carPlate ? ` · ${rc.carPlate}` : ''}</p>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <MapPin size={10} className="text-gray-600 shrink-0" />
+                        <p className="text-gray-500 text-[10px] truncate">{r.typeOfRepair} — {r.location}</p>
+                      </div>
+                    </div>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ${
+                      isQueued ? 'bg-gray-500/20 text-gray-400' :
+                      isAtWorkshop ? 'bg-yellow-500/20 text-yellow-400' :
+                      'bg-orange-500/20 text-orange-400'
+                    }`}>
+                      {isQueued ? 'Queued' : isAtWorkshop ? 'At Workshop' : 'Awaiting Bill'}
+                    </span>
+                  </div>
+                  {isAtWorkshop && (
+                    <button
+                      onClick={() => { setCollectTarget(r); setCollectPhoto(''); }}
+                      className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[10px] font-semibold bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 text-green-400 transition-colors"
+                    >
+                      <CheckCircle size={10} />Car Collected
+                    </button>
+                  )}
+                  {r.status === 'awaiting_bill' && (
+                    <p className="text-gray-600 text-[10px]">Bill pending entry by admin</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {/* ── REMINDERS ── */}
       <div className="card-surface rounded-xl p-4 space-y-3">
         <div className="flex items-center justify-between">
@@ -629,6 +791,144 @@ export default function SalesDashboard() {
             Save
           </button>
         </div>
+      </Modal>
+
+      {/* Send Car to Workshop Modal */}
+      <Modal isOpen={showSendModal} onClose={resetSendModal} title="Send Car to Workshop" maxWidth="max-w-sm">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-gray-300 text-xs font-medium mb-1.5">Car Plate</label>
+            <div className="flex gap-2">
+              <input
+                className="input flex-1"
+                value={sendPlate}
+                onChange={e => { setSendPlate(e.target.value); setSendMatchedCar(null); setSendPlateError(''); }}
+                onKeyDown={e => { if (e.key === 'Enter') handlePlateLookup(); }}
+                placeholder="e.g. QCF7376"
+                autoFocus
+                disabled={!!sendMatchedCar}
+              />
+              {!sendMatchedCar && (
+                <button onClick={handlePlateLookup} disabled={!sendPlate.trim()} className="btn-gold px-4 rounded-lg text-sm disabled:opacity-40">
+                  Find
+                </button>
+              )}
+            </div>
+            {sendPlateError && <p className="text-red-400 text-xs mt-1.5">{sendPlateError}</p>}
+            {sendMatchedCar && (
+              <div className="mt-2 flex items-center justify-between bg-green-500/5 border border-green-500/20 rounded-lg px-3 py-2">
+                <p className="text-white text-xs font-medium">
+                  {sendMatchedCar.year} {sendMatchedCar.make} {sendMatchedCar.model} · {sendMatchedCar.carPlate}
+                </p>
+                <button onClick={() => { setSendMatchedCar(null); setSendPlate(''); }} className="text-gray-500 hover:text-white text-[10px] shrink-0 ml-2">
+                  Change
+                </button>
+              </div>
+            )}
+          </div>
+
+          {sendMatchedCar && (
+            <>
+              <div>
+                <label className="block text-gray-300 text-xs font-medium mb-1.5">Type of Repair</label>
+                {sendRepairTypes.length === 0 ? (
+                  <p className="text-xs text-gray-500 py-2">
+                    No repair types yet — add workshops with a speciality in <span className="text-gold-400">Data → Workshops</span>
+                  </p>
+                ) : (
+                  <select
+                    className="input"
+                    value={sendTypeOfRepair}
+                    onChange={e => { setSendTypeOfRepair(e.target.value); setSendWorkshop(''); }}
+                  >
+                    <option value="">Select type...</option>
+                    {sendRepairTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-gray-300 text-xs font-medium mb-1.5">Send to Workshop</label>
+                {!sendTypeOfRepair ? (
+                  <p className="text-xs text-gray-500 py-2">Select a repair type first</p>
+                ) : sendFilteredWorkshops.length === 0 ? (
+                  <p className="text-xs text-gray-500 py-2">
+                    No <span className="text-white">{sendTypeOfRepair}</span> workshops — add one in <span className="text-gold-400">Data → Workshops</span>
+                  </p>
+                ) : (
+                  <select className="input" value={sendWorkshop} onChange={e => setSendWorkshop(e.target.value)}>
+                    <option value="">Select workshop...</option>
+                    {sendFilteredWorkshops.map(w => <option key={w.id} value={w.name}>{w.name}{w.phone ? ` — ${w.phone}` : ''}</option>)}
+                  </select>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+        <div className="flex gap-3 mt-5">
+          <button onClick={resetSendModal} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
+          <button
+            onClick={handleSendSubmit}
+            disabled={!sendMatchedCar || !sendTypeOfRepair || !sendWorkshop || sendSubmitting}
+            className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {sendSubmitting ? 'Sending…' : 'Send to Workshop'}
+          </button>
+        </div>
+      </Modal>
+
+      {/* Car Collected Modal */}
+      <Modal isOpen={!!collectTarget} onClose={() => { setCollectTarget(null); setCollectPhoto(''); }} title="Car Collected" maxWidth="max-w-sm">
+        {collectTarget && (() => {
+          const rc = cars.find(c => c.id === collectTarget.carId);
+          return (
+            <div className="space-y-4">
+              <p className="text-gray-400 text-sm">
+                Confirm <span className="text-white font-medium">{rc ? `${rc.year} ${rc.make} ${rc.model}` : 'this car'}</span> has been picked up from <span className="text-white font-medium">{collectTarget.location}</span>.
+              </p>
+              <div>
+                <label className="block text-gray-300 text-xs font-medium mb-1.5">Bill Photo <span className="text-red-400">*</span></label>
+                <p className="text-gray-600 text-[11px] mb-1.5 -mt-1">Required — quick snapshot as backup; admin will key in the official bill.</p>
+                {collectPhoto ? (
+                  <div className="relative inline-block w-full">
+                    <img src={collectPhoto} alt="Bill" className="w-full h-40 object-cover rounded-lg border border-obsidian-400/60" />
+                    <button onClick={() => setCollectPhoto('')} className="absolute top-2 right-2 bg-black/60 text-white rounded-full p-0.5"><X size={12} /></button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => collectPhotoRef.current?.click()}
+                    disabled={collectUploading}
+                    className="w-full border-2 border-dashed border-obsidian-400/60 hover:border-green-500/50 rounded-lg p-4 flex flex-col items-center gap-2 text-gray-600 hover:text-green-400 transition-colors"
+                  >
+                    {collectUploading ? <span className="text-xs">Uploading...</span> : <><Upload size={18} /><span className="text-xs">Take / upload photo</span></>}
+                  </button>
+                )}
+                <input ref={collectPhotoRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={async e => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setCollectUploading(true);
+                  try {
+                    const url = await uploadRepairPhoto(file, 'repair-bills');
+                    setCollectPhoto(url);
+                  } finally {
+                    setCollectUploading(false);
+                  }
+                  e.target.value = '';
+                }} />
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => { setCollectTarget(null); setCollectPhoto(''); }} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
+                <button
+                  onClick={handleCollectSubmit}
+                  disabled={!collectPhoto || collectSubmitting}
+                  className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {collectSubmitting ? 'Confirming…' : 'Confirm Collected'}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
       </Modal>
 
       <DeleteConfirmModal

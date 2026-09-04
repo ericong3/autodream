@@ -45,9 +45,13 @@ import { Car, RepairJob, ChecklistItem, DEFAULT_CHECKLIST_LABELS, WorkOrderItem 
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, formatMileage, generateId, shortName } from '../utils/format';
-import { generateDeliveryPayments, generateRepairPayment, generateMiscCostPayment, generatePanelChargePayment } from '../utils/generatePayments';
-import { buildCarSaleEntry, buildPayableRecognizedEntry, LEDGER_ACCOUNTS } from '../utils/generateJournalEntries';
+import { generateDeliveryPayments, generateMiscCostPayment, generatePanelChargePayment } from '../utils/generatePayments';
+import { completeRepairJob } from '../utils/completeRepair';
+import { buildCarSaleEntry, buildPayableRecognizedEntry, buildCarCostRecognizedEntry, buildSettlementRecognizedEntry, LEDGER_ACCOUNTS } from '../utils/generateJournalEntries';
 import { getCaseCompletion } from '../utils/caseCompletion';
+import { buildDealReceiptPdf, uploadDealReceipt } from '../utils/generateDealReceipt';
+import { buildConsignmentSettlementPdf, buildConsignmentSummaryPdf, ConsignmentSettlementInput } from '../utils/generateConsignmentSettlement';
+import { toast } from '../utils/toast';
 
 
 const STATUS_BADGE: Record<string, string> = {
@@ -80,6 +84,7 @@ const REPAIR_STATUS_BADGE: Record<string, string> = {
   queued: 'bg-gray-500/20 text-gray-400',
   pending: 'bg-yellow-500/20 text-yellow-400',
   in_progress: 'bg-blue-500/20 text-blue-400',
+  awaiting_bill: 'bg-orange-500/20 text-orange-400',
   done: 'bg-green-500/20 text-green-400',
 };
 
@@ -87,7 +92,8 @@ const REPAIR_STATUS_LABEL: Record<string, string> = {
   queued: 'Pending',
   pending: 'Sent Out',
   in_progress: 'In Progress',
-  done: 'Collected',
+  awaiting_bill: 'Awaiting Bill',
+  done: 'Completed',
 };
 
 function inputCls(error?: string) {
@@ -218,6 +224,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const [dealView, setDealView] = useState<'salesman' | 'director'>('salesman');
   const [collectionExpanded, setCollectionExpanded] = useState(false);
   const [showConsignment, setShowConsignment] = useState(false);
+  const [generatingConsignDoc, setGeneratingConsignDoc] = useState<'settlement' | 'summary' | null>(null);
   const carMovements = useStore((s) => s.carMovements);
   const [outgoingConsignModal, setOutgoingConsignModal] = useState<{ dealer: string; terms: 'fixed_amount' | 'profit_split'; fixedAmount: number; splitPercent: number } | null>(null);
   const [outgoingConsignSaving, setOutgoingConsignSaving] = useState(false);
@@ -228,6 +235,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const dealCustomer = car ? customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder)) : undefined;
   const dealWo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
   const dealIsLoan = !!dealCustomer?.loanWorkOrder;
+  const _loanAmount = dealIsLoan ? (car?.disbursementExpectedAmount ?? car?.disbursementAmount ?? dealCustomer?.loanWorkOrder?.loanAmount ?? 0) : 0;
 
   // Customer balance: positive = customer still owes us, negative = we owe customer a refund
   const customerBalance = (() => {
@@ -308,6 +316,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   // ── Delivery Modal ──
   const [showDeliveryModal, setShowDeliveryModal] = useState(false);
   const [deliveryPhoto, setDeliveryPhoto] = useState('');
+  const [deliverySubmitting, setDeliverySubmitting] = useState(false);
   const deliveryRef = useRef<HTMLInputElement>(null);
   const collectionRef = useRef<HTMLInputElement>(null);
   const inlineCollectionRef = useRef<HTMLInputElement>(null);
@@ -322,6 +331,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       accountNo: refundClaim?.accountNumber ?? '',
     });
   }, [refundClaim?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Deal receipt (Collection Balance) ──
+  const [generatingReceipt, setGeneratingReceipt] = useState(false);
 
   // ── Green Card preview ──
   const [showGreenCardPreview, setShowGreenCardPreview] = useState(false);
@@ -441,9 +453,12 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
 
   // Net profit matching director view formula
   const _wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
-  const _dealPrice = _wo
+  // A work order/final-deal price of exactly 0 means the selling price was
+  // never actually filled in on the deal — not a real RM0 sale — so fall
+  // back to the asking price rather than let a blank field read as a huge loss.
+  const _dealPrice = _wo && _wo.sellingPrice > 0
     ? (_wo.sellingPrice - (_wo.discount ?? 0))
-    : (car.finalDeal?.dealPrice ?? car.sellingPrice);
+    : (car.finalDeal?.dealPrice || car.sellingPrice);
   const _discount = _wo ? (_wo.discount ?? 0) : 0;
   const _intakeCommission = car.intakeCommission ?? 0;
   const _sourceCommission = car.sourceCommission ?? 0;
@@ -464,7 +479,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     checked: false,
   }));
   const allChecked = checklist.every((item) => item.checked);
-  const hasActiveRepair = carRepairs.some((r) => r.status === 'pending' || r.status === 'in_progress');
+  const hasActiveRepair = carRepairs.some((r) => r.status === 'pending' || r.status === 'in_progress' || r.status === 'awaiting_bill');
   const hasSentOutRepair = hasActiveRepair;
 
   // Photo tracking helpers
@@ -479,7 +494,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     setShowEditModal(true);
   };
 
-  const handleEditSubmit = () => {
+  const handleEditSubmit = async () => {
     const e: Record<string, string> = {};
     if (!editForm.make?.trim()) e.make = 'Required';
     if (!editForm.model?.trim()) e.model = 'Required';
@@ -488,12 +503,29 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     setEditErrors(e);
     if (Object.keys(e).length > 0) return;
     setShowEditModal(false);
-    updateCar(car.id, {
+    const newlyAddedSettlement = (editForm.settlementAmount ?? 0) > 0
+      && !(car.settlementAmount ?? 0)
+      && !payments.some(p => p.type === 'purchase_settlement' && p.carId === car.id);
+    await updateCar(car.id, {
       ...editForm,
       consignment: editForm.consignment?.terms === 'fixed_amount'
         ? { ...editForm.consignment, fixedAmount: editForm.purchasePrice || 0 }
         : editForm.consignment,
     });
+    if (newlyAddedSettlement && currentUser) {
+      await addPayment({
+        id: generateId(), type: 'purchase_settlement', carId: car.id,
+        recipientType: 'merchant', recipientId: editForm.settlementRecipient || 'Settlement', recipientName: editForm.settlementRecipient || 'Settlement',
+        amount: editForm.settlementAmount!, description: `Settlement — ${car.year} ${car.make} ${car.model}`,
+        status: 'pending', createdAt: new Date().toISOString(),
+      });
+      // Non-consignment cars already have their full purchasePrice booked to
+      // Bank from when the car was added — reclassify the settlement portion
+      // as still-owed instead of posting a fresh purchase entry.
+      if (!editForm.consignment) {
+        await addJournalEntry(buildSettlementRecognizedEntry({ car, amount: editForm.settlementAmount!, createdBy: currentUser.id }));
+      }
+    }
   };
 
   // ── Add Repair ──
@@ -544,24 +576,18 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   // ── Complete Repair ──
   const openCompleteRepair = (r: RepairJob) => {
     setTargetRepair(r);
-    setCompleteForm({ actualCost: r.totalCost, receiptPhoto: '' });
+    setCompleteForm({ actualCost: r.totalCost, receiptPhoto: r.collectedPhoto ?? '' });
     setShowCompleteModal(true);
   };
 
   const handleCompleteRepair = async () => {
-    if (!targetRepair) return;
+    if (!targetRepair || !currentUser) return;
     setShowCompleteModal(false);
     const repair = targetRepair;
     setTargetRepair(null);
-    await updateRepair(repair.id, {
-      status: 'done',
-      actualCost: completeForm.actualCost,
-      receiptPhoto: completeForm.receiptPhoto || undefined,
-      completedAt: new Date().toISOString(),
-    });
-    generateRepairPayment({
-      repair: { ...repair, actualCost: completeForm.actualCost },
-      payments, workshops, addPayment,
+    await completeRepairJob({
+      repair, car, actualCost: completeForm.actualCost, receiptPhoto: completeForm.receiptPhoto,
+      currentUserId: currentUser.id, payments, workshops, addPayment, updateRepair, addJournalEntry,
     });
   };
 
@@ -621,13 +647,60 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
 
   // ── Delivery ──
   const handleDeliverySubmit = async () => {
+    if (!deliveryPhoto || deliverySubmitting) return;
+    setDeliverySubmitting(true);
     setShowDeliveryModal(false);
     await updateCar(car.id, {
       status: 'delivered',
-      deliveryPhoto: deliveryPhoto || undefined,
+      deliveryPhoto,
       deliveryCollected: true,
     });
     await generateDeliveryPayments({ car, payments, users, externalSalesmen, dealers, customers, addPayment });
+
+    // Auto-generate the customer's delivery receipt — full deal breakdown,
+    // same format as the manual Collection Receipt. Fires once, right when
+    // delivery is confirmed, so the customer always leaves with proof.
+    if (dealCustomer && dealWo) {
+      try {
+        const sellingPrice = dealWo.sellingPrice ?? car.sellingPrice;
+        const discount = dealWo.discount ?? 0;
+        const insurance = dealWo.insurance ?? 0;
+        const bankProduct = dealWo.bankProduct ?? 0;
+        const additionalItems = dealWo.additionalItems ?? [];
+        const additionalTotal = additionalItems.reduce((s, i) => s + i.amount, 0);
+        const bookingFeeAmt = dealWo.bookingFee ?? 0;
+        const resultLabel = Math.abs(customerBalance) < 0.01 ? 'Balance' : customerBalance < 0 ? 'Refund to Customer' : 'Collect from Customer';
+        const carLabel = `${car.year} ${car.make} ${car.model}${car.variant ? ' ' + car.variant : ''}`;
+        const salesmanName = dealWo.submittedBy || assignedSalesperson?.name || currentUser?.name || '-';
+        const plusLines = [
+          ...(insurance > 0 ? [{ label: 'Insurance', amount: insurance }] : []),
+          ...(bankProduct > 0 ? [{ label: 'Bank Product', amount: bankProduct }] : []),
+          ...additionalItems.map(i => ({ label: i.label, amount: i.amount })),
+        ];
+        const minusLines = [
+          ...(discount > 0 ? [{ label: 'Discount', amount: discount }] : []),
+          ...(bookingFeeAmt > 0 ? [{ label: 'Deposit / Booking Fee', amount: bookingFeeAmt }] : []),
+          ...(_loanAmount > 0 ? [{ label: 'Loan Amount', amount: _loanAmount }] : []),
+        ];
+        const bytes = await buildDealReceiptPdf({
+          customerName: dealCustomer.name,
+          carLabel,
+          carPlate: car.carPlate,
+          salesmanName,
+          sellingPrice,
+          plusLines,
+          subtotal: sellingPrice + insurance + bankProduct + additionalTotal,
+          minusLines,
+          resultLabel,
+          resultAmount: Math.abs(customerBalance),
+          generatedAt: new Date(),
+        });
+        const url = await uploadDealReceipt(bytes, car.id, supabase.storage.from('car-photos'));
+        await updateCar(car.id, { dealReceiptUrl: url, dealReceiptGeneratedAt: new Date().toISOString() });
+      } catch (err: any) {
+        toast.error(err?.message ?? 'Delivery saved, but the receipt could not be generated — use Generate Receipt in the Final Deal tab.');
+      }
+    }
 
     // Ledger: dealer-consignment cars (someone else's car, we're just selling it
     // for them) are a separate existing flow and never booked as our inventory.
@@ -656,6 +729,14 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           car, sourceType: 'intake_bonus', sourceId: car.id, createdBy: currentUser.id,
         }));
       }
+      if ((car.sourceCommission ?? 0) > 0) {
+        await addJournalEntry(buildPayableRecognizedEntry({
+          expenseAccountId: LEDGER_ACCOUNTS.expSourceComm,
+          amount: car.sourceCommission!,
+          description: `Source commission recognized — ${car.year} ${car.make} ${car.model}`,
+          car, sourceType: 'source_commission', sourceId: car.id, createdBy: currentUser.id,
+        }));
+      }
     }
 
     if (customerBalance < 0 && dealCustomer) {
@@ -675,6 +756,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
         });
       }
     }
+    setDeliverySubmitting(false);
   };
 
   return (
@@ -792,6 +874,98 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                       <p className="text-green-400 font-semibold mt-0.5">{100 - (car.consignment.splitPercent ?? 50)}%</p>
                     </div>
                   </>
+                )}
+                {car.consignment.terms === 'profit_split' && car.finalDeal && (
+                  <div className="col-span-2 sm:col-span-4 flex flex-wrap items-center gap-2 pt-2 mt-1 border-t border-blue-500/20">
+                    <button
+                      type="button"
+                      disabled={generatingConsignDoc !== null}
+                      onClick={async () => {
+                        setGeneratingConsignDoc('settlement');
+                        try {
+                          const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
+                          const sellingPrice = wo?.sellingPrice ?? car.finalDeal!.dealPrice ?? car.sellingPrice;
+                          const addOnTotal = (wo?.insurance ?? 0) + (wo?.bankProduct ?? 0) + (wo?.additionalItems ?? []).reduce((s, i) => s + i.amount, 0);
+                          const input: ConsignmentSettlementInput = {
+                            dealerName: car.consignment!.dealer,
+                            carLabel: `${car.year} ${car.make} ${car.model}${car.variant ? ' ' + car.variant : ''}`,
+                            carPlate: car.carPlate,
+                            sellingPrice,
+                            addOnTotal,
+                            discount: wo?.discount ?? 0,
+                            purchasePrice: car.purchasePrice,
+                            repairCost: totalRepairCost,
+                            miscCost: totalMiscCost,
+                            disbursementCharges: _disbursementCharges,
+                            commission: _commission,
+                            intakeBonus: _intakeCommission,
+                            netProfit,
+                            splitPercent: car.consignment!.splitPercent ?? 50,
+                            generatedAt: new Date(),
+                          };
+                          const bytes = await buildConsignmentSettlementPdf(input);
+                          const blob = new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `${car.carPlate ?? car.id}-consignment-settlement.pdf`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        } catch (err: any) {
+                          toast.error(err?.message ?? 'Failed to generate settlement receipt');
+                        } finally {
+                          setGeneratingConsignDoc(null);
+                        }
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 text-blue-300 text-xs font-medium transition-colors disabled:opacity-50"
+                    >
+                      <Receipt size={12} /> {generatingConsignDoc === 'settlement' ? 'Generating…' : 'Settlement Receipt'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={generatingConsignDoc !== null}
+                      onClick={async () => {
+                        setGeneratingConsignDoc('summary');
+                        try {
+                          const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
+                          const sellingPrice = wo?.sellingPrice ?? car.finalDeal!.dealPrice ?? car.sellingPrice;
+                          const addOnTotal = (wo?.insurance ?? 0) + (wo?.bankProduct ?? 0) + (wo?.additionalItems ?? []).reduce((s, i) => s + i.amount, 0);
+                          const input: ConsignmentSettlementInput = {
+                            dealerName: car.consignment!.dealer,
+                            carLabel: `${car.year} ${car.make} ${car.model}${car.variant ? ' ' + car.variant : ''}`,
+                            carPlate: car.carPlate,
+                            sellingPrice,
+                            addOnTotal,
+                            discount: wo?.discount ?? 0,
+                            purchasePrice: car.purchasePrice,
+                            repairCost: totalRepairCost,
+                            miscCost: totalMiscCost,
+                            disbursementCharges: _disbursementCharges,
+                            commission: _commission,
+                            intakeBonus: _intakeCommission,
+                            netProfit,
+                            splitPercent: car.consignment!.splitPercent ?? 50,
+                            generatedAt: new Date(),
+                          };
+                          const bytes = await buildConsignmentSummaryPdf(input);
+                          const blob = new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `${car.carPlate ?? car.id}-take-in-summary.pdf`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        } catch (err: any) {
+                          toast.error(err?.message ?? 'Failed to generate summary');
+                        } finally {
+                          setGeneratingConsignDoc(null);
+                        }
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 text-blue-300 text-xs font-medium transition-colors disabled:opacity-50"
+                    >
+                      <FileText size={12} /> {generatingConsignDoc === 'summary' ? 'Generating…' : 'Take-In Summary'}
+                    </button>
+                  </div>
                 )}
               </div>
             )}
@@ -967,6 +1141,19 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 <InfoItem label="Intake Bonus" value={`RM ${(car.intakeCommission ?? 0).toLocaleString()}`} valueClass="text-green-400 font-semibold" />
               )}
             </div>
+
+            {isDirectorView && (() => {
+              const settlementPayment = payments.find(p => p.type === 'purchase_settlement' && p.carId === car.id && p.status === 'pending');
+              if (!settlementPayment) return null;
+              return (
+                <button
+                  onClick={() => navigate('/payments')}
+                  className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-orange-500/40 bg-orange-500/10 text-orange-300 text-xs font-bold hover:bg-orange-500/20 transition-colors"
+                >
+                  <Banknote size={12} /> Settle {formatRM(settlementPayment.amount)} to {settlementPayment.recipientName}
+                </button>
+              );
+            })()}
 
             {car.notes && (
               <div className="mt-4 p-3 bg-obsidian-700/60 rounded-lg border border-obsidian-400/60">
@@ -1178,7 +1365,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           <div className="divide-y divide-obsidian-400/60/50">
             {carRepairs.map((r, i) => {
               const partsTotal = r.parts.reduce((sum, p) => sum + p.cost, 0);
-              const isActive = r.status === 'pending' || r.status === 'in_progress';
+              const isActive = r.status === 'pending' || r.status === 'in_progress' || r.status === 'awaiting_bill';
               const isQueued = r.status === 'queued';
               return (
                 <div key={r.id} className={`p-5 ${i % 2 === 0 ? 'bg-[#0F0E0C]' : 'bg-[#080808]/30'}`}>
@@ -1465,8 +1652,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           const isLoan = !!soldCustomer?.loanWorkOrder;
           const approvedByUser = users.find(u => u.id === deal.approvedBy);
 
-          const DRow = ({ label, value, valueClass, border = true }: { label: string; value: React.ReactNode; valueClass?: string; border?: boolean }) => (
-            <div className={`flex justify-between items-center py-2.5 ${border ? 'border-b border-obsidian-400/30' : ''}`}>
+          const DRow = ({ label, value, valueClass, border = true, rowBg }: { label: string; value: React.ReactNode; valueClass?: string; border?: boolean; rowBg?: string }) => (
+            <div className={`flex justify-between items-center py-2.5 px-2.5 -mx-2.5 ${rowBg ?? ''} ${border ? 'border-b border-obsidian-400/30' : ''}`}>
               <span className="text-gray-500 text-sm">{label}</span>
               <span className={`text-sm font-medium text-right ${valueClass ?? 'text-white'}`}>{value}</span>
             </div>
@@ -1486,7 +1673,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           const bankProduct = wo?.bankProduct ?? 0;
           const additionalItems = wo?.additionalItems ?? [];
           const additionalTotal = additionalItems.reduce((s, i) => s + i.amount, 0);
-          const loanAmount = isLoan ? ((wo as any)?.loanAmount ?? 0) : 0;
+          const loanAmount = isLoan ? (car.disbursementExpectedAmount ?? car.disbursementAmount ?? (wo as any)?.loanAmount ?? 0) : 0;
           // Salesman balance: total payable minus loan amount and deposit already collected
           const bookingFee = wo?.bookingFee ?? 0;
           const balance = sellingPrice - discount + insurance + bankProduct + additionalTotal - loanAmount - bookingFee;
@@ -1587,18 +1774,18 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                     {showExpanded && (
                 <div className="mt-3">
                   <DRow label="Selling Price" value={formatRM(sellingPrice)} valueClass="text-gold-400 font-bold" />
-                  {discount > 0 && <DRow label="− Discount" value={formatRM(discount)} valueClass="text-red-400" />}
-                  {insurance > 0 && <DRow label="+ Insurance" value={formatRM(insurance)} valueClass="text-white" />}
-                  {bankProduct > 0 && <DRow label="+ Bank Product" value={formatRM(bankProduct)} valueClass="text-white" />}
+                  {insurance > 0 && <DRow label="+ Insurance" value={formatRM(insurance)} valueClass="text-white" rowBg="bg-emerald-500/15 border-l-2 border-l-emerald-400/70 rounded-r-md" />}
+                  {bankProduct > 0 && <DRow label="+ Bank Product" value={formatRM(bankProduct)} valueClass="text-white" rowBg="bg-emerald-500/15 border-l-2 border-l-emerald-400/70 rounded-r-md" />}
                   {additionalItems.map((item, i) => (
-                    <DRow key={i} label={`+ ${item.label}`} value={formatRM(item.amount)} valueClass="text-white" />
+                    <DRow key={i} label={`+ ${item.label}`} value={formatRM(item.amount)} valueClass="text-white" rowBg="bg-emerald-500/15 border-l-2 border-l-emerald-400/70 rounded-r-md" />
                   ))}
                   <div className="flex justify-between items-center pt-2 mt-1 border-t border-obsidian-400/40">
-                    <span className="text-gray-300 text-sm font-semibold">Total Balance</span>
-                    <span className="text-gold-300 text-sm font-bold">{formatRM(sellingPrice - discount + insurance + bankProduct + additionalTotal)}</span>
+                    <span className="text-gray-300 text-sm font-semibold">Subtotal</span>
+                    <span className="text-gold-300 text-sm font-bold">{formatRM(sellingPrice + insurance + bankProduct + additionalTotal)}</span>
                   </div>
-                  {bookingFee > 0 && <DRow label="− Deposit / Booking Fee" value={formatRM(bookingFee)} valueClass="text-red-400" />}
-                  {loanAmount > 0 && <DRow label="− Loan Amount" value={formatRM(loanAmount)} valueClass="text-red-400" />}
+                  {discount > 0 && <DRow label="− Discount" value={formatRM(discount)} valueClass="text-red-400" rowBg="bg-red-500/15 border-l-2 border-l-red-400/70 rounded-r-md" />}
+                  {bookingFee > 0 && <DRow label="− Deposit / Booking Fee" value={formatRM(bookingFee)} valueClass="text-red-400" rowBg="bg-red-500/15 border-l-2 border-l-red-400/70 rounded-r-md" />}
+                  {loanAmount > 0 && <DRow label="− Loan Amount" value={formatRM(loanAmount)} valueClass="text-red-400" rowBg="bg-red-500/15 border-l-2 border-l-red-400/70 rounded-r-md" />}
                   <div className={`flex justify-between items-center pt-3 mt-1 border-t-2 ${Math.abs(balance) < 0.01 || isSettled ? 'border-green-500/40' : balance < 0 ? 'border-sky-500/40' : 'border-orange-500/40'}`}>
                     <span className="text-white font-semibold text-sm">
                       {Math.abs(balance) < 0.01 ? 'Balance' : isSettled ? (balance < 0 ? 'Refunded to Customer' : 'Collected from Customer') : balance < 0 ? 'Refund to Customer' : 'Collect from Customer'}
@@ -1607,6 +1794,63 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                       {Math.abs(balance) < 0.01 ? '✓ Balanced' : isSettled ? `✓ Paid ${formatRM(Math.abs(balance))}` : formatRM(Math.abs(balance))}
                     </span>
                   </div>
+
+                  {/* ── Generate Receipt: PDF snapshot of this breakdown, auto-saved to storage ── */}
+                  <div className="mt-3 pt-3 border-t border-obsidian-400/30 flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={generatingReceipt}
+                      onClick={async () => {
+                        if (!soldCustomer) return;
+                        setGeneratingReceipt(true);
+                        try {
+                          const resultLabel = Math.abs(balance) < 0.01 ? 'Balance' : balance < 0 ? 'Refund to Customer' : 'Collect from Customer';
+                          const carLabel = `${car.year} ${car.make} ${car.model}${car.variant ? ' ' + car.variant : ''}`;
+                          const salesmanName = (wo as any)?.submittedBy || assignedSalesperson?.name || currentUser?.name || '-';
+                          const plusLines = [
+                            ...(insurance > 0 ? [{ label: 'Insurance', amount: insurance }] : []),
+                            ...(bankProduct > 0 ? [{ label: 'Bank Product', amount: bankProduct }] : []),
+                            ...additionalItems.map(i => ({ label: i.label, amount: i.amount })),
+                          ];
+                          const minusLines = [
+                            ...(discount > 0 ? [{ label: 'Discount', amount: discount }] : []),
+                            ...(bookingFee > 0 ? [{ label: 'Deposit / Booking Fee', amount: bookingFee }] : []),
+                            ...(loanAmount > 0 ? [{ label: 'Loan Amount', amount: loanAmount }] : []),
+                          ];
+                          const bytes = await buildDealReceiptPdf({
+                            customerName: soldCustomer.name,
+                            carLabel,
+                            carPlate: car.carPlate,
+                            salesmanName,
+                            sellingPrice,
+                            plusLines,
+                            subtotal: sellingPrice + insurance + bankProduct + additionalTotal,
+                            minusLines,
+                            resultLabel,
+                            resultAmount: Math.abs(balance),
+                            generatedAt: new Date(),
+                          });
+                          const url = await uploadDealReceipt(bytes, car.id, supabase.storage.from('car-photos'));
+                          await updateCar(car.id, { dealReceiptUrl: url, dealReceiptGeneratedAt: new Date().toISOString() });
+                          toast.success('Receipt generated');
+                        } catch (err: any) {
+                          toast.error(err?.message ?? 'Failed to generate receipt');
+                        } finally {
+                          setGeneratingReceipt(false);
+                        }
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gold-500/15 hover:bg-gold-500/25 border border-gold-500/30 text-gold-300 text-xs font-medium transition-colors disabled:opacity-50"
+                    >
+                      <Receipt size={12} /> {generatingReceipt ? 'Generating…' : car.dealReceiptUrl ? 'Regenerate Receipt' : 'Generate Receipt'}
+                    </button>
+                    {car.dealReceiptUrl && (
+                      <a href={car.dealReceiptUrl} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-xs text-gray-400 hover:text-gold-300 hover:underline">
+                        <FileText size={11} /> View last
+                      </a>
+                    )}
+                  </div>
+
                   {/* ── Refund to customer: submit bank details, tracked as a Payments claim ── */}
                   {balance < 0 && Math.abs(balance) >= 0.01 && (
                     <div className="mt-3 pt-3 border-t border-sky-500/20 space-y-2">
@@ -1718,8 +1962,12 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               {(dealView === 'director' && isDirectorView) && (
                 <Section title="Deal Financials">
                   <DRow label="Selling Price" value={formatRM(sellingPrice)} valueClass="text-gold-400 font-bold" />
-                  {discount > 0 && <DRow label="− Discount" value={formatRM(discount)} valueClass="text-red-400" />}
                   {addOnTotal > 0 && <DRow label="+ Customer Add-ons" value={formatRM(addOnTotal)} valueClass="text-emerald-400" />}
+                  {loanAmount > 0 && <DRow label="− Loan Amount" value={formatRM(loanAmount)} valueClass="text-red-400" />}
+                  {loanAmount > 0 && (
+                    <p className="text-xs text-gray-500 text-right pr-2.5 pb-1">Financed by bank — shown for reference, not deducted from Net Profit</p>
+                  )}
+                  {discount > 0 && <DRow label="− Discount" value={formatRM(discount)} valueClass="text-red-400" />}
                   <DRow label="− Purchase Price" value={formatRM(purchasePrice + dealSourceCommission)} valueClass="text-red-400" />
                   {totalRepairCost > 0 && <DRow label="− Repair Expenses" value={formatRM(totalRepairCost)} valueClass="text-red-400" />}
                   {totalMiscCost > 0 && <DRow label="− Misc Costs" value={formatRM(totalMiscCost)} valueClass="text-red-400" />}
@@ -1967,15 +2215,24 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   </div>
                 )}
 
-                {isSalesperson && (
-                  <button
-                    onClick={() => { setDeliveryPhoto(''); setShowDeliveryModal(true); }}
-                    className="flex items-center gap-2 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
-                  >
-                    <Truck size={15} />
-                    Mark Delivered & Payment Collected
-                  </button>
-                )}
+                {isSalesperson && (() => {
+                  const needsProof = customerBalance > 0 && !car.collectionReceiptUrl;
+                  return (
+                    <div className="space-y-1.5">
+                      <button
+                        disabled={needsProof}
+                        onClick={() => { setDeliveryPhoto(''); setShowDeliveryModal(true); }}
+                        className="flex items-center gap-2 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-green-500/10"
+                      >
+                        <Truck size={15} />
+                        Mark Delivered & Payment Collected
+                      </button>
+                      {needsProof && (
+                        <p className="text-gray-600 text-[11px]">Upload the collection receipt above first — required before delivery can be confirmed.</p>
+                      )}
+                    </div>
+                  );
+                })()}
               </>
             ) : (
               <div className="space-y-3">
@@ -1986,6 +2243,12 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 {car.deliveryPhoto && (
                   <a href={car.deliveryPhoto} target="_blank" rel="noopener noreferrer">
                     <img src={car.deliveryPhoto} alt="Delivery" className="w-48 h-32 object-cover rounded-lg border border-obsidian-400/60 hover:opacity-80 transition-opacity" />
+                  </a>
+                )}
+                {car.dealReceiptUrl && (
+                  <a href={car.dealReceiptUrl} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-xs text-gold-400 hover:text-gold-300 hover:underline w-fit">
+                    <Receipt size={12} /> Delivery Receipt
                   </a>
                 )}
               </div>
@@ -2010,6 +2273,18 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   <span className="text-gray-500 text-xs">Asking Price</span>
                   <span className="text-sm font-medium text-gold-400 font-bold">{formatRM(car.sellingPrice)}</span>
                 </div>
+                {_addOnRevenue > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-500 text-xs">Customer Add-ons</span>
+                    <span className="text-sm font-medium text-emerald-400">+ {formatRM(_addOnRevenue)}</span>
+                  </div>
+                )}
+                {_loanAmount > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-500 text-xs">Loan Amount</span>
+                    <span className="text-sm font-medium text-red-400">− {formatRM(_loanAmount)}</span>
+                  </div>
+                )}
                 {_discount > 0 && (
                   <div className="flex justify-between items-center">
                     <span className="text-gray-500 text-xs">Discount</span>
@@ -2020,12 +2295,6 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   <div className="flex justify-between items-center">
                     <span className="text-gray-500 text-xs">Deal Price</span>
                     <span className="text-sm font-medium text-gold-300">{formatRM(_dealPrice)}</span>
-                  </div>
-                )}
-                {_addOnRevenue > 0 && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-500 text-xs">Customer Add-ons</span>
-                    <span className="text-sm font-medium text-emerald-400">+ {formatRM(_addOnRevenue)}</span>
                   </div>
                 )}
                 <div className="flex justify-between items-center">
@@ -2111,6 +2380,54 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           <FormField label="Purchase Price (RM)" error={editErrors.purchasePrice}>
             <input type="number" className={inputCls(editErrors.purchasePrice)} value={editForm.purchasePrice ?? ''} onChange={(e) => setEditForm({ ...editForm, purchasePrice: Number(e.target.value) })} />
           </FormField>
+          {(() => {
+            const settlementLocked = payments.some(p => p.type === 'purchase_settlement' && p.carId === car.id);
+            return (
+              <div className="col-span-2">
+                <button
+                  type="button"
+                  disabled={settlementLocked}
+                  onClick={() => setEditForm({ ...editForm, settlementAmount: editForm.settlementAmount != null ? undefined : 0, settlementRecipient: editForm.settlementAmount != null ? undefined : editForm.settlementRecipient })}
+                  className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${editForm.settlementAmount != null ? 'bg-orange-500/10 border-orange-500/40 text-orange-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'} ${settlementLocked ? 'opacity-70 cursor-not-allowed' : ''}`}
+                >
+                  <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${editForm.settlementAmount != null ? 'bg-orange-500 border-orange-500' : 'border-gray-600'}`}>
+                    {editForm.settlementAmount != null && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Add Settlement</p>
+                    <p className="text-xs opacity-60 mt-0.5">Part of the purchase price pays off an existing loan directly to the lender</p>
+                  </div>
+                </button>
+                {editForm.settlementAmount != null && (
+                  <div className="mt-3 space-y-3 pl-2 border-l-2 border-orange-500/30">
+                    {settlementLocked && <p className="text-xs text-orange-400/80">Already recorded as a pending payment — edit the amount from Payments instead.</p>}
+                    <FormField label="Settle To (bank / lender)">
+                      <input
+                        className={inputCls()}
+                        value={editForm.settlementRecipient ?? ''}
+                        onChange={(e) => setEditForm({ ...editForm, settlementRecipient: e.target.value })}
+                        placeholder="e.g. Public Bank"
+                        disabled={settlementLocked}
+                      />
+                    </FormField>
+                    <FormField label="Settlement Amount (RM)">
+                      <input
+                        type="number"
+                        className={inputCls()}
+                        value={editForm.settlementAmount ?? 0}
+                        onChange={(e) => setEditForm({ ...editForm, settlementAmount: Number(e.target.value) })}
+                        disabled={settlementLocked}
+                      />
+                    </FormField>
+                    <div className="flex items-center justify-between bg-obsidian-700/40 border border-obsidian-400/40 rounded-lg px-3 py-2.5">
+                      <p className="text-gray-400 text-xs">Net to Seller</p>
+                      <p className="text-orange-400 font-semibold text-sm">{formatRM(Math.max(0, (editForm.purchasePrice || 0) - (editForm.settlementAmount || 0)))}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           <FormField label="Selling Price (RM)" error={editErrors.sellingPrice}>
             <input type="number" className={inputCls(editErrors.sellingPrice)} value={editForm.sellingPrice ?? ''} onChange={(e) => setEditForm({ ...editForm, sellingPrice: Number(e.target.value) })} />
           </FormField>
@@ -2622,7 +2939,14 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 createdBy: currentUser?.id,
               };
               await addMiscCost(car!.id, miscEntry);
-              generateMiscCostPayment({ carId: car!.id, misc: miscEntry, payments, merchants, addPayment });
+              const miscPaymentId = await generateMiscCostPayment({ carId: car!.id, misc: miscEntry, payments, merchants, addPayment });
+              if (miscPaymentId && currentUser) {
+                await addJournalEntry(buildCarCostRecognizedEntry({
+                  car: car!, amount: miscEntry.amount,
+                  description: `Misc cost recognized — ${miscEntry.description}`,
+                  sourceType: 'misc_cost', sourceId: miscPaymentId, createdBy: currentUser.id,
+                }));
+              }
               setShowMiscModal(false);
               setJobTab('misc');
             }}
@@ -3147,7 +3471,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
         <div className="space-y-4">
           <p className="text-gray-400 text-sm">Upload a delivery photo and confirm payment has been collected.</p>
           <div>
-            <label className="block text-gray-300 text-xs font-medium mb-1.5">Delivery Photo (optional)</label>
+            <label className="block text-gray-300 text-xs font-medium mb-1.5">Delivery Photo <span className="text-red-400">*</span></label>
+            <p className="text-gray-600 text-[11px] mb-1.5 -mt-1">Required — a delivery receipt is generated automatically once confirmed.</p>
             {deliveryPhoto ? (
               <div className="relative inline-block">
                 <img src={deliveryPhoto} alt="Delivery" className="w-full h-40 object-cover rounded-lg border border-obsidian-400/60" />
@@ -3174,8 +3499,12 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
         </div>
         <div className="flex gap-3 mt-5">
           <button onClick={() => setShowDeliveryModal(false)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
-          <button onClick={handleDeliverySubmit} className="flex-1 bg-green-500 hover:bg-green-400 px-4 py-2.5 rounded-lg text-sm">
-            Confirm Delivered
+          <button
+            onClick={handleDeliverySubmit}
+            disabled={!deliveryPhoto || deliverySubmitting}
+            className="flex-1 bg-green-500 hover:bg-green-400 px-4 py-2.5 rounded-lg text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {deliverySubmitting ? 'Confirming…' : 'Confirm Delivered'}
           </button>
         </div>
       </Modal>
