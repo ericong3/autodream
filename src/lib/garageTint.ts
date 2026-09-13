@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import type {
-  TintSeries, GlassPosition, GarageVehicleSize, TintPackageType,
+  TintSeries, GlassPosition, ExtraGlassKey, GarageVehicleSize, TintPackageType,
   TintPositionSelection, GarageTintOrder,
 } from '../types';
 
@@ -20,21 +20,22 @@ export async function setFullPrice(series: TintSeries, vehicleSize: GarageVehicl
   if (error) throw error;
 }
 
-// Mix & Match price grid — keyed "position|series|size".
+// Mix & Match / extras price grid — per piece, by series only (no size
+// dimension) — keyed "position|series".
 export async function getPositionPrices(): Promise<Record<string, number>> {
   const { data, error } = await supabase.from('garage_tint_position_prices').select('*');
   if (error) throw error;
   const map: Record<string, number> = {};
-  (data ?? []).forEach((r: any) => { map[`${r.glass_position}|${r.series}|${r.vehicle_size}`] = Number(r.price); });
+  (data ?? []).forEach((r: any) => { map[`${r.glass_position}|${r.series}`] = Number(r.price); });
   return map;
 }
 
 export async function setPositionPrice(
-  position: GlassPosition, series: TintSeries, vehicleSize: GarageVehicleSize, price: number,
+  position: GlassPosition | ExtraGlassKey, series: TintSeries, price: number,
 ): Promise<void> {
   const { error } = await supabase
     .from('garage_tint_position_prices')
-    .upsert({ glass_position: position, series, vehicle_size: vehicleSize, price, updated_at: new Date().toISOString() });
+    .upsert({ glass_position: position, series, price, updated_at: new Date().toISOString() });
   if (error) throw error;
 }
 
@@ -43,7 +44,9 @@ function rowToTintOrder(r: any): GarageTintOrder {
     invoiceId: r.invoice_id,
     packageType: r.package_type,
     fullSeries: r.full_series ?? undefined,
+    fullVlt: r.full_vlt ?? undefined,
     selections: r.selections ?? [],
+    extras: r.extras ?? [],
     discount: Number(r.discount),
     finalTotal: Number(r.final_total),
     createdAt: r.created_at,
@@ -57,14 +60,16 @@ export async function getTintOrder(invoiceId: string): Promise<GarageTintOrder |
 }
 
 export async function createTintOrder(input: {
-  invoiceId: string; packageType: TintPackageType; fullSeries?: TintSeries;
-  selections: TintPositionSelection[]; discount: number; finalTotal: number;
+  invoiceId: string; packageType: TintPackageType; fullSeries?: TintSeries; fullVlt?: string;
+  selections: TintPositionSelection[]; extras: TintPositionSelection[]; discount: number; finalTotal: number;
 }): Promise<GarageTintOrder> {
   const row = {
     invoice_id: input.invoiceId,
     package_type: input.packageType,
     full_series: input.fullSeries || null,
+    full_vlt: input.fullVlt || null,
     selections: input.selections,
+    extras: input.extras,
     discount: input.discount,
     final_total: input.finalTotal,
   };

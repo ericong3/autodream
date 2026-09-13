@@ -37,10 +37,15 @@ export type GarageService = 'tinted' | 'coating' | 'ppf' | 'spray';
 // own series + VLT (darkness) choice.
 export type TintPackageType = 'full' | 'mix';
 export type TintSeries = 'eco' | 'lite' | 'classic' | 'majestic' | 'unique' | 'royal';
-export type GlassPosition = 'front_windscreen' | 'front_side' | 'rear_side' | 'rear_windscreen';
+export type GlassPosition = 'front_windscreen' | 'door_window' | 'rear_panel_window' | 'rear_windscreen';
+// Optional add-ons, priced the same way as a glass position (series-based,
+// no size dimension) but not part of the standard 4-window set — shown as
+// a toggle rather than always-on. Extra Rear Window only applies to
+// X-Large cars; Small Window is offered on any size.
+export type ExtraGlassKey = 'extra_rear_2pc' | 'small_window';
 
 export interface TintPositionSelection {
-  position: GlassPosition;
+  position: GlassPosition | ExtraGlassKey;
   series: TintSeries;
   vlt: string; // e.g. '35%'
   price: number;
@@ -54,7 +59,9 @@ export interface GarageTintOrder {
   invoiceId: string;
   packageType: TintPackageType;
   fullSeries?: TintSeries; // set when packageType === 'full'
-  selections: TintPositionSelection[]; // set when packageType === 'mix'
+  fullVlt?: string; // full package's single VLT, applied to the whole car
+  selections: TintPositionSelection[]; // the 4 core positions, set when packageType === 'mix'
+  extras: TintPositionSelection[]; // optional add-ons, either package type
   discount: number;
   finalTotal: number;
   createdAt: string;

@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { Check } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import { getFullPrices, setFullPrice, getPositionPrices, setPositionPrice } from '../lib/garageTint';
-import { TINT_SERIES, VEHICLE_SIZES, GLASS_POSITIONS } from '../utils/tintPricing';
-import type { TintSeries, GlassPosition, GarageVehicleSize } from '../types';
+import { TINT_SERIES, VEHICLE_SIZES, GLASS_POSITIONS, EXTRA_GLASS_OPTIONS } from '../utils/tintPricing';
+import type { TintSeries, GlassPosition, ExtraGlassKey, GarageVehicleSize } from '../types';
+
+const POSITION_TABS = [...GLASS_POSITIONS, ...EXTRA_GLASS_OPTIONS];
 
 function PriceCell({
   value, saved, onCommit,
@@ -35,7 +37,7 @@ export default function GarageTintPricing() {
   const [fullPrices, setFullPrices] = useState<Record<string, number>>({});
   const [positionPrices, setPositionPrices] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
-  const [activePosition, setActivePosition] = useState<GlassPosition>('front_windscreen');
+  const [activePosition, setActivePosition] = useState<GlassPosition | ExtraGlassKey>('front_windscreen');
   const [justSaved, setJustSaved] = useState<string | null>(null);
 
   useEffect(() => {
@@ -56,10 +58,10 @@ export default function GarageTintPricing() {
     flashSaved(key);
   };
 
-  const commitPosition = async (position: GlassPosition, series: TintSeries, size: GarageVehicleSize, price: number) => {
-    const key = `${position}|${series}|${size}`;
+  const commitPosition = async (position: GlassPosition | ExtraGlassKey, series: TintSeries, price: number) => {
+    const key = `${position}|${series}`;
     setPositionPrices((p) => ({ ...p, [key]: price }));
-    await setPositionPrice(position, series, size, price);
+    await setPositionPrice(position, series, price);
     flashSaved(key);
   };
 
@@ -73,7 +75,7 @@ export default function GarageTintPricing() {
 
   return (
     <GarageShell title="Tint Pricing" showBack backTo="/garage">
-      <div className="max-w-4xl mx-auto space-y-8">
+      <div className="max-w-3xl mx-auto space-y-8">
         {/* Full Package grid */}
         <div className="relative overflow-hidden rounded-[28px] p-6 sm:p-8 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
           <h2 className="font-display text-lg text-white font-semibold tracking-wide mb-1">Full Package</h2>
@@ -89,7 +91,7 @@ export default function GarageTintPricing() {
                   ))}
                 </tr>
               </thead>
-              <tbody className="space-y-2">
+              <tbody>
                 {TINT_SERIES.map((s) => (
                   <tr key={s.key}>
                     <td className="text-white text-sm font-medium py-1.5 pr-3 whitespace-nowrap">{s.label}</td>
@@ -112,13 +114,13 @@ export default function GarageTintPricing() {
           </div>
         </div>
 
-        {/* Mix & Match grid */}
+        {/* Mix & Match / extras — per piece, by series only */}
         <div className="relative overflow-hidden rounded-[28px] p-6 sm:p-8 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
-          <h2 className="font-display text-lg text-white font-semibold tracking-wide mb-1">Mix &amp; Match</h2>
-          <p className="text-white/40 text-sm mb-5">Price per series, by vehicle size — set separately for each glass position</p>
+          <h2 className="font-display text-lg text-white font-semibold tracking-wide mb-1">Mix &amp; Match / Extras</h2>
+          <p className="text-white/40 text-sm mb-5">Price per piece, by series — set separately for each glass position</p>
 
           <div className="flex items-center gap-2 mb-5 overflow-x-auto">
-            {GLASS_POSITIONS.map((pos) => (
+            {POSITION_TABS.map((pos) => (
               <button
                 key={pos.key}
                 onClick={() => setActivePosition(pos.key)}
@@ -133,37 +135,31 @@ export default function GarageTintPricing() {
             ))}
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[420px]">
-              <thead>
-                <tr>
-                  <th className="text-left text-white/40 text-xs font-medium pb-2">Series</th>
-                  {VEHICLE_SIZES.map((sz) => (
-                    <th key={sz.key} className="text-left text-white/40 text-xs font-medium pb-2 px-2">{sz.label}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {TINT_SERIES.map((s) => (
+          <table className="w-full text-sm max-w-xs">
+            <thead>
+              <tr>
+                <th className="text-left text-white/40 text-xs font-medium pb-2">Series</th>
+                <th className="text-left text-white/40 text-xs font-medium pb-2 px-2">Price / piece</th>
+              </tr>
+            </thead>
+            <tbody>
+              {TINT_SERIES.map((s) => {
+                const key = `${activePosition}|${s.key}`;
+                return (
                   <tr key={s.key}>
                     <td className="text-white text-sm font-medium py-1.5 pr-3 whitespace-nowrap">{s.label}</td>
-                    {VEHICLE_SIZES.map((sz) => {
-                      const key = `${activePosition}|${s.key}|${sz.key}`;
-                      return (
-                        <td key={sz.key} className="py-1.5 px-2 w-32">
-                          <PriceCell
-                            value={positionPrices[key] ?? 0}
-                            saved={justSaved === key}
-                            onCommit={(v) => commitPosition(activePosition, s.key, sz.key, v)}
-                          />
-                        </td>
-                      );
-                    })}
+                    <td className="py-1.5 px-2 w-36">
+                      <PriceCell
+                        value={positionPrices[key] ?? 0}
+                        saved={justSaved === key}
+                        onCommit={(v) => commitPosition(activePosition, s.key, v)}
+                      />
+                    </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
     </GarageShell>

@@ -8,12 +8,12 @@ import { getGarageVehicle, getGarageCustomer } from '../lib/garageCustomers';
 import { getGarageInvoice, listInvoiceClaims, createInvoiceClaim } from '../lib/garageInvoices';
 import { getTintOrder } from '../lib/garageTint';
 import { GARAGE_SERVICE_MAP } from '../utils/garageServices';
-import { TINT_SERIES, GLASS_POSITIONS } from '../utils/tintPricing';
+import { TINT_SERIES, GLASS_POSITIONS, EXTRA_GLASS_OPTIONS } from '../utils/tintPricing';
 import { formatRM } from '../utils/format';
 import type { GarageInvoice, GarageVehicle, GarageCustomer, GarageInvoiceClaim, GarageClaimType, GarageTintOrder } from '../types';
 
 const TINT_SERIES_LABEL = Object.fromEntries(TINT_SERIES.map((s) => [s.key, s.label]));
-const GLASS_POSITION_LABEL = Object.fromEntries(GLASS_POSITIONS.map((p) => [p.key, p.label]));
+const GLASS_POSITION_LABEL = Object.fromEntries([...GLASS_POSITIONS, ...EXTRA_GLASS_OPTIONS].map((p) => [p.key, p.label]));
 
 const CLAIM_META: Record<GarageClaimType, { label: string; bearBy: string; badge: string; icon: typeof ShieldCheck }> = {
   warranty: { label: 'Warranty Claim', bearBy: 'Borne by supplier', badge: 'bg-blue-500/15 border-blue-500/30 text-blue-400', icon: ShieldCheck },
@@ -154,10 +154,24 @@ export default function GarageInvoiceDetail() {
             </h3>
 
             {tintOrder.packageType === 'full' && tintOrder.fullSeries ? (
-              <p className="text-white text-sm">{TINT_SERIES_LABEL[tintOrder.fullSeries]}</p>
+              <p className="text-white text-sm">
+                {TINT_SERIES_LABEL[tintOrder.fullSeries]}{tintOrder.fullVlt ? ` · ${tintOrder.fullVlt}` : ''}
+              </p>
             ) : (
               <div className="space-y-1.5">
                 {tintOrder.selections.map((sel) => (
+                  <div key={sel.position} className="flex items-center justify-between text-sm">
+                    <span className="text-white/60">{GLASS_POSITION_LABEL[sel.position]}</span>
+                    <span className="text-white">{TINT_SERIES_LABEL[sel.series]} · {sel.vlt}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {tintOrder.extras.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-white/10 space-y-1.5">
+                <p className="text-white/40 text-xs mb-1">Extras</p>
+                {tintOrder.extras.map((sel) => (
                   <div key={sel.position} className="flex items-center justify-between text-sm">
                     <span className="text-white/60">{GLASS_POSITION_LABEL[sel.position]}</span>
                     <span className="text-white">{TINT_SERIES_LABEL[sel.series]} · {sel.vlt}</span>
