@@ -17,17 +17,10 @@ export default function GarageShell({
 
   return (
     <div className="min-h-screen relative bg-obsidian-950">
-      {/* Desktop background video */}
-      <video
-        className="fixed inset-0 w-full h-full object-cover md:block hidden"
-        src="/background.mp4?v=2"
-        autoPlay loop muted playsInline preload="none"
-      />
-      {/* Mobile background video */}
-      <video
-        className="fixed inset-0 w-full h-full object-cover md:hidden block"
-        src="/preview_phone.mp4"
-        autoPlay loop muted playsInline preload="none"
+      {/* Garage showroom background */}
+      <div
+        className="fixed inset-0 bg-cover bg-center"
+        style={{ backgroundImage: "url('/garage-bg.png')" }}
       />
       <div className="fixed inset-0 bg-black/70" />
       <div className="fixed inset-0 bg-gradient-to-b from-black/40 via-transparent to-obsidian-950" />

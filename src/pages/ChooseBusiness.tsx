@@ -15,22 +15,15 @@ export default function ChooseBusiness() {
 
   return (
     <div className="min-h-screen relative overflow-hidden bg-obsidian-950">
-      {/* Desktop background video */}
-      <video
-        className="absolute inset-0 w-full h-full object-cover md:block hidden"
-        src="/background.mp4?v=2"
-        autoPlay loop muted playsInline preload="none"
-      />
-      {/* Mobile background video */}
-      <video
-        className="absolute inset-0 w-full h-full object-cover md:hidden block"
-        src="/preview_phone.mp4"
-        autoPlay loop muted playsInline preload="none"
+      {/* Garage showroom background */}
+      <div
+        className="absolute inset-0 bg-cover bg-center"
+        style={{ backgroundImage: "url('/garage-bg.png')" }}
       />
 
       {/* Darkening + vignette so the glass cards read clearly */}
-      <div className="absolute inset-0 bg-black/55" />
-      <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-obsidian-950" />
+      <div className="absolute inset-0 bg-black/45" />
+      <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-obsidian-950" />
 
       <div className="relative z-10 min-h-screen flex flex-col items-center justify-center px-6 py-16">
         {/* Logo */}
