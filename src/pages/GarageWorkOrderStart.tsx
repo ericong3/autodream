@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { UserPlus, UserSearch, ChevronRight } from 'lucide-react';
+import { UserPlus, UserSearch } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 
 // First step of Create Work Order — decide whether this job is for a brand
@@ -63,13 +63,7 @@ function OptionCard({
       </div>
 
       <h2 className="font-display text-lg md:text-xl font-semibold text-white tracking-wide mb-2">{title}</h2>
-      <p className="text-white/40 text-xs md:text-sm mb-8">{subtitle}</p>
-
-      <span className="relative flex items-center justify-center w-11 h-11 rounded-full border border-gold-400/40
-        text-gold-400 group-hover:bg-gold-400 group-hover:text-obsidian-950 group-hover:border-gold-400
-        group-hover:shadow-gold transition-all duration-300">
-        <ChevronRight size={18} />
-      </span>
+      <p className="text-white/40 text-xs md:text-sm">{subtitle}</p>
     </button>
   );
 }
