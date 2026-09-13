@@ -5,6 +5,7 @@ import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, generateId } from '../utils/format';
 import { getCommissionMonth, getDeliveryDate } from '../utils/generatePayments';
+import { getDealCommission, getDealCustomer, getDealPrice, getDealSalespersonId } from '../utils/dealMath';
 
 type EditState = { carId: string; field: 'deal' | 'intake' | 'source'; customerId?: string; value: string };
 
@@ -36,24 +37,6 @@ export default function Commission() {
   // for deals that closed but haven't physically handed over yet.
   const allSoldCars = cars.filter(c => c.status === 'delivered' || c.commissionCreditedEarly);
 
-  const getDealCustomer = (car: typeof cars[0]) =>
-    customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
-
-  const getDealSalespersonId = (car: typeof cars[0]): string | undefined => {
-    const dealCustomer = getDealCustomer(car);
-    return car.assignedSalesperson || dealCustomer?.assignedSalesId;
-  };
-
-  const calcCommission = (car: typeof cars[0]): number => {
-    if (car.outgoingConsignment) return 0;
-    const dealCustomer = getDealCustomer(car);
-    if (dealCustomer?.commission != null) return dealCustomer.commission;
-    const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
-    const dealPrice = ((wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0)) || car.sellingPrice;
-    if (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) return 1000;
-    return 1500;
-  };
-
   const startEdit = (carId: string, field: EditState['field'], currentValue: number, customerId?: string) => {
     setEditing({ carId, field, customerId, value: String(currentValue) });
     setTimeout(() => editRef.current?.select(), 20);
@@ -74,16 +57,16 @@ export default function Commission() {
   };
 
   const filteredSoldCars = useMemo(() => allSoldCars.filter(c => {
-    const matchSales = !salesFilter || getDealSalespersonId(c) === salesFilter;
+    const matchSales = !salesFilter || getDealSalespersonId(c, customers) === salesFilter;
     const matchMonth = !monthFilter || getCommissionMonth(c, customers) === monthFilter;
     return matchSales && matchMonth;
   }), [allSoldCars, salesFilter, monthFilter, customers]);
 
-  const allFilteredForSp = allSoldCars.filter(c => !salesFilter || getDealSalespersonId(c) === salesFilter);
+  const allFilteredForSp = allSoldCars.filter(c => !salesFilter || getDealSalespersonId(c, customers) === salesFilter);
   const totalSoldAll = allFilteredForSp.length;
-  const totalCommissionAll = allFilteredForSp.reduce((s, c) => s + calcCommission(c), 0);
+  const totalCommissionAll = allFilteredForSp.reduce((s, c) => s + getDealCommission(c, customers), 0);
   const monthSold = filteredSoldCars.length;
-  const monthCommission = filteredSoldCars.reduce((s, c) => s + calcCommission(c), 0);
+  const monthCommission = filteredSoldCars.reduce((s, c) => s + getDealCommission(c, customers), 0);
 
   const allIntakeCars = cars.filter(c =>
     (c.intakeCommission ?? 0) > 0 && c.assignedSalesperson &&
@@ -238,9 +221,9 @@ export default function Commission() {
                 </thead>
                 <tbody>
                   {filteredSoldCars.map((c, i) => {
-                    const dealCustomer = getDealCustomer(c);
+                    const dealCustomer = getDealCustomer(c, customers);
                     const isEditingThis = editing?.carId === c.id && editing.field === 'deal';
-                    const isOverride = dealCustomer?.commission != null;
+                    const isOverride = dealCustomer?.commission != null && !(c.outgoingConsignment || c.isStaffSale || c.waiveCommission);
                     return (
                       <tr key={c.id} className={`border-b border-obsidian-400/60/50 ${i % 2 !== 0 ? 'bg-obsidian-950/30' : ''} hover:bg-obsidian-700/50 transition-colors`}>
                         <td className="px-5 py-3">
@@ -248,9 +231,9 @@ export default function Commission() {
                           <p className="text-gray-500 text-xs capitalize">{c.colour} · {c.transmission}</p>
                         </td>
                         <td className="px-5 py-3 text-gray-400">{new Date(getDeliveryDate(c, customers)).toLocaleDateString('en-MY')}</td>
-                        {isDirector && <td className="px-5 py-3 text-gray-400">{getSalesName(getDealSalespersonId(c))}</td>}
+                        {isDirector && <td className="px-5 py-3 text-gray-400">{getSalesName(getDealSalespersonId(c, customers))}</td>}
                         <td className="px-5 py-3 text-right text-gold-400 font-semibold">
-                          {formatRM(c.finalDeal?.dealPrice ?? c.sellingPrice)}
+                          {formatRM(getDealPrice(c, customers))}
                         </td>
                         <td className="px-5 py-3 text-right">
                           {isDirector && isEditingThis ? (
@@ -270,12 +253,12 @@ export default function Commission() {
                           ) : (
                             <div className="flex items-center justify-end gap-2">
                               <span className={`font-semibold ${isOverride ? 'text-yellow-400' : 'text-green-400'}`}>
-                                {formatRM(calcCommission(c))}
+                                {formatRM(getDealCommission(c, customers))}
                               </span>
                               {isOverride && <span className="text-xs text-yellow-600 font-normal">custom</span>}
                               {isDirector && (
                                 <button
-                                  onClick={() => startEdit(c.id, 'deal', calcCommission(c), dealCustomer?.id)}
+                                  onClick={() => startEdit(c.id, 'deal', getDealCommission(c, customers), dealCustomer?.id)}
                                   className="text-gray-600 hover:text-gold-400 transition-colors"
                                 >
                                   <Pencil size={12} />
@@ -294,10 +277,10 @@ export default function Commission() {
                       Total ({filteredSoldCars.length} cars)
                     </td>
                     <td className="px-5 py-3 text-right text-gold-400 font-bold">
-                      {formatRM(filteredSoldCars.reduce((sum, c) => sum + (c.finalDeal?.dealPrice ?? c.sellingPrice), 0))}
+                      {formatRM(filteredSoldCars.reduce((sum, c) => sum + getDealPrice(c, customers), 0))}
                     </td>
                     <td className="px-5 py-3 text-right text-green-400 font-bold">
-                      {formatRM(filteredSoldCars.reduce((s, c) => s + calcCommission(c), 0))}
+                      {formatRM(filteredSoldCars.reduce((s, c) => s + getDealCommission(c, customers), 0))}
                     </td>
                   </tr>
                 </tfoot>
