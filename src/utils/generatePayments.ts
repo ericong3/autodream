@@ -1,5 +1,6 @@
 import { Car, Payment, RepairJob, MiscCost, User, ExternalSalesman, Workshop, Dealer, Merchant, Customer } from '../types';
 import { generateId } from './format';
+import { getDealCommission, getDealCustomer, getDealPrice, getDealSalespersonId } from './dealMath';
 
 type AddPayment = (p: Payment) => Promise<void>;
 type UpdatePayment = (id: string, u: Partial<Payment>) => Promise<void>;
@@ -20,7 +21,7 @@ type UpdatePayment = (id: string, u: Partial<Payment>) => Promise<void>;
 // this function is used, not just in the Delivered tab's own display.
 export function getDeliveryDate(car: Car, customers: Customer[]): string {
   if (car.commissionCreditedEarly && car.commissionCreditedMonth) return `${car.commissionCreditedMonth}-01`;
-  const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
+  const dealCustomer = getDealCustomer(car, customers);
   return dealCustomer?.deliveredAt ?? car.finalDeal?.submittedAt ?? car.dateAdded;
 }
 export function getCommissionMonth(car: Car, customers: Customer[]): string {
@@ -86,23 +87,20 @@ export async function generateDeliveryPayments(opts: {
   const now = new Date().toISOString();
   const label = `${car.make} ${car.model}${car.carPlate ? ` (${car.carPlate})` : ''}`;
 
-  const dealCustomer = customers.find(c =>
-    c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder),
-  );
-  const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
-  const dealPrice = ((wo?.sellingPrice ?? car.sellingPrice) - (wo?.discount ?? 0)) || car.sellingPrice;
+  const dealCustomer = getDealCustomer(car, customers);
+  const dealPrice = getDealPrice(car, customers);
 
-  // Salesman commission
-  if (car.assignedSalesperson && !car.outgoingConsignment && !car.isStaffSale && !car.waiveCommission) {
-    const sp = users.find(u => u.id === car.assignedSalesperson);
+  // Salesman commission — uses the same rules as Dashboard / Commission / Payroll.
+  const salespersonId = getDealSalespersonId(car, customers);
+  const dealCommission = getDealCommission(car, customers);
+  if (salespersonId && dealCommission > 0) {
+    const sp = users.find(u => u.id === salespersonId);
     if (sp && !exists(payments, 'salesman_commission', { carId: car.id })) {
-      const effectiveFloor = car.priceFloor ?? car.sellingPrice;
-        const amount = (car.consignment || dealPrice < effectiveFloor) ? 1000 : 1500;
       await addPayment({
         id: generateId(), type: 'salesman_commission', carId: car.id,
         recipientType: 'user', recipientId: sp.id, recipientName: sp.name,
         bankName: sp.bankName, accountNumber: sp.bankAccountNumber, accountHolder: sp.bankAccountHolder,
-        amount, description: `Commission — ${label}`, status: 'pending', createdAt: now,
+        amount: dealCommission, description: `Commission — ${label}`, status: 'pending', createdAt: now,
       });
     }
   }
@@ -349,23 +347,20 @@ export function collectMissingPayments(data: {
   for (const car of cars) {
     if (car.status !== 'delivered') continue;
     const label = `${car.make} ${car.model}${car.carPlate ? ` (${car.carPlate})` : ''}`;
-    const dealCustomer = customers.find(c =>
-      c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder),
-    );
-    const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
-    const dealPrice = ((wo?.sellingPrice ?? car.sellingPrice) - (wo?.discount ?? 0)) || car.sellingPrice;
+    const dealCustomer = getDealCustomer(car, customers);
+    const dealPrice = getDealPrice(car, customers);
 
     // Salesman commission
-    if (car.assignedSalesperson && !car.outgoingConsignment && !car.isStaffSale && !car.waiveCommission && !alreadyExists('salesman_commission', { carId: car.id })) {
-      const sp = users.find(u => u.id === car.assignedSalesperson);
+    const salespersonId = getDealSalespersonId(car, customers);
+    const dealCommission = getDealCommission(car, customers);
+    if (salespersonId && dealCommission > 0 && !alreadyExists('salesman_commission', { carId: car.id })) {
+      const sp = users.find(u => u.id === salespersonId);
       if (sp) {
-        const effectiveFloor = car.priceFloor ?? car.sellingPrice;
-        const amount = (car.consignment || dealPrice < effectiveFloor) ? 1000 : 1500;
         result.push({
           id: generateId(), type: 'salesman_commission', carId: car.id,
           recipientType: 'user', recipientId: sp.id, recipientName: sp.name,
           bankName: sp.bankName, accountNumber: sp.bankAccountNumber, accountHolder: sp.bankAccountHolder,
-          amount, description: `Commission — ${label}`, status: 'pending', createdAt: car.dateAdded,
+          amount: dealCommission, description: `Commission — ${label}`, status: 'pending', createdAt: car.dateAdded,
         });
       }
     }
@@ -468,7 +463,6 @@ export function collectMissingPayments(data: {
       const lwo = dealCustomer?.loanWorkOrder;
       const finalBank = lwo?.bank ?? car.finalDeal?.bank;
       if (car.disbursementAmount && car.disbursementAmount > 0) {
-        // Already recorded
         result.push({
           id: generateId(), type: 'loan_disbursement', carId: car.id,
           recipientType: 'customer', recipientId: car.id, recipientName: `${finalBank ?? 'Bank'} — ${label}`,
@@ -478,7 +472,6 @@ export function collectMissingPayments(data: {
           createdAt: car.disbursementDate ?? car.dateAdded,
         });
       } else if (lwo && (lwo.loanAmount ?? 0) > 0) {
-        // Loan deal with work order but disbursement not yet recorded
         result.push({
           id: generateId(), type: 'loan_disbursement', carId: car.id,
           recipientType: 'customer', recipientId: car.id, recipientName: `${lwo.bank} — ${label}`,
@@ -486,7 +479,6 @@ export function collectMissingPayments(data: {
           status: 'pending', createdAt: car.dateAdded,
         });
       } else if (finalBank && (dealCustomer?.dealType === 'loan' || car.finalDeal?.bank)) {
-        // Loan deal detected via finalDeal but no work order — amount unknown, create placeholder
         const estAmount = car.finalDeal?.dealPrice ?? 0;
         if (estAmount > 0) result.push({
           id: generateId(), type: 'loan_disbursement', carId: car.id,
@@ -616,11 +608,6 @@ export function collectMonthlyPayroll(opts: {
 
   // Commission — merged into the same run, covering both cars actually
   // delivered this month and cars a director explicitly credited early.
-  // Previously commission relied entirely on a separate automatic-at-
-  // delivery trigger (plus a manual Backfill on Payments as a catch-up),
-  // completely disconnected from Run Payroll — so basic/allowance and
-  // commission could drift out of sync with each other for the same month.
-  // Now one click covers everything owed for the month, from either source.
   const hasCommissionPayment = (carId: string) =>
     payments.some(p => p.type === 'salesman_commission' && p.carId === carId) ||
     result.some(p => p.type === 'salesman_commission' && p.carId === carId);
@@ -628,15 +615,11 @@ export function collectMonthlyPayroll(opts: {
     (c.status === 'delivered' || c.commissionCreditedEarly) && getCommissionMonth(c, customers) === month
   );
   for (const car of monthCars) {
-    if (car.outgoingConsignment || car.isStaffSale || car.waiveCommission || hasCommissionPayment(car.id)) continue;
-    const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
-    const spId = car.assignedSalesperson || dealCustomer?.assignedSalesId;
+    if (hasCommissionPayment(car.id)) continue;
+    const spId = getDealSalespersonId(car, customers);
     const sp = spId ? users.find(u => u.id === spId) : undefined;
-    if (!sp) continue;
-    const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
-    const dealPrice = ((wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0)) || car.sellingPrice;
-    const effectiveFloor = car.priceFloor ?? car.sellingPrice;
-    const amount = (car.consignment || dealPrice < effectiveFloor) ? 1000 : 1500;
+    const amount = getDealCommission(car, customers);
+    if (!sp || amount <= 0) continue;
     const carLabel = `${car.year} ${car.make} ${car.model}${car.carPlate ? ` (${car.carPlate})` : ''}`;
     result.push({
       id: generateId(), type: 'salesman_commission', carId: car.id,
