@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Car, Sparkles, ChevronRight } from 'lucide-react';
+import { Car, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useStore } from '../store';
 import { roleHome } from '../utils/landingPath';
 
@@ -64,12 +64,14 @@ export default function ChooseBusiness() {
             icon={<Car size={32} strokeWidth={1.5} />}
             title="AutoDream Used Car"
             subtitle="Inventory, deals, customers & finance"
+            direction="left"
             onClick={() => navigate(roleHome(currentUser.role))}
           />
           <BusinessCard
             icon={<Sparkles size={32} strokeWidth={1.5} />}
             title="AutoDream Garage"
             subtitle="Tinting, coating & car spray"
+            direction="right"
             onClick={() => navigate('/garage')}
           />
         </div>
@@ -79,8 +81,8 @@ export default function ChooseBusiness() {
 }
 
 function BusinessCard({
-  icon, title, subtitle, onClick,
-}: { icon: ReactNode; title: string; subtitle: string; onClick: () => void }) {
+  icon, title, subtitle, direction, onClick,
+}: { icon: ReactNode; title: string; subtitle: string; direction: 'left' | 'right'; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -113,7 +115,7 @@ function BusinessCard({
       <span className="relative flex items-center justify-center w-11 h-11 rounded-full border border-gold-400/40
         text-gold-400 group-hover:bg-gold-400 group-hover:text-obsidian-950 group-hover:border-gold-400
         group-hover:shadow-gold transition-all duration-300">
-        <ChevronRight size={18} />
+        {direction === 'left' ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
       </span>
     </button>
   );
