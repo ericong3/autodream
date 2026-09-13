@@ -27,6 +27,14 @@ const emptyExtras: ExtraState = {
   small_window: { included: false, series: '', vlt: '' },
 };
 
+// Extra Rear Window bills at the Rear Panel Window rate (no separate price
+// to set); Small Window is complimentary — never adds to the total, even
+// though the series/VLT actually used still gets recorded.
+function extraPrice(key: ExtraGlassKey, series: TintSeries, positionPrices: Record<string, number>): number {
+  if (key === 'small_window') return 0;
+  return positionPrices[`rear_panel_window|${series}`] ?? 0;
+}
+
 export default function GarageTintPackage() {
   const { id, vehicleId } = useParams<{ id: string; vehicleId: string }>();
   const navigate = useNavigate();
@@ -68,7 +76,7 @@ export default function GarageTintPackage() {
     if (!state.included) return sum;
     const series = packageType === 'full' ? fullSeries : state.series;
     if (!series) return sum;
-    return sum + (positionPrices[`${ex.key}|${series}`] ?? 0);
+    return sum + extraPrice(ex.key, series, positionPrices);
   }, 0);
   const subtotal = (packageType === 'full' ? fullPrice : mixTotal) + extrasTotal;
   const finalTotal = Math.max(0, subtotal - discount);
@@ -105,7 +113,7 @@ export default function GarageTintPackage() {
         .map((ex) => {
           const series = (packageType === 'full' ? fullSeries : extras[ex.key].series) as TintSeries;
           const vlt = packageType === 'full' ? fullVlt : extras[ex.key].vlt;
-          return { position: ex.key, series, vlt, price: positionPrices[`${ex.key}|${series}`] ?? 0 };
+          return { position: ex.key, series, vlt, price: extraPrice(ex.key, series, positionPrices) };
         });
       await createTintOrder({
         invoiceId: invoice.id,
@@ -222,7 +230,7 @@ export default function GarageTintPackage() {
                         {ex.label}
                       </span>
                       <span className="text-white/40 text-xs">
-                        {fullSeries ? formatRM(positionPrices[`${ex.key}|${fullSeries}`] ?? 0) : '—'}
+                        {ex.key === 'small_window' ? 'Free' : fullSeries ? formatRM(extraPrice(ex.key, fullSeries, positionPrices)) : '—'}
                       </span>
                     </label>
                   ))}
@@ -270,6 +278,7 @@ export default function GarageTintPackage() {
                           className="accent-gold-500"
                         />
                         {ex.label}
+                        {ex.key === 'small_window' && <span className="text-white/30 text-xs">(Free)</span>}
                       </label>
                       <select
                         disabled={!extras[ex.key].included}

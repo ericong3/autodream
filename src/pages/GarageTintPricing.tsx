@@ -2,10 +2,13 @@ import { useEffect, useState } from 'react';
 import { Check } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import { getFullPrices, setFullPrice, getPositionPrices, setPositionPrice } from '../lib/garageTint';
-import { TINT_SERIES, VEHICLE_SIZES, GLASS_POSITIONS, EXTRA_GLASS_OPTIONS } from '../utils/tintPricing';
-import type { TintSeries, GlassPosition, ExtraGlassKey, GarageVehicleSize } from '../types';
+import { TINT_SERIES, VEHICLE_SIZES, GLASS_POSITIONS } from '../utils/tintPricing';
+import type { TintSeries, GlassPosition, GarageVehicleSize } from '../types';
 
-const POSITION_TABS = [...GLASS_POSITIONS, ...EXTRA_GLASS_OPTIONS];
+// Extra Rear Window bills at the Rear Panel Window rate and Small Window is
+// always free — neither needs its own price, so this grid only covers the
+// 4 standard glass positions.
+const POSITION_TABS = GLASS_POSITIONS;
 
 function PriceCell({
   value, saved, onCommit,
@@ -37,7 +40,7 @@ export default function GarageTintPricing() {
   const [fullPrices, setFullPrices] = useState<Record<string, number>>({});
   const [positionPrices, setPositionPrices] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
-  const [activePosition, setActivePosition] = useState<GlassPosition | ExtraGlassKey>('front_windscreen');
+  const [activePosition, setActivePosition] = useState<GlassPosition>('front_windscreen');
   const [justSaved, setJustSaved] = useState<string | null>(null);
 
   useEffect(() => {
@@ -58,7 +61,7 @@ export default function GarageTintPricing() {
     flashSaved(key);
   };
 
-  const commitPosition = async (position: GlassPosition | ExtraGlassKey, series: TintSeries, price: number) => {
+  const commitPosition = async (position: GlassPosition, series: TintSeries, price: number) => {
     const key = `${position}|${series}`;
     setPositionPrices((p) => ({ ...p, [key]: price }));
     await setPositionPrice(position, series, price);
