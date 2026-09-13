@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import type { AppNotification } from '../types';
 import { createPortal } from 'react-dom';
 import {
-  LogOut, Bell, MoreHorizontal, X,
+  LogOut, Bell, MoreHorizontal, X, ArrowLeftRight,
   LayoutDashboard, Car, Users, CalendarDays,
   FileText, Calculator, GitCompare,
   ClipboardList, Bot, TrendingUp, UsersRound,
@@ -259,6 +259,17 @@ export default function Layout() {
                     {pendingCount}
                   </span>
                 )}
+              </button>
+            )}
+            {currentUser?.businessAccess === 'both' && (
+              <button
+                onClick={() => navigate('/choose-business')}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg
+                  text-gold-400 hover:text-gold-300 hover:bg-obsidian-600/60
+                  transition-colors text-sm"
+              >
+                <ArrowLeftRight size={15} />
+                <span className="hidden sm:inline">Switch</span>
               </button>
             )}
             <button
