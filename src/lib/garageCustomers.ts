@@ -42,6 +42,23 @@ export async function findGarageCustomerByIc(icNumber: string): Promise<GarageCu
   return data ? rowToCustomer(data) : null;
 }
 
+// Live/partial search as the salesman types — matches on name or any part of
+// the IC number, so they don't have to key in the full 12 digits to find
+// someone. `%` and `,` are stripped since they're meaningful to the
+// ilike/or-filter syntax, not customer data.
+export async function searchGarageCustomers(query: string): Promise<GarageCustomer[]> {
+  const q = query.trim().replace(/[%,]/g, '');
+  if (!q) return [];
+  const { data, error } = await supabase
+    .from('garage_customers')
+    .select('*')
+    .or(`name.ilike.%${q}%,ic_number.ilike.%${q}%`)
+    .order('name')
+    .limit(10);
+  if (error) throw error;
+  return (data ?? []).map(rowToCustomer);
+}
+
 export async function getGarageCustomer(id: string): Promise<GarageCustomer | null> {
   const { data, error } = await supabase.from('garage_customers').select('*').eq('id', id).maybeSingle();
   if (error) throw error;
