@@ -20,3 +20,16 @@ export function generateId(): string {
 export function shortName(name: string): string {
   return name.split(' ').slice(0, 2).join(' ');
 }
+
+// Malaysian IC — ######-##-#### (birth date, state code, serial). Strips
+// anything typed that isn't a digit and re-inserts the dashes as you go, so
+// it can be wired straight to an input's onChange.
+export function formatMalaysianIc(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 12);
+  const parts = [digits.slice(0, 6), digits.slice(6, 8), digits.slice(8, 12)].filter(Boolean);
+  return parts.join('-');
+}
+
+export function isValidMalaysianIc(value: string): boolean {
+  return /^\d{6}-\d{2}-\d{4}$/.test(value);
+}

@@ -2,6 +2,34 @@
 // 'both' (see the business_access migration); everyone else is single-business.
 export type BusinessAccess = 'used_car' | 'garage' | 'both';
 
+// Garage's own customer/vehicle records — entirely separate from Used Car's
+// Customer type above. IC number is the business-unique key a salesman
+// searches by to pull up an existing customer.
+export interface GarageCustomer {
+  id: string;
+  name: string;
+  icNumber: string; // '######-##-####'
+  phone: string;
+  email?: string;
+  createdAt: string;
+  createdBy?: string;
+}
+
+export type GarageVehicleSize = 'standard' | 'large' | 'xlarge';
+
+export interface GarageVehicle {
+  id: string;
+  customerId: string; // GarageCustomer.id
+  make: string;
+  model: string;
+  year: number;
+  colour?: string;
+  registrationNo: string;
+  size: GarageVehicleSize;
+  createdAt: string;
+  createdBy?: string;
+}
+
 export interface User {
   id: string;
   name: string;
