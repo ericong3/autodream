@@ -6,6 +6,16 @@ import {
   Navigate,
 } from 'react-router-dom';
 import { useStore } from './store';
+import type { AppRole } from './config/access';
+import {
+  ADMIN_ONLY,
+  DATA_ROLES,
+  DIRECTOR_ROLES,
+  SALES_ROLES,
+  STAFF_ROLES,
+  canAccess,
+  roleHome,
+} from './config/access';
 import Layout from './components/Layout';
 import ToastContainer from './components/Toast';
 import Login from './pages/Login';
@@ -36,67 +46,30 @@ import Payments from './pages/Payments';
 import Claims from './pages/Claims';
 import CarMovement from './pages/CarMovement';
 
-function roleHome(role: string) {
-  if (role === 'banker') return '/banker-dashboard';
-  if (role === 'investor') return '/investor-portal';
-  if (role === 'admin') return '/admin-dashboard';
-  return '/inventory';
-}
-
-// Layout wrapper for regular users — mounts once, stays mounted across navigation
-function AuthedLayout() {
+function RequireRoles({ children, roles }: { children: React.ReactNode; roles: readonly AppRole[] }) {
   const currentUser = useStore((s) => s.currentUser);
   if (!currentUser) return <Navigate to="/login" replace />;
-  if (currentUser.role === 'banker') return <Navigate to="/banker-dashboard" replace />;
-  if (currentUser.role === 'investor') return <Navigate to="/investor-portal" replace />;
+  if (!canAccess(currentUser.role, roles)) {
+    return <Navigate to={roleHome(currentUser.role)} replace />;
+  }
+  return <>{children}</>;
+}
+
+// Layout wrapper for normal staff. Bankers and investors have intentionally isolated portals.
+function StaffLayout() {
+  const currentUser = useStore((s) => s.currentUser);
+  if (!currentUser) return <Navigate to="/login" replace />;
+  if (!canAccess(currentUser.role, STAFF_ROLES)) {
+    return <Navigate to={roleHome(currentUser.role)} replace />;
+  }
   return <Layout />;
 }
 
-function RequireAdmin({ children }: { children: React.ReactNode }) {
+function RoleLayout({ role }: { role: AppRole }) {
   const currentUser = useStore((s) => s.currentUser);
   if (!currentUser) return <Navigate to="/login" replace />;
-  if (currentUser.role !== 'admin') return <Navigate to={roleHome(currentUser.role)} replace />;
-  return <>{children}</>;
-}
-
-// Layout wrapper for bankers
-function BankerLayout() {
-  const currentUser = useStore((s) => s.currentUser);
-  if (!currentUser) return <Navigate to="/login" replace />;
-  if (currentUser.role !== 'banker') return <Navigate to={roleHome(currentUser.role)} replace />;
+  if (currentUser.role !== role) return <Navigate to={roleHome(currentUser.role)} replace />;
   return <Layout />;
-}
-
-// Layout wrapper for investors
-function InvestorLayout() {
-  const currentUser = useStore((s) => s.currentUser);
-  if (!currentUser) return <Navigate to="/login" replace />;
-  if (currentUser.role !== 'investor') return <Navigate to="/inventory" replace />;
-  return <Layout />;
-}
-
-// Role guards — wrap page elements only, not Layout
-function RequireDirector({ children }: { children: React.ReactNode }) {
-  const currentUser = useStore((s) => s.currentUser);
-  if (!currentUser) return <Navigate to="/login" replace />;
-  if (currentUser.role !== 'director' && currentUser.role !== 'shareholder') return <Navigate to={roleHome(currentUser.role)} replace />;
-  return <>{children}</>;
-}
-
-
-function RequireSalesOrDirector({ children }: { children: React.ReactNode }) {
-  const currentUser = useStore((s) => s.currentUser);
-  if (!currentUser) return <Navigate to="/login" replace />;
-  if (!['director', 'salesperson', 'shareholder'].includes(currentUser.role)) return <Navigate to={roleHome(currentUser.role)} replace />;
-  return <>{children}</>;
-}
-
-// Data page — sales/director as above, plus admin (scoped to the Workshops tab only, see Data.tsx)
-function RequireDataAccess({ children }: { children: React.ReactNode }) {
-  const currentUser = useStore((s) => s.currentUser);
-  if (!currentUser) return <Navigate to="/login" replace />;
-  if (!['director', 'salesperson', 'shareholder', 'admin'].includes(currentUser.role)) return <Navigate to={roleHome(currentUser.role)} replace />;
-  return <>{children}</>;
 }
 
 export default function App() {
@@ -104,28 +77,38 @@ export default function App() {
   const loadAll = useStore((s) => s.loadAll);
   const storeLoaded = useStore((s) => s.loaded);
   const [hydrated, setHydrated] = useState(() => useStore.persist.hasHydrated());
-  const [fetchDone, setFetchDone] = useState(false);
+  const [fetchedForUserId, setFetchedForUserId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!hydrated) {
       const unsub = useStore.persist.onFinishHydration(() => setHydrated(true));
       return unsub;
     }
-  }, []);
+  }, [hydrated]);
 
-  // Re-runs on every login/logout/user-switch (currentUser.id changing), not
-  // just once on the very first page load — otherwise fetchDone stays true
-  // forever after the first successful load, so the ready-gate below stops
-  // actually gating anything: logging out wipes the store's data arrays
-  // (see logout()) but nothing re-triggers loadAll(), so the app renders
-  // immediately with empty data until a manual browser refresh remounts
-  // App from scratch and this effect fires again for real.
+  // Never fetch company data before a user is authenticated. After login (or a
+  // persisted session is restored), loadAll refreshes the in-memory working set.
   useEffect(() => {
-    setFetchDone(false);
-    loadAll().finally(() => setFetchDone(true));
-  }, [currentUser?.id]);
+    if (!hydrated) return;
+    if (!currentUser) {
+      setFetchedForUserId(null);
+      return;
+    }
 
-  const ready = hydrated && (storeLoaded || fetchDone);
+    let cancelled = false;
+    setFetchedForUserId(null);
+    loadAll().finally(() => {
+      if (!cancelled) setFetchedForUserId(currentUser.id);
+    });
+
+    return () => { cancelled = true; };
+  }, [hydrated, currentUser?.id, loadAll]);
+
+  const ready = hydrated && (
+    !currentUser ||
+    storeLoaded ||
+    fetchedForUserId === currentUser.id
+  );
 
   if (!ready) {
     return (
@@ -139,9 +122,6 @@ export default function App() {
     <HashRouter>
       <ToastContainer />
       <Routes>
-        {/* Car Movement — login-required but standalone (no Layout) */}
-        <Route path="/movement" element={<CarMovement />} />
-
         {/* Public */}
         <Route
           path="/login"
@@ -152,41 +132,53 @@ export default function App() {
           element={<Navigate to={currentUser ? roleHome(currentUser.role) : '/login'} replace />}
         />
 
-        {/* Regular users — Layout mounts once, stays alive across all these routes */}
-        <Route element={<AuthedLayout />}>
-          <Route path="/inventory" element={<Inventory />} />
-          <Route path="/inventory/:id" element={<CarDetail />} />
-          <Route path="/workshop" element={<Workshop />} />
-          <Route path="/reminders" element={<Reminders />} />
-          <Route path="/ai-assistant" element={<AIAssistant />} />
-          <Route path="/payments" element={<Payments />} />
-          <Route path="/claims" element={<Claims />} />
-          <Route path="/quotations" element={<RequireSalesOrDirector><Quotations /></RequireSalesOrDirector>} />
-          <Route path="/customers" element={<RequireSalesOrDirector><Customers /></RequireSalesOrDirector>} />
-          <Route path="/commission" element={<RequireSalesOrDirector><Commission /></RequireSalesOrDirector>} />
-          <Route path="/loan-calculator" element={<RequireSalesOrDirector><LoanCalculator /></RequireSalesOrDirector>} />
-          <Route path="/car-compare" element={<RequireSalesOrDirector><CarCompare /></RequireSalesOrDirector>} />
-          <Route path="/calendar" element={<RequireSalesOrDirector><Calendar /></RequireSalesOrDirector>} />
-          <Route path="/sales-dashboard" element={<RequireSalesOrDirector><SalesDashboard /></RequireSalesOrDirector>} />
-          <Route path="/loan-cases" element={<RequireSalesOrDirector><LoanCases /></RequireSalesOrDirector>} />
-          <Route path="/finance" element={<RequireDirector><Finance /></RequireDirector>} />
-          <Route path="/payroll" element={<RequireDirector><Payroll /></RequireDirector>} />
-          <Route path="/team" element={<RequireDirector><TeamMembers /></RequireDirector>} />
-          <Route path="/data" element={<RequireDataAccess><Data /></RequireDataAccess>} />
-          <Route path="/investors" element={<RequireDirector><Investors /></RequireDirector>} />
-          <Route path="/dashboard" element={<RequireDirector><Dashboard /></RequireDirector>} />
-          <Route path="/history" element={<History />} />
-          <Route path="/history/:id" element={<History />} />
-          <Route path="/admin-dashboard" element={<RequireAdmin><AdminDashboard /></RequireAdmin>} />
+        {/* Car movement is standalone, but still staff-only. */}
+        <Route
+          path="/movement"
+          element={<RequireRoles roles={STAFF_ROLES}><CarMovement /></RequireRoles>}
+        />
+
+        {/* Staff app */}
+        <Route element={<StaffLayout />}>
+          <Route path="/inventory" element={<RequireRoles roles={STAFF_ROLES}><Inventory /></RequireRoles>} />
+          <Route path="/inventory/:id" element={<RequireRoles roles={STAFF_ROLES}><CarDetail /></RequireRoles>} />
+          <Route path="/reminders" element={<RequireRoles roles={STAFF_ROLES}><Reminders /></RequireRoles>} />
+          <Route path="/ai-assistant" element={<RequireRoles roles={STAFF_ROLES}><AIAssistant /></RequireRoles>} />
+          <Route path="/claims" element={<RequireRoles roles={STAFF_ROLES}><Claims /></RequireRoles>} />
+          <Route path="/history" element={<RequireRoles roles={STAFF_ROLES}><History /></RequireRoles>} />
+          <Route path="/history/:id" element={<RequireRoles roles={STAFF_ROLES}><History /></RequireRoles>} />
+
+          {/* Admin operations */}
+          <Route path="/workshop" element={<RequireRoles roles={ADMIN_ONLY}><Workshop /></RequireRoles>} />
+          <Route path="/payments" element={<RequireRoles roles={ADMIN_ONLY}><Payments /></RequireRoles>} />
+          <Route path="/admin-dashboard" element={<RequireRoles roles={ADMIN_ONLY}><AdminDashboard /></RequireRoles>} />
+
+          {/* Sales */}
+          <Route path="/quotations" element={<RequireRoles roles={SALES_ROLES}><Quotations /></RequireRoles>} />
+          <Route path="/customers" element={<RequireRoles roles={SALES_ROLES}><Customers /></RequireRoles>} />
+          <Route path="/commission" element={<RequireRoles roles={SALES_ROLES}><Commission /></RequireRoles>} />
+          <Route path="/loan-calculator" element={<RequireRoles roles={SALES_ROLES}><LoanCalculator /></RequireRoles>} />
+          <Route path="/car-compare" element={<RequireRoles roles={SALES_ROLES}><CarCompare /></RequireRoles>} />
+          <Route path="/calendar" element={<RequireRoles roles={SALES_ROLES}><Calendar /></RequireRoles>} />
+          <Route path="/sales-dashboard" element={<RequireRoles roles={SALES_ROLES}><SalesDashboard /></RequireRoles>} />
+          <Route path="/loan-cases" element={<RequireRoles roles={SALES_ROLES}><LoanCases /></RequireRoles>} />
+
+          {/* Management */}
+          <Route path="/finance" element={<RequireRoles roles={DIRECTOR_ROLES}><Finance /></RequireRoles>} />
+          <Route path="/payroll" element={<RequireRoles roles={DIRECTOR_ROLES}><Payroll /></RequireRoles>} />
+          <Route path="/team" element={<RequireRoles roles={DIRECTOR_ROLES}><TeamMembers /></RequireRoles>} />
+          <Route path="/investors" element={<RequireRoles roles={DIRECTOR_ROLES}><Investors /></RequireRoles>} />
+          <Route path="/dashboard" element={<RequireRoles roles={DIRECTOR_ROLES}><Dashboard /></RequireRoles>} />
+          <Route path="/data" element={<RequireRoles roles={DATA_ROLES}><Data /></RequireRoles>} />
         </Route>
 
-        {/* Banker — own Layout instance */}
-        <Route element={<BankerLayout />}>
+        {/* Banker portal */}
+        <Route element={<RoleLayout role="banker" />}>
           <Route path="/banker-dashboard" element={<BankerDashboard />} />
         </Route>
 
-        {/* Investor — own Layout instance */}
-        <Route element={<InvestorLayout />}>
+        {/* Investor portal */}
+        <Route element={<RoleLayout role="investor" />}>
           <Route path="/investor-portal" element={<InvestorPortal />} />
         </Route>
 
