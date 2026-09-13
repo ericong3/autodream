@@ -20,8 +20,8 @@ export const SALESMAN_TABS: GarageTab[] = [
 // Deliberately separate from the Used Car Layout/Sidebar so nothing here
 // can affect that side of the app.
 export default function GarageShell({
-  title, showBack, tabs, children,
-}: { title: string; showBack?: boolean; tabs?: GarageTab[]; children: ReactNode }) {
+  title, showBack, backTo = '/garage', tabs, children,
+}: { title: string; showBack?: boolean; backTo?: string; tabs?: GarageTab[]; children: ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
   const logout = useStore((s) => s.logout);
   const navigate = useNavigate();
@@ -44,7 +44,7 @@ export default function GarageShell({
           <div className="flex items-center gap-3">
             {showBack && (
               <button
-                onClick={() => navigate('/garage')}
+                onClick={() => navigate(backTo)}
                 className="p-2 -ml-2 rounded-lg text-white/60 hover:text-gold-400 hover:bg-white/5 transition-colors"
               >
                 <ArrowLeft size={18} />

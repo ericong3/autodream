@@ -1,16 +1,15 @@
-import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { FilePlus, ClipboardList } from 'lucide-react';
 import GarageShell, { SALESMAN_TABS } from '../components/GarageShell';
-import Modal from '../components/Modal';
 
 export default function GarageSalesTools() {
-  const [showWorkOrder, setShowWorkOrder] = useState(false);
+  const navigate = useNavigate();
 
   return (
     <GarageShell title="AutoDream Garage" tabs={SALESMAN_TABS} showBack>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <button
-          onClick={() => setShowWorkOrder(true)}
+          onClick={() => navigate('/garage/work-order/new')}
           className="group relative overflow-hidden text-left rounded-2xl p-6 flex items-center gap-4
             bg-white/[0.04] backdrop-blur-xl border border-gold-400/15
             hover:border-gold-400/50 hover:bg-white/[0.06] hover:-translate-y-0.5
@@ -36,16 +35,6 @@ export default function GarageSalesTools() {
           </div>
         </div>
       </div>
-
-      <Modal isOpen={showWorkOrder} onClose={() => setShowWorkOrder(false)} title="New Work Order">
-        <div className="flex flex-col items-center justify-center py-10 text-center">
-          <FilePlus size={30} strokeWidth={1.5} className="text-gold-400/70 mb-3" />
-          <p className="text-gray-400 text-sm">Work order form — coming soon</p>
-        </div>
-        <button onClick={() => setShowWorkOrder(false)} className="w-full mt-2 px-4 py-2.5 btn-ghost rounded-lg text-sm">
-          Close
-        </button>
-      </Modal>
     </GarageShell>
   );
 }

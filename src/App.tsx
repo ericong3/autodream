@@ -40,6 +40,9 @@ import GarageHome from './pages/GarageHome';
 import GarageTeamMembers from './pages/GarageTeamMembers';
 import GarageDashboard from './pages/GarageDashboard';
 import GarageSalesTools from './pages/GarageSalesTools';
+import GarageWorkOrderStart from './pages/GarageWorkOrderStart';
+import GarageWorkOrderNewCustomer from './pages/GarageWorkOrderNewCustomer';
+import GarageWorkOrderExistingCustomer from './pages/GarageWorkOrderExistingCustomer';
 import { roleHome, landingPath, garageHome } from './utils/landingPath';
 
 // Layout wrapper for regular users — mounts once, stays mounted across navigation
@@ -181,6 +184,9 @@ export default function App() {
         <Route path="/garage" element={<RequireGarage><GarageHome /></RequireGarage>} />
         <Route path="/garage/dashboard" element={<RequireGarage><GarageDashboard /></RequireGarage>} />
         <Route path="/garage/sales-tools" element={<RequireGarage><GarageSalesTools /></RequireGarage>} />
+        <Route path="/garage/work-order/new" element={<RequireGarage><GarageWorkOrderStart /></RequireGarage>} />
+        <Route path="/garage/work-order/new-customer" element={<RequireGarage><GarageWorkOrderNewCustomer /></RequireGarage>} />
+        <Route path="/garage/work-order/existing-customer" element={<RequireGarage><GarageWorkOrderExistingCustomer /></RequireGarage>} />
         <Route path="/garage/team" element={<RequireGarageManager><GarageTeamMembers /></RequireGarageManager>} />
 
         {/* Regular users — Layout mounts once, stays alive across all these routes */}
