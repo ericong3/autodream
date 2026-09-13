@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useStore } from '../store';
+import { roleHome } from '../config/access';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -19,19 +20,26 @@ export default function Login() {
     setError('');
     if (!username.trim()) { setError('Username is required'); return; }
     if (!password) { setError('Password is required'); return; }
+
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 400));
-    const success = await login(username.trim(), password);
-    setLoading(false);
-    if (success) {
-      const role = useStore.getState().currentUser?.role;
-      navigate(from ?? (role === 'investor' ? '/investor-portal' : '/inventory'));
-    } else { setError('Invalid username or password'); }
+    try {
+      const success = await login(username.trim(), password);
+      if (success) {
+        const role = useStore.getState().currentUser?.role;
+        navigate(from ?? (role ? roleHome(role) : '/inventory'), { replace: true });
+      } else {
+        setError('Invalid username or password');
+      }
+    } catch (err) {
+      console.error('Login failed:', err);
+      setError('Unable to sign in right now. Please check your connection and try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="min-h-screen relative overflow-hidden bg-obsidian-950">
-
       {/* Desktop background video */}
       <video
         className="absolute inset-0 w-full h-full object-cover md:block hidden"
@@ -45,16 +53,11 @@ export default function Login() {
         autoPlay loop muted playsInline preload="none"
       />
 
-      {/* Full-screen overlay */}
       <div className="absolute inset-0 bg-black/30" />
 
-      {/* Layout sits on top of video */}
       <div className="relative z-10 min-h-screen flex">
-
-        {/* ── LEFT — Logo sits over the cosmic/nebula part of the video ── */}
         <div className="hidden md:flex md:w-[62%] lg:w-[64%] items-center justify-center px-16 select-none">
           <div className="relative flex items-center justify-center">
-            {/* Deep radial dark behind logo */}
             <div className="absolute w-[960px] lg:w-[1060px] aspect-square rounded-full
               bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.92)_0%,rgba(0,0,0,0.72)_30%,rgba(0,0,0,0.3)_58%,transparent_75%)]
               pointer-events-none" />
@@ -70,19 +73,13 @@ export default function Login() {
           </div>
         </div>
 
-        {/* ── RIGHT — Login form sits over the video's dark panel area ── */}
         <div className="w-full md:w-[38%] lg:w-[36%] flex flex-col items-center justify-center
           px-8 md:pl-8 md:pr-0 lg:pl-10 lg:pr-0 py-12 relative">
-
-          {/* Subtle top glow */}
           <div className="absolute -top-10 left-1/2 -translate-x-1/2 w-80 h-48
             bg-gold-400 opacity-[0.06] blur-[60px] pointer-events-none" />
-
-          {/* Corner brackets — desktop only */}
           <div className="hidden md:block absolute top-7 right-7 w-7 h-7 border-r-2 border-t-2 border-gold-400/40" />
           <div className="hidden md:block absolute bottom-7 right-7 w-7 h-7 border-r-2 border-b-2 border-gold-400/40" />
 
-          {/* Mobile logo — outside form container so it can be full width */}
           <div className="md:hidden w-full text-center mb-10">
             <img src="/logo.png?v=3" alt="AutoDream" className="w-[90vw] max-w-[420px] mx-auto
               drop-shadow-[0_0_40px_rgba(255,255,255,0.15)]
@@ -91,8 +88,6 @@ export default function Login() {
           </div>
 
           <div className="w-full max-w-[320px] relative z-10 md:-translate-x-[30%]">
-
-            {/* Heading */}
             <div className="mb-8 text-center">
               <h1 className="font-display text-[1.85rem] font-bold text-white tracking-wide leading-tight mb-1">
                 Welcome Back
@@ -107,7 +102,6 @@ export default function Login() {
               </div>
             </div>
 
-            {/* Error */}
             {error && (
               <div className="flex items-center gap-2.5 bg-red-500/[0.08] border border-red-500/20
                 text-red-400 rounded-xl p-3.5 mb-5 text-sm">
@@ -116,12 +110,9 @@ export default function Login() {
               </div>
             )}
 
-            {/* Form card */}
             <div className="bg-black/40 border border-gold-400/12 rounded-2xl p-6
               shadow-[0_8px_40px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(212,160,23,0.08)]">
-
               <form onSubmit={handleSubmit} className="space-y-5">
-
                 <div>
                   <label className="block text-white/50 text-[10px] font-semibold mb-2 uppercase tracking-[0.18em]">
                     Username
@@ -135,6 +126,7 @@ export default function Login() {
                     autoComplete="username"
                     autoCapitalize="none"
                     spellCheck={false}
+                    disabled={loading}
                   />
                 </div>
 
@@ -152,12 +144,14 @@ export default function Login() {
                       autoComplete="current-password"
                       autoCapitalize="none"
                       spellCheck={false}
+                      disabled={loading}
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
                       className="absolute right-3 top-1/2 -translate-y-1/2
                         text-white/35 hover:text-white/70 transition-colors"
+                      disabled={loading}
                     >
                       {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
@@ -167,7 +161,7 @@ export default function Login() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="btn-gold w-full py-3.5 rounded-xl text-sm mt-1"
+                  className="btn-gold w-full py-3.5 rounded-xl text-sm mt-1 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {loading ? (
                     <span className="flex items-center justify-center gap-2">
@@ -179,17 +173,14 @@ export default function Login() {
                     </span>
                   ) : 'Sign In'}
                 </button>
-
               </form>
             </div>
 
             <p className="text-white/45 text-[10px] text-center mt-8 tracking-[0.25em] uppercase font-sans">
               AutoDream &copy; {new Date().getFullYear()}
             </p>
-
           </div>
         </div>
-
       </div>
     </div>
   );
