@@ -289,6 +289,7 @@ function rowToCar(r: any): Car {
     disbursementExpectedAmount: r.disbursement_expected_amount ?? undefined,
     disbursementCharges: r.disbursement_charges ?? undefined,
     comingSoonType: r.coming_soon_type ?? undefined,
+    tradeInSourceCarId: r.trade_in_source_car_id ?? undefined,
     shipmentId: r.shipment_id ?? undefined,
     panelDealerId: r.panel_dealer_id ?? undefined,
     panelChargeAmount: r.panel_charge_amount ?? undefined,
@@ -549,6 +550,7 @@ function carToRow(c: Partial<Car>) {
   if (c.disbursementExpectedAmount !== undefined) row.disbursement_expected_amount = c.disbursementExpectedAmount;
   if (c.disbursementCharges !== undefined) row.disbursement_charges = c.disbursementCharges;
   if (c.comingSoonType !== undefined) row.coming_soon_type = c.comingSoonType;
+  if (c.tradeInSourceCarId !== undefined) row.trade_in_source_car_id = c.tradeInSourceCarId;
   if ('shipmentId' in c) row.shipment_id = c.shipmentId ?? null;
   if (c.panelDealerId !== undefined) row.panel_dealer_id = c.panelDealerId;
   if (c.panelChargeAmount !== undefined) row.panel_charge_amount = c.panelChargeAmount;

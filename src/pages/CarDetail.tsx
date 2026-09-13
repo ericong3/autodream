@@ -38,6 +38,7 @@ import {
   CreditCard,
   LogIn,
   LogOut,
+  Lock,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
@@ -47,10 +48,11 @@ import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, formatMileage, generateId, shortName } from '../utils/format';
 import { generateDeliveryPayments, generateMiscCostPayment, generatePanelChargePayment } from '../utils/generatePayments';
 import { completeRepairJob } from '../utils/completeRepair';
-import { buildCarSaleEntry, buildPayableRecognizedEntry, buildCarCostRecognizedEntry, buildSettlementRecognizedEntry, LEDGER_ACCOUNTS } from '../utils/generateJournalEntries';
+import { buildCarSaleEntry, buildPayableRecognizedEntry, buildCarCostRecognizedEntry, buildSettlementRecognizedEntry, buildTradeInAcquiredEntry, LEDGER_ACCOUNTS } from '../utils/generateJournalEntries';
 import { getCaseCompletion } from '../utils/caseCompletion';
 import { buildDealReceiptPdf, uploadDealReceipt } from '../utils/generateDealReceipt';
 import { buildConsignmentSettlementPdf, buildConsignmentSummaryPdf, ConsignmentSettlementInput } from '../utils/generateConsignmentSettlement';
+import { buildTradeInCar } from '../utils/tradeIn';
 import { toast } from '../utils/toast';
 
 
@@ -139,6 +141,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const externalSalesmen = useStore((s) => s.externalSalesmen);
   const currentUser = useStore((s) => s.currentUser);
   const updateCar = useStore((s) => s.updateCar);
+  const addCar = useStore((s) => s.addCar);
   const updateCustomer = useStore((s) => s.updateCustomer);
   const addRepair = useStore((s) => s.addRepair);
   const updateRepair = useStore((s) => s.updateRepair);
@@ -262,6 +265,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     bankProduct: 0, loanAmount: 0, downpayment: 0, bookingFee: 0,
     additionalItems: [] as WorkOrderItem[],
     soldDate: '',
+    hasTradeIn: false, tradeInMode: 'trade_in' as 'trade_in' | 'swap',
+    tradeInPlate: '', tradeInMake: '', tradeInModel: '', tradeInVariant: '',
+    tradeInPrice: 0, settlementFigure: 0,
   });
   const [savingDeal, setSavingDeal] = useState(false);
 
@@ -270,7 +276,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     const deal = car.finalDeal!;
     setEditDealForm({
       bank: dealWo && 'bank' in dealWo ? (dealWo as any).bank : deal.bank ?? '',
-      sellingPrice: dealWo?.sellingPrice ?? deal.dealPrice,
+      // Never carried over from the stored work order — always the car's current listing price.
+      sellingPrice: car.sellingPrice,
       discount: dealWo?.discount ?? 0,
       insurance: dealWo?.insurance ?? 0,
       bankProduct: dealWo?.bankProduct ?? 0,
@@ -279,6 +286,14 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       bookingFee: dealWo?.bookingFee ?? 0,
       additionalItems: [...(dealWo?.additionalItems ?? [])],
       soldDate: car.finalDeal?.submittedAt?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+      hasTradeIn: dealWo?.hasTradeIn ?? false,
+      tradeInMode: dealWo?.tradeInMode ?? 'trade_in',
+      tradeInPlate: dealWo?.tradeInPlate ?? '',
+      tradeInMake: dealWo?.tradeInMake ?? '',
+      tradeInModel: dealWo?.tradeInModel ?? '',
+      tradeInVariant: dealWo?.tradeInVariant ?? '',
+      tradeInPrice: dealWo?.tradeInPrice ?? 0,
+      settlementFigure: dealWo?.settlementFigure ?? 0,
     });
     setShowEditDeal(true);
   };
@@ -287,7 +302,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     if (!car || !dealCustomer || !dealWo) return;
     setSavingDeal(true);
     try {
-      const updatedWo = { ...dealWo, ...editDealForm } as any;
+      // Selling price is never hand-typed here — force it back to the car's current
+      // listing price so a stale/incorrect stored value self-heals on every save.
+      const updatedWo = { ...dealWo, ...editDealForm, sellingPrice: car.sellingPrice } as any;
       if (dealIsLoan) {
         await updateCustomer(dealCustomer.id, { loanWorkOrder: updatedWo });
       } else {
@@ -296,13 +313,19 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       await updateCar(car.id, {
         finalDeal: {
           ...car.finalDeal!,
-          dealPrice: editDealForm.sellingPrice - editDealForm.discount,
+          dealPrice: car.sellingPrice - editDealForm.discount,
           bank: editDealForm.bank,
           submittedAt: editDealForm.soldDate
             ? new Date(editDealForm.soldDate + 'T12:00:00').toISOString()
             : car.finalDeal!.submittedAt,
         },
       });
+      // A trade-in added or turned on here (rather than at original
+      // submission) still needs its Coming Soon car created — same builder
+      // used at submission time, guarded against creating a second one.
+      if (updatedWo.hasTradeIn && !cars.some(c => c.tradeInSourceCarId === car.id)) {
+        await addCar(buildTradeInCar({ sourceCar: car, wo: updatedWo, customerName: dealCustomer.name, repairs }));
+      }
       setShowEditDeal(false);
     } finally {
       setSavingDeal(false);
@@ -704,19 +727,46 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
 
     // Ledger: dealer-consignment cars (someone else's car, we're just selling it
     // for them) are a separate existing flow and never booked as our inventory.
+    const _dealPriceAtDelivery = ((dealWo?.sellingPrice ?? car.sellingPrice) - (dealWo?.discount ?? 0)) || car.sellingPrice;
+    const _effectiveFloorAtDelivery = car.priceFloor ?? car.sellingPrice;
+    const _commissionAtDelivery = (car.isStaffSale || car.waiveCommission) ? 0
+      : (car.consignment || _dealPriceAtDelivery < _effectiveFloorAtDelivery) ? 1000 : 1500;
+
+    // Trade-in reconciliation — now that this deal's final costs are known,
+    // lock in the traded-in car's real price and book its acquisition. Runs
+    // regardless of whether this (parent) deal is a consignment sale, since
+    // the trade-in car itself is ours either way; only the parent's own
+    // sale-side ledger entry below is skipped for consignment (existing,
+    // separate behavior — consignment sales were never booked to Revenue/
+    // Bank/COGS here, only through the Payments/payout flow).
+    if (dealWo?.hasTradeIn && currentUser) {
+      const tradeInChild = cars.find(c => c.tradeInSourceCarId === car.id);
+      if (tradeInChild) {
+        const finalPurchasePrice = dealWo.tradeInMode === 'swap'
+          ? (car.purchasePrice ?? 0) + totalRepairCost + totalMiscCost + _commissionAtDelivery
+          : (dealWo.tradeInPrice ?? 0);
+        await updateCar(tradeInChild.id, { purchasePrice: finalPurchasePrice });
+        await addJournalEntry(buildTradeInAcquiredEntry({
+          car: { ...tradeInChild, purchasePrice: finalPurchasePrice },
+          tradeInPrice: dealWo.tradeInPrice ?? 0,
+          settlementFigure: dealWo.settlementFigure,
+          createdBy: currentUser.id,
+        }));
+      }
+    }
+
     if (!car.consignment && !car.outgoingConsignment && currentUser) {
-      const dealPrice = ((dealWo?.sellingPrice ?? car.sellingPrice) - (dealWo?.discount ?? 0)) || car.sellingPrice;
+      const dealPrice = _dealPriceAtDelivery;
       const cost = (car.purchasePrice ?? 0) + totalRepairCost + totalMiscCost;
       const loanAmount = dealIsLoan ? (car.disbursementExpectedAmount ?? car.disbursementAmount ?? dealCustomer?.loanWorkOrder?.loanAmount ?? 0) : 0;
       const bookingFee = dealWo?.bookingFee ?? 0;
-      await addJournalEntry(buildCarSaleEntry({ car, dealPrice, cost, isLoan: dealIsLoan, loanAmount, bookingFee, createdBy: currentUser.id }));
+      const tradeInValue = dealWo?.hasTradeIn ? Math.max(0, (dealWo.tradeInPrice ?? 0) - (dealWo.settlementFigure ?? 0)) : 0;
+      await addJournalEntry(buildCarSaleEntry({ car, dealPrice, cost, isLoan: dealIsLoan, loanAmount, bookingFee, tradeInValue, createdBy: currentUser.id }));
 
       if (car.assignedSalesperson && !car.isStaffSale && !car.waiveCommission) {
-        const effectiveFloor = car.priceFloor ?? car.sellingPrice;
-        const commissionAmount = (car.consignment || dealPrice < effectiveFloor) ? 1000 : 1500;
         await addJournalEntry(buildPayableRecognizedEntry({
           expenseAccountId: LEDGER_ACCOUNTS.expSalesmanComm,
-          amount: commissionAmount,
+          amount: _commissionAtDelivery,
           description: `Commission recognized — ${car.year} ${car.make} ${car.model}`,
           car, sourceType: 'salesman_commission', sourceId: car.id, createdBy: currentUser.id,
         }));
@@ -1996,7 +2046,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               {!isLoan && (
                 <Section title="Deal Financials">
                   <DRow label="Selling Price" value={formatRM(sellingPrice)} valueClass="text-gold-400 font-bold" />
-                  {isDirectorView && (
+                  {dealView === 'director' && isDirectorView && (
                     <>
                       <DRow label="Purchase Price" value={`− ${formatRM(purchasePrice + dealSourceCommission)}`} valueClass="text-red-400" />
                       {discount > 0 && <DRow label="Discount" value={`− ${formatRM(discount)}`} valueClass="text-red-400" />}
@@ -2063,10 +2113,14 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               {/* Trade-in */}
               {wo?.hasTradeIn && (
                 <Section title="Trade-In">
+                  <DRow label="Type" value={wo.tradeInMode === 'swap' ? 'Swap' : 'Trade-In'} valueClass={wo.tradeInMode === 'swap' ? 'text-gold-400 font-semibold' : 'text-gray-300'} />
                   <DRow label="Vehicle" value={`${wo.tradeInMake} ${wo.tradeInModel}${wo.tradeInVariant ? ` ${wo.tradeInVariant}` : ''}`} />
                   <DRow label="Plate" value={wo.tradeInPlate || '—'} />
                   <DRow label="Trade-In Value" value={formatRM(wo.tradeInPrice)} valueClass="text-green-400" />
-                  {wo.settlementFigure > 0 && <DRow label="Settlement" value={formatRM(wo.settlementFigure)} valueClass="text-orange-400" border={false} />}
+                  {wo.settlementFigure > 0 && <DRow label="Settlement" value={formatRM(wo.settlementFigure)} valueClass="text-orange-400" />}
+                  {wo.tradeInMode === 'swap' && (
+                    <DRow label="Note" value="Traded-in car's price finalizes when this deal is delivered" valueClass="text-gray-500 text-xs text-right max-w-[220px]" border={false} />
+                  )}
                 </Section>
               )}
             </div>
@@ -3520,9 +3574,10 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       <Modal isOpen={showEditDeal} onClose={() => setShowEditDeal(false)} title="Edit Deal Details" maxWidth="max-w-md">
         <div className="max-h-[70vh] overflow-y-auto -mx-1 px-1">
           {(() => {
-            const { sellingPrice, discount, insurance, bankProduct, loanAmount, bookingFee, additionalItems } = editDealForm;
+            const { sellingPrice, discount, insurance, bankProduct, loanAmount, downpayment, bookingFee, additionalItems } = editDealForm;
             const addTotal = additionalItems.reduce((s, x) => s + x.amount, 0);
-            const bal = sellingPrice - discount + insurance + bankProduct + addTotal - loanAmount - bookingFee;
+            const netTradeIn = editDealForm.hasTradeIn ? (editDealForm.tradeInPrice - editDealForm.settlementFigure) : 0;
+            const bal = sellingPrice - discount + insurance + bankProduct + addTotal - loanAmount - downpayment - bookingFee - netTradeIn;
             const rowCls = "flex items-center justify-between py-2.5 border-b border-obsidian-400/30 gap-4";
             const inputCls = "bg-transparent text-right text-sm font-medium text-white w-32 outline-none focus:text-gold-300 placeholder-gray-700";
             return (
@@ -3539,7 +3594,10 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 )}
                 <div className={rowCls}>
                   <span className="text-gray-500 text-sm shrink-0">Selling Price</span>
-                  <input type="number" min={0} placeholder="0" value={editDealForm.sellingPrice || ''} onChange={e => setEditDealForm(f => ({ ...f, sellingPrice: Number(e.target.value) }))} className={inputCls} />
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-white">
+                    {formatRM(car?.sellingPrice ?? 0)}
+                    <Lock size={12} className="text-gray-600" />
+                  </span>
                 </div>
                 <div className={rowCls}>
                   <span className="text-gray-500 text-sm shrink-0">Discount</span>
@@ -3569,6 +3627,53 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   <input type="number" min={0} placeholder="0" value={editDealForm.bookingFee || ''} onChange={e => setEditDealForm(f => ({ ...f, bookingFee: Number(e.target.value) }))} className={inputCls} />
                 </div>
 
+                <div className="py-3 border-b border-obsidian-400/30">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-gray-400 text-xs font-semibold uppercase tracking-wide">Trade-In</span>
+                    <button
+                      onClick={() => setEditDealForm(f => ({ ...f, hasTradeIn: !f.hasTradeIn }))}
+                      className="text-xs text-gold-400 hover:text-gold-300 transition-colors"
+                    >
+                      {editDealForm.hasTradeIn ? 'Remove trade-in' : '+ Add trade-in'}
+                    </button>
+                  </div>
+                  {editDealForm.hasTradeIn && (
+                    <div className="space-y-2">
+                      <div className="flex bg-obsidian-700/40 border border-obsidian-400/40 rounded-lg p-1 gap-1">
+                        {([['trade_in', 'Trade-In'], ['swap', 'Swap']] as const).map(([val, label]) => (
+                          <button
+                            key={val}
+                            onClick={() => setEditDealForm(f => ({ ...f, tradeInMode: val }))}
+                            className={`flex-1 py-1.5 rounded text-xs font-medium transition-colors ${editDealForm.tradeInMode === val ? 'bg-gold-500 text-obsidian-950' : 'text-gray-400 hover:text-white'}`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input value={editDealForm.tradeInMake} onChange={e => setEditDealForm(f => ({ ...f, tradeInMake: e.target.value }))} placeholder="Make" className="bg-obsidian-700/60 border border-obsidian-400/40 rounded-lg px-2.5 py-1.5 text-sm text-white flex-1 outline-none focus:border-gold-500/60 placeholder-gray-600" />
+                        <input value={editDealForm.tradeInModel} onChange={e => setEditDealForm(f => ({ ...f, tradeInModel: e.target.value }))} placeholder="Model" className="bg-obsidian-700/60 border border-obsidian-400/40 rounded-lg px-2.5 py-1.5 text-sm text-white flex-1 outline-none focus:border-gold-500/60 placeholder-gray-600" />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input value={editDealForm.tradeInVariant} onChange={e => setEditDealForm(f => ({ ...f, tradeInVariant: e.target.value }))} placeholder="Variant" className="bg-obsidian-700/60 border border-obsidian-400/40 rounded-lg px-2.5 py-1.5 text-sm text-white flex-1 outline-none focus:border-gold-500/60 placeholder-gray-600" />
+                        <input value={editDealForm.tradeInPlate} onChange={e => setEditDealForm(f => ({ ...f, tradeInPlate: e.target.value }))} placeholder="Plate" className="bg-obsidian-700/60 border border-obsidian-400/40 rounded-lg px-2.5 py-1.5 text-sm text-white flex-1 outline-none focus:border-gold-500/60 placeholder-gray-600" />
+                      </div>
+                      <div className={rowCls}>
+                        <span className="text-gray-500 text-sm shrink-0">Trade-In Value</span>
+                        <input type="number" min={0} placeholder="0" value={editDealForm.tradeInPrice || ''} onChange={e => setEditDealForm(f => ({ ...f, tradeInPrice: Number(e.target.value) }))} className={inputCls} />
+                      </div>
+                      <div className={rowCls}>
+                        <span className="text-gray-500 text-sm shrink-0">Settlement</span>
+                        <input type="number" min={0} placeholder="0" value={editDealForm.settlementFigure || ''} onChange={e => setEditDealForm(f => ({ ...f, settlementFigure: Number(e.target.value) }))} className={inputCls} />
+                      </div>
+                      <div className="flex items-center justify-between px-1 pt-1">
+                        <span className="text-gray-400 text-xs">Net Trade-In</span>
+                        <span className="text-white font-semibold text-sm">{formatRM(netTradeIn)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {editDealForm.additionalItems.map((item, i) => (
                   <div key={i} className="flex items-center py-2.5 border-b border-obsidian-400/30 gap-2">
                     <input className="bg-transparent text-sm text-gray-400 flex-1 outline-none focus:text-white placeholder-gray-700" value={item.label} onChange={e => setEditDealForm(f => ({ ...f, additionalItems: f.additionalItems.map((x, j) => j === i ? { ...x, label: e.target.value } : x) }))} placeholder="Item name" />
@@ -3582,7 +3687,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   </button>
                 </div>
 
-                {dealIsLoan && (
+                {(dealIsLoan || editDealForm.hasTradeIn) && (
                   <div className={`flex justify-between items-center pt-3 mt-1 border-t-2 ${Math.abs(bal) < 0.01 ? 'border-green-500/40' : bal < 0 ? 'border-sky-500/40' : 'border-orange-500/40'}`}>
                     <span className="text-white font-semibold text-sm">
                       {Math.abs(bal) < 0.01 ? 'Balance' : bal < 0 ? 'Refund to Customer' : 'Collect from Customer'}

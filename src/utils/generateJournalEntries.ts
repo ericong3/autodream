@@ -11,6 +11,7 @@ export const LEDGER_ACCOUNTS = {
   inventoryInvestor: 'acct-inv-investor',
   accountsReceivable: 'acct-ar',
   accountsPayable: 'acct-ap',
+  tradeInClearing: 'acct-trade-in-clearing',
   investorPayable: 'acct-investor-payable',
   customerRefundsPayable: 'acct-customer-refunds',
   revCarSales: 'acct-rev-car-sales',
@@ -150,6 +151,49 @@ export function buildCarPurchaseEntry(opts: { car: Car; createdBy: string }): Jo
   };
 }
 
+// A car acquired as a trade-in (comingSoonType 'trade_in') was never bought
+// with cash — the customer handed it over instead of paying, as part of
+// another deal. Booking it through buildCarPurchaseEntry would credit Bank
+// for cash that never left, on top of the trade-in's original deal already
+// crediting Revenue for the full price — a double-counted phantom cash swing
+// in both directions. This credits Trade-In Clearing instead, which nets to
+// zero once the other deal's buildCarSaleEntry (with tradeInValue set) posts
+// its matching debit to the same account.
+//
+// Always books the trade-in's real agreed value here (tradeInPrice), not
+// car.purchasePrice — for a "swap" deal those two differ (purchasePrice is
+// set to the total cost of the deal it settled, for the app's own profit
+// tracking on this car's eventual resale), but repair cost and commission
+// on the *other* deal are already booked through their own normal entries.
+// Using the inflated figure here would double-count them. The formal ledger
+// stays anchored to what actually changed hands; car.purchasePrice is free
+// to carry the higher management figure without the two needing to agree.
+export function buildTradeInAcquiredEntry(opts: {
+  car: Car;
+  tradeInPrice: number;
+  settlementFigure?: number;
+  createdBy: string;
+}): JournalEntry {
+  const { car, tradeInPrice, createdBy } = opts;
+  const settlement = Math.min(opts.settlementFigure ?? 0, tradeInPrice);
+  const netTradeIn = tradeInPrice - settlement;
+  return {
+    id: generateId(),
+    date: (car.dateAdded || today()).slice(0, 10),
+    description: `Trade-in acquired — ${carLabel(car)}`,
+    lines: [
+      { accountId: LEDGER_ACCOUNTS.inventoryOwn, debit: tradeInPrice, credit: 0 },
+      ...(netTradeIn > 0 ? [{ accountId: LEDGER_ACCOUNTS.tradeInClearing, debit: 0, credit: netTradeIn }] : []),
+      ...(settlement > 0 ? [{ accountId: LEDGER_ACCOUNTS.accountsPayable, debit: 0, credit: settlement }] : []),
+    ],
+    sourceType: 'trade_in_acquired',
+    sourceId: car.id,
+    carId: car.id,
+    createdBy,
+    createdAt: new Date().toISOString(),
+  };
+}
+
 // Reclassifies part of an already-posted car purchase from "paid in cash" to
 // "still owed" — used when a settlement is discovered/added after the car
 // was already booked in full (buildCarPurchaseEntry credited Bank for the
@@ -195,11 +239,18 @@ export function buildCarSaleEntry(opts: {
   isLoan: boolean;
   loanAmount?: number;
   bookingFee?: number;
+  // Net trade-in credited against this deal (tradeInPrice − settlementFigure
+  // from the work order). Reduces what actually lands in Bank — this portion
+  // of the price was paid with a car, not money — and instead debits
+  // Trade-In Clearing, which nets to zero against the trade-in car's own
+  // buildTradeInAcquiredEntry.
+  tradeInValue?: number;
   createdBy: string;
 }): JournalEntry {
   const { car, dealPrice, cost, isLoan, createdBy } = opts;
   const loanAmount = opts.loanAmount ?? 0;
   const bookingFee = opts.bookingFee ?? 0;
+  const tradeInValue = opts.tradeInValue ?? 0;
   const isInvestorCar = !!car.investorId;
   const bankAccount = isInvestorCar ? LEDGER_ACCOUNTS.bankInvestor : LEDGER_ACCOUNTS.bankOperating;
 
@@ -207,11 +258,15 @@ export function buildCarSaleEntry(opts: {
   // deal actually calls for (net of the booking fee already collected).
   const refundOwed = isLoan ? Math.max(loanAmount - (dealPrice - bookingFee), 0) : 0;
   // Whatever was collected in cash before delivery — the whole price for a
-  // cash deal, or booking fee + any customer-owed balance for a loan deal.
-  const bankAmount = isLoan ? bookingFee + Math.max((dealPrice - bookingFee) - loanAmount, 0) : dealPrice;
+  // cash deal, or booking fee + any customer-owed balance for a loan deal —
+  // less whatever was instead paid for with a trade-in.
+  const bankAmount = Math.max(0,
+    (isLoan ? bookingFee + Math.max((dealPrice - bookingFee) - loanAmount, 0) : dealPrice) - tradeInValue
+  );
 
   const cashLines = [
     ...(isLoan ? [{ accountId: LEDGER_ACCOUNTS.accountsReceivable, debit: loanAmount, credit: 0 }] : []),
+    ...(tradeInValue > 0 ? [{ accountId: LEDGER_ACCOUNTS.tradeInClearing, debit: tradeInValue, credit: 0 }] : []),
     ...(bankAmount > 0 ? [{ accountId: bankAccount, debit: bankAmount, credit: 0 }] : []),
   ];
   const refundLine = refundOwed > 0
@@ -374,8 +429,16 @@ export function collectMissingJournalEntries(opts: {
     // we never owned or paid for those, so nothing to book here.
     if (car.consignment || car.outgoingConsignment) continue;
 
-    if (!hasEntry('car_purchased', car.id) && (car.purchasePrice ?? 0) > 0) {
-      result.push(buildCarPurchaseEntry({ car, createdBy }));
+    if (!hasEntry('car_purchased', car.id) && !hasEntry('trade_in_acquired', car.id) && (car.purchasePrice ?? 0) > 0) {
+      if (car.comingSoonType === 'trade_in' && car.tradeInSourceCarId) {
+        const sourceDealCustomer = customers.find(c => c.interestedCarId === car.tradeInSourceCarId && (c.cashWorkOrder || c.loanWorkOrder));
+        const sourceWo = sourceDealCustomer?.loanWorkOrder ?? sourceDealCustomer?.cashWorkOrder;
+        if (sourceWo && sourceWo.hasTradeIn) {
+          result.push(buildTradeInAcquiredEntry({ car, tradeInPrice: sourceWo.tradeInPrice, settlementFigure: sourceWo.settlementFigure, createdBy }));
+        }
+      } else {
+        result.push(buildCarPurchaseEntry({ car, createdBy }));
+      }
     }
 
     if (car.status === 'delivered' && !hasEntry('car_sold', car.id)) {
@@ -386,10 +449,11 @@ export function collectMissingJournalEntries(opts: {
         const dealPrice = ((wo.sellingPrice ?? car.sellingPrice) - (wo.discount ?? 0)) || car.sellingPrice;
         const loanAmount = isLoan ? (car.disbursementExpectedAmount ?? car.disbursementAmount ?? dealCustomer!.loanWorkOrder!.loanAmount ?? 0) : 0;
         const bookingFee = wo.bookingFee ?? 0;
+        const tradeInValue = wo.hasTradeIn ? Math.max(0, (wo.tradeInPrice ?? 0) - (wo.settlementFigure ?? 0)) : 0;
         const repairCost = repairs.filter(r => r.carId === car.id && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
         const miscCost = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
         const cost = (car.purchasePrice ?? 0) + repairCost + miscCost;
-        result.push(buildCarSaleEntry({ car, dealPrice, cost, isLoan, loanAmount, bookingFee, createdBy }));
+        result.push(buildCarSaleEntry({ car, dealPrice, cost, isLoan, loanAmount, bookingFee, tradeInValue, createdBy }));
 
         if (isLoan && car.moneyReceived && (car.disbursementAmount ?? 0) > 0 && !hasEntry('disbursement_received', car.id)) {
           // No dynamic per-label ledger accounts available in this backfill

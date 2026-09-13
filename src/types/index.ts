@@ -185,12 +185,22 @@ export interface LoanWorkOrder {
   customerAddress: string;
   // Trade in
   hasTradeIn: boolean;
+  // 'trade_in' = value credited toward the deal (customer may still owe/be
+  // refunded a balance). 'swap' = the trade-in is the entire consideration
+  // for this deal — the incoming car's cost basis is derived from what this
+  // deal cost to fulfill, not just the trade-in value. Defaults to
+  // 'trade_in' for older records that predate this field.
+  tradeInMode?: 'trade_in' | 'swap';
   tradeInPhotos: string[];
   greenCardPhoto: string;
   tradeInPlate: string;
   tradeInMake: string;
   tradeInModel: string;
   tradeInVariant: string;
+  tradeInYear?: number;
+  tradeInColour?: string;
+  tradeInMileage?: number;
+  tradeInCondition?: 'excellent' | 'good' | 'fair' | 'poor';
   tradeInPrice: number;
   settlementFigure: number;
   // Meta
@@ -217,12 +227,22 @@ export interface CashWorkOrder {
   customerAddress: string;
   // Trade in
   hasTradeIn: boolean;
+  // 'trade_in' = value credited toward the deal (customer may still owe/be
+  // refunded a balance). 'swap' = the trade-in is the entire consideration
+  // for this deal — the incoming car's cost basis is derived from what this
+  // deal cost to fulfill, not just the trade-in value. Defaults to
+  // 'trade_in' for older records that predate this field.
+  tradeInMode?: 'trade_in' | 'swap';
   tradeInPhotos: string[];
   greenCardPhoto: string;
   tradeInPlate: string;
   tradeInMake: string;
   tradeInModel: string;
   tradeInVariant: string;
+  tradeInYear?: number;
+  tradeInColour?: string;
+  tradeInMileage?: number;
+  tradeInCondition?: 'excellent' | 'good' | 'fair' | 'poor';
   tradeInPrice: number;
   settlementFigure: number;
   // Meta
@@ -461,6 +481,11 @@ export interface Car {
   // rather than a fixed set of fields. Each posts as its own ledger expense.
   disbursementCharges?: { label: string; amount: number }[];
   comingSoonType?: 'trade_in' | 'direct_purchase' | 'pending_shipment' | 'in_shipment';
+  // The deal this car was traded in against, when comingSoonType is
+  // 'trade_in' and it was created automatically off a Final Deal's trade-in
+  // section — links back for traceability and tells the ledger this car's
+  // acquisition already routes through Trade-In Clearing, not a cash purchase.
+  tradeInSourceCarId?: string;
   shipmentId?: string;
   panelDealerId?: string;        // dealer whose bank panel was used for loan submission
   panelChargeAmount?: number;    // fee charged by panel dealer (varies by bank)

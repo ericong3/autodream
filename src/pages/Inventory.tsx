@@ -2722,7 +2722,7 @@ export default function Inventory() {
         // Collection Balance panel, so the two screens never disagree on the same deal.
         const viewLoanAmount = car.disbursementExpectedAmount ?? car.disbursementAmount ?? lwo?.loanAmount ?? 0;
         const displayTotal = woEditMode
-          ? calcTotal(woEditData, editExtras)
+          ? calcTotal({ ...woEditData, sellingPrice: car.sellingPrice }, editExtras)
           : calcTotal({ ...activeWo, loanAmount: viewLoanAmount }, activeWo.additionalItems ?? []);
 
         const setD = (patch: Record<string, any>) => setWoEditData((prev: any) => ({ ...prev, ...patch }));
@@ -2730,7 +2730,9 @@ export default function Inventory() {
         const handleSave = async () => {
           setWoSaving(true);
           try {
-            const updated = { ...activeWo, ...woEditData, additionalItems: editExtras };
+            // Selling price is never hand-typed here — force it back to the car's current
+            // listing price so a stale/incorrect stored value self-heals on every save.
+            const updated = { ...activeWo, ...woEditData, sellingPrice: car.sellingPrice, additionalItems: editExtras };
             if (isLoan) {
               await updateCustomer(buyer.id, { loanWorkOrder: updated as LoanWorkOrder });
             } else {
@@ -2871,7 +2873,14 @@ export default function Inventory() {
                       <div className="px-4 pt-3 pb-1">
                         <p className="text-[10px] uppercase tracking-widest text-gray-600 mb-1">Charges</p>
                       </div>
-                      {numInput('sellingPrice', 'Selling Price')}
+                      {/* Selling Price — always the car's listing price, never hand-typed */}
+                      <div className="flex items-center gap-3 px-4 py-3 border-b border-obsidian-400/30">
+                        <span className="text-gray-400 text-sm flex-1">Selling Price</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-white text-sm">{formatRM(car.sellingPrice)}</span>
+                          <Lock size={12} className="text-gray-600" />
+                        </div>
+                      </div>
                       {numInput('insurance', 'Insurance')}
                       {numInput('bankProduct', 'Bank Product')}
                       {editExtras.map((item, idx) => (

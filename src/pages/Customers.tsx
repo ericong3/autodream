@@ -24,6 +24,7 @@ import MiniCalendar from '../components/MiniCalendar';
 import { generateId, formatRM } from '../utils/format';
 import { supabase } from '../lib/supabase';
 import { buildDepositReceiptPdf, uploadDepositReceipt } from '../utils/generateDepositReceipt';
+import { buildTradeInCar } from '../utils/tradeIn';
 import { toast } from '../utils/toast';
 
 const LEAD_STATUS_LABELS: Record<Customer['leadStatus'], string> = {
@@ -75,6 +76,8 @@ export default function Customers() {
   const [searchParams, setSearchParams] = useSearchParams();
   const customers = useStore((s) => s.customers);
   const cars = useStore((s) => s.cars);
+  const repairs = useStore((s) => s.repairs);
+  const addCar = useStore((s) => s.addCar);
   const users = useStore((s) => s.users);
   const currentUser = useStore((s) => s.currentUser);
   const loanCases = useStore((s) => s.loanCases);
@@ -230,8 +233,11 @@ export default function Customers() {
     loanAmount: 0, approvedBank: '',
     customerName: '', customerIc: '', customerPhone: '', customerEmail: '', customerAddress: '',
     hasTradeIn: false,
+    tradeInMode: 'trade_in' as 'trade_in' | 'swap',
     tradeInPhotos: [] as string[], greenCardPhoto: '',
     tradeInPlate: '', tradeInMake: '', tradeInModel: '', tradeInVariant: '',
+    tradeInYear: undefined as number | undefined, tradeInColour: '', tradeInMileage: undefined as number | undefined,
+    tradeInCondition: undefined as 'excellent' | 'good' | 'fair' | 'poor' | undefined,
     tradeInPrice: 0, settlementFigure: 0,
   };
   const [woForm, setWoForm] = useState({ ...emptyWorkOrder });
@@ -673,17 +679,32 @@ export default function Customers() {
     if (e.target) e.target.value = '';
   };
 
+  // Auto-creates the traded-in car in Coming Soon the moment a deal with a
+  // trade-in is confirmed, so it doesn't have to be re-keyed by hand later.
+  // Shape is built by the shared buildTradeInCar so this and CarDetail's Edit
+  // Deal modal (which can also add/change a trade-in on an existing deal)
+  // never drift apart.
+  const createTradeInCar = (sourceCar: CarType | undefined, wo: Parameters<typeof buildTradeInCar>[0]['wo'], customerName: string) => {
+    if (!wo.hasTradeIn) return;
+    // Guards against a duplicate car if this work order gets resubmitted
+    // (e.g. reverted to Leads then re-confirmed) after already spawning one.
+    if (sourceCar && cars.some(c => c.tradeInSourceCarId === sourceCar.id)) return;
+    addCar(buildTradeInCar({ sourceCar, wo, customerName, repairs }));
+  };
+
   const handleWorkOrderSubmit = () => {
     if (!workOrderCustomer) return;
     const car = getCar(workOrderCarId);
+    // Selling price is never hand-typed — it always tracks the car's current listing price.
+    const sellingPrice = car?.sellingPrice ?? 0;
     const bpTotal = woForm.bankProductItems.reduce((s, x) => s + (x.amount || 0), 0);
     const additionalTotal = woForm.additionalItems.reduce((s, x) => s + (x.amount || 0), 0);
-    const totalFinalDeal = woForm.sellingPrice + woForm.insurance + bpTotal + additionalTotal - woForm.discount;
-    const hasDiscount = car ? woForm.sellingPrice < car.sellingPrice : false;
+    const totalFinalDeal = sellingPrice + woForm.insurance + bpTotal + additionalTotal - woForm.discount;
+    const hasDiscount = woForm.discount > 0;
 
     const workOrder: CashWorkOrder = {
       carId: workOrderCarId,
-      sellingPrice: woForm.sellingPrice,
+      sellingPrice,
       insurance: woForm.insurance,
       bankProduct: bpTotal,
       bankProductItems: woForm.bankProductItems,
@@ -697,12 +718,17 @@ export default function Customers() {
       customerEmail: woForm.customerEmail,
       customerAddress: woForm.customerAddress,
       hasTradeIn: woForm.hasTradeIn,
+      tradeInMode: woForm.tradeInMode,
       tradeInPhotos: woForm.tradeInPhotos,
       greenCardPhoto: woForm.greenCardPhoto,
       tradeInPlate: woForm.tradeInPlate,
       tradeInMake: woForm.tradeInMake,
       tradeInModel: woForm.tradeInModel,
       tradeInVariant: woForm.tradeInVariant,
+      tradeInYear: woForm.tradeInYear,
+      tradeInColour: woForm.tradeInColour,
+      tradeInMileage: woForm.tradeInMileage,
+      tradeInCondition: woForm.tradeInCondition,
       tradeInPrice: woForm.tradeInPrice,
       settlementFigure: woForm.settlementFigure,
       submittedBy: currentUser?.name ?? '',
@@ -757,6 +783,7 @@ export default function Customers() {
         },
       });
     }
+    createTradeInCar(car, workOrder, woForm.customerName || workOrderCustomer.name);
     setWorkOrderCustomer(null);
   };
 
@@ -768,7 +795,8 @@ export default function Customers() {
     const type = c.loanWorkOrder ? 'loan' : 'cash';
     setWoForm({
       ...emptyWorkOrder,
-      sellingPrice: wo.sellingPrice,
+      // Never carried over from the stored work order — always the car's current listing price.
+      sellingPrice: getCar(wo.carId)?.sellingPrice ?? 0,
       insurance: wo.insurance,
       bankProduct: wo.bankProduct,
       bankProductItems: wo.bankProductItems ?? [],
@@ -807,9 +835,6 @@ export default function Customers() {
     const resolvedCarId = carIdOverride ?? c.interestedCarId ?? '';
     const car = getCar(resolvedCarId);
     const prev = c.loanWorkOrder ?? c.cashWorkOrder;
-    // Only trust the previous work order's selling price if it was actually quoted against
-    // this same car — otherwise (car changed since) it's a stale price from the old unit.
-    const prevPriceCarMatches = prev?.carId === resolvedCarId;
     const lo = c.loanOrder; // pre-fill from Loan Order if available
     // Same staleness guard as the work order above — a Loan Order is a snapshot taken
     // when the application was first submitted; if Change Car moved this case to a
@@ -820,7 +845,8 @@ export default function Customers() {
     const approvedCase = loanCases.find(lc => lc.customerId === c.id && lc.status === 'approved' && lc.carId === resolvedCarId && (!bankName || lc.bank === bankName));
     setWoForm({
       ...emptyWorkOrder,
-      sellingPrice: (prevPriceCarMatches ? prev?.sellingPrice : undefined) ?? (loMatchesCar ? lo?.sellingPrice : undefined) ?? car?.sellingPrice ?? 0,
+      // Never carried over from a previous quote — always the car's current listing price.
+      sellingPrice: car?.sellingPrice ?? 0,
       insurance: prev?.insurance ?? (loMatchesCar ? lo?.insurance : undefined) ?? 0,
       bankProduct: prev?.bankProduct ?? (loMatchesCar ? lo?.bankProduct : undefined) ?? 0,
       bankProductItems: prev?.bankProductItems ?? (approvedCase?.bankProducts?.map(bp => ({ label: bp.name, amount: bp.amount })) ?? []),
@@ -853,16 +879,18 @@ export default function Customers() {
   const handleLoanWoSubmit = () => {
     if (!workOrderCustomer) return;
     const car = getCar(workOrderCarId);
+    // Selling price is never hand-typed — it always tracks the car's current listing price.
+    const sellingPrice = car?.sellingPrice ?? 0;
     const bpTotal = woForm.bankProductItems.reduce((s, x) => s + (x.amount || 0), 0);
     const additionalTotal = woForm.additionalItems.reduce((s, x) => s + (x.amount || 0), 0);
-    const totalFinalDeal = woForm.sellingPrice + woForm.insurance + bpTotal + additionalTotal - woForm.discount;
-    const hasDiscount = car ? woForm.discount > 0 || woForm.sellingPrice < car.sellingPrice : false;
+    const totalFinalDeal = sellingPrice + woForm.insurance + bpTotal + additionalTotal - woForm.discount;
+    const hasDiscount = woForm.discount > 0;
 
     const loanWorkOrder: LoanWorkOrder = {
       carId: workOrderCarId,
       bank: woForm.approvedBank,
       loanAmount: woForm.loanAmount,
-      sellingPrice: woForm.sellingPrice,
+      sellingPrice,
       insurance: woForm.insurance,
       bankProduct: bpTotal,
       bankProductItems: woForm.bankProductItems,
@@ -875,12 +903,17 @@ export default function Customers() {
       customerEmail: woForm.customerEmail,
       customerAddress: woForm.customerAddress,
       hasTradeIn: woForm.hasTradeIn,
+      tradeInMode: woForm.tradeInMode,
       tradeInPhotos: woForm.tradeInPhotos,
       greenCardPhoto: woForm.greenCardPhoto,
       tradeInPlate: woForm.tradeInPlate,
       tradeInMake: woForm.tradeInMake,
       tradeInModel: woForm.tradeInModel,
       tradeInVariant: woForm.tradeInVariant,
+      tradeInYear: woForm.tradeInYear,
+      tradeInColour: woForm.tradeInColour,
+      tradeInMileage: woForm.tradeInMileage,
+      tradeInCondition: woForm.tradeInCondition,
       tradeInPrice: woForm.tradeInPrice,
       settlementFigure: woForm.settlementFigure,
       submittedBy: currentUser?.name ?? '',
@@ -945,6 +978,7 @@ export default function Customers() {
         },
       });
     }
+    createTradeInCar(car, loanWorkOrder, woForm.customerName || workOrderCustomer.name);
 
     setWorkOrderCustomer(null);
   };
@@ -1032,8 +1066,10 @@ export default function Customers() {
     if (!carChangePending) return;
     const { lc, newCarId } = carChangePending;
     const form = carChangeForm;
+    // Never taken from the form — always the new car's current listing price.
+    const sellingPrice = getCar(newCarId)?.sellingPrice ?? 0;
     const additionalTotal = form.additionalItems.reduce((s, x) => s + (x.amount || 0), 0);
-    const newDealTotal = form.sellingPrice + form.insurance + form.bankProduct + additionalTotal - form.discount;
+    const newDealTotal = sellingPrice + form.insurance + form.bankProduct + additionalTotal - form.discount;
     const flaggedAt = new Date().toISOString();
     const customer = customers.find(c => c.id === lc.customerId);
 
@@ -1058,15 +1094,15 @@ export default function Customers() {
         const oldCar = getCar(currentDealCarId);
         const storeUpdateCar = useStore.getState().updateCar;
         if (customer.loanWorkOrder) {
-          updateCustomer(customer.id, { interestedCarId: newCarId, loanWorkOrder: { ...customer.loanWorkOrder, carId: newCarId, sellingPrice: form.sellingPrice, insurance: form.insurance, bankProduct: form.bankProduct, discount: form.discount, additionalItems: form.additionalItems }, dealPrice: newDealTotal, lastActionAt: flaggedAt });
+          updateCustomer(customer.id, { interestedCarId: newCarId, loanWorkOrder: { ...customer.loanWorkOrder, carId: newCarId, sellingPrice: sellingPrice, insurance: form.insurance, bankProduct: form.bankProduct, discount: form.discount, additionalItems: form.additionalItems }, dealPrice: newDealTotal, lastActionAt: flaggedAt });
         } else if (customer.cashWorkOrder) {
-          updateCustomer(customer.id, { interestedCarId: newCarId, cashWorkOrder: { ...customer.cashWorkOrder, carId: newCarId, sellingPrice: form.sellingPrice, insurance: form.insurance, bankProduct: form.bankProduct, discount: form.discount, additionalItems: form.additionalItems }, dealPrice: newDealTotal, lastActionAt: flaggedAt });
+          updateCustomer(customer.id, { interestedCarId: newCarId, cashWorkOrder: { ...customer.cashWorkOrder, carId: newCarId, sellingPrice: sellingPrice, insurance: form.insurance, bankProduct: form.bankProduct, discount: form.discount, additionalItems: form.additionalItems }, dealPrice: newDealTotal, lastActionAt: flaggedAt });
         } else {
           // No work order committed yet, but this is still the customer's live interested
           // car — stash the confirmed numbers as a Loan Order so Confirm Deal picks them up.
           updateCustomer(customer.id, {
             interestedCarId: newCarId,
-            loanOrder: { carId: newCarId, sellingPrice: form.sellingPrice, insurance: form.insurance, bankProduct: form.bankProduct, discount: form.discount, additionalItems: form.additionalItems, requestedLoanAmount: newDealTotal, hasTradeIn: customer.loanOrder?.hasTradeIn ?? false, submittedBy: currentUser?.name ?? '', createdAt: flaggedAt },
+            loanOrder: { carId: newCarId, sellingPrice: sellingPrice, insurance: form.insurance, bankProduct: form.bankProduct, discount: form.discount, additionalItems: form.additionalItems, requestedLoanAmount: newDealTotal, hasTradeIn: customer.loanOrder?.hasTradeIn ?? false, submittedBy: currentUser?.name ?? '', createdAt: flaggedAt },
             lastActionAt: flaggedAt,
           });
         }
@@ -1092,7 +1128,7 @@ export default function Customers() {
         // Not the customer's live deal car — still stash a fresh Loan Order snapshot for
         // this case's new car, so a later Confirm Deal on THIS case prices correctly.
         updateCustomer(customer.id, {
-          loanOrder: { carId: newCarId, sellingPrice: form.sellingPrice, insurance: form.insurance, bankProduct: form.bankProduct, discount: form.discount, additionalItems: form.additionalItems, requestedLoanAmount: newDealTotal, hasTradeIn: customer.loanOrder?.hasTradeIn ?? false, submittedBy: currentUser?.name ?? '', createdAt: flaggedAt },
+          loanOrder: { carId: newCarId, sellingPrice: sellingPrice, insurance: form.insurance, bankProduct: form.bankProduct, discount: form.discount, additionalItems: form.additionalItems, requestedLoanAmount: newDealTotal, hasTradeIn: customer.loanOrder?.hasTradeIn ?? false, submittedBy: currentUser?.name ?? '', createdAt: flaggedAt },
           lastActionAt: flaggedAt,
         });
       }
@@ -1106,7 +1142,7 @@ export default function Customers() {
       if (customer) {
         updateCustomer(customer.id, {
           ...(customer.interestedCarId === lc.carId ? { interestedCarId: newCarId } : {}),
-          loanOrder: { carId: newCarId, sellingPrice: form.sellingPrice, insurance: form.insurance, bankProduct: form.bankProduct, discount: form.discount, additionalItems: form.additionalItems, requestedLoanAmount: newDealTotal, hasTradeIn: customer.loanOrder?.hasTradeIn ?? false, submittedBy: currentUser?.name ?? '', createdAt: flaggedAt },
+          loanOrder: { carId: newCarId, sellingPrice: sellingPrice, insurance: form.insurance, bankProduct: form.bankProduct, discount: form.discount, additionalItems: form.additionalItems, requestedLoanAmount: newDealTotal, hasTradeIn: customer.loanOrder?.hasTradeIn ?? false, submittedBy: currentUser?.name ?? '', createdAt: flaggedAt },
           lastActionAt: flaggedAt,
         });
       }
@@ -1117,7 +1153,7 @@ export default function Customers() {
         userName: currentUser?.name ?? '',
         userRole: currentUser?.role ?? '',
         type: 'remark',
-        content: `Car changed to ${newCar ? `${newCar.year} ${newCar.make} ${newCar.model}` : 'a different unit'} while this case was with the bank. Re-priced at ${formatRM(form.sellingPrice)}.`,
+        content: `Car changed to ${newCar ? `${newCar.year} ${newCar.make} ${newCar.model}` : 'a different unit'} while this case was with the bank. Re-priced at ${formatRM(sellingPrice)}.`,
         createdAt: flaggedAt,
       });
     }
@@ -3928,26 +3964,13 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
               <div>
                 <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest mb-3">Deal of the Car</p>
                 <div className="bg-[#0F0E0C] border border-obsidian-400/60 rounded-xl overflow-hidden">
-                  {/* Selling Price — locked for non-directors */}
+                  {/* Selling Price — always the car's listing price, never hand-typed */}
                   <div className="flex items-center gap-3 px-4 py-3 border-b border-obsidian-400/30">
                     <span className="text-gray-400 text-sm flex-1">Selling Price</span>
-                    {isDirectorOrAdmin ? (
-                      <div className="flex items-center gap-1">
-                        <span className="text-gray-600 text-xs">RM</span>
-                        <input
-                          type="number"
-                          value={woForm.sellingPrice || ''}
-                          onChange={e => setWoForm(f => ({ ...f, sellingPrice: Number(e.target.value) }))}
-                          className="w-28 bg-transparent text-white text-sm text-right outline-none border-b border-transparent focus:border-gold-500/60 transition-colors"
-                          placeholder="0"
-                        />
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <span className="text-white text-sm font-medium">{formatRM(woForm.sellingPrice)}</span>
-                        <Lock size={12} className="text-gray-600" />
-                      </div>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <span className="text-white text-sm font-medium">{formatRM(car?.sellingPrice ?? 0)}</span>
+                      <Lock size={12} className="text-gray-600" />
+                    </div>
                   </div>
 
                   {/* Insurance */}
@@ -4191,6 +4214,29 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
 
                 {woForm.hasTradeIn && (
                   <div className="space-y-4">
+                    {/* Trade-in vs Swap — Trade-in credits the value toward the deal
+                        (customer may still owe/be refunded a balance). Swap means this
+                        car is the entire consideration for the deal — its eventual
+                        purchase price gets set to whatever the deal it settles actually
+                        costs (payout/purchase + repair + misc + commission), computed
+                        automatically once the deal is delivered, not this rough estimate. */}
+                    <div className="flex bg-[#0F0E0C] border border-obsidian-400/60 rounded-xl p-1 gap-1">
+                      {([['trade_in', 'Trade-In'], ['swap', 'Swap']] as const).map(([val, label]) => (
+                        <button
+                          key={val}
+                          onClick={() => setWoForm(f => ({ ...f, tradeInMode: val }))}
+                          className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${woForm.tradeInMode === val ? 'bg-gold-500 text-obsidian-950' : 'text-gray-400 hover:text-white'}`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {woForm.tradeInMode === 'swap' && (
+                      <p className="text-gray-500 text-xs px-1">
+                        This car is the whole payment for the deal — its price will be set automatically from the full cost of this deal once delivered, not the estimate below.
+                      </p>
+                    )}
+
                     {/* Trade-in car details */}
                     <div className="bg-[#0F0E0C] border border-obsidian-400/60 rounded-xl overflow-hidden divide-y divide-obsidian-400/30">
                       {[
@@ -4198,6 +4244,7 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                         { label: 'Make', key: 'tradeInMake' as const, placeholder: 'Toyota' },
                         { label: 'Model', key: 'tradeInModel' as const, placeholder: 'Vios' },
                         { label: 'Variant', key: 'tradeInVariant' as const, placeholder: '1.5 E' },
+                        { label: 'Colour', key: 'tradeInColour' as const, placeholder: 'White' },
                       ].map(row => (
                         <div key={row.key} className="flex items-center gap-3 px-4 py-3">
                           <span className="text-gray-500 text-sm w-20 shrink-0">{row.label}</span>
@@ -4209,6 +4256,35 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                           />
                         </div>
                       ))}
+                      {[
+                        { label: 'Year', key: 'tradeInYear' as const, placeholder: '2019' },
+                        { label: 'Mileage', key: 'tradeInMileage' as const, placeholder: '60000' },
+                      ].map(row => (
+                        <div key={row.key} className="flex items-center gap-3 px-4 py-3">
+                          <span className="text-gray-500 text-sm w-20 shrink-0">{row.label}</span>
+                          <input
+                            type="number"
+                            value={woForm[row.key] ?? ''}
+                            onChange={e => setWoForm(f => ({ ...f, [row.key]: e.target.value ? Number(e.target.value) : undefined }))}
+                            placeholder={row.placeholder}
+                            className="flex-1 bg-transparent text-white text-sm outline-none border-b border-transparent focus:border-gold-500/60 transition-colors"
+                          />
+                        </div>
+                      ))}
+                      <div className="flex items-center gap-3 px-4 py-3">
+                        <span className="text-gray-500 text-sm w-20 shrink-0">Condition</span>
+                        <div className="flex-1 flex gap-1.5 flex-wrap justify-end">
+                          {(['excellent', 'good', 'fair', 'poor'] as const).map(c => (
+                            <button
+                              key={c}
+                              onClick={() => setWoForm(f => ({ ...f, tradeInCondition: f.tradeInCondition === c ? undefined : c }))}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-medium capitalize border transition-colors ${woForm.tradeInCondition === c ? 'bg-gold-500/20 border-gold-500/50 text-gold-300' : 'border-obsidian-400/40 text-gray-500 hover:text-gray-300'}`}
+                            >
+                              {c}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       {[
                         { label: 'Trade-in Price', key: 'tradeInPrice' as const },
                         { label: 'Settlement', key: 'settlementFigure' as const },
@@ -4371,12 +4447,10 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
 
           <div className="space-y-1.5">
             <label className="text-xs text-gray-400 font-medium">Selling Price (RM)</label>
-            <input
-              type="number"
-              value={carChangeForm.sellingPrice || ''}
-              onChange={e => setCarChangeForm(f => ({ ...f, sellingPrice: Number(e.target.value) }))}
-              className="w-full bg-obsidian-700 border border-obsidian-500/40 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-gold-500/50"
-            />
+            <div className="w-full bg-obsidian-700 border border-obsidian-500/40 rounded-lg px-3 py-2 text-white text-sm flex items-center justify-between">
+              <span>{formatRM(carChangeForm.sellingPrice)}</span>
+              <Lock size={12} className="text-gray-600" />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
