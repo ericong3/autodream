@@ -37,6 +37,7 @@ import Claims from './pages/Claims';
 import CarMovement from './pages/CarMovement';
 import ChooseBusiness from './pages/ChooseBusiness';
 import GarageHome from './pages/GarageHome';
+import GarageTeamMembers from './pages/GarageTeamMembers';
 import { roleHome, landingPath } from './utils/landingPath';
 
 // Layout wrapper for regular users — mounts once, stays mounted across navigation
@@ -166,6 +167,7 @@ export default function App() {
         />
         <Route path="/choose-business" element={<RequireBoth><ChooseBusiness /></RequireBoth>} />
         <Route path="/garage" element={<RequireGarage><GarageHome /></RequireGarage>} />
+        <Route path="/garage/team" element={<RequireGarage><GarageTeamMembers /></RequireGarage>} />
 
         {/* Regular users — Layout mounts once, stays alive across all these routes */}
         <Route element={<AuthedLayout />}>

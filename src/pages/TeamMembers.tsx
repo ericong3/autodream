@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Edit, Trash2, Users, AlertCircle, Shield, UserCheck, Wrench, Phone, Mail, AtSign, Car, TrendingUp, Target, Award, X, KeyRound, CreditCard, Save, Settings, Copy, Check } from 'lucide-react';
 import { useStore } from '../store';
-import { User, NO_BANKER_BANKS } from '../types';
+import { User, NO_BANKER_BANKS, BusinessAccess } from '../types';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, generateId } from '../utils/format';
@@ -47,7 +47,14 @@ const emptyForm = {
   bankAccountNumber: '',
   bankAccountHolder: '',
   banks: [] as string[],
+  businessAccess: 'used_car' as BusinessAccess,
 };
+
+const BUSINESS_OPTIONS: { value: BusinessAccess; label: string }[] = [
+  { value: 'used_car', label: 'Used Car' },
+  { value: 'garage', label: 'Garage' },
+  { value: 'both', label: 'Both' },
+];
 
 const ROLE_CONFIG = {
   director: {
@@ -476,6 +483,8 @@ export default function TeamMembers() {
 
   const handleSubmit = () => {
     if (!validate()) return;
+    const isDirectorLike = form.role === 'director' || form.role === 'shareholder';
+    const businessAccess: BusinessAccess = isDirectorLike ? 'both' : form.businessAccess;
     const target = editTarget;
     setShowModal(false);
     setEditTarget(null);
@@ -487,6 +496,7 @@ export default function TeamMembers() {
         username: form.username,
         phone: form.phone,
         role: form.role,
+        businessAccess,
         monthlyTarget: form.role === 'salesperson' ? form.monthlyTarget : target.monthlyTarget,
         bankName: form.bankName || undefined,
         bankAccountNumber: form.bankAccountNumber || undefined,
@@ -501,6 +511,7 @@ export default function TeamMembers() {
         username: form.username,
         password: form.password,
         role: form.role,
+        businessAccess,
         phone: form.phone,
         monthlyTarget: form.role === 'salesperson' ? form.monthlyTarget : 0,
         carsInMonth: 0,
@@ -525,6 +536,7 @@ export default function TeamMembers() {
       bankAccountNumber: user.bankAccountNumber ?? '',
       bankAccountHolder: user.bankAccountHolder ?? '',
       banks: user.banks ?? [],
+      businessAccess: user.businessAccess ?? 'used_car',
     });
     setErrors({});
     setShowModal(true);
@@ -557,7 +569,9 @@ export default function TeamMembers() {
     setPwTarget(null);
   };
 
-  const teamUsers = users.filter((u) => u.role !== 'investor' && u.role !== 'banker');
+  // Excludes garage-only accounts — those are managed from the Garage Team
+  // Members page, and don't have used-car roles ROLE_CONFIG knows about.
+  const teamUsers = users.filter((u) => u.role !== 'investor' && u.role !== 'banker' && u.businessAccess !== 'garage');
   const filteredUsers =
     filterRole === 'all' ? teamUsers : teamUsers.filter((u) => u.role === filterRole);
 
@@ -870,7 +884,11 @@ export default function TeamMembers() {
                   <button
                     key={role}
                     type="button"
-                    onClick={() => setForm({ ...form, role })}
+                    onClick={() => setForm({
+                      ...form,
+                      role,
+                      ...(role === 'director' || role === 'shareholder' ? { businessAccess: 'both' as BusinessAccess } : {}),
+                    })}
                     className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
                       selected
                         ? selectedStyle
@@ -883,6 +901,35 @@ export default function TeamMembers() {
                 );
               })}
             </div>
+          </FormField>
+
+          {/* Business access — most stay Used Car; director/shareholder are
+              locked to Both since they need to see both businesses. */}
+          <FormField label="Business Access">
+            <div className="grid grid-cols-3 gap-2">
+              {BUSINESS_OPTIONS.map((opt) => {
+                const locked = form.role === 'director' || form.role === 'shareholder';
+                const selected = form.businessAccess === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    disabled={locked}
+                    onClick={() => setForm({ ...form, businessAccess: opt.value })}
+                    className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${
+                      selected
+                        ? 'bg-gold-500/20 border-gold-500/50 text-gold-300'
+                        : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:text-gray-200 hover:border-gray-600'
+                    } ${locked ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+            {(form.role === 'director' || form.role === 'shareholder') && (
+              <p className="text-gray-500 text-[11px] mt-1.5">Directors &amp; shareholders always have access to both businesses.</p>
+            )}
           </FormField>
 
           {/* Monthly target — only for salesperson */}
