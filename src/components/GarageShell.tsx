@@ -1,17 +1,31 @@
 import type { ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, ArrowLeftRight, LogOut } from 'lucide-react';
 import { useStore } from '../store';
 
+export interface GarageTab {
+  label: string;
+  path: string;
+}
+
+// Shared by every page in the Salesman nav (Dashboard, Sales Tools, ...).
+export const SALESMAN_TABS: GarageTab[] = [
+  { label: 'Dashboard', path: '/garage/dashboard' },
+  { label: 'Sales Tools', path: '/garage/sales-tools' },
+];
+
 // Shared chrome for every Garage page — cinematic background + a light
-// header (back / switch-business / logout). Deliberately separate from the
-// Used Car Layout/Sidebar so nothing here can affect that side of the app.
+// header (back / switch-business / logout), plus an optional tab strip for
+// role-specific nav (e.g. the Salesman Dashboard/Sales Tools pages).
+// Deliberately separate from the Used Car Layout/Sidebar so nothing here
+// can affect that side of the app.
 export default function GarageShell({
-  title, showBack, children,
-}: { title: string; showBack?: boolean; children: ReactNode }) {
+  title, showBack, tabs, children,
+}: { title: string; showBack?: boolean; tabs?: GarageTab[]; children: ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
   const logout = useStore((s) => s.logout);
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleLogout = () => { logout(); navigate('/login'); };
 
@@ -60,6 +74,27 @@ export default function GarageShell({
             </button>
           </div>
         </header>
+
+        {tabs && (
+          <nav className="flex items-center gap-2 px-5 sm:px-8 py-3 border-b border-white/[0.06] backdrop-blur-sm overflow-x-auto">
+            {tabs.map((t) => {
+              const active = location.pathname === t.path;
+              return (
+                <button
+                  key={t.path}
+                  onClick={() => navigate(t.path)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap border transition-colors ${
+                    active
+                      ? 'bg-gold-500/15 border-gold-500/30 text-gold-400'
+                      : 'border-transparent text-white/50 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </nav>
+        )}
 
         <main className="flex-1 px-5 sm:px-8 py-8 max-w-5xl w-full mx-auto">
           {children}

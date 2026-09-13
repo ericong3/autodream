@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Car, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useStore } from '../store';
-import { roleHome } from '../utils/landingPath';
+import { roleHome, garageHome } from '../utils/landingPath';
 
 // Shown only to accounts with businessAccess === 'both' (directors,
 // shareholders) right after login — everyone else skips straight to their
@@ -65,7 +65,7 @@ export default function ChooseBusiness() {
             title="AutoDream Garage"
             subtitle="Tinting, coating & car spray"
             direction="right"
-            onClick={() => navigate('/garage')}
+            onClick={() => navigate(garageHome(currentUser.role))}
           />
         </div>
       </div>

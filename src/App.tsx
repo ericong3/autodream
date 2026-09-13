@@ -38,23 +38,35 @@ import CarMovement from './pages/CarMovement';
 import ChooseBusiness from './pages/ChooseBusiness';
 import GarageHome from './pages/GarageHome';
 import GarageTeamMembers from './pages/GarageTeamMembers';
-import { roleHome, landingPath } from './utils/landingPath';
+import GarageDashboard from './pages/GarageDashboard';
+import GarageSalesTools from './pages/GarageSalesTools';
+import { roleHome, landingPath, garageHome } from './utils/landingPath';
 
 // Layout wrapper for regular users — mounts once, stays mounted across navigation
 function AuthedLayout() {
   const currentUser = useStore((s) => s.currentUser);
   if (!currentUser) return <Navigate to="/login" replace />;
-  if (currentUser.businessAccess === 'garage') return <Navigate to="/garage" replace />;
+  if (currentUser.businessAccess === 'garage') return <Navigate to={garageHome(currentUser.role)} replace />;
   if (currentUser.role === 'banker') return <Navigate to="/banker-dashboard" replace />;
   if (currentUser.role === 'investor') return <Navigate to="/investor-portal" replace />;
   return <Layout />;
 }
 
-// Garage home — only for accounts with access to garage
+// Garage pages — only for accounts with access to garage
 function RequireGarage({ children }: { children: React.ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
   if (!currentUser) return <Navigate to="/login" replace />;
   if (currentUser.businessAccess === 'used_car') return <Navigate to={roleHome(currentUser.role)} replace />;
+  return <>{children}</>;
+}
+
+// Garage Team Members — management only (mirrors RequireDirector on the
+// Used Car side); other Garage roles get bounced to their own landing spot.
+function RequireGarageManager({ children }: { children: React.ReactNode }) {
+  const currentUser = useStore((s) => s.currentUser);
+  if (!currentUser) return <Navigate to="/login" replace />;
+  if (currentUser.businessAccess === 'used_car') return <Navigate to={roleHome(currentUser.role)} replace />;
+  if (currentUser.role !== 'director' && currentUser.role !== 'shareholder') return <Navigate to={garageHome(currentUser.role)} replace />;
   return <>{children}</>;
 }
 
@@ -167,7 +179,9 @@ export default function App() {
         />
         <Route path="/choose-business" element={<RequireBoth><ChooseBusiness /></RequireBoth>} />
         <Route path="/garage" element={<RequireGarage><GarageHome /></RequireGarage>} />
-        <Route path="/garage/team" element={<RequireGarage><GarageTeamMembers /></RequireGarage>} />
+        <Route path="/garage/dashboard" element={<RequireGarage><GarageDashboard /></RequireGarage>} />
+        <Route path="/garage/sales-tools" element={<RequireGarage><GarageSalesTools /></RequireGarage>} />
+        <Route path="/garage/team" element={<RequireGarageManager><GarageTeamMembers /></RequireGarageManager>} />
 
         {/* Regular users — Layout mounts once, stays alive across all these routes */}
         <Route element={<AuthedLayout />}>

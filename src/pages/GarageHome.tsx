@@ -1,8 +1,10 @@
 import { useNavigate } from 'react-router-dom';
-import { Users, Layers, Sparkles, SprayCan, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Wrench, Users, Layers, Sparkles, SprayCan, ChevronRight } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 
 const MODULES = [
+  { key: 'dashboard', label: 'Dashboard', desc: 'Overview', icon: LayoutDashboard, path: '/garage/dashboard', active: true },
+  { key: 'sales-tools', label: 'Sales Tools', desc: 'Work orders & more', icon: Wrench, path: '/garage/sales-tools', active: true },
   { key: 'team', label: 'Team Members', desc: 'Staff, roles & access', icon: Users, path: '/garage/team', active: true },
   { key: 'tint', label: 'Tinting', desc: 'Car & building tint jobs', icon: Layers, path: null, active: false },
   { key: 'coating', label: 'Coating', desc: 'Detailing jobs', icon: Sparkles, path: null, active: false },
