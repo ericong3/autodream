@@ -1,3 +1,5 @@
+import type { User } from '../types';
+
 const STORE_KEY = 'autodream-session';
 
 /**
@@ -8,14 +10,18 @@ const STORE_KEY = 'autodream-session';
  * Do not add payroll, password/hash, bank-account, customer, payment, loan or
  * accounting data here. Those values belong in memory only after login.
  */
-export function sanitizeSessionUser(user: any) {
+export function sanitizeSessionUser(user: User | null | undefined): User | null {
   if (!user?.id || !user?.role) return null;
 
   return {
     id: user.id,
     name: user.name ?? '',
     username: user.username ?? '',
+    password: '',
     role: user.role,
+    phone: user.phone ?? '',
+    monthlyTarget: user.monthlyTarget ?? 0,
+    carsInMonth: user.carsInMonth ?? 0,
     avatar: user.avatar ?? undefined,
     position: user.position ?? undefined,
   };
@@ -30,8 +36,7 @@ export function safePersistedState(state: any) {
 
 /**
  * Older app versions cached the entire Zustand working set in localStorage.
- * Scrub that legacy snapshot before the store module is imported/hydrated so
- * sensitive rows are not restored into memory on the login screen.
+ * Remove that legacy snapshot and replace it with the safe session subset.
  */
 export function scrubLegacyPersistedState() {
   if (typeof window === 'undefined') return;
