@@ -6,8 +6,14 @@ import Modal from '../components/Modal';
 import { useStore } from '../store';
 import { getGarageVehicle, getGarageCustomer } from '../lib/garageCustomers';
 import { getGarageInvoice, listInvoiceClaims, createInvoiceClaim } from '../lib/garageInvoices';
+import { getTintOrder } from '../lib/garageTint';
 import { GARAGE_SERVICE_MAP } from '../utils/garageServices';
-import type { GarageInvoice, GarageVehicle, GarageCustomer, GarageInvoiceClaim, GarageClaimType } from '../types';
+import { TINT_SERIES, GLASS_POSITIONS } from '../utils/tintPricing';
+import { formatRM } from '../utils/format';
+import type { GarageInvoice, GarageVehicle, GarageCustomer, GarageInvoiceClaim, GarageClaimType, GarageTintOrder } from '../types';
+
+const TINT_SERIES_LABEL = Object.fromEntries(TINT_SERIES.map((s) => [s.key, s.label]));
+const GLASS_POSITION_LABEL = Object.fromEntries(GLASS_POSITIONS.map((p) => [p.key, p.label]));
 
 const CLAIM_META: Record<GarageClaimType, { label: string; bearBy: string; badge: string; icon: typeof ShieldCheck }> = {
   warranty: { label: 'Warranty Claim', bearBy: 'Borne by supplier', badge: 'bg-blue-500/15 border-blue-500/30 text-blue-400', icon: ShieldCheck },
@@ -22,6 +28,7 @@ export default function GarageInvoiceDetail() {
   const [vehicle, setVehicle] = useState<GarageVehicle | null>(null);
   const [customer, setCustomer] = useState<GarageCustomer | null>(null);
   const [claims, setClaims] = useState<GarageInvoiceClaim[]>([]);
+  const [tintOrder, setTintOrder] = useState<GarageTintOrder | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
@@ -35,14 +42,16 @@ export default function GarageInvoiceDetail() {
     getGarageInvoice(invoiceId).then(async (inv) => {
       if (!inv) { setNotFound(true); setLoading(false); return; }
       setInvoice(inv);
-      const [v, c, cl] = await Promise.all([
+      const [v, c, cl, to] = await Promise.all([
         getGarageVehicle(inv.vehicleId),
         getGarageCustomer(inv.customerId),
         listInvoiceClaims(inv.id),
+        inv.service === 'tinted' ? getTintOrder(inv.id) : Promise.resolve(null),
       ]);
       setVehicle(v);
       setCustomer(c);
       setClaims(cl);
+      setTintOrder(to);
       setLoading(false);
     });
   };
@@ -135,6 +144,42 @@ export default function GarageInvoiceDetail() {
             </button>
           </div>
         </div>
+
+        {/* Tint package detail */}
+        {tintOrder && (
+          <div className="relative overflow-hidden rounded-[28px] p-8
+            bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
+            <h3 className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-4">
+              {tintOrder.packageType === 'full' ? 'Full Package' : 'Mix & Match'}
+            </h3>
+
+            {tintOrder.packageType === 'full' && tintOrder.fullSeries ? (
+              <p className="text-white text-sm">{TINT_SERIES_LABEL[tintOrder.fullSeries]}</p>
+            ) : (
+              <div className="space-y-1.5">
+                {tintOrder.selections.map((sel) => (
+                  <div key={sel.position} className="flex items-center justify-between text-sm">
+                    <span className="text-white/60">{GLASS_POSITION_LABEL[sel.position]}</span>
+                    <span className="text-white">{TINT_SERIES_LABEL[sel.series]} · {sel.vlt}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-5 pt-4 border-t border-white/10 space-y-1.5">
+              {tintOrder.discount > 0 && (
+                <div className="flex justify-between text-sm text-white/50">
+                  <span>Discount</span>
+                  <span>-{formatRM(tintOrder.discount)}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-baseline">
+                <span className="text-white font-semibold text-sm">Final Total</span>
+                <span className="text-gold-400 font-display text-lg font-bold">{formatRM(tintOrder.finalTotal)}</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Claims history */}
         {claims.length > 0 && (

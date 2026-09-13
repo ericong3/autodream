@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Wrench, Users, Layers, Sparkles, SprayCan, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Wrench, Users, Layers, Sparkles, SprayCan, Settings2, ChevronRight } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
+import { useStore } from '../store';
 
 const MODULES = [
   { key: 'dashboard', label: 'Dashboard', desc: 'Overview', icon: LayoutDashboard, path: '/garage/dashboard', active: true },
@@ -13,11 +14,17 @@ const MODULES = [
 
 export default function GarageHome() {
   const navigate = useNavigate();
+  const currentUser = useStore((s) => s.currentUser);
+  const isManager = currentUser?.role === 'director' || currentUser?.role === 'shareholder';
+
+  const modules = isManager
+    ? [...MODULES, { key: 'tint-pricing', label: 'Tint Pricing', desc: 'Package & VLT price grid', icon: Settings2, path: '/garage/tint-pricing', active: true }]
+    : MODULES;
 
   return (
     <GarageShell title="AutoDream Garage">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {MODULES.map((m) => (
+        {modules.map((m) => (
           <button
             key={m.key}
             disabled={!m.active}

@@ -32,6 +32,34 @@ export interface GarageVehicle {
 
 export type GarageService = 'tinted' | 'coating' | 'ppf' | 'spray';
 
+// Tint package config — Full Package applies one series to every window at
+// a size-based auto price; Mix & Match prices each glass position on its
+// own series + VLT (darkness) choice.
+export type TintPackageType = 'full' | 'mix';
+export type TintSeries = 'eco' | 'lite' | 'classic' | 'majestic' | 'unique' | 'royal';
+export type GlassPosition = 'front_windscreen' | 'front_side' | 'rear_side' | 'rear_windscreen';
+
+export interface TintPositionSelection {
+  position: GlassPosition;
+  series: TintSeries;
+  vlt: string; // e.g. '35%'
+  price: number;
+}
+
+// The tint-specific detail for a GarageInvoice with service === 'tinted' —
+// kept in its own table (one per invoice) rather than on GarageInvoice
+// itself, so Coating/PPF/Spray can each get their own detail shape later
+// without this one growing unrelated columns.
+export interface GarageTintOrder {
+  invoiceId: string;
+  packageType: TintPackageType;
+  fullSeries?: TintSeries; // set when packageType === 'full'
+  selections: TintPositionSelection[]; // set when packageType === 'mix'
+  discount: number;
+  finalTotal: number;
+  createdAt: string;
+}
+
 // A completed/sold job for a vehicle — the record a salesman pulls up when a
 // customer comes back for a warranty claim or replacement after delivery.
 export interface GarageInvoice {

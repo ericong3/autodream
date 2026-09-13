@@ -48,6 +48,8 @@ import GarageAddVehicle from './pages/GarageAddVehicle';
 import GarageWorkOrderContinue from './pages/GarageWorkOrderContinue';
 import GarageServiceStub from './pages/GarageServiceStub';
 import GarageInvoiceDetail from './pages/GarageInvoiceDetail';
+import GarageTintPackage from './pages/GarageTintPackage';
+import GarageTintPricing from './pages/GarageTintPricing';
 import { roleHome, landingPath, garageHome } from './utils/landingPath';
 
 // Layout wrapper for regular users — mounts once, stays mounted across navigation
@@ -195,8 +197,10 @@ export default function App() {
         <Route path="/garage/work-order/customer/:id" element={<RequireGarage><GarageCustomerProfile /></RequireGarage>} />
         <Route path="/garage/work-order/customer/:id/add-car" element={<RequireGarage><GarageAddVehicle /></RequireGarage>} />
         <Route path="/garage/work-order/customer/:id/vehicle/:vehicleId" element={<RequireGarage><GarageWorkOrderContinue /></RequireGarage>} />
+        <Route path="/garage/work-order/customer/:id/vehicle/:vehicleId/service/tinted" element={<RequireGarage><GarageTintPackage /></RequireGarage>} />
         <Route path="/garage/work-order/customer/:id/vehicle/:vehicleId/service/:service" element={<RequireGarage><GarageServiceStub /></RequireGarage>} />
         <Route path="/garage/invoice/:invoiceId" element={<RequireGarage><GarageInvoiceDetail /></RequireGarage>} />
+        <Route path="/garage/tint-pricing" element={<RequireGarageManager><GarageTintPricing /></RequireGarageManager>} />
         <Route path="/garage/team" element={<RequireGarageManager><GarageTeamMembers /></RequireGarageManager>} />
 
         {/* Regular users — Layout mounts once, stays alive across all these routes */}
