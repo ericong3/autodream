@@ -34,13 +34,13 @@ export default function ChooseBusiness() {
 
       <div className="relative z-10 min-h-screen flex flex-col items-center justify-center px-6 py-16">
         {/* Logo */}
-        <div className="relative mb-8 flex items-center justify-center">
-          <div className="absolute w-[420px] max-w-[70vw] aspect-square rounded-full
+        <div className="relative mb-4 sm:mb-6 flex items-center justify-center">
+          <div className="absolute w-[900px] max-w-[95vw] aspect-square rounded-full
             bg-[radial-gradient(ellipse_at_center,rgba(234,184,32,0.16)_0%,transparent_70%)] pointer-events-none" />
           <img
             src="/logo.png?v=3"
             alt="AutoDream"
-            className="relative z-10 w-[200px] sm:w-[240px]
+            className="relative z-10 w-[620px] max-w-[85vw] sm:w-[720px]
               drop-shadow-[0_0_40px_rgba(234,184,32,0.25)]
               drop-shadow-[0_8px_30px_rgba(0,0,0,0.9)]"
             draggable={false}
