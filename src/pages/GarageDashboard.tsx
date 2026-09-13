@@ -5,7 +5,7 @@ import GarageShell, { SALESMAN_TABS } from '../components/GarageShell';
 // gets added once it's decided what a Garage salesman actually needs to see.
 export default function GarageDashboard() {
   return (
-    <GarageShell title="AutoDream Garage" tabs={SALESMAN_TABS}>
+    <GarageShell title="AutoDream Garage" tabs={SALESMAN_TABS} showBack>
       <div className="flex flex-col items-center justify-center py-24 text-center">
         <div className="relative mb-5 flex items-center justify-center">
           <div className="absolute w-20 h-20 rounded-full bg-gold-400/10 blur-xl" />

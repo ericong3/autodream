@@ -7,7 +7,7 @@ export default function GarageSalesTools() {
   const [showWorkOrder, setShowWorkOrder] = useState(false);
 
   return (
-    <GarageShell title="AutoDream Garage" tabs={SALESMAN_TABS}>
+    <GarageShell title="AutoDream Garage" tabs={SALESMAN_TABS} showBack>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <button
           onClick={() => setShowWorkOrder(true)}
@@ -42,6 +42,9 @@ export default function GarageSalesTools() {
           <FilePlus size={30} strokeWidth={1.5} className="text-gold-400/70 mb-3" />
           <p className="text-gray-400 text-sm">Work order form — coming soon</p>
         </div>
+        <button onClick={() => setShowWorkOrder(false)} className="w-full mt-2 px-4 py-2.5 btn-ghost rounded-lg text-sm">
+          Close
+        </button>
       </Modal>
     </GarageShell>
   );
