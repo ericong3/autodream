@@ -30,6 +30,36 @@ export interface GarageVehicle {
   createdBy?: string;
 }
 
+export type GarageService = 'tinted' | 'coating' | 'ppf' | 'spray';
+
+// A completed/sold job for a vehicle — the record a salesman pulls up when a
+// customer comes back for a warranty claim or replacement after delivery.
+export interface GarageInvoice {
+  id: string;
+  invoiceNumber: string; // 'INV-000123', assigned by the DB sequence
+  customerId: string;
+  vehicleId: string;
+  service: GarageService;
+  invoiceDate: string; // 'YYYY-MM-DD'
+  createdAt: string;
+  createdBy?: string;
+}
+
+export type GarageClaimType = 'warranty' | 'replacement';
+// Warranty claims are the supplier's cost; replacements are the company's —
+// fixed by claim type, not chosen per-claim.
+export type GarageClaimBearBy = 'supplier' | 'company';
+
+export interface GarageInvoiceClaim {
+  id: string;
+  invoiceId: string;
+  type: GarageClaimType;
+  bearBy: GarageClaimBearBy;
+  reason?: string;
+  createdAt: string;
+  createdBy?: string;
+}
+
 export interface User {
   id: string;
   name: string;

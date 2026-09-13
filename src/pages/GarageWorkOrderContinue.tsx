@@ -1,29 +1,29 @@
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Car, Layers, Sparkles, Shield, SprayCan } from 'lucide-react';
+import { Car, FileText, ChevronRight } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import { getGarageVehicle } from '../lib/garageCustomers';
-import type { GarageVehicle } from '../types';
-
-const SERVICES = [
-  { key: 'tinted', label: 'Tinted', icon: Layers },
-  { key: 'coating', label: 'Coating', icon: Sparkles },
-  { key: 'ppf', label: 'PPF', icon: Shield },
-  { key: 'spray', label: 'Spray', icon: SprayCan },
-] as const;
+import { listInvoicesForVehicle } from '../lib/garageInvoices';
+import { GARAGE_SERVICES, GARAGE_SERVICE_MAP } from '../utils/garageServices';
+import type { GarageVehicle, GarageInvoice } from '../types';
 
 // Reached once a vehicle is picked (new or existing) for the work order.
 // Picking a service leads to that service's package/pricing step — the
-// next thing to build.
+// next thing to build. Below it, this vehicle's invoice history — where a
+// warranty claim (supplier's cost) or replacement (company's cost) gets
+// filed once the car's already been delivered.
 export default function GarageWorkOrderContinue() {
   const { id, vehicleId } = useParams<{ id: string; vehicleId: string }>();
   const navigate = useNavigate();
   const [vehicle, setVehicle] = useState<GarageVehicle | null>(null);
+  const [invoices, setInvoices] = useState<GarageInvoice[]>([]);
+  const [loadingInvoices, setLoadingInvoices] = useState(true);
 
   useEffect(() => {
     if (!vehicleId) return;
     getGarageVehicle(vehicleId).then(setVehicle);
+    listInvoicesForVehicle(vehicleId).then(setInvoices).finally(() => setLoadingInvoices(false));
   }, [vehicleId]);
 
   return (
@@ -37,8 +37,8 @@ export default function GarageWorkOrderContinue() {
 
         <p className="text-white/40 text-sm tracking-wide mb-8">Which service is this for?</p>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 w-full max-w-3xl">
-          {SERVICES.map((s) => (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 w-full max-w-3xl mb-12">
+          {GARAGE_SERVICES.map((s) => (
             <ServiceCard
               key={s.key}
               icon={<s.icon size={30} strokeWidth={1.5} />}
@@ -46,6 +46,43 @@ export default function GarageWorkOrderContinue() {
               onClick={() => navigate(`/garage/work-order/customer/${id}/vehicle/${vehicleId}/service/${s.key}`)}
             />
           ))}
+        </div>
+
+        {/* Purchase history — where warranty claims / replacements get filed */}
+        <div className="w-full max-w-3xl">
+          <h3 className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-3">Purchase History</h3>
+
+          {loadingInvoices ? (
+            <p className="text-white/30 text-sm">Loading…</p>
+          ) : invoices.length === 0 ? (
+            <div className="flex items-center gap-2.5 text-white/40 text-sm bg-white/[0.03] border border-white/10 rounded-xl p-4">
+              <FileText size={15} className="shrink-0" /> No previous services for this vehicle yet
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {invoices.map((inv) => {
+                const meta = GARAGE_SERVICE_MAP[inv.service];
+                return (
+                  <button
+                    key={inv.id}
+                    onClick={() => navigate(`/garage/invoice/${inv.id}`)}
+                    className="w-full flex items-center gap-3 text-left rounded-xl p-4
+                      bg-white/[0.04] backdrop-blur-xl border border-gold-400/15
+                      hover:border-gold-400/40 hover:bg-white/[0.06] transition-colors"
+                  >
+                    <div className="shrink-0 w-9 h-9 rounded-lg bg-gold-400/10 flex items-center justify-center text-gold-400">
+                      <meta.icon size={16} strokeWidth={1.5} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-sm font-medium">{inv.invoiceNumber} · {meta.label}</p>
+                      <p className="text-white/40 text-xs mt-0.5">{new Date(inv.invoiceDate).toLocaleDateString('en-MY')}</p>
+                    </div>
+                    <ChevronRight size={15} className="text-gold-400/50 shrink-0" />
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </GarageShell>

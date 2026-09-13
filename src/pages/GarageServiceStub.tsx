@@ -1,23 +1,19 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Car, Layers, Sparkles, Shield, SprayCan, Wrench } from 'lucide-react';
+import { Car, Wrench } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import { getGarageVehicle } from '../lib/garageCustomers';
-import type { GarageVehicle } from '../types';
-
-const SERVICE_LABEL: Record<string, { label: string; icon: typeof Layers }> = {
-  tinted: { label: 'Tinted', icon: Layers },
-  coating: { label: 'Coating', icon: Sparkles },
-  ppf: { label: 'PPF', icon: Shield },
-  spray: { label: 'Spray', icon: SprayCan },
-};
+import { GARAGE_SERVICE_MAP } from '../utils/garageServices';
+import type { GarageVehicle, GarageService } from '../types';
 
 // Reached once a service is picked. Package/pricing/confirm for each
-// service is the next thing to build.
+// service is the next thing to build — that's the step that will actually
+// create the GarageInvoice a delivered car's warranty/replacement claims
+// get filed against later.
 export default function GarageServiceStub() {
   const { id, vehicleId, service } = useParams<{ id: string; vehicleId: string; service: string }>();
   const [vehicle, setVehicle] = useState<GarageVehicle | null>(null);
-  const meta = (service && SERVICE_LABEL[service]) || { label: 'Service', icon: Wrench };
+  const meta = (service && GARAGE_SERVICE_MAP[service as GarageService]) || { label: 'Service', icon: Wrench };
 
   useEffect(() => {
     if (!vehicleId) return;
