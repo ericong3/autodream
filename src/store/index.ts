@@ -801,6 +801,7 @@ function rowToUser(r: any): User {
     username: r.username,
     password: r.password,
     role: r.role,
+    businessAccess: r.business_access ?? 'used_car',
     phone: r.phone,
     monthlyTarget: r.monthly_target,
     carsInMonth: r.cars_in_month,
@@ -836,6 +837,7 @@ function userToRow(u: Partial<User>) {
   if (u.username !== undefined) row.username = u.username;
   if (u.password !== undefined) row.password = u.password;
   if (u.role !== undefined) row.role = u.role;
+  if (u.businessAccess !== undefined) row.business_access = u.businessAccess;
   if (u.phone !== undefined) row.phone = u.phone;
   if (u.monthlyTarget !== undefined) row.monthly_target = u.monthlyTarget;
   if (u.carsInMonth !== undefined) row.cars_in_month = u.carsInMonth;

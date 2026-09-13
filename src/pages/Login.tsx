@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useStore } from '../store';
+import { landingPath } from '../utils/landingPath';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -24,8 +25,8 @@ export default function Login() {
     const success = await login(username.trim(), password);
     setLoading(false);
     if (success) {
-      const role = useStore.getState().currentUser?.role;
-      navigate(from ?? (role === 'investor' ? '/investor-portal' : '/inventory'));
+      const user = useStore.getState().currentUser;
+      navigate(from ?? (user ? landingPath(user) : '/login'));
     } else { setError('Invalid username or password'); }
   };
 

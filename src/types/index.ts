@@ -1,9 +1,18 @@
+// Which business/es an account can log into. Directors and shareholders get
+// 'both' (see the business_access migration); everyone else is single-business.
+export type BusinessAccess = 'used_car' | 'garage' | 'both';
+
 export interface User {
   id: string;
   name: string;
   username: string;
   password: string;
-  role: 'director' | 'salesperson' | 'mechanic' | 'admin' | 'investor' | 'shareholder' | 'banker';
+  role: 'director' | 'salesperson' | 'mechanic' | 'admin' | 'investor' | 'shareholder' | 'banker'
+    // Garage-side roles — director/shareholder above are reused as-is for Garage too.
+    | 'garage_salesman' | 'garage_installer' | 'garage_detailer' | 'garage_spray';
+  // Optional — missing/undefined means 'used_car' (see rowToUser's default).
+  // Kept optional so existing User-creation call sites don't all need updating.
+  businessAccess?: BusinessAccess;
   phone: string;
   monthlyTarget: number;
   carsInMonth: number;

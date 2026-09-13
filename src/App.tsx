@@ -35,21 +35,34 @@ import AdminDashboard from './pages/AdminDashboard';
 import Payments from './pages/Payments';
 import Claims from './pages/Claims';
 import CarMovement from './pages/CarMovement';
-
-function roleHome(role: string) {
-  if (role === 'banker') return '/banker-dashboard';
-  if (role === 'investor') return '/investor-portal';
-  if (role === 'admin') return '/admin-dashboard';
-  return '/inventory';
-}
+import ChooseBusiness from './pages/ChooseBusiness';
+import GarageHome from './pages/GarageHome';
+import { roleHome, landingPath } from './utils/landingPath';
 
 // Layout wrapper for regular users — mounts once, stays mounted across navigation
 function AuthedLayout() {
   const currentUser = useStore((s) => s.currentUser);
   if (!currentUser) return <Navigate to="/login" replace />;
+  if (currentUser.businessAccess === 'garage') return <Navigate to="/garage" replace />;
   if (currentUser.role === 'banker') return <Navigate to="/banker-dashboard" replace />;
   if (currentUser.role === 'investor') return <Navigate to="/investor-portal" replace />;
   return <Layout />;
+}
+
+// Garage home — only for accounts with access to garage
+function RequireGarage({ children }: { children: React.ReactNode }) {
+  const currentUser = useStore((s) => s.currentUser);
+  if (!currentUser) return <Navigate to="/login" replace />;
+  if (currentUser.businessAccess === 'used_car') return <Navigate to={roleHome(currentUser.role)} replace />;
+  return <>{children}</>;
+}
+
+// Choose-business screen — only for accounts with access to both
+function RequireBoth({ children }: { children: React.ReactNode }) {
+  const currentUser = useStore((s) => s.currentUser);
+  if (!currentUser) return <Navigate to="/login" replace />;
+  if (currentUser.businessAccess !== 'both') return <Navigate to={landingPath(currentUser)} replace />;
+  return <>{children}</>;
 }
 
 function RequireAdmin({ children }: { children: React.ReactNode }) {
@@ -145,12 +158,14 @@ export default function App() {
         {/* Public */}
         <Route
           path="/login"
-          element={currentUser ? <Navigate to={roleHome(currentUser.role)} replace /> : <Login />}
+          element={currentUser ? <Navigate to={landingPath(currentUser)} replace /> : <Login />}
         />
         <Route
           path="/"
-          element={<Navigate to={currentUser ? roleHome(currentUser.role) : '/login'} replace />}
+          element={<Navigate to={currentUser ? landingPath(currentUser) : '/login'} replace />}
         />
+        <Route path="/choose-business" element={<RequireBoth><ChooseBusiness /></RequireBoth>} />
+        <Route path="/garage" element={<RequireGarage><GarageHome /></RequireGarage>} />
 
         {/* Regular users — Layout mounts once, stays alive across all these routes */}
         <Route element={<AuthedLayout />}>
