@@ -7,6 +7,7 @@ import { useStore } from '../store';
 import { formatRM, generateId } from '../utils/format';
 import { thumbUrl } from '../utils/photoUrl';
 import { Car } from '../types';
+import { getDealFinancials } from '../utils/dealMath';
 
 const STATUS_LABEL: Record<Car['status'], string> = {
   coming_soon: 'Coming Soon',
@@ -54,27 +55,9 @@ export default function InvestorPortal() {
   const carData = useMemo(() => {
     return myCars.map((car) => {
       const split = (car.investorSplit ?? 50) / 100;
-      const repairCost = repairs
-        .filter((r) => r.carId === car.id && r.status === 'done')
-        .reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
-      const miscCost = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
-
-      const customer = customers.find(
-        (c) => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder)
-      );
-      const wo = customer?.loanWorkOrder ?? customer?.cashWorkOrder;
-      const dealPrice = wo
-        ? wo.sellingPrice - (wo.discount ?? 0)
-        : car.finalDeal?.dealPrice ?? car.sellingPrice;
-      const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
-
-      const commission = car.isStaffSale ? 0 : (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
-
-      const totalExpenses = repairCost + miscCost + additionalTotal + commission;
-      const netProfit = dealPrice - car.purchasePrice - totalExpenses;
-      const myShare = netProfit * split;
-
-      return { car, repairCost, miscCost, additionalTotal, commission, dealPrice, netProfit, myShare, split };
+      const financials = getDealFinancials(car, customers, repairs);
+      const myShare = financials.netProfit * split;
+      return { car, ...financials, myShare, split };
     });
   }, [myCars, repairs, customers]);
 
@@ -107,10 +90,7 @@ export default function InvestorPortal() {
 
   const projectedProfit = carData
     .filter((d) => d.car.status !== 'delivered')
-    .reduce((s, d) => {
-      const est = (d.car.sellingPrice - d.car.purchasePrice - d.repairCost - d.miscCost - d.commission) * d.split;
-      return s + est;
-    }, 0);
+    .reduce((s, d) => s + d.myShare, 0);
 
   const active = carData.filter((d) => d.car.status !== 'delivered');
   const realized = carData.filter((d) => d.car.status === 'delivered');
@@ -320,9 +300,9 @@ export default function InvestorPortal() {
           </div>
         ) : (
           <div className="space-y-3">
-            {active.map(({ car, repairCost, miscCost, commission, split }) => {
-              const totalIn = car.purchasePrice + repairCost + miscCost;
-              const estProfit = (car.sellingPrice - car.purchasePrice - repairCost - miscCost - commission) * split;
+            {active.map(({ car, repairCost, miscCost, additionalTotal, dealCommission, intakeCommission, sourceCommission, myShare, split }) => {
+              const operatingCosts = repairCost + miscCost + additionalTotal + dealCommission + intakeCommission + sourceCommission;
+              const totalIn = car.purchasePrice + operatingCosts;
               return (
                 <div key={car.id} className="bg-card-gradient border border-obsidian-400/70 rounded-xl overflow-hidden">
                   <div className="flex gap-3 p-4">
@@ -349,8 +329,8 @@ export default function InvestorPortal() {
                       <p className="text-white font-medium">{formatRM(car.purchasePrice)}</p>
                     </div>
                     <div>
-                      <p className="text-gray-600 mb-0.5">Repair + Misc</p>
-                      <p className="text-white font-medium">{formatRM(repairCost + miscCost)}</p>
+                      <p className="text-gray-600 mb-0.5">Operating Costs</p>
+                      <p className="text-white font-medium">{formatRM(operatingCosts)}</p>
                     </div>
                     <div>
                       <p className="text-gray-600 mb-0.5">Total In</p>
@@ -358,7 +338,7 @@ export default function InvestorPortal() {
                     </div>
                     <div>
                       <p className="text-gray-600 mb-0.5">Est. My Share ({Math.round(split * 100)}%)</p>
-                      <p className={`font-semibold ${estProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatRM(estProfit)}</p>
+                      <p className={`font-semibold ${myShare >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatRM(myShare)}</p>
                     </div>
                   </div>
                 </div>
@@ -375,7 +355,7 @@ export default function InvestorPortal() {
             <CheckCircle2 size={13} /> Realized ({realized.length})
           </h2>
           <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl divide-y divide-obsidian-400/40">
-            {realized.map(({ car, repairCost, miscCost, additionalTotal, commission, dealPrice, myShare, split }) => (
+            {realized.map(({ car, repairCost, miscCost, additionalTotal, dealCommission, intakeCommission, sourceCommission, dealPrice, myShare, split }) => (
               <div key={car.id} className="flex items-center gap-3 px-4 py-3">
                 <div className="w-14 h-10 bg-obsidian-700/60 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center">
                   {car.photo
@@ -386,7 +366,7 @@ export default function InvestorPortal() {
                   <p className="text-gray-300 text-sm font-medium">{car.year} {car.make} {car.model}</p>
                   <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-600 flex-wrap">
                     <span>Sold: {formatRM(dealPrice)}</span>
-                    <span>Costs: {formatRM(car.purchasePrice + repairCost + miscCost + additionalTotal + commission)}</span>
+                    <span>Costs: {formatRM(car.purchasePrice + repairCost + miscCost + additionalTotal + dealCommission + intakeCommission + sourceCommission)}</span>
                   </div>
                 </div>
                 <div className="text-right shrink-0">
