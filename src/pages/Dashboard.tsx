@@ -16,6 +16,7 @@ import StatCard from '../components/StatCard';
 import Sparkline from '../components/Sparkline';
 import MyPayslipCard from '../components/MyPayslipCard';
 import { formatRM } from '../utils/format';
+import { getDealFinancials } from '../utils/dealMath';
 import { useAnimatedCounter } from '../hooks/useAnimatedCounter';
 import { useAnimatedRM } from '../hooks/useAnimatedRM';
 
@@ -56,29 +57,21 @@ export default function Dashboard() {
     .filter((r) => r.status === 'done')
     .reduce((sum, r) => sum + (r.actualCost ?? r.totalCost), 0);
 
-  // Per-car P&L using the same formula as Commission and InvestorPortal
+  // Per-car P&L now comes from one shared calculation engine so Dashboard,
+  // Commission and Accounting can never silently drift apart again.
   const soldCarData = useMemo(() => soldCars.map((car) => {
-    const repairCost = repairs
-      .filter((r) => r.carId === car.id && r.status === 'done')
-      .reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
-    const miscCost = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
-
-    const customer = customers.find(
-      (c) => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder)
-    );
-    const wo = customer?.loanWorkOrder ?? customer?.cashWorkOrder;
-    const dealPrice = wo
-      ? wo.sellingPrice - (wo.discount ?? 0)
-      : car.finalDeal?.dealPrice ?? car.sellingPrice;
-    const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
-
-    const profitBeforeComm = dealPrice - car.purchasePrice - repairCost - miscCost;
-    const commission = (car.outgoingConsignment || car.isStaffSale || car.waiveCommission) ? 0 : (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
-    const intakeComm = car.intakeCommission ?? 0;
-    const sourceComm = car.sourceCommission ?? 0;
-
-    const netCarProfit = car.isStaffSale ? 0 : profitBeforeComm - commission - intakeComm - sourceComm;
-    return { car, dealPrice, repairCost, miscCost, additionalTotal, commission, intakeComm, sourceComm, netCarProfit };
+    const financials = getDealFinancials(car, customers, repairs);
+    return {
+      car,
+      dealPrice: financials.dealPrice,
+      repairCost: financials.repairCost,
+      miscCost: financials.miscCost,
+      additionalTotal: financials.additionalTotal,
+      commission: financials.dealCommission,
+      intakeComm: financials.intakeCommission,
+      sourceComm: financials.sourceCommission,
+      netCarProfit: financials.netProfit,
+    };
   }), [soldCars, repairs, customers]);
 
   const totalRevenue   = soldCarData.reduce((s, d) => s + d.dealPrice, 0);
