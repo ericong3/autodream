@@ -58,10 +58,13 @@ export interface TintPositionSelection {
 export interface GarageTintOrder {
   invoiceId: string;
   packageType: TintPackageType;
-  fullSeries?: TintSeries; // set when packageType === 'full'
-  fullVlt?: string; // full package's single VLT, applied to the whole car
-  selections: TintPositionSelection[]; // the 4 core positions, set when packageType === 'mix'
-  extras: TintPositionSelection[]; // optional add-ons, either package type
+  // Full Package: one series for the whole car (every selections[].series is
+  // this same value) but VLT can still differ per window — price is the
+  // flat full-package rate regardless. Mix & Match: series and price vary
+  // per position. Both modes populate the same 4 core positions here.
+  fullSeries?: TintSeries;
+  selections: TintPositionSelection[];
+  extras: TintPositionSelection[]; // optional add-ons — priced only in Mix & Match; always free in Full Package
   discount: number;
   finalTotal: number;
   createdAt: string;

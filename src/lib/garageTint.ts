@@ -44,7 +44,6 @@ function rowToTintOrder(r: any): GarageTintOrder {
     invoiceId: r.invoice_id,
     packageType: r.package_type,
     fullSeries: r.full_series ?? undefined,
-    fullVlt: r.full_vlt ?? undefined,
     selections: r.selections ?? [],
     extras: r.extras ?? [],
     discount: Number(r.discount),
@@ -60,14 +59,13 @@ export async function getTintOrder(invoiceId: string): Promise<GarageTintOrder |
 }
 
 export async function createTintOrder(input: {
-  invoiceId: string; packageType: TintPackageType; fullSeries?: TintSeries; fullVlt?: string;
+  invoiceId: string; packageType: TintPackageType; fullSeries?: TintSeries;
   selections: TintPositionSelection[]; extras: TintPositionSelection[]; discount: number; finalTotal: number;
 }): Promise<GarageTintOrder> {
   const row = {
     invoice_id: input.invoiceId,
     package_type: input.packageType,
     full_series: input.fullSeries || null,
-    full_vlt: input.fullVlt || null,
     selections: input.selections,
     extras: input.extras,
     discount: input.discount,

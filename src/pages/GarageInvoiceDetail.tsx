@@ -153,20 +153,19 @@ export default function GarageInvoiceDetail() {
               {tintOrder.packageType === 'full' ? 'Full Package' : 'Mix & Match'}
             </h3>
 
-            {tintOrder.packageType === 'full' && tintOrder.fullSeries ? (
-              <p className="text-white text-sm">
-                {TINT_SERIES_LABEL[tintOrder.fullSeries]}{tintOrder.fullVlt ? ` · ${tintOrder.fullVlt}` : ''}
-              </p>
-            ) : (
-              <div className="space-y-1.5">
-                {tintOrder.selections.map((sel) => (
-                  <div key={sel.position} className="flex items-center justify-between text-sm">
-                    <span className="text-white/60">{GLASS_POSITION_LABEL[sel.position]}</span>
-                    <span className="text-white">{TINT_SERIES_LABEL[sel.series]} · {sel.vlt}</span>
-                  </div>
-                ))}
-              </div>
+            {tintOrder.packageType === 'full' && tintOrder.fullSeries && (
+              <p className="text-white text-sm mb-3">{TINT_SERIES_LABEL[tintOrder.fullSeries]} — same series for every window</p>
             )}
+            <div className="space-y-1.5">
+              {tintOrder.selections.map((sel) => (
+                <div key={sel.position} className="flex items-center justify-between text-sm">
+                  <span className="text-white/60">{GLASS_POSITION_LABEL[sel.position]}</span>
+                  <span className="text-white">
+                    {tintOrder.packageType === 'mix' ? `${TINT_SERIES_LABEL[sel.series]} · ` : ''}{sel.vlt}
+                  </span>
+                </div>
+              ))}
+            </div>
 
             {tintOrder.extras.length > 0 && (
               <div className="mt-4 pt-4 border-t border-white/10 space-y-1.5">
