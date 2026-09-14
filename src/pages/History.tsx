@@ -21,6 +21,7 @@ import {
   Unlock,
   Clock,
   Pencil,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   DndContext,
@@ -41,16 +42,17 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Car } from '../types';
+import { Car, Payment } from '../types';
 import { formatRM as _formatRM } from '../utils/format';
 import Modal from '../components/Modal';
 import { useStore } from '../store';
-import { generateLoanDisbursement, getDeliveryDate } from '../utils/generatePayments';
+import { generateLoanDisbursement, getDeliveryDate, calcDealPrice, calcConsignmentPayoutAmount } from '../utils/generatePayments';
 import { buildDisbursementReceivedEntry } from '../utils/generateJournalEntries';
 import { getCaseCompletion } from '../utils/caseCompletion';
-import { formatRM, formatMileage, shortName } from '../utils/format';
+import { formatRM, formatMileage, shortName, generateId } from '../utils/format';
 import StatCard from '../components/StatCard';
 import { CarDetailContent } from './CarDetail';
+import { TransferModal } from './Payments';
 import { SkeletonCard, SkeletonRow } from '../components/Skeleton';
 
 // ── Drag helpers ─────────────────────────────────────────────────────────────
@@ -155,6 +157,7 @@ export default function History() {
   const updateCustomer = useStore((s) => s.updateCustomer);
   const payments = useStore((s) => s.payments);
   const addPayment = useStore((s) => s.addPayment);
+  const dealers = useStore((s) => s.dealers);
   const addJournalEntry = useStore((s) => s.addJournalEntry);
   const journalEntries = useStore((s) => s.journalEntries);
   const voidJournalEntry = useStore((s) => s.voidJournalEntry);
@@ -215,6 +218,31 @@ export default function History() {
     bank: string; sellingPrice: number; discount: number; insurance: number;
     bankProduct: number; additionalTotal: number; bookingFee: number; loanAmount: number;
   } | null>(null);
+  // Paying out a consignment dealer's share, right here instead of bouncing to
+  // the general Accounting > Payments tab — same "Mark as Transferred" flow,
+  // just triggered on the one payment for this car.
+  const [payingConsignmentId, setPayingConsignmentId] = useState<string | null>(null);
+  // A consignment car whose payout couldn't be computed — "Fixed Amount" terms
+  // are tied to Purchase Price (see CarDetail's edit-save), so if that was never
+  // entered the payout silently comes out to RM 0 and no payment ever gets
+  // created. Prompt for the price right here instead of leaving it invisible.
+  const [fixPriceCarId, setFixPriceCarId] = useState<string | null>(null);
+  const [fixPriceValue, setFixPriceValue] = useState('');
+  const [fixPriceSaving, setFixPriceSaving] = useState(false);
+
+  const createConsignmentPayout = async (car: Car, amount: number): Promise<Payment> => {
+    const dealerName = car.consignment!.dealer;
+    const dealer = dealers.find(d => d.name.toLowerCase() === dealerName.toLowerCase());
+    const label = `${car.make} ${car.model}${car.carPlate ? ` (${car.carPlate})` : ''}`;
+    const payment: Payment = {
+      id: generateId(), type: 'consignment_payout', carId: car.id,
+      recipientType: 'dealer', recipientId: dealer?.id ?? dealerName, recipientName: dealerName,
+      bankName: dealer?.bankName, accountNumber: dealer?.bankAccountNumber, accountHolder: dealer?.bankAccountHolder,
+      amount, description: `Consignment payout — ${label}`, status: 'pending', createdAt: new Date().toISOString(),
+    };
+    await addPayment(payment);
+    return payment;
+  };
 
   const soldCars = useMemo(() => {
     let result = cars.filter((c) => c.status === 'delivered');
@@ -667,15 +695,38 @@ export default function History() {
                     );
                   })()}
 
-                  {isDirectorView && car.moneyReceived && (() => {
+                  {isDirectorView && car.moneyReceived && car.consignment && (() => {
                     const payout = getConsignmentPayout(car);
-                    if (!payout) return null;
-                    return (
+                    if (payout) return (
                       <button
-                        onClick={(e) => { e.stopPropagation(); navigate('/payments'); }}
+                        onClick={(e) => { e.stopPropagation(); setPayingConsignmentId(payout.id); }}
                         className="mt-1 w-full flex items-center justify-center gap-1.5 py-1 rounded-lg border border-indigo-500/40 bg-indigo-500/10 text-indigo-300 text-[10px] font-bold hover:bg-indigo-500/20 transition-colors"
                       >
                         <HeartHandshake size={9} /> Pay {payout.recipientName}: RM {payout.amount.toLocaleString()}
+                      </button>
+                    );
+                    // No payment on record yet — figure out whether it's just
+                    // never been generated (amount is computable) or the terms
+                    // are genuinely missing data (purchase price never entered).
+                    const amount = calcConsignmentPayoutAmount(car, calcDealPrice(car, customers));
+                    if (amount > 0) return (
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          const created = await createConsignmentPayout(car, amount);
+                          setPayingConsignmentId(created.id);
+                        }}
+                        className="mt-1 w-full flex items-center justify-center gap-1.5 py-1 rounded-lg border border-indigo-500/40 bg-indigo-500/10 text-indigo-300 text-[10px] font-bold hover:bg-indigo-500/20 transition-colors"
+                      >
+                        <HeartHandshake size={9} /> Pay {car.consignment.dealer}: RM {amount.toLocaleString()}
+                      </button>
+                    );
+                    return (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setFixPriceCarId(car.id); setFixPriceValue(''); }}
+                        className="mt-1 w-full flex items-center justify-center gap-1.5 py-1 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-300 text-[10px] font-bold hover:bg-amber-500/20 transition-colors"
+                      >
+                        <AlertTriangle size={9} /> Set purchase price for {car.consignment.dealer}
                       </button>
                     );
                   })()}
@@ -781,15 +832,35 @@ export default function History() {
                     );
                   })()}
 
-                  {isDirectorView && car.moneyReceived && (() => {
+                  {isDirectorView && car.moneyReceived && car.consignment && (() => {
                     const payout = getConsignmentPayout(car);
-                    if (!payout) return null;
-                    return (
+                    if (payout) return (
                       <button
-                        onClick={(e) => { e.stopPropagation(); navigate('/payments'); }}
+                        onClick={(e) => { e.stopPropagation(); setPayingConsignmentId(payout.id); }}
                         className="flex items-center gap-1 text-[10px] font-bold text-indigo-300 hover:text-indigo-200 transition-colors"
                       >
                         <HeartHandshake size={9} /> Pay {payout.recipientName}: RM {payout.amount.toLocaleString()}
+                      </button>
+                    );
+                    const amount = calcConsignmentPayoutAmount(car, calcDealPrice(car, customers));
+                    if (amount > 0) return (
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          const created = await createConsignmentPayout(car, amount);
+                          setPayingConsignmentId(created.id);
+                        }}
+                        className="flex items-center gap-1 text-[10px] font-bold text-indigo-300 hover:text-indigo-200 transition-colors"
+                      >
+                        <HeartHandshake size={9} /> Pay {car.consignment.dealer}: RM {amount.toLocaleString()}
+                      </button>
+                    );
+                    return (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setFixPriceCarId(car.id); setFixPriceValue(''); }}
+                        className="flex items-center gap-1 text-[10px] font-bold text-amber-300 hover:text-amber-200 transition-colors"
+                      >
+                        <AlertTriangle size={9} /> Set purchase price for {car.consignment.dealer}
                       </button>
                     );
                   })()}
@@ -1007,6 +1078,90 @@ export default function History() {
                   className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Confirm
+                </button>
+              </div>
+            </div>
+          </Modal>
+        );
+      })()}
+
+      {/* ── Pay Consignment Dealer Modal — same "Mark as Transferred" flow as
+          Accounting > Payments, just triggered inline so directors don't get
+          bounced out of the Delivered tab to pay a dealer's share. ── */}
+      {payingConsignmentId && (() => {
+        const payout = payments.find(p => p.id === payingConsignmentId);
+        if (!payout) { setPayingConsignmentId(null); return null; }
+        return (
+          <TransferModal
+            count={1}
+            totalAmount={payout.amount}
+            onClose={() => setPayingConsignmentId(null)}
+            onConfirm={async (date, notes, _actualReceived, receiptUrl) => {
+              await updatePayment(payout.id, {
+                status: 'transferred',
+                transferredAt: date ? new Date(date).toISOString() : new Date().toISOString(),
+                transferredBy: currentUser?.id,
+                ...(receiptUrl ? { receiptUrl } : {}),
+                notes: notes || undefined,
+              });
+              setPayingConsignmentId(null);
+            }}
+          />
+        );
+      })()}
+
+      {/* ── Set Purchase Price — unblocks a consignment payout that came out to
+          RM 0 because "Fixed Amount" terms are tied to Purchase Price and it was
+          never entered at intake. Saves it, then immediately creates and opens
+          the payout so fixing it and paying it out is one continuous action. ── */}
+      {fixPriceCarId && (() => {
+        const car = cars.find(c => c.id === fixPriceCarId);
+        if (!car || !car.consignment) { setFixPriceCarId(null); return null; }
+        return (
+          <Modal
+            isOpen
+            onClose={() => setFixPriceCarId(null)}
+            title={`Set Purchase Price — ${car.consignment.dealer}`}
+            maxWidth="max-w-sm"
+          >
+            <div className="space-y-4">
+              <p className="text-gray-400 text-sm">
+                This car's payout to {car.consignment.dealer} couldn't be calculated because no Purchase Price
+                was ever entered. Enter what was agreed with the dealer for this car — the payout button will
+                appear right after.
+              </p>
+              <div>
+                <label className="block text-gray-300 text-xs font-medium mb-1.5">Purchase Price (RM)</label>
+                <input
+                  type="number"
+                  autoFocus
+                  value={fixPriceValue}
+                  onChange={e => setFixPriceValue(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full px-3 py-2.5 rounded-lg bg-obsidian-700/60 border border-obsidian-400/40 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-gold-500/50"
+                />
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setFixPriceCarId(null)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
+                <button
+                  disabled={!fixPriceValue || Number(fixPriceValue) <= 0 || fixPriceSaving}
+                  onClick={async () => {
+                    setFixPriceSaving(true);
+                    const price = Number(fixPriceValue);
+                    const updatedConsignment = { ...car.consignment!, fixedAmount: price };
+                    await updateCar(car.id, { purchasePrice: price, consignment: updatedConsignment });
+                    const updatedCar = { ...car, purchasePrice: price, consignment: updatedConsignment };
+                    const amount = calcConsignmentPayoutAmount(updatedCar, calcDealPrice(updatedCar, customers));
+                    setFixPriceCarId(null);
+                    setFixPriceSaving(false);
+                    if (amount > 0) {
+                      const created = await createConsignmentPayout(updatedCar, amount);
+                      setPayingConsignmentId(created.id);
+                    }
+                  }}
+                  className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {fixPriceSaving ? 'Saving...' : 'Save & Continue'}
                 </button>
               </div>
             </div>

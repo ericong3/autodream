@@ -27,6 +27,27 @@ export function getCommissionMonth(car: Car, customers: Customer[]): string {
   return getDeliveryDate(car, customers).slice(0, 7);
 }
 
+// What the deal actually closed at — the work order's price (net of discount)
+// when there is one, falling back to the car's list price. Shared so every
+// caller that needs "the real deal price" (commission, consignment payout)
+// agrees on the same number.
+export function calcDealPrice(car: Car, customers: Customer[]): number {
+  const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
+  const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
+  return ((wo?.sellingPrice ?? car.sellingPrice) - (wo?.discount ?? 0)) || car.sellingPrice;
+}
+
+// What we owe the consignor for an incoming-consignment car — 0 when the
+// terms can't be computed yet (e.g. "fixed_amount" but purchasePrice was
+// never entered, so consignment.fixedAmount is still 0/unset).
+export function calcConsignmentPayoutAmount(car: Car, dealPrice: number): number {
+  const c = car.consignment;
+  if (!c) return 0;
+  if (c.terms === 'fixed_amount' && c.fixedAmount) return Math.max(0, c.fixedAmount - (car.settlementAmount ?? 0));
+  if (c.terms === 'profit_split' && c.splitPercent) return Math.max(0, (dealPrice - car.purchasePrice) * (c.splitPercent / 100));
+  return 0;
+}
+
 // Sundays are the standing off-day for everyone — the divisor for proration
 // is working days in the month, not raw calendar days.
 function isWorkingDay(year: number, monthNum: number, day: number): boolean {
@@ -89,8 +110,7 @@ export async function generateDeliveryPayments(opts: {
   const dealCustomer = customers.find(c =>
     c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder),
   );
-  const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
-  const dealPrice = ((wo?.sellingPrice ?? car.sellingPrice) - (wo?.discount ?? 0)) || car.sellingPrice;
+  const dealPrice = calcDealPrice(car, customers);
 
   // Salesman commission
   if (car.assignedSalesperson && !car.outgoingConsignment && !car.isStaffSale && !car.waiveCommission) {
@@ -148,12 +168,7 @@ export async function generateDeliveryPayments(opts: {
   // Consignment payout (incoming consignment — we owe consignor)
   if (car.consignment && !exists(payments, 'consignment_payout', { carId: car.id })) {
     const c = car.consignment;
-    let amount = 0;
-    if (c.terms === 'fixed_amount' && c.fixedAmount) {
-      amount = Math.max(0, c.fixedAmount - (car.settlementAmount ?? 0));
-    } else if (c.terms === 'profit_split' && c.splitPercent) {
-      amount = Math.max(0, (dealPrice - car.purchasePrice) * (c.splitPercent / 100));
-    }
+    const amount = calcConsignmentPayoutAmount(car, dealPrice);
     if (amount > 0) {
       const dealer = dealers.find(d => d.name.toLowerCase() === c.dealer.toLowerCase());
       await addPayment({
@@ -352,8 +367,7 @@ export function collectMissingPayments(data: {
     const dealCustomer = customers.find(c =>
       c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder),
     );
-    const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
-    const dealPrice = ((wo?.sellingPrice ?? car.sellingPrice) - (wo?.discount ?? 0)) || car.sellingPrice;
+    const dealPrice = calcDealPrice(car, customers);
 
     // Salesman commission
     if (car.assignedSalesperson && !car.outgoingConsignment && !car.isStaffSale && !car.waiveCommission && !alreadyExists('salesman_commission', { carId: car.id })) {
@@ -405,9 +419,7 @@ export function collectMissingPayments(data: {
     // Consignment payout (incoming — we owe dealer)
     if (car.consignment && !alreadyExists('consignment_payout', { carId: car.id })) {
       const c = car.consignment;
-      let amount = 0;
-      if (c.terms === 'fixed_amount' && c.fixedAmount) amount = Math.max(0, c.fixedAmount - (car.settlementAmount ?? 0));
-      else if (c.terms === 'profit_split' && c.splitPercent) amount = Math.max(0, (dealPrice - car.purchasePrice) * (c.splitPercent / 100));
+      const amount = calcConsignmentPayoutAmount(car, dealPrice);
       if (amount > 0) {
         const dealer = dealers.find(d => d.name.toLowerCase() === c.dealer.toLowerCase());
         result.push({

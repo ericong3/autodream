@@ -104,7 +104,7 @@ const EMPTY_ADD = {
 };
 
 // ── Transfer / Collect modal ──────────────────────────────────────────────────
-interface TransferModalProps {
+export interface TransferModalProps {
   count: number;
   totalAmount: number;
   isCollect?: boolean;
@@ -112,7 +112,7 @@ interface TransferModalProps {
   onClose: () => void;
 }
 
-function TransferModal({ count, totalAmount, isCollect, onConfirm, onClose }: TransferModalProps) {
+export function TransferModal({ count, totalAmount, isCollect, onConfirm, onClose }: TransferModalProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState('');
