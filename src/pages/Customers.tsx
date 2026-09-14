@@ -96,6 +96,7 @@ export default function Customers() {
   const addKanbanColumn = useStore((s) => s.addKanbanColumn);
   const updateKanbanColumn = useStore((s) => s.updateKanbanColumn);
   const deleteKanbanColumn = useStore((s) => s.deleteKanbanColumn);
+  const loadKanbanColumnsForUser = useStore((s) => s.loadKanbanColumnsForUser);
   const notifications = useStore((s) => s.notifications);
   const markNotificationsReadByRef = useStore((s) => s.markNotificationsReadByRef);
 
@@ -106,6 +107,7 @@ export default function Customers() {
   const isShareHolder = currentUser?.role === 'shareholder';
   const isDirectorOrAdmin = isDirector || isAdmin;
   const isDirectorLevel = isDirectorOrAdmin || isShareHolder;
+  const isSalesperson = currentUser?.role === 'salesperson';
   const canEditLoanDocs = currentUser?.role === 'salesperson' || isDirectorOrAdmin;
 
   // ── Stale lead helpers ────────────────────────────────────
@@ -282,7 +284,10 @@ export default function Customers() {
   // leadStatus, so dragging cards is pure personal organization, not a status change.
   // Defaults on (for Leads/Loan) from the restored tab, not just future tab clicks —
   // otherwise a refresh always lands back on the plain list regardless of this default.
-  const [boardView, setBoardView] = useState(() => (tab === 'leads' || tab === 'loan') && !isShareHolder);
+  // Salespeople only — directors don't carry leads of their own, so their board is
+  // always someone else's and shouldn't pop up unasked; they land on the list and
+  // opt into "Salesman Boards" explicitly.
+  const [boardView, setBoardView] = useState(() => (tab === 'leads' || tab === 'loan') && isSalesperson);
   // Banker portal submission modal
   const [loanSubmitCustomer, setLoanSubmitCustomer] = useState<Customer | null>(null);
   const [loanSubmitInitial, setLoanSubmitInitial] = useState<{ carId?: string; amount?: number; banks?: string[] }>({});
@@ -1213,12 +1218,77 @@ export default function Customers() {
   const loanUnreadCount     = useMemo(() => myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus === 'loan_submitted' && !c.isTrashed && unreadCustomerIds.has(c.id)).length, [myCustomers, unreadCustomerIds]);
   const confirmedUnreadCount = useMemo(() => myCustomers.filter(c => !c.isTrashed && !!(c.cashWorkOrder || c.loanWorkOrder) && unreadCustomerIds.has(c.id)).length, [myCustomers, unreadCustomerIds]);
 
+  // Which board the Kanban view is showing: a director/admin picking a specific
+  // salesperson browses that salesperson's own board (read-only); everyone else
+  // (and a director who hasn't picked anyone) sees their own.
+  const viewingOthersBoard = isDirectorLevel && !['all', 'own'].includes(directorView);
+  const boardUserId = viewingOthersBoard ? directorView : currentUser!.id;
+  // Tracked so the board shows a loading state instead of a flash of empty
+  // columns while the freshly-picked salesperson's board is still in flight —
+  // that flash otherwise reads as "their board got wiped", which it isn't.
+  const [boardLoading, setBoardLoading] = useState(false);
+  useEffect(() => {
+    if (!(boardView && viewingOthersBoard)) { setBoardLoading(false); return; }
+    let cancelled = false;
+    setBoardLoading(true);
+    loadKanbanColumnsForUser(boardUserId).finally(() => { if (!cancelled) setBoardLoading(false); });
+    return () => { cancelled = true; };
+  }, [boardView, viewingOthersBoard, boardUserId]);
+
+  // Directors/admins get Salesman Board as the primary top-level switch — Leads/
+  // Cash/Loan/Confirmed are sub-navigation that only makes sense once "All List"
+  // is picked, so it nests underneath instead of competing for top billing.
+  const showListSubNav = !isDirectorLevel || isShareHolder || !boardView;
+
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      {isDirectorLevel && !isShareHolder && (
+        <div className="flex gap-2 items-center flex-wrap">
+          <div className="flex items-center bg-[#0F0E0C] border border-obsidian-400/50 rounded-lg p-0.5">
+            <button
+              onClick={() => {
+                if (['all', 'own'].includes(directorView)) {
+                  const firstSales = salespeople.find(u => u.role === 'salesperson');
+                  if (firstSales) setDirectorView(firstSales.id);
+                }
+                setBoardView(true);
+              }}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 flex items-center gap-1.5 ${
+                boardView ? 'bg-gold-500/15 text-gold-400' : 'text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              <Columns size={12} />Salesman Board
+            </button>
+            <button
+              onClick={() => { setBoardView(false); setDirectorView('all'); }}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${
+                !boardView ? 'bg-gold-500/15 text-gold-400' : 'text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              All List
+            </button>
+          </div>
+
+          {/* Salesman picker — only meaningful once a board is showing */}
+          <select
+            value={['all', 'own'].includes(directorView) ? '' : directorView}
+            onChange={e => { setDirectorView(e.target.value); setBoardView(true); }}
+            className={`input text-xs py-1.5 px-3 rounded-lg border-gold-500/40 text-gold-400 bg-gold-500/10 transition-opacity duration-200 ${
+              boardView ? 'opacity-100' : 'opacity-0 pointer-events-none w-0 px-0 border-0'
+            }`}
+          >
+            <option value="" disabled>Pick a salesperson…</option>
+            {salespeople.filter(u => u.role === 'salesperson').map(u => (
+              <option key={u.id} value={u.id}>{u.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {showListSubNav && (<div className="flex items-center justify-between">
         <div className="flex items-center gap-1 bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-1">
           <button
-            onClick={() => { setTab('leads'); setStatusFilter('all'); setCarGroupFilter('all'); setCarIdFilter('all'); setSearch(''); setBoardView(!isShareHolder); }}
+            onClick={() => { setTab('leads'); setStatusFilter('all'); setCarGroupFilter('all'); setCarIdFilter('all'); setSearch(''); setBoardView(isSalesperson); }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${tab === 'leads' ? 'bg-gold-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
             Leads
@@ -1233,7 +1303,7 @@ export default function Customers() {
             {cashUnreadCount > 0 && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
           </button>
           <button
-            onClick={() => { setTab('loan'); setStatusFilter('all'); setCarGroupFilter('all'); setCarIdFilter('all'); setLoanBankFilter('all'); setSearch(''); setBoardView(!isShareHolder); }}
+            onClick={() => { setTab('loan'); setStatusFilter('all'); setCarGroupFilter('all'); setCarIdFilter('all'); setLoanBankFilter('all'); setSearch(''); setBoardView(isSalesperson); }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${tab === 'loan' ? 'bg-purple-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
           >
             Loan <span className={`text-xs px-1.5 py-0.5 rounded-full ${tab === 'loan' ? 'bg-white/20' : 'bg-[#2C2415]'}`}>{myCustomers.filter(c => !c.cashWorkOrder && !c.loanWorkOrder && c.leadStatus === 'loan_submitted' && !c.isTrashed).length}</span>
@@ -1253,7 +1323,7 @@ export default function Customers() {
           >
             <Trash2 size={14} />
           </button>
-          {!isShareHolder && (
+          {!isShareHolder && !isDirectorLevel && (
             <button
               onClick={() => setBoardView(v => !v)}
               className={`px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${boardView ? 'bg-gold-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
@@ -1269,50 +1339,7 @@ export default function Customers() {
             <Plus size={16} />New Lead
           </button>
         )}
-      </div>
-
-      {/* Director view toggle */}
-      {isDirectorLevel && !isShareHolder && (
-        <div className="flex gap-2 items-center">
-          {(['all', 'own', 'salesman'] as const).map(opt => (
-            <button
-              key={opt}
-              onClick={() => {
-                if (opt === 'salesman') {
-                  // default to first salesperson if none selected yet
-                  const firstSales = salespeople.find(u => u.role === 'salesperson');
-                  if (!['all', 'own'].includes(directorView)) return; // already on a salesman
-                  if (firstSales) setDirectorView(firstSales.id);
-                } else {
-                  setDirectorView(opt);
-                }
-              }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                (opt === 'all' && directorView === 'all') ||
-                (opt === 'own' && directorView === 'own') ||
-                (opt === 'salesman' && !['all', 'own'].includes(directorView))
-                  ? 'bg-gold-500/15 border-gold-500/50 text-gold-400'
-                  : 'bg-[#0F0E0C] border-obsidian-400/50 text-gray-500 hover:text-gray-300 hover:border-obsidian-400'
-              }`}
-            >
-              {opt === 'all' ? 'All Leads' : opt === 'own' ? 'My Leads' : 'Salesman\'s Lead'}
-            </button>
-          ))}
-
-          {/* Salesman dropdown — shown when "Salesman's Lead" is active */}
-          {!['all', 'own'].includes(directorView) && (
-            <select
-              value={directorView}
-              onChange={e => setDirectorView(e.target.value)}
-              className="input text-xs py-1.5 px-3 rounded-lg border-gold-500/40 text-gold-400 bg-gold-500/10"
-            >
-              {salespeople.filter(u => u.role === 'salesperson').map(u => (
-                <option key={u.id} value={u.id}>{u.name}</option>
-              ))}
-            </select>
-          )}
-        </div>
-      )}
+      </div>)}
 
 
       {!boardView && tab === 'leads' && (<>
@@ -2100,7 +2127,10 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
       {boardView && (
         <KanbanBoard
           customers={myCustomers.filter(c => !c.isTrashed && !c.isDead && !c.cashWorkOrder && !c.loanWorkOrder)}
-          currentUserId={currentUser!.id}
+          currentUserId={boardUserId}
+          viewerName={viewingOthersBoard ? salespeople.find(u => u.id === boardUserId)?.name?.trim() : undefined}
+          readOnly={viewingOthersBoard}
+          loading={viewingOthersBoard && boardLoading}
           columns={kanbanColumns}
           addKanbanColumn={addKanbanColumn}
           updateKanbanColumn={updateKanbanColumn}
@@ -4664,6 +4694,7 @@ function ColorSwatchPicker({ value, onChange, onDone }: { value: string; onChang
 
 function KanbanBoard({
   customers, currentUserId, columns, addKanbanColumn, updateKanbanColumn, deleteKanbanColumn, getCar, onOpenCustomer,
+  readOnly, viewerName, loading,
 }: {
   customers: Customer[];
   currentUserId: string;
@@ -4673,6 +4704,14 @@ function KanbanBoard({
   deleteKanbanColumn: (id: string) => Promise<void>;
   getCar: (id?: string) => CarType | undefined;
   onOpenCustomer: (c: Customer) => void;
+  // A director/admin browsing a salesperson's own board — it stays that
+  // salesperson's private arrangement, so no dragging or add/edit/delete here.
+  readOnly?: boolean;
+  viewerName?: string;
+  // Fetch for this board is still in flight — render a skeleton instead of
+  // `columns` (which may still hold a previously-viewed board, or nothing yet
+  // for this one), so switching salesmen never flashes an empty-looking board.
+  loading?: boolean;
 }) {
   const myColumns = useMemo(
     () => columns.filter(c => c.userId === currentUserId).sort((a, b) => a.sortOrder - b.sortOrder),
@@ -4692,6 +4731,7 @@ function KanbanBoard({
 
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveId(null);
+    if (readOnly) return;
     const { active, over } = event;
     if (!over) return;
     const draggedId = String(active.id);
@@ -4722,12 +4762,25 @@ function KanbanBoard({
   return (
     <div className="space-y-3">
       <p className="text-gray-500 text-xs">
-        Your personal board — drag cards into your own columns however you like. Only you see this arrangement; it doesn't change the lead's real status.
+        {readOnly
+          ? `Viewing ${viewerName ?? "this salesperson"}'s personal board — read-only, only they can rearrange it.`
+          : "Your personal board — drag cards into your own columns however you like. Only you see this arrangement; it doesn't change the lead's real status."}
       </p>
+      {loading ? (
+        <div className="flex gap-3 overflow-x-auto pb-3">
+          {[0, 1, 2, 3].map(i => (
+            <div key={i} className="shrink-0 w-64 space-y-2">
+              <div className="h-4 w-24 rounded bg-obsidian-700/60 animate-pulse" />
+              <div className="h-20 rounded-xl bg-obsidian-800/40 border border-obsidian-400/20 animate-pulse" />
+              <div className="h-20 rounded-xl bg-obsidian-800/40 border border-obsidian-400/20 animate-pulse" />
+            </div>
+          ))}
+        </div>
+      ) : (
       <DndContext
-        sensors={sensors}
+        sensors={readOnly ? [] : sensors}
         collisionDetection={closestCenter}
-        onDragStart={e => setActiveId(String(e.active.id))}
+        onDragStart={e => !readOnly && setActiveId(String(e.active.id))}
         onDragEnd={handleDragEnd}
         onDragCancel={() => setActiveId(null)}
       >
@@ -4739,6 +4792,7 @@ function KanbanBoard({
             getCar={getCar}
             onOpenCustomer={onOpenCustomer}
             isUnsorted
+            readOnly={readOnly}
           />
           {myColumns.map(col => (
             <KanbanColumnView
@@ -4746,14 +4800,15 @@ function KanbanBoard({
               id={col.id}
               title={col.name}
               color={col.color}
-              onColorChange={c => updateKanbanColumn(col.id, { color: c })}
+              onColorChange={readOnly ? undefined : c => updateKanbanColumn(col.id, { color: c })}
               cards={col.cardIds.map(cid => customersById.get(cid)).filter((c): c is Customer => !!c)}
               getCar={getCar}
               onOpenCustomer={onOpenCustomer}
-              onDelete={() => setDeleteColumnTarget(col)}
+              onDelete={readOnly ? undefined : () => setDeleteColumnTarget(col)}
+              readOnly={readOnly}
             />
           ))}
-          <div className="shrink-0 w-64">
+          {!readOnly && <div className="shrink-0 w-64">
             {showAddColumn ? (
               <div className="bg-obsidian-800/60 border border-obsidian-400/40 rounded-xl p-3 space-y-3">
                 <input
@@ -4798,12 +4853,13 @@ function KanbanBoard({
                 <Plus size={16} />Add Column
               </button>
             )}
-          </div>
+          </div>}
         </div>
         <DragOverlay>
           {activeCustomer && <KanbanCardContent customer={activeCustomer} car={getCar(activeCustomer.interestedCarId)} overlay />}
         </DragOverlay>
       </DndContext>
+      )}
 
       <DeleteConfirmModal
         isOpen={!!deleteColumnTarget}
@@ -4819,7 +4875,7 @@ function KanbanBoard({
 }
 
 function KanbanColumnView({
-  id, title, color, onColorChange, cards, getCar, onOpenCustomer, isUnsorted, onDelete,
+  id, title, color, onColorChange, cards, getCar, onOpenCustomer, isUnsorted, onDelete, readOnly,
 }: {
   id: string;
   title: string;
@@ -4830,6 +4886,7 @@ function KanbanColumnView({
   onOpenCustomer: (c: Customer) => void;
   isUnsorted?: boolean;
   onDelete?: () => void;
+  readOnly?: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -4912,7 +4969,7 @@ function KanbanColumnView({
         }`}
       >
         {cards.map(c => (
-          <DraggableCustomerCard key={c.id} customer={c} car={getCar(c.interestedCarId)} onOpen={() => onOpenCustomer(c)} />
+          <DraggableCustomerCard key={c.id} customer={c} car={getCar(c.interestedCarId)} onOpen={() => onOpenCustomer(c)} readOnly={readOnly} />
         ))}
         {cards.length === 0 && (
           <p className="text-gray-700 text-xs text-center py-6">Drop cards here</p>
@@ -4922,8 +4979,8 @@ function KanbanColumnView({
   );
 }
 
-function DraggableCustomerCard({ customer, car, onOpen }: { customer: Customer; car?: CarType; onOpen: () => void }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: customer.id });
+function DraggableCustomerCard({ customer, car, onOpen, readOnly }: { customer: Customer; car?: CarType; onOpen: () => void; readOnly?: boolean }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: customer.id, disabled: readOnly });
   return (
     <div
       ref={setNodeRef}
@@ -4934,18 +4991,18 @@ function DraggableCustomerCard({ customer, car, onOpen }: { customer: Customer; 
         zIndex: isDragging ? 10 : undefined,
         position: isDragging ? 'relative' : undefined,
       }}
-      {...attributes}
-      {...listeners}
+      {...(readOnly ? {} : attributes)}
+      {...(readOnly ? {} : listeners)}
       onClick={onOpen}
       onDragStart={(e) => e.preventDefault()}
-      className="cursor-grab active:cursor-grabbing touch-none"
+      className={readOnly ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing touch-none'}
     >
-      <KanbanCardContent customer={customer} car={car} />
+      <KanbanCardContent customer={customer} car={car} hideGrip={readOnly} />
     </div>
   );
 }
 
-function KanbanCardContent({ customer, car, overlay }: { customer: Customer; car?: CarType; overlay?: boolean }) {
+function KanbanCardContent({ customer, car, overlay, hideGrip }: { customer: Customer; car?: CarType; overlay?: boolean; hideGrip?: boolean }) {
   // Solid opaque background, not the app's usual translucent bg-card-gradient —
   // that lets the column's colored background bleed straight through and tint the
   // card the same color, making it blend into the box instead of standing out in
@@ -4953,7 +5010,7 @@ function KanbanCardContent({ customer, car, overlay }: { customer: Customer; car
   return (
     <div className={`bg-obsidian-700 shadow-card border border-obsidian-400/60 rounded-lg p-3 transition-colors ${overlay ? 'shadow-2xl rotate-2 w-60' : 'hover:border-gold-500/40'}`}>
       <div className="flex items-start gap-2">
-        <GripVertical size={13} className="text-gray-700 mt-0.5 shrink-0" />
+        {!hideGrip && <GripVertical size={13} className="text-gray-700 mt-0.5 shrink-0" />}
         <div className="flex-1 min-w-0">
           <p className="text-white text-sm font-semibold truncate">{customer.name}</p>
           <p className="text-gray-500 text-xs truncate">{customer.phone}</p>

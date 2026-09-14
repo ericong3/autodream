@@ -137,6 +137,10 @@ interface StoreState {
   addKanbanColumn: (column: KanbanColumn) => Promise<void>;
   updateKanbanColumn: (id: string, patch: Partial<KanbanColumn>) => Promise<void>;
   deleteKanbanColumn: (id: string) => Promise<void>;
+  // Directors don't carry their own board — this loads (read-only) another
+  // user's personal kanban columns into state so a director can browse a
+  // salesperson's board without that board being shipped to every client by default.
+  loadKanbanColumnsForUser: (userId: string) => Promise<void>;
 
   // Dealers
   addDealer: (dealer: Dealer) => Promise<void>;
@@ -2289,6 +2293,16 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       console.error('deleteKanbanColumn failed, rolling back:', error.message);
       if (previous) set((s) => ({ kanbanColumns: [...s.kanbanColumns, previous] }));
     }
+  },
+  loadKanbanColumnsForUser: async (userId) => {
+    const { data: cols, error } = await supabase.from('kanban_columns').select('*')
+      .eq('user_id', userId).order('sort_order', { ascending: true });
+    if (error) { console.error('loadKanbanColumnsForUser failed:', error.message); return; }
+    // Merge: replace this user's rows, leave every other user's rows (own board,
+    // any other salesperson already browsed this session) untouched.
+    set((s) => ({
+      kanbanColumns: [...s.kanbanColumns.filter((c) => c.userId !== userId), ...(cols ?? []).map(rowToKanbanColumn)],
+    }));
   },
 
   markNotificationsReadByRef: async (referenceId) => {
