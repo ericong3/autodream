@@ -1301,11 +1301,19 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       // Personal Kanban columns are user-scoped at fetch time (not just filtered
       // client-side) — no reason to ship one salesperson's private board layout to
       // every other logged-in client.
-      supabase.from('kanban_columns').select('*')
-        .eq('user_id', currentUser.id).order('sort_order', { ascending: true })
-        .then(({ data: cols }) => {
-          if (cols) set({ kanbanColumns: cols.map(rowToKanbanColumn) });
-        });
+      // Retried once on failure: this fetch overwrites kanbanColumns wholesale (no
+      // merge with the persisted cache), so a transient failure must not be treated
+      // as "empty" — that's how a salesperson's whole board looked wiped on reload.
+      const fetchKanban = (isRetry = false): void => {
+        supabase.from('kanban_columns').select('*')
+          .eq('user_id', currentUser.id).order('sort_order', { ascending: true })
+          .then(({ data: cols, error }) => {
+            if (cols) set({ kanbanColumns: cols.map(rowToKanbanColumn) });
+            else if (!isRetry) setTimeout(() => fetchKanban(true), 4000);
+            else if (error) console.error('kanban_columns fetch failed, keeping cached board:', error.message);
+          });
+      };
+      fetchKanban();
     }
 
     // ── Phase 2: historical + secondary tables — load in background ──
@@ -2235,18 +2243,52 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     await supabase.from('personal_reminders').delete().eq('id', id);
   },
 
+  // These three set local state optimistically first, then write through to Supabase.
+  // If the write silently fails (dropped connection, PWA backgrounded mid-request —
+  // the same class of issue behind the delete-bug/loadAll fixes above) and nothing
+  // rolls the optimistic state back, the user keeps seeing their change locally, but
+  // the next loadAll() overwrites kanbanColumns wholesale from the DB (see the
+  // kanban_columns fetch above) with whatever never got saved — which is exactly what
+  // makes a whole column (and the cards dragged into it) seem to vanish on reload.
+  // Retry once, and on continued failure roll back so the UI matches what's actually
+  // persisted instead of silently drifting from it.
   addKanbanColumn: async (column) => {
     set((s) => ({ kanbanColumns: [...s.kanbanColumns, column] }));
-    const { error } = await supabase.from('kanban_columns').insert(kanbanColumnToRow(column));
-    if (error) console.error('addKanbanColumn failed:', error.message);
+    let { error } = await supabase.from('kanban_columns').insert(kanbanColumnToRow(column));
+    if (error) {
+      await new Promise((r) => setTimeout(r, 1500));
+      ({ error } = await supabase.from('kanban_columns').insert(kanbanColumnToRow(column)));
+    }
+    if (error) {
+      console.error('addKanbanColumn failed, rolling back:', error.message);
+      set((s) => ({ kanbanColumns: s.kanbanColumns.filter((c) => c.id !== column.id) }));
+    }
   },
   updateKanbanColumn: async (id, patch) => {
+    const previous = get().kanbanColumns.find((c) => c.id === id);
     set((s) => ({ kanbanColumns: s.kanbanColumns.map((c) => (c.id === id ? { ...c, ...patch } : c)) }));
-    await supabase.from('kanban_columns').update(kanbanColumnToRow(patch)).eq('id', id);
+    let { error } = await supabase.from('kanban_columns').update(kanbanColumnToRow(patch)).eq('id', id);
+    if (error) {
+      await new Promise((r) => setTimeout(r, 1500));
+      ({ error } = await supabase.from('kanban_columns').update(kanbanColumnToRow(patch)).eq('id', id));
+    }
+    if (error) {
+      console.error('updateKanbanColumn failed, rolling back:', error.message);
+      if (previous) set((s) => ({ kanbanColumns: s.kanbanColumns.map((c) => (c.id === id ? previous : c)) }));
+    }
   },
   deleteKanbanColumn: async (id) => {
+    const previous = get().kanbanColumns.find((c) => c.id === id);
     set((s) => ({ kanbanColumns: s.kanbanColumns.filter((c) => c.id !== id) }));
-    await supabase.from('kanban_columns').delete().eq('id', id);
+    let { error } = await supabase.from('kanban_columns').delete().eq('id', id);
+    if (error) {
+      await new Promise((r) => setTimeout(r, 1500));
+      ({ error } = await supabase.from('kanban_columns').delete().eq('id', id));
+    }
+    if (error) {
+      console.error('deleteKanbanColumn failed, rolling back:', error.message);
+      if (previous) set((s) => ({ kanbanColumns: [...s.kanbanColumns, previous] }));
+    }
   },
 
   markNotificationsReadByRef: async (referenceId) => {
