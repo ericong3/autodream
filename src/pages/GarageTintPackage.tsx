@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Car, Layers, AlertCircle } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
@@ -123,10 +123,23 @@ export default function GarageTintPackage() {
   const [mix, setMix] = useState<MixState>(() => detectMix(incoming?.packageType === 'mix' ? incoming.selections : undefined));
   const [extras, setExtras] = useState<ExtraState>(() => detectExtras(incoming?.extras));
   const [discount, setDiscount] = useState(incoming?.discount ?? 0);
-  // Kept out of sight by default — a customer watching the screen shouldn't
-  // see a "Discount" field and ask for one. Only reveals once the salesman
-  // deliberately taps for it, or if a discount was already applied earlier.
+  // No visible trigger at all — a customer watching the screen shouldn't be
+  // able to spot anything to ask about. Only reveals via 5 quick taps on the
+  // "Price Summary" title (a plain-looking heading, not a button), or if a
+  // discount was already applied earlier (e.g. after Back).
   const [showDiscount, setShowDiscount] = useState(!!incoming?.discount);
+  const discountTapCount = useRef(0);
+  const discountTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleTitleTap = () => {
+    discountTapCount.current += 1;
+    if (discountTapTimer.current) clearTimeout(discountTapTimer.current);
+    if (discountTapCount.current >= 5) {
+      setShowDiscount(true);
+      discountTapCount.current = 0;
+      return;
+    }
+    discountTapTimer.current = setTimeout(() => { discountTapCount.current = 0; }, 1200);
+  };
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -466,7 +479,7 @@ export default function GarageTintPackage() {
 
           {/* Price summary */}
           <div className="relative overflow-hidden rounded-[28px] p-6 sm:p-8 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg h-fit">
-            <h2 className="font-display text-lg text-white font-semibold tracking-wide mb-5">Price Summary</h2>
+            <h2 onClick={handleTitleTap} className="font-display text-lg text-white font-semibold tracking-wide mb-5 select-none">Price Summary</h2>
 
             <div className="space-y-2.5 text-sm mb-4">
               {packageType === 'full' ? (
@@ -507,15 +520,7 @@ export default function GarageTintPackage() {
                 </div>
               </div>
             ) : (
-              <div className="flex justify-end py-3 border-t border-white/10">
-                <button
-                  type="button"
-                  onClick={() => setShowDiscount(true)}
-                  className="text-white/15 hover:text-white/40 text-[10px] transition-colors"
-                >
-                  + discount
-                </button>
-              </div>
+              <div className="border-t border-white/10 py-3" />
             )}
 
             <div className="flex justify-between items-baseline pt-3 border-t border-white/10 mb-6">
