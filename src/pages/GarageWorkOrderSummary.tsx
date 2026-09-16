@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Car, User, Phone, Layers, X, ArrowRight } from 'lucide-react';
+import { Car, User, Phone, Layers, X, ArrowRight, Pencil } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import Modal from '../components/Modal';
 import { getGarageVehicle, getGarageCustomer } from '../lib/garageCustomers';
@@ -104,6 +104,17 @@ export default function GarageWorkOrderSummary() {
   return (
     <GarageShell title="Order Summary" showBack backTo={backToPackage}>
       <div className="max-w-5xl mx-auto">
+        {!loading && (
+          <div className="flex justify-end mb-4">
+            <button
+              onClick={() => navigate(backToPackage)}
+              className="flex items-center gap-1.5 text-white/50 hover:text-gold-400 text-sm font-medium transition-colors"
+            >
+              <Pencil size={14} /> Edit
+            </button>
+          </div>
+        )}
+
         {loading ? (
           <p className="text-white/40 text-sm text-center py-10">Loading…</p>
         ) : (
@@ -222,20 +233,12 @@ export default function GarageWorkOrderSummary() {
               <span className="text-gold-400 font-display text-lg font-bold">{formatRM(grandTotal)}</span>
             </div>
 
-            <div className="flex gap-3">
-              <button
-                onClick={() => navigate(backToPackage)}
-                className="flex-1 px-4 py-3 btn-ghost rounded-xl text-sm"
-              >
-                Edit
-              </button>
-              <button
-                onClick={handleContinue}
-                className="flex-[2] flex items-center justify-center gap-2 btn-gold px-4 py-3 rounded-xl text-sm"
-              >
-                Continue to Payment <ArrowRight size={15} />
-              </button>
-            </div>
+            <button
+              onClick={handleContinue}
+              className="w-full flex items-center justify-center gap-2 btn-gold px-4 py-3 rounded-xl text-sm"
+            >
+              Continue to Payment <ArrowRight size={15} />
+            </button>
           </div>
         )}
       </div>
