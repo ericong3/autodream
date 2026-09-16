@@ -50,6 +50,7 @@ import GarageServiceStub from './pages/GarageServiceStub';
 import GarageInvoiceDetail from './pages/GarageInvoiceDetail';
 import GarageTintPackage from './pages/GarageTintPackage';
 import GarageWorkOrderSummary from './pages/GarageWorkOrderSummary';
+import GarageWorkOrderPayment from './pages/GarageWorkOrderPayment';
 import GarageInstallerJobs from './pages/GarageInstallerJobs';
 import GarageTintPricing from './pages/GarageTintPricing';
 import { roleHome, landingPath, garageHome } from './utils/landingPath';
@@ -201,6 +202,7 @@ export default function App() {
         <Route path="/garage/work-order/customer/:id/vehicle/:vehicleId" element={<RequireGarage><GarageWorkOrderContinue /></RequireGarage>} />
         <Route path="/garage/work-order/customer/:id/vehicle/:vehicleId/service/tinted" element={<RequireGarage><GarageTintPackage /></RequireGarage>} />
         <Route path="/garage/work-order/customer/:id/vehicle/:vehicleId/service/tinted/summary" element={<RequireGarage><GarageWorkOrderSummary /></RequireGarage>} />
+        <Route path="/garage/work-order/customer/:id/vehicle/:vehicleId/service/tinted/payment" element={<RequireGarage><GarageWorkOrderPayment /></RequireGarage>} />
         <Route path="/garage/work-order/customer/:id/vehicle/:vehicleId/service/:service" element={<RequireGarage><GarageServiceStub /></RequireGarage>} />
         <Route path="/garage/invoice/:invoiceId" element={<RequireGarage><GarageInvoiceDetail /></RequireGarage>} />
         <Route path="/garage/installer" element={<RequireGarage><GarageInstallerJobs /></RequireGarage>} />

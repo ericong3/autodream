@@ -70,6 +70,8 @@ export interface GarageTintOrder {
   createdAt: string;
 }
 
+export type GaragePaymentMethod = 'cash' | 'card' | 'transfer' | 'installment';
+
 // A completed/sold job for a vehicle — the record a salesman pulls up when a
 // customer comes back for a warranty claim or replacement after delivery.
 export interface GarageInvoice {
@@ -79,8 +81,20 @@ export interface GarageInvoice {
   vehicleId: string;
   service: GarageService;
   invoiceDate: string; // 'YYYY-MM-DD'
+  paymentMethod?: GaragePaymentMethod;
   createdAt: string;
   createdBy?: string;
+}
+
+// Generic add-on product tacked onto an order alongside the base service —
+// not tint-specific, so any GarageService can carry add-ons.
+export interface GarageInvoiceAddon {
+  id: string;
+  invoiceId: string;
+  name: string;
+  price: number;
+  qty: number;
+  createdAt: string;
 }
 
 export type GarageClaimType = 'warranty' | 'replacement';

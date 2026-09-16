@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import type { GarageInvoice, GarageInvoiceClaim, GarageService, GarageClaimType } from '../types';
+import type { GarageInvoice, GarageInvoiceClaim, GarageInvoiceAddon, GarageService, GarageClaimType, GaragePaymentMethod } from '../types';
 import { generateId } from '../utils/format';
 
 function rowToInvoice(r: any): GarageInvoice {
@@ -10,8 +10,20 @@ function rowToInvoice(r: any): GarageInvoice {
     vehicleId: r.vehicle_id,
     service: r.service,
     invoiceDate: r.invoice_date,
+    paymentMethod: r.payment_method ?? undefined,
     createdAt: r.created_at,
     createdBy: r.created_by ?? undefined,
+  };
+}
+
+function rowToAddon(r: any): GarageInvoiceAddon {
+  return {
+    id: r.id,
+    invoiceId: r.invoice_id,
+    name: r.name,
+    price: Number(r.price),
+    qty: r.qty,
+    createdAt: r.created_at,
   };
 }
 
@@ -44,18 +56,44 @@ export async function getGarageInvoice(id: string): Promise<GarageInvoice | null
 }
 
 export async function createGarageInvoice(input: {
-  customerId: string; vehicleId: string; service: GarageService; createdBy?: string;
+  customerId: string; vehicleId: string; service: GarageService; paymentMethod?: GaragePaymentMethod; createdBy?: string;
 }): Promise<GarageInvoice> {
   const row = {
     id: generateId(),
     customer_id: input.customerId,
     vehicle_id: input.vehicleId,
     service: input.service,
+    payment_method: input.paymentMethod || null,
     created_by: input.createdBy || null,
   };
   const { data, error } = await supabase.from('garage_invoices').insert(row).select().single();
   if (error) throw error;
   return rowToInvoice(data);
+}
+
+export async function listInvoiceAddons(invoiceId: string): Promise<GarageInvoiceAddon[]> {
+  const { data, error } = await supabase
+    .from('garage_invoice_addons')
+    .select('*')
+    .eq('invoice_id', invoiceId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map(rowToAddon);
+}
+
+export async function createInvoiceAddon(input: {
+  invoiceId: string; name: string; price: number; qty: number;
+}): Promise<GarageInvoiceAddon> {
+  const row = {
+    id: generateId(),
+    invoice_id: input.invoiceId,
+    name: input.name,
+    price: input.price,
+    qty: input.qty,
+  };
+  const { data, error } = await supabase.from('garage_invoice_addons').insert(row).select().single();
+  if (error) throw error;
+  return rowToAddon(data);
 }
 
 export async function listInvoiceClaims(invoiceId: string): Promise<GarageInvoiceClaim[]> {

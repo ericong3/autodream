@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Car, User, Phone, ShieldCheck, RefreshCw, AlertCircle } from 'lucide-react';
+import { Car, User, Phone, ShieldCheck, RefreshCw, AlertCircle, Banknote, CreditCard, ArrowRightLeft, CalendarClock } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import Modal from '../components/Modal';
 import { useStore } from '../store';
 import { getGarageVehicle, getGarageCustomer } from '../lib/garageCustomers';
-import { getGarageInvoice, listInvoiceClaims, createInvoiceClaim } from '../lib/garageInvoices';
+import { getGarageInvoice, listInvoiceClaims, createInvoiceClaim, listInvoiceAddons } from '../lib/garageInvoices';
 import { getTintOrder } from '../lib/garageTint';
 import { GARAGE_SERVICE_MAP } from '../utils/garageServices';
 import { TINT_SERIES, GLASS_POSITIONS, EXTRA_GLASS_OPTIONS } from '../utils/tintPricing';
 import { formatRM } from '../utils/format';
-import type { GarageInvoice, GarageVehicle, GarageCustomer, GarageInvoiceClaim, GarageClaimType, GarageTintOrder } from '../types';
+import type {
+  GarageInvoice, GarageVehicle, GarageCustomer, GarageInvoiceClaim, GarageClaimType, GarageTintOrder,
+  GarageInvoiceAddon, GaragePaymentMethod,
+} from '../types';
 
 const TINT_SERIES_LABEL = Object.fromEntries(TINT_SERIES.map((s) => [s.key, s.label]));
 const GLASS_POSITION_LABEL = Object.fromEntries([...GLASS_POSITIONS, ...EXTRA_GLASS_OPTIONS].map((p) => [p.key, p.label]));
@@ -18,6 +21,13 @@ const GLASS_POSITION_LABEL = Object.fromEntries([...GLASS_POSITIONS, ...EXTRA_GL
 const CLAIM_META: Record<GarageClaimType, { label: string; bearBy: string; badge: string; icon: typeof ShieldCheck }> = {
   warranty: { label: 'Warranty Claim', bearBy: 'Borne by supplier', badge: 'bg-blue-500/15 border-blue-500/30 text-blue-400', icon: ShieldCheck },
   replacement: { label: 'Replacement', bearBy: 'Borne by company', badge: 'bg-orange-500/15 border-orange-500/30 text-orange-400', icon: RefreshCw },
+};
+
+const PAYMENT_METHOD_META: Record<GaragePaymentMethod, { label: string; icon: typeof Banknote }> = {
+  cash: { label: 'Cash', icon: Banknote },
+  card: { label: 'Card', icon: CreditCard },
+  transfer: { label: 'Transfer', icon: ArrowRightLeft },
+  installment: { label: 'Installment', icon: CalendarClock },
 };
 
 export default function GarageInvoiceDetail() {
@@ -29,6 +39,7 @@ export default function GarageInvoiceDetail() {
   const [customer, setCustomer] = useState<GarageCustomer | null>(null);
   const [claims, setClaims] = useState<GarageInvoiceClaim[]>([]);
   const [tintOrder, setTintOrder] = useState<GarageTintOrder | null>(null);
+  const [addons, setAddons] = useState<GarageInvoiceAddon[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
@@ -42,16 +53,18 @@ export default function GarageInvoiceDetail() {
     getGarageInvoice(invoiceId).then(async (inv) => {
       if (!inv) { setNotFound(true); setLoading(false); return; }
       setInvoice(inv);
-      const [v, c, cl, to] = await Promise.all([
+      const [v, c, cl, to, ad] = await Promise.all([
         getGarageVehicle(inv.vehicleId),
         getGarageCustomer(inv.customerId),
         listInvoiceClaims(inv.id),
         inv.service === 'tinted' ? getTintOrder(inv.id) : Promise.resolve(null),
+        listInvoiceAddons(inv.id),
       ]);
       setVehicle(v);
       setCustomer(c);
       setClaims(cl);
       setTintOrder(to);
+      setAddons(ad);
       setLoading(false);
     });
   };
@@ -112,6 +125,12 @@ export default function GarageInvoiceDetail() {
               <h2 className="font-display text-lg text-white font-semibold tracking-wide">{invoice.invoiceNumber}</h2>
               <p className="text-white/40 text-xs">{meta.label} · {new Date(invoice.invoiceDate).toLocaleDateString('en-MY')}</p>
             </div>
+            {invoice.paymentMethod && (
+              <span className="ml-auto flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-full border bg-white/[0.03] border-white/10 text-white/60">
+                {(() => { const M = PAYMENT_METHOD_META[invoice.paymentMethod].icon; return <M size={12} />; })()}
+                {PAYMENT_METHOD_META[invoice.paymentMethod].label}
+              </span>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
@@ -196,6 +215,30 @@ export default function GarageInvoiceDetail() {
                 <span className="text-gold-400 font-display text-lg font-bold">{formatRM(tintOrder.finalTotal)}</span>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Add-on products */}
+        {addons.length > 0 && (
+          <div className="relative overflow-hidden rounded-[28px] p-8
+            bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
+            <h3 className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-4">Add-on Products</h3>
+            <div className="space-y-1.5">
+              {addons.map((a) => (
+                <div key={a.id} className="flex items-center justify-between text-sm">
+                  <span className="text-white/60">{a.name} {a.qty > 1 && <span className="text-white/30">× {a.qty}</span>}</span>
+                  <span className="text-white">{formatRM(a.price * a.qty)}</span>
+                </div>
+              ))}
+            </div>
+            {tintOrder && (
+              <div className="mt-5 pt-4 border-t border-white/10 flex justify-between items-baseline">
+                <span className="text-white font-semibold text-sm">Order Total</span>
+                <span className="text-gold-400 font-display text-lg font-bold">
+                  {formatRM(tintOrder.finalTotal + addons.reduce((sum, a) => sum + a.price * a.qty, 0))}
+                </span>
+              </div>
+            )}
           </div>
         )}
 
