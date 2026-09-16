@@ -1,9 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Banknote, CreditCard, ArrowRightLeft, CalendarClock, CheckCircle2, AlertCircle, Send, Clock } from 'lucide-react';
+import {
+  Banknote, CreditCard, ArrowRightLeft, CalendarClock, CheckCircle2, AlertCircle, Send, Clock,
+  Upload, Camera, FileText, X,
+} from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import { useStore } from '../store';
-import { createGarageInvoice, createInvoiceAddon } from '../lib/garageInvoices';
+import { createGarageInvoice, createInvoiceAddon, uploadInvoiceReceipt } from '../lib/garageInvoices';
 import { createTintOrder } from '../lib/garageTint';
 import { createInstallerJob } from '../lib/garageInstallerJobs';
 import { formatRM } from '../utils/format';
@@ -42,9 +45,24 @@ export default function GarageWorkOrderPayment() {
 
   const [timing, setTiming] = useState<GaragePaymentStatus>('paid');
   const [method, setMethod] = useState<GaragePaymentMethod | ''>('');
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
+
+  const handleReceiptPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!/^image\//.test(file.type) && file.type !== 'application/pdf') {
+      setError('Receipt must be an image or a PDF');
+      return;
+    }
+    setError('');
+    setReceiptFile(file);
+  };
 
   useEffect(() => {
     if (!state) {
@@ -77,6 +95,9 @@ export default function GarageWorkOrderPayment() {
       await Promise.all(addons.map((a) => createInvoiceAddon({
         invoiceId: invoice.id, name: a.name, price: a.price, qty: a.qty,
       })));
+      if (receiptFile) {
+        await uploadInvoiceReceipt(invoice.id, receiptFile);
+      }
       // Only Tint has an installer queue so far — Coating/PPF/Spray will get
       // their own worker queues later.
       if (invoice.service === 'tinted') {
@@ -164,6 +185,43 @@ export default function GarageWorkOrderPayment() {
               </button>
             ))}
           </div>
+
+          {timing === 'paid' && method && (
+            <div className="mt-8 pt-6 border-t border-white/10">
+              <p className="text-white/50 text-xs font-medium uppercase tracking-wider mb-4">Proof of Payment (optional)</p>
+              {receiptFile ? (
+                <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-gold-400/30 bg-gold-500/10">
+                  <span className="flex items-center gap-2 text-sm text-white/80 truncate">
+                    <FileText size={15} className="text-gold-400 shrink-0" /> {receiptFile.name}
+                  </span>
+                  <button onClick={() => setReceiptFile(null)} className="text-white/40 hover:text-red-400 transition-colors shrink-0">
+                    <X size={15} />
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium
+                      bg-white/[0.03] border-white/10 text-white/60 hover:text-white/90 hover:border-white/20 transition-colors"
+                  >
+                    <Upload size={16} /> Upload File
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => cameraInputRef.current?.click()}
+                    className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium
+                      bg-white/[0.03] border-white/10 text-white/60 hover:text-white/90 hover:border-white/20 transition-colors"
+                  >
+                    <Camera size={16} /> Take Photo
+                  </button>
+                </div>
+              )}
+              <input ref={fileInputRef} type="file" accept="image/*,application/pdf" onChange={handleReceiptPick} className="hidden" />
+              <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleReceiptPick} className="hidden" />
+            </div>
+          )}
         </div>
 
         {error && (

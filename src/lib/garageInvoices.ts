@@ -15,6 +15,8 @@ function rowToInvoice(r: any): GarageInvoice {
     invoiceDate: r.invoice_date,
     paymentMethod: r.payment_method ?? undefined,
     paymentStatus: r.payment_status,
+    receiptPath: r.receipt_path ?? undefined,
+    receiptName: r.receipt_name ?? undefined,
     createdAt: r.created_at,
     createdBy: r.created_by ?? undefined,
   };
@@ -86,6 +88,29 @@ export async function markInvoicePaid(invoiceId: string): Promise<GarageInvoice>
     .single();
   if (error) throw error;
   return rowToInvoice(data);
+}
+
+// Proof-of-payment upload — photo, camera capture, or PDF. Only the storage
+// path is kept on the invoice row; a signed URL is generated on view since
+// the bucket is private.
+export async function uploadInvoiceReceipt(invoiceId: string, file: File): Promise<GarageInvoice> {
+  const path = `${invoiceId}/${Date.now()}-${file.name}`;
+  const { error: uploadError } = await supabase.storage.from('garage-invoice-receipts').upload(path, file);
+  if (uploadError) throw uploadError;
+  const { data, error } = await supabase
+    .from('garage_invoices')
+    .update({ receipt_path: path, receipt_name: file.name })
+    .eq('id', invoiceId)
+    .select()
+    .single();
+  if (error) throw error;
+  return rowToInvoice(data);
+}
+
+export async function getInvoiceReceiptUrl(path: string): Promise<string> {
+  const { data, error } = await supabase.storage.from('garage-invoice-receipts').createSignedUrl(path, 60);
+  if (error) throw error;
+  return data.signedUrl;
 }
 
 export async function listInvoiceAddons(invoiceId: string): Promise<GarageInvoiceAddon[]> {

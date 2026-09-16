@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Car, User, Phone, ShieldCheck, RefreshCw, AlertCircle, Banknote, CreditCard, ArrowRightLeft, CalendarClock, Clock, CheckCircle2 } from 'lucide-react';
+import {
+  Car, User, Phone, ShieldCheck, RefreshCw, AlertCircle, Banknote, CreditCard, ArrowRightLeft, CalendarClock,
+  Clock, CheckCircle2, FileText,
+} from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import Modal from '../components/Modal';
 import { useStore } from '../store';
 import { getGarageVehicle, getGarageCustomer } from '../lib/garageCustomers';
-import { getGarageInvoice, listInvoiceClaims, createInvoiceClaim, listInvoiceAddons, markInvoicePaid } from '../lib/garageInvoices';
+import {
+  getGarageInvoice, listInvoiceClaims, createInvoiceClaim, listInvoiceAddons, markInvoicePaid, getInvoiceReceiptUrl,
+} from '../lib/garageInvoices';
 import { getTintOrder } from '../lib/garageTint';
 import { GARAGE_SERVICE_MAP } from '../utils/garageServices';
 import { TINT_SERIES, GLASS_POSITIONS, EXTRA_GLASS_OPTIONS } from '../utils/tintPricing';
@@ -47,6 +52,7 @@ export default function GarageInvoiceDetail() {
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
   const [markingPaid, setMarkingPaid] = useState(false);
+  const [openingReceipt, setOpeningReceipt] = useState(false);
 
   const load = () => {
     if (!invoiceId) return;
@@ -86,6 +92,17 @@ export default function GarageInvoiceDetail() {
       load();
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleViewReceipt = async () => {
+    if (!invoice?.receiptPath) return;
+    setOpeningReceipt(true);
+    try {
+      const url = await getInvoiceReceiptUrl(invoice.receiptPath);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } finally {
+      setOpeningReceipt(false);
     }
   };
 
@@ -152,6 +169,16 @@ export default function GarageInvoiceDetail() {
                 <span className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-full border bg-orange-500/15 border-orange-500/30 text-orange-400">
                   <Clock size={12} /> Pending Payment
                 </span>
+              )}
+              {invoice.receiptPath && (
+                <button
+                  onClick={handleViewReceipt}
+                  disabled={openingReceipt}
+                  className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-full border
+                    bg-white/[0.03] border-white/10 text-white/60 hover:text-gold-400 hover:border-gold-400/40 transition-colors disabled:opacity-60"
+                >
+                  <FileText size={12} /> {openingReceipt ? 'Opening…' : 'Receipt'}
+                </button>
               )}
             </div>
           </div>

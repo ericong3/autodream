@@ -86,6 +86,8 @@ export interface GarageInvoice {
   invoiceDate: string; // 'YYYY-MM-DD'
   paymentMethod?: GaragePaymentMethod;
   paymentStatus: GaragePaymentStatus;
+  receiptPath?: string; // path in the 'garage-invoice-receipts' storage bucket
+  receiptName?: string;
   createdAt: string;
   createdBy?: string;
 }
