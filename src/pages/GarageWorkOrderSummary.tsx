@@ -168,7 +168,7 @@ export default function GarageWorkOrderSummary() {
               </div>
             </div>
 
-            {/* Add-on products + order total */}
+            {/* Add-on products */}
             <div className="relative overflow-hidden rounded-[28px] p-6 sm:p-8 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg h-fit">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-white/50 text-xs font-semibold uppercase tracking-wider">Add-on Products</h3>
@@ -181,9 +181,9 @@ export default function GarageWorkOrderSummary() {
               </div>
 
               {addons.length === 0 ? (
-                <p className="text-white/30 text-xs mb-4">No add-on products yet</p>
+                <p className="text-white/30 text-xs">No add-on products yet</p>
               ) : (
-                <div className="space-y-1.5 mb-4">
+                <div className="space-y-1.5">
                   {addons.map((a) => (
                     <div key={a.clientId} className="flex items-center justify-between text-sm gap-3">
                       <span className="text-white/60 truncate">{a.name} {a.qty > 1 && <span className="text-white/30">× {a.qty}</span>}</span>
@@ -197,26 +197,30 @@ export default function GarageWorkOrderSummary() {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        )}
 
-              <div className="pt-4 border-t border-white/10 flex justify-between items-baseline mb-6">
-                <span className="text-white font-semibold text-sm">Order Total</span>
-                <span className="text-gold-400 font-display text-lg font-bold">{formatRM(grandTotal)}</span>
-              </div>
+        {!loading && (
+          <div className="mt-6 space-y-6">
+            <div className="flex justify-between items-baseline px-2">
+              <span className="text-white font-semibold text-sm">Order Total</span>
+              <span className="text-gold-400 font-display text-lg font-bold">{formatRM(grandTotal)}</span>
+            </div>
 
-              <div className="flex flex-col gap-3">
-                <button
-                  onClick={handleContinue}
-                  className="flex items-center justify-center gap-2 btn-gold px-4 py-3 rounded-xl text-sm"
-                >
-                  Continue to Payment <ArrowRight size={15} />
-                </button>
-                <button
-                  onClick={() => navigate(backToPackage)}
-                  className="px-4 py-2.5 btn-ghost rounded-xl text-sm"
-                >
-                  Edit
-                </button>
-              </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => navigate(backToPackage)}
+                className="flex-1 px-4 py-3 btn-ghost rounded-xl text-sm"
+              >
+                Edit
+              </button>
+              <button
+                onClick={handleContinue}
+                className="flex-[2] flex items-center justify-center gap-2 btn-gold px-4 py-3 rounded-xl text-sm"
+              >
+                Continue to Payment <ArrowRight size={15} />
+              </button>
             </div>
           </div>
         )}
