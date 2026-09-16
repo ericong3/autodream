@@ -5,10 +5,16 @@ import GarageShell from '../components/GarageShell';
 import Modal from '../components/Modal';
 import { getGarageVehicle, getGarageCustomer } from '../lib/garageCustomers';
 import { TINT_SERIES, GLASS_POSITIONS, EXTRA_GLASS_OPTIONS } from '../utils/tintPricing';
+import { GARAGE_SERVICES } from '../utils/garageServices';
 import { formatRM, generateId } from '../utils/format';
 import type {
   GarageVehicle, GarageCustomer, TintPackageType, TintSeries, TintPositionSelection,
 } from '../types';
+
+// This page only ever runs for the Tint work order, so the other 3 services
+// are always the quick-add options — a customer getting a tint job is a
+// natural moment to also sell Coating/PPF/Spray as add-ons.
+const OTHER_SERVICES = GARAGE_SERVICES.filter((s) => s.key !== 'tinted');
 
 const TINT_SERIES_LABEL = Object.fromEntries(TINT_SERIES.map((s) => [s.key, s.label]));
 const GLASS_POSITION_LABEL = Object.fromEntries([...GLASS_POSITIONS, ...EXTRA_GLASS_OPTIONS].map((p) => [p.key, p.label]));
@@ -66,8 +72,8 @@ export default function GarageWorkOrderSummary() {
 
   const backToPackage = `/garage/work-order/customer/${id}/vehicle/${vehicleId}/service/tinted`;
 
-  const openAddonModal = () => {
-    setAddonName('');
+  const openAddonModal = (prefillName?: string) => {
+    setAddonName(prefillName ?? '');
     setAddonPrice('');
     setAddonQty('1');
     setAddonError('');
@@ -173,11 +179,25 @@ export default function GarageWorkOrderSummary() {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-white/50 text-xs font-semibold uppercase tracking-wider">Add-on Products</h3>
                 <button
-                  onClick={openAddonModal}
+                  onClick={() => openAddonModal()}
                   className="flex items-center gap-1.5 text-gold-400 hover:text-gold-300 text-xs font-medium transition-colors"
                 >
                   <Plus size={13} /> Add Product
                 </button>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 mb-4">
+                {OTHER_SERVICES.map((s) => (
+                  <button
+                    key={s.key}
+                    onClick={() => openAddonModal(s.label)}
+                    className="flex flex-col items-center justify-center gap-1.5 px-2 py-3 rounded-xl border text-xs font-medium
+                      bg-white/[0.03] border-white/10 text-white/60 hover:text-gold-400 hover:border-gold-400/40 transition-colors"
+                  >
+                    <s.icon size={16} strokeWidth={1.5} />
+                    {s.label}
+                  </button>
+                ))}
               </div>
 
               {addons.length === 0 ? (
