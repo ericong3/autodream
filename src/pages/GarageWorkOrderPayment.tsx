@@ -173,7 +173,7 @@ export default function GarageWorkOrderPayment() {
         <div className="flex gap-3">
           <button
             onClick={() => navigate(-1)}
-            className="flex-1 px-4 py-3 btn-ghost rounded-xl text-sm"
+            className="flex-1 px-4 py-3 btn-ghost rounded-xl text-sm !text-white/90 font-medium"
           >
             Back
           </button>
