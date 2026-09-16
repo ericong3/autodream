@@ -102,7 +102,7 @@ export default function GarageWorkOrderSummary() {
   };
 
   return (
-    <GarageShell title="Order Summary" showBack backTo={backToPackage}>
+    <GarageShell title="Order Summary">
       <div className="max-w-5xl mx-auto">
         {!loading && (
           <div className="flex justify-start mb-4">
