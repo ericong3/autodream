@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Car, User, Phone, Layers, X, ArrowRight, Pencil } from 'lucide-react';
+import { Car, User, Phone, Layers, X, ArrowRight, ArrowLeft } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import Modal from '../components/Modal';
 import { getGarageVehicle, getGarageCustomer } from '../lib/garageCustomers';
@@ -105,12 +105,12 @@ export default function GarageWorkOrderSummary() {
     <GarageShell title="Order Summary" showBack backTo={backToPackage}>
       <div className="max-w-5xl mx-auto">
         {!loading && (
-          <div className="flex justify-end mb-4">
+          <div className="flex justify-start mb-4">
             <button
               onClick={() => navigate(backToPackage)}
               className="flex items-center gap-1.5 text-white/50 hover:text-gold-400 text-sm font-medium transition-colors"
             >
-              <Pencil size={14} /> Edit
+              <ArrowLeft size={14} /> Back
             </button>
           </div>
         )}
