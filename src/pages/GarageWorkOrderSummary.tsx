@@ -107,7 +107,7 @@ export default function GarageWorkOrderSummary() {
         {!loading && (
           <div className="flex justify-start mb-4">
             <button
-              onClick={() => navigate(backToPackage)}
+              onClick={() => navigate(backToPackage, { state: pending })}
               className="flex items-center gap-1.5 text-white/50 hover:text-gold-400 text-sm font-medium transition-colors"
             >
               <ArrowLeft size={14} /> Back

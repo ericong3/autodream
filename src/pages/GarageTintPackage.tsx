@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Car, Layers, AlertCircle } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import { getGarageVehicle } from '../lib/garageCustomers';
@@ -44,25 +44,85 @@ function extraPrice(key: ExtraGlassKey, series: TintSeries, positionPrices: Reco
   return positionPrices[`rear_panel_window|${series}`] ?? 0;
 }
 
+// The Summary page's Back button hands the previously built order back here
+// via router state, so the form can be rehydrated instead of resetting —
+// same shape this page originally sent to Summary.
+interface IncomingOrder {
+  packageType: TintPackageType;
+  fullSeries?: TintSeries;
+  selections: TintPositionSelection[];
+  extras: TintPositionSelection[];
+  discount: number;
+}
+
+function detectFullVlt(selections: TintPositionSelection[] | undefined): {
+  mode: VltGroupMode; whole: string; front: string; rear: string; perWindow: FullVltState;
+} {
+  const perWindow: FullVltState = { ...emptyFullVlt };
+  if (!selections || selections.length === 0) {
+    return { mode: 'individual', whole: '', front: '', rear: '', perWindow };
+  }
+  GLASS_POSITIONS.forEach((p) => {
+    const found = selections.find((s) => s.position === p.key);
+    if (found) perWindow[p.key] = found.vlt;
+  });
+  const values = GLASS_POSITIONS.map((p) => perWindow[p.key]);
+  if (values.every((v) => v && v === values[0])) {
+    return { mode: 'whole', whole: values[0], front: '', rear: '', perWindow };
+  }
+  const frontValues = FRONT_GROUP.map((k) => perWindow[k]);
+  const rearValues = REAR_GROUP.map((k) => perWindow[k]);
+  if (frontValues.every((v) => v && v === frontValues[0]) && rearValues.every((v) => v && v === rearValues[0])) {
+    return { mode: 'front_rear', whole: '', front: frontValues[0], rear: rearValues[0], perWindow };
+  }
+  return { mode: 'individual', whole: '', front: '', rear: '', perWindow };
+}
+
+function detectMix(selections: TintPositionSelection[] | undefined): MixState {
+  const mix: MixState = { ...emptyMix };
+  if (!selections) return mix;
+  GLASS_POSITIONS.forEach((p) => {
+    const found = selections.find((s) => s.position === p.key);
+    if (found) mix[p.key] = { series: found.series, vlt: found.vlt };
+  });
+  return mix;
+}
+
+function detectExtras(extrasIn: TintPositionSelection[] | undefined): ExtraState {
+  const extras: ExtraState = { ...emptyExtras };
+  if (!extrasIn) return extras;
+  (Object.keys(extras) as ExtraGlassKey[]).forEach((key) => {
+    const found = extrasIn.find((e) => e.position === key);
+    if (found) extras[key] = { included: true, series: found.series, vlt: found.vlt };
+  });
+  return extras;
+}
+
 export default function GarageTintPackage() {
   const { id, vehicleId } = useParams<{ id: string; vehicleId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Present only when reached via the Summary page's Back button — restores
+  // the form instead of resetting it.
+  const incoming = location.state as IncomingOrder | undefined;
+  const [initialFullVlt] = useState(() => detectFullVlt(incoming?.packageType === 'full' ? incoming.selections : undefined));
 
   const [vehicle, setVehicle] = useState<GarageVehicle | null>(null);
   const [fullPrices, setFullPrices] = useState<Record<string, number>>({});
   const [positionPrices, setPositionPrices] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
-  const [packageType, setPackageType] = useState<TintPackageType>('full');
-  const [fullSeries, setFullSeries] = useState<TintSeries | ''>('');
-  const [fullVlt, setFullVlt] = useState<FullVltState>(emptyFullVlt);
-  const [vltGroupMode, setVltGroupMode] = useState<VltGroupMode>('individual');
-  const [wholeVlt, setWholeVlt] = useState('');
-  const [frontVlt, setFrontVlt] = useState('');
-  const [rearVlt, setRearVlt] = useState('');
-  const [mix, setMix] = useState<MixState>(emptyMix);
-  const [extras, setExtras] = useState<ExtraState>(emptyExtras);
-  const [discount, setDiscount] = useState(0);
+  const [packageType, setPackageType] = useState<TintPackageType>(incoming?.packageType ?? 'full');
+  const [fullSeries, setFullSeries] = useState<TintSeries | ''>(incoming?.fullSeries ?? '');
+  const [fullVlt, setFullVlt] = useState<FullVltState>(initialFullVlt.perWindow);
+  const [vltGroupMode, setVltGroupMode] = useState<VltGroupMode>(initialFullVlt.mode);
+  const [wholeVlt, setWholeVlt] = useState(initialFullVlt.whole);
+  const [frontVlt, setFrontVlt] = useState(initialFullVlt.front);
+  const [rearVlt, setRearVlt] = useState(initialFullVlt.rear);
+  const [mix, setMix] = useState<MixState>(() => detectMix(incoming?.packageType === 'mix' ? incoming.selections : undefined));
+  const [extras, setExtras] = useState<ExtraState>(() => detectExtras(incoming?.extras));
+  const [discount, setDiscount] = useState(incoming?.discount ?? 0);
   const [error, setError] = useState('');
 
   useEffect(() => {
