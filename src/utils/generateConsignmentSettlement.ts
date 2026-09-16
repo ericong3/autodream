@@ -16,7 +16,9 @@ export interface ConsignmentSettlementInput {
   commission: number;
   intakeBonus: number;
   netProfit: number;       // matches the in-app Deal Financials Net Profit
-  splitPercent: number;    // consignor's share of net profit, e.g. 30
+  terms: 'fixed_amount' | 'profit_split';
+  splitPercent: number;    // consignor's share of net profit, e.g. 30 — only meaningful for 'profit_split'
+  settlementAmount?: number; // already paid to the consignor against a 'fixed_amount' deal, if any
   generatedAt: Date;
 }
 
@@ -27,7 +29,19 @@ const HAIRLINE = rgb(0.87, 0.83, 0.71);
 const RED = rgb(0.7, 0.13, 0.13);
 
 function profitShare(input: ConsignmentSettlementInput): number {
+  if (input.terms !== 'profit_split') return 0;
   return Math.max(0, input.netProfit) * (input.splitPercent / 100);
+}
+
+// What actually gets transferred to the consignor: purchase price plus their
+// profit share for 'profit_split' deals, or just the agreed fixed amount
+// (less anything already settled) for 'fixed_amount' ones — full profit
+// stays with us on those, there's no share to add.
+function totalToTransfer(input: ConsignmentSettlementInput): number {
+  if (input.terms === 'fixed_amount') {
+    return Math.max(0, input.purchasePrice - (input.settlementAmount ?? 0));
+  }
+  return input.purchasePrice + profitShare(input);
 }
 
 // Detailed, itemized settlement receipt — every expense that fed into Net
@@ -83,7 +97,12 @@ export async function buildConsignmentSettlementPdf(input: ConsignmentSettlement
   infoLabel('CONSIGNOR', input.dealerName, margin, y);
   const carValue = input.carPlate ? `${input.carLabel}  ·  ${input.carPlate}` : input.carLabel;
   infoLabel('VEHICLE', carValue, 320, y);
-  infoLabel('SPLIT', `${input.splitPercent}% of Net Profit`, margin, y - 34);
+  infoLabel(
+    'TERMS',
+    input.terms === 'fixed_amount' ? 'Fixed Amount' : `${input.splitPercent}% of Net Profit`,
+    margin,
+    y - 34,
+  );
   infoLabel(
     'DATE',
     input.generatedAt.toLocaleDateString('en-MY', { day: 'numeric', month: 'long', year: 'numeric' }),
@@ -119,14 +138,19 @@ export async function buildConsignmentSettlementPdf(input: ConsignmentSettlement
 
   page.drawText('SETTLEMENT', { x: margin, y, size: 9, font: bold, color: GRAY });
   y -= 20;
-  row('Purchase Price (returned)', input.purchasePrice, y); y -= 18;
-  row(`Consignor Share (${input.splitPercent}% of Net Profit)`, profitShare(input), y); y -= 18;
+  if (input.terms === 'fixed_amount') {
+    row('Agreed Fixed Amount', input.purchasePrice, y); y -= 18;
+    if ((input.settlementAmount ?? 0) > 0) { row('- Already Settled', input.settlementAmount!, y, { color: RED }); y -= 18; }
+  } else {
+    row('Purchase Price (returned)', input.purchasePrice, y); y -= 18;
+    row(`Consignor Share (${input.splitPercent}% of Net Profit)`, profitShare(input), y); y -= 18;
+  }
 
   y -= 10;
   hr(y, GOLD, 1.5);
   y -= 28;
   page.drawText('TOTAL TO TRANSFER', { x: margin, y, size: 14, font: bold, color: INK });
-  rightText(formatRM(input.purchasePrice + profitShare(input)), y, 16, bold, GOLD);
+  rightText(formatRM(totalToTransfer(input)), y, 16, bold, GOLD);
 
   const footerY = 70;
   hr(footerY + 24);
@@ -193,14 +217,16 @@ export async function buildConsignmentSummaryPdf(input: ConsignmentSettlementInp
   hr(y);
   y -= 34;
 
-  const total = input.purchasePrice + profitShare(input);
+  const total = totalToTransfer(input);
   page.drawText('TAKE-IN PRICE', { x: margin, y, size: 12, font: bold, color: GRAY });
   y -= 30;
   rightText(formatRM(total), y, 30, bold, GOLD);
 
   y -= 20;
   page.drawText(
-    `(Purchase Price ${formatRM(input.purchasePrice)} + Profit Share ${formatRM(profitShare(input))})`,
+    input.terms === 'fixed_amount'
+      ? `(Agreed Fixed Amount${(input.settlementAmount ?? 0) > 0 ? ` − Already Settled ${formatRM(input.settlementAmount!)}` : ''})`
+      : `(Purchase Price ${formatRM(input.purchasePrice)} + Profit Share ${formatRM(profitShare(input))})`,
     { x: margin, y, size: 9, font, color: GRAY },
   );
 

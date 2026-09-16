@@ -925,7 +925,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                     </div>
                   </>
                 )}
-                {car.consignment.terms === 'profit_split' && car.finalDeal && (
+                {car.finalDeal && (
                   <div className="col-span-2 sm:col-span-4 flex flex-wrap items-center gap-2 pt-2 mt-1 border-t border-blue-500/20">
                     <button
                       type="button"
@@ -950,7 +950,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                             commission: _commission,
                             intakeBonus: _intakeCommission,
                             netProfit,
+                            terms: car.consignment!.terms,
                             splitPercent: car.consignment!.splitPercent ?? 50,
+                            settlementAmount: car.settlementAmount,
                             generatedAt: new Date(),
                           };
                           const bytes = await buildConsignmentSettlementPdf(input);
@@ -994,7 +996,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                             commission: _commission,
                             intakeBonus: _intakeCommission,
                             netProfit,
+                            terms: car.consignment!.terms,
                             splitPercent: car.consignment!.splitPercent ?? 50,
+                            settlementAmount: car.settlementAmount,
                             generatedAt: new Date(),
                           };
                           const bytes = await buildConsignmentSummaryPdf(input);
