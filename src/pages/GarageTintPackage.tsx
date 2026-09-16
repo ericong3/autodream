@@ -4,8 +4,7 @@ import { Car, Layers, Settings, AlertCircle } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import { useStore } from '../store';
 import { getGarageVehicle } from '../lib/garageCustomers';
-import { createGarageInvoice } from '../lib/garageInvoices';
-import { getFullPrices, getPositionPrices, createTintOrder } from '../lib/garageTint';
+import { getFullPrices, getPositionPrices } from '../lib/garageTint';
 import { TINT_SERIES, GLASS_POSITIONS, EXTRA_GLASS_OPTIONS, VLT_OPTIONS } from '../utils/tintPricing';
 import { formatRM } from '../utils/format';
 import type {
@@ -68,7 +67,6 @@ export default function GarageTintPackage() {
   const [extras, setExtras] = useState<ExtraState>(emptyExtras);
   const [discount, setDiscount] = useState(0);
   const [error, setError] = useState('');
-  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!vehicleId) return;
@@ -105,7 +103,10 @@ export default function GarageTintPackage() {
   const subtotal = (packageType === 'full' ? fullPrice : mixTotal) + extrasTotal;
   const finalTotal = Math.max(0, subtotal - discount);
 
-  const handleSave = async () => {
+  // Nothing is persisted here — this just validates and hands the built
+  // order off to the Summary page (via router state), which is where the
+  // invoice/tint order/installer job actually get created on Confirm.
+  const handleContinue = () => {
     if (packageType === 'full') {
       if (!fullSeries) { setError('Choose a series for the Full Package'); return; }
       if (vltGroupMode === 'whole' && !wholeVlt) { setError('Choose a VLT for the whole car'); return; }
@@ -120,41 +121,32 @@ export default function GarageTintPackage() {
       }
     }
     setError('');
-    setSaving(true);
-    try {
-      const invoice = await createGarageInvoice({
-        customerId: id!, vehicleId: vehicleId!, service: 'tinted', createdBy: currentUser?.id,
+    const selections: TintPositionSelection[] = packageType === 'full'
+      ? GLASS_POSITIONS.map((p) => ({ position: p.key, series: fullSeries as TintSeries, vlt: effectiveFullVlt(p.key), price: 0 }))
+      : GLASS_POSITIONS.map((p) => ({
+          position: p.key,
+          series: mix[p.key].series as TintSeries,
+          vlt: mix[p.key].vlt,
+          price: positionPrices[`${p.key}|${mix[p.key].series}`] ?? 0,
+        }));
+    const extraSelections: TintPositionSelection[] = availableExtras
+      .filter((ex) => extras[ex.key].included)
+      .map((ex) => {
+        const series = (packageType === 'full' ? fullSeries : extras[ex.key].series) as TintSeries;
+        const vlt = extras[ex.key].vlt;
+        const price = packageType === 'full' ? 0 : extraPrice(ex.key, series, positionPrices);
+        return { position: ex.key, series, vlt, price };
       });
-      const selections: TintPositionSelection[] = packageType === 'full'
-        ? GLASS_POSITIONS.map((p) => ({ position: p.key, series: fullSeries as TintSeries, vlt: effectiveFullVlt(p.key), price: 0 }))
-        : GLASS_POSITIONS.map((p) => ({
-            position: p.key,
-            series: mix[p.key].series as TintSeries,
-            vlt: mix[p.key].vlt,
-            price: positionPrices[`${p.key}|${mix[p.key].series}`] ?? 0,
-          }));
-      const extraSelections: TintPositionSelection[] = availableExtras
-        .filter((ex) => extras[ex.key].included)
-        .map((ex) => {
-          const series = (packageType === 'full' ? fullSeries : extras[ex.key].series) as TintSeries;
-          const vlt = extras[ex.key].vlt;
-          const price = packageType === 'full' ? 0 : extraPrice(ex.key, series, positionPrices);
-          return { position: ex.key, series, vlt, price };
-        });
-      await createTintOrder({
-        invoiceId: invoice.id,
+    navigate(`/garage/work-order/customer/${id}/vehicle/${vehicleId}/service/tinted/summary`, {
+      state: {
         packageType,
         fullSeries: packageType === 'full' ? (fullSeries as TintSeries) : undefined,
         selections,
         extras: extraSelections,
         discount,
         finalTotal,
-      });
-      navigate(`/garage/invoice/${invoice.id}`);
-    } catch (err: any) {
-      setError(err?.message ?? 'Something went wrong — please try again');
-      setSaving(false);
-    }
+      },
+    });
   };
 
   if (loading) {
@@ -469,8 +461,8 @@ export default function GarageTintPackage() {
               <p className="text-red-400 text-xs mb-3 flex items-center gap-1.5"><AlertCircle size={12} /> {error}</p>
             )}
 
-            <button onClick={handleSave} disabled={saving} className="w-full btn-gold py-3 rounded-xl text-sm disabled:opacity-60">
-              {saving ? 'Saving…' : 'Confirm Work Order'}
+            <button onClick={handleContinue} className="w-full btn-gold py-3 rounded-xl text-sm">
+              Review Order
             </button>
           </div>
         </div>

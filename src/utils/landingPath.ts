@@ -16,6 +16,7 @@ export function roleHome(role: string) {
 // not built out yet) lands on the hub.
 export function garageHome(role: string) {
   if (role === 'garage_salesman') return '/garage/dashboard';
+  if (role === 'garage_installer') return '/garage/installer';
   return '/garage';
 }
 

@@ -98,6 +98,22 @@ export interface GarageInvoiceClaim {
   createdBy?: string;
 }
 
+// A job handed to an installer once a salesman confirms a Tint work order —
+// shows up in the installer's job queue until they accept it. Other
+// services don't have a worker queue yet, so this only ever gets created
+// for service === 'tinted' for now.
+export type GarageJobStatus = 'pending' | 'accepted';
+
+export interface GarageInstallerJob {
+  id: string;
+  invoiceId: string;
+  service: GarageService;
+  status: GarageJobStatus;
+  createdAt: string;
+  acceptedBy?: string;
+  acceptedAt?: string;
+}
+
 export interface User {
   id: string;
   name: string;
