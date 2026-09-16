@@ -378,6 +378,12 @@ export default function History() {
   // that generateDeliveryPayments already created at delivery time.
   const getConsignmentPayout = (car: typeof cars[0]) =>
     car.consignment ? payments.find(p => p.type === 'consignment_payout' && p.carId === car.id && p.status === 'pending') : undefined;
+  // Once transferred, the pending lookup above stops finding it — without this,
+  // the "Pay X" button reappeared for an already-paid dealer and clicking it
+  // created a second, duplicate payout payment instead of just doing nothing
+  // useful. Checked first so a paid car always shows as paid, never as payable.
+  const getConsignmentPaid = (car: typeof cars[0]) =>
+    car.consignment ? payments.find(p => p.type === 'consignment_payout' && p.carId === car.id && p.status === 'transferred') : undefined;
 
   // Each distinct deduction label (Processing Fee, Service Charge, Insurance
   // Cover Note, ...) gets its own expense account so the ledger shows how
@@ -696,6 +702,12 @@ export default function History() {
                   })()}
 
                   {isDirectorView && car.moneyReceived && car.consignment && (() => {
+                    const paid = getConsignmentPaid(car);
+                    if (paid) return (
+                      <div className="mt-1 w-full flex items-center justify-center gap-1.5 py-1 rounded-lg border border-green-500/40 bg-green-500/10 text-green-400 text-[10px] font-bold">
+                        <HeartHandshake size={9} /> Paid {paid.recipientName}: RM {paid.amount.toLocaleString()}
+                      </div>
+                    );
                     const payout = getConsignmentPayout(car);
                     if (payout) return (
                       <button
@@ -833,6 +845,12 @@ export default function History() {
                   })()}
 
                   {isDirectorView && car.moneyReceived && car.consignment && (() => {
+                    const paid = getConsignmentPaid(car);
+                    if (paid) return (
+                      <span className="flex items-center gap-1 text-[10px] font-bold text-green-400">
+                        <HeartHandshake size={9} /> Paid {paid.recipientName}: RM {paid.amount.toLocaleString()}
+                      </span>
+                    );
                     const payout = getConsignmentPayout(car);
                     if (payout) return (
                       <button
