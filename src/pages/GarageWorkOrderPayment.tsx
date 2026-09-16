@@ -83,7 +83,7 @@ export default function GarageWorkOrderPayment() {
   if (done) {
     return (
       <GarageShell title="Payment" showBack={false}>
-        <div className="max-w-lg mx-auto flex flex-col items-center text-center py-16">
+        <div className="max-w-2xl mx-auto flex flex-col items-center text-center py-16">
           <div className="relative mb-5 flex items-center justify-center">
             <div className="absolute w-20 h-20 rounded-full bg-emerald-400/10 blur-xl" />
             <CheckCircle2 size={40} strokeWidth={1.5} className="relative text-emerald-400" />
@@ -103,27 +103,27 @@ export default function GarageWorkOrderPayment() {
 
   return (
     <GarageShell title="Payment">
-      <div className="max-w-lg mx-auto space-y-6">
-        <div className="relative overflow-hidden rounded-[28px] p-8
+      <div className="max-w-2xl mx-auto space-y-6">
+        <div className="relative overflow-hidden rounded-[28px] p-8 sm:p-10
           bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
-          <div className="flex justify-between items-baseline mb-6 pb-6 border-b border-white/10">
+          <div className="flex justify-between items-baseline mb-8 pb-6 border-b border-white/10">
             <span className="text-white/50 text-sm">Amount Due</span>
-            <span className="text-gold-400 font-display text-2xl font-bold">{formatRM(grandTotal)}</span>
+            <span className="text-gold-400 font-display text-3xl font-bold">{formatRM(grandTotal)}</span>
           </div>
 
-          <p className="text-white/50 text-xs font-medium uppercase tracking-wider mb-3">Payment Method</p>
-          <div className="grid grid-cols-2 gap-3">
+          <p className="text-white/50 text-xs font-medium uppercase tracking-wider mb-4">Payment Method</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {PAYMENT_METHODS.map((m) => (
               <button
                 key={m.key}
                 onClick={() => setMethod(m.key)}
-                className={`flex flex-col items-center justify-center gap-2 px-4 py-5 rounded-xl border text-sm font-medium transition-colors ${
+                className={`flex flex-col items-center justify-center gap-2.5 px-4 py-7 rounded-xl border text-sm font-medium transition-colors ${
                   method === m.key
                     ? 'bg-gold-500/15 border-gold-400/50 text-gold-400'
                     : 'bg-white/[0.03] border-white/10 text-white/60 hover:text-white/90 hover:border-white/20'
                 }`}
               >
-                <m.icon size={20} strokeWidth={1.5} />
+                <m.icon size={24} strokeWidth={1.5} />
                 {m.label}
               </button>
             ))}
