@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Car, Layers, Settings, AlertCircle } from 'lucide-react';
+import { Car, Layers, AlertCircle } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
-import { useStore } from '../store';
 import { getGarageVehicle } from '../lib/garageCustomers';
 import { getFullPrices, getPositionPrices } from '../lib/garageTint';
 import { TINT_SERIES, GLASS_POSITIONS, EXTRA_GLASS_OPTIONS, VLT_OPTIONS } from '../utils/tintPricing';
@@ -48,8 +47,6 @@ function extraPrice(key: ExtraGlassKey, series: TintSeries, positionPrices: Reco
 export default function GarageTintPackage() {
   const { id, vehicleId } = useParams<{ id: string; vehicleId: string }>();
   const navigate = useNavigate();
-  const currentUser = useStore((s) => s.currentUser);
-  const canEditPricing = currentUser?.role === 'director' || currentUser?.role === 'shareholder';
 
   const [vehicle, setVehicle] = useState<GarageVehicle | null>(null);
   const [fullPrices, setFullPrices] = useState<Record<string, number>>({});
@@ -165,14 +162,6 @@ export default function GarageTintPackage() {
             <div className="flex items-center gap-2.5 text-white/50 text-sm bg-white/[0.03] border border-white/10 rounded-full px-4 py-2">
               <Car size={14} /> {vehicle.year} {vehicle.make} {vehicle.model} · Size: {size[0].toUpperCase() + size.slice(1)}
             </div>
-          )}
-          {canEditPricing && (
-            <button
-              onClick={() => navigate('/garage/tint-pricing')}
-              className="flex items-center gap-1.5 text-white/40 hover:text-gold-400 text-xs transition-colors"
-            >
-              <Settings size={13} /> Edit Pricing
-            </button>
           )}
         </div>
 
