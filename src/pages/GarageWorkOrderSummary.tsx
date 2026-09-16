@@ -186,12 +186,12 @@ export default function GarageWorkOrderSummary() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-3 gap-2 mb-4">
+              <div className="flex flex-col gap-2 mb-4">
                 {OTHER_SERVICES.map((s) => (
                   <button
                     key={s.key}
                     onClick={() => openAddonModal(s.label)}
-                    className="flex flex-col items-center justify-center gap-1.5 px-2 py-3 rounded-xl border text-xs font-medium
+                    className="flex items-center gap-2.5 px-4 py-3 rounded-xl border text-sm font-medium
                       bg-white/[0.03] border-white/10 text-white/60 hover:text-gold-400 hover:border-gold-400/40 transition-colors"
                   >
                     <s.icon size={16} strokeWidth={1.5} />
