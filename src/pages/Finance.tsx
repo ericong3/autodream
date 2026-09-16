@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { DollarSign, TrendingUp, Car, Wrench, Award, ChevronLeft, ChevronRight, Wallet, BookOpen, Plus, Trash2, ScrollText, Ban, Scale } from 'lucide-react';
+import { DollarSign, TrendingUp, Car, Wrench, Award, ChevronLeft, ChevronRight, Wallet, BookOpen, Plus, Trash2, ScrollText, Ban, Scale, Landmark } from 'lucide-react';
 import { useStore } from '../store';
 import StatCard from '../components/StatCard';
 import { formatRM, shortName, generateId } from '../utils/format';
@@ -8,6 +8,7 @@ import { collectMissingJournalEntries, findStaleLoanSaleEntries, buildCarSaleEnt
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import Payments from './Payments';
+import Reconciliation from './Reconciliation';
 
 const ACCOUNT_TYPE_LABELS: Record<LedgerAccountType, string> = {
   asset: 'Assets', liability: 'Liabilities', equity: 'Equity',
@@ -51,7 +52,7 @@ export default function Finance() {
   const [staleOverrides, setStaleOverrides] = useState<Record<string, { loanAmount: number; bookingFee: number }>>({});
   const [applyingStale, setApplyingStale] = useState<string | null>(null);
 
-  const [financeTab, setFinanceTab] = useState<'overview' | 'payments' | 'accounts' | 'ledger' | 'balance_sheet'>('overview');
+  const [financeTab, setFinanceTab] = useState<'overview' | 'payments' | 'reconciliation' | 'accounts' | 'ledger' | 'balance_sheet'>('overview');
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [accountForm, setAccountForm] = useState({ name: '', type: 'expense' as LedgerAccountType, investorTagged: false });
   const [accountDeleteTarget, setAccountDeleteTarget] = useState<{ id: string; name: string } | null>(null);
@@ -205,6 +206,13 @@ export default function Finance() {
           Payments
         </button>
         <button
+          onClick={() => setFinanceTab('reconciliation')}
+          className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${financeTab === 'reconciliation' ? 'bg-gold-gradient text-obsidian-950 font-bold shadow-gold-sm' : 'text-gray-400 hover:text-white'}`}
+        >
+          <Landmark size={12} />
+          Reconciliation
+        </button>
+        <button
           onClick={() => setFinanceTab('accounts')}
           className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${financeTab === 'accounts' ? 'bg-gold-gradient text-obsidian-950 font-bold shadow-gold-sm' : 'text-gray-400 hover:text-white'}`}
         >
@@ -228,6 +236,8 @@ export default function Finance() {
       </div>
 
       {financeTab === 'payments' && <Payments embedded />}
+
+      {financeTab === 'reconciliation' && <Reconciliation />}
 
       {financeTab === 'balance_sheet' && (
         <div className="space-y-4">

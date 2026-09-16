@@ -998,3 +998,34 @@ export interface Payment {
   periodEnd?: string;
   createdAt: string;
 }
+
+// One uploaded bank statement (PDF or a photo of one) — a container for the
+// transactions extracted from it. Kept separate from Payment (see
+// bankReconciliation.ts) rather than bolting fields onto Payment, since
+// reconciliation state doesn't apply to every payment and Payment's row
+// mappers already enumerate every field explicitly.
+export interface BankStatementUpload {
+  id: string;
+  filePath: string;   // path in the private 'bank-statements' storage bucket
+  fileName: string;
+  uploadedBy: string;
+  uploadedAt: string;
+  status: 'processing' | 'ready' | 'failed';
+}
+
+// One line item extracted from a statement, with the app's best guess at
+// which existing Payment it corresponds to.
+export interface BankTransaction {
+  id: string;
+  uploadId: string;
+  txnDate: string;
+  description: string;
+  amount: number;
+  direction: 'debit' | 'credit'; // from the bank's perspective
+  suggestedPaymentId?: string;
+  matchedPaymentId?: string;
+  status: 'unmatched' | 'matched' | 'ignored';
+  resolvedBy?: string;
+  resolvedAt?: string;
+  createdAt: string;
+}

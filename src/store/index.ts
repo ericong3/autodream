@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
-import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, ClaimCategory, LedgerAccount, JournalEntry, JournalLine, MiscCost, ExternalSalesman, Banker, LoanCase, LoanCaseDocument, LoanCaseActivity, Payment, AppNotification, InvestorTransaction, Shipment, CarMovement, KanbanColumn, Payslip } from '../types';
+import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, ClaimCategory, LedgerAccount, JournalEntry, JournalLine, MiscCost, ExternalSalesman, Banker, LoanCase, LoanCaseDocument, LoanCaseActivity, Payment, AppNotification, InvestorTransaction, Shipment, CarMovement, KanbanColumn, Payslip, BankStatementUpload, BankTransaction } from '../types';
 import { sendPush } from '../utils/sendPush';
 import { hashPassword, verifyPassword } from '../utils/password';
 
@@ -180,6 +180,14 @@ interface StoreState {
   batchAddPayments: (payments: Payment[]) => Promise<void>;
   updatePayment: (id: string, updates: Partial<Payment>) => Promise<void>;
   deletePayment: (id: string) => Promise<void>;
+
+  // Bank statement reconciliation
+  bankStatementUploads: BankStatementUpload[];
+  bankTransactions: BankTransaction[];
+  addBankStatementUpload: (upload: BankStatementUpload) => Promise<void>;
+  updateBankStatementUpload: (id: string, updates: Partial<BankStatementUpload>) => Promise<void>;
+  addBankTransactions: (txns: BankTransaction[]) => Promise<void>;
+  updateBankTransaction: (id: string, updates: Partial<BankTransaction>) => Promise<void>;
 
   // External Salesmen
   addExternalSalesman: (s: ExternalSalesman) => Promise<void>;
@@ -1048,6 +1056,62 @@ function paymentToRow(p: Partial<Payment>) {
   return row;
 }
 
+function rowToBankStatementUpload(r: any): BankStatementUpload {
+  return {
+    id: r.id,
+    filePath: r.file_path,
+    fileName: r.file_name,
+    uploadedBy: r.uploaded_by,
+    uploadedAt: r.uploaded_at,
+    status: r.status,
+  };
+}
+
+function bankStatementUploadToRow(u: Partial<BankStatementUpload>) {
+  const row: any = {};
+  if (u.id !== undefined) row.id = u.id;
+  if (u.filePath !== undefined) row.file_path = u.filePath;
+  if (u.fileName !== undefined) row.file_name = u.fileName;
+  if (u.uploadedBy !== undefined) row.uploaded_by = u.uploadedBy;
+  if (u.uploadedAt !== undefined) row.uploaded_at = u.uploadedAt;
+  if (u.status !== undefined) row.status = u.status;
+  return row;
+}
+
+function rowToBankTransaction(r: any): BankTransaction {
+  return {
+    id: r.id,
+    uploadId: r.upload_id,
+    txnDate: r.txn_date,
+    description: r.description,
+    amount: r.amount,
+    direction: r.direction,
+    suggestedPaymentId: r.suggested_payment_id ?? undefined,
+    matchedPaymentId: r.matched_payment_id ?? undefined,
+    status: r.status,
+    resolvedBy: r.resolved_by ?? undefined,
+    resolvedAt: r.resolved_at ?? undefined,
+    createdAt: r.created_at,
+  };
+}
+
+function bankTransactionToRow(t: Partial<BankTransaction>) {
+  const row: any = {};
+  if (t.id !== undefined) row.id = t.id;
+  if (t.uploadId !== undefined) row.upload_id = t.uploadId;
+  if (t.txnDate !== undefined) row.txn_date = t.txnDate;
+  if (t.description !== undefined) row.description = t.description;
+  if (t.amount !== undefined) row.amount = t.amount;
+  if (t.direction !== undefined) row.direction = t.direction;
+  if (t.suggestedPaymentId !== undefined) row.suggested_payment_id = t.suggestedPaymentId ?? null;
+  if (t.matchedPaymentId !== undefined) row.matched_payment_id = t.matchedPaymentId ?? null;
+  if (t.status !== undefined) row.status = t.status;
+  if (t.resolvedBy !== undefined) row.resolved_by = t.resolvedBy ?? null;
+  if (t.resolvedAt !== undefined) row.resolved_at = t.resolvedAt ?? null;
+  if (t.createdAt !== undefined) row.created_at = t.createdAt;
+  return row;
+}
+
 function rowToInvestorTxn(r: any): InvestorTransaction {
   return {
     id: r.id,
@@ -1190,6 +1254,8 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   loanCaseDocuments: [],
   loanCaseActivities: [],
   payments: [],
+  bankStatementUploads: [],
+  bankTransactions: [],
   investorTransactions: [],
   payslips: [],
   notifications: [],
@@ -1345,7 +1411,9 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       () => supabase.from('shipments').select('*').order('eta', { ascending: true }),
       () => supabase.from('car_movements').select('*').order('created_at', { ascending: false }),
       () => supabase.from('payslips').select('*').order('created_at', { ascending: false }),
-    ], 5).then(async ([deliveredCarsResult, closedCasesResult, quotations, instructions, testDrives, reminders, dealers, workshops, suppliers, merchants, claimCategories, ledgerAccounts, journalEntries, loanCaseDocsResult, loanCaseActivitiesResult, paymentsResult, investorTxnsResult, shipmentsResult, carMovementsResult, payslipsResult]) => {
+      () => supabase.from('bank_statement_uploads').select('*').order('uploaded_at', { ascending: false }),
+      () => supabase.from('bank_transactions').select('*').order('created_at', { ascending: false }),
+    ], 5).then(async ([deliveredCarsResult, closedCasesResult, quotations, instructions, testDrives, reminders, dealers, workshops, suppliers, merchants, claimCategories, ledgerAccounts, journalEntries, loanCaseDocsResult, loanCaseActivitiesResult, paymentsResult, investorTxnsResult, shipmentsResult, carMovementsResult, payslipsResult, bankUploadsResult, bankTxnsResult]) => {
       const allQuotations  = (quotations.data ?? []).map(rowToQuotation);
       const allTestDrives  = (testDrives.data ?? []).map(rowToTestDrive);
       const deliveredCars  = (deliveredCarsResult.data ?? []).map(rowToCar);
@@ -1380,6 +1448,8 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         shipments:           shipmentsResult.data      ? shipmentsResult.data.map(rowToShipment)                                : s.shipments,
         carMovements:        carMovementsResult.data   ? carMovementsResult.data.map(rowToCarMovement)                           : s.carMovements,
         payslips:            payslipsResult.data       ? payslipsResult.data.map(rowToPayslip)                                    : s.payslips,
+        bankStatementUploads:bankUploadsResult.data    ? bankUploadsResult.data.map(rowToBankStatementUpload)                     : s.bankStatementUploads,
+        bankTransactions:    bankTxnsResult.data       ? bankTxnsResult.data.map(rowToBankTransaction)                            : s.bankTransactions,
         phase2Loaded: true,
       }));
 
@@ -1800,6 +1870,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     externalSalesmen: [], bankers: [], shipments: [], carMovements: [], loanCases: [],
     loanCaseDocuments: [], loanCaseActivities: [], payments: [], investorTransactions: [],
     payslips: [], notifications: [], kanbanColumns: [],
+    bankStatementUploads: [], bankTransactions: [],
     loaded: false, phase2Loaded: false, lastFetched: null,
   }),
 
@@ -2483,6 +2554,33 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     await supabase.from('payments').delete().eq('id', id);
   },
 
+  addBankStatementUpload: async (upload) => {
+    set((s) => ({ bankStatementUploads: [upload, ...s.bankStatementUploads] }));
+    const { error } = await supabase.from('bank_statement_uploads').insert(bankStatementUploadToRow(upload));
+    if (error) {
+      set((s) => ({ bankStatementUploads: s.bankStatementUploads.filter((u) => u.id !== upload.id) }));
+      throw new Error(error.message);
+    }
+  },
+  updateBankStatementUpload: async (id, updates) => {
+    set((s) => ({ bankStatementUploads: s.bankStatementUploads.map((u) => u.id === id ? { ...u, ...updates } : u) }));
+    await supabase.from('bank_statement_uploads').update(bankStatementUploadToRow(updates)).eq('id', id);
+  },
+  addBankTransactions: async (txns) => {
+    if (!txns.length) return;
+    set((s) => ({ bankTransactions: [...txns, ...s.bankTransactions] }));
+    const { error } = await supabase.from('bank_transactions').insert(txns.map(bankTransactionToRow));
+    if (error) {
+      const ids = new Set(txns.map((t) => t.id));
+      set((s) => ({ bankTransactions: s.bankTransactions.filter((t) => !ids.has(t.id)) }));
+      throw new Error(error.message);
+    }
+  },
+  updateBankTransaction: async (id, updates) => {
+    set((s) => ({ bankTransactions: s.bankTransactions.map((t) => t.id === id ? { ...t, ...updates } : t) }));
+    await supabase.from('bank_transactions').update(bankTransactionToRow(updates)).eq('id', id);
+  },
+
   addExternalSalesman: async (s) => {
     set((st) => ({ externalSalesmen: [...st.externalSalesmen, s] }));
     const row = externalSalesmanToRow(s);
@@ -2874,6 +2972,8 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     loanCaseDocuments: state.loanCaseDocuments,
     loanCaseActivities: state.loanCaseActivities,
     payments: state.payments,
+    bankStatementUploads: state.bankStatementUploads,
+    bankTransactions: state.bankTransactions,
     investorTransactions: state.investorTransactions,
     payslips: state.payslips,
     notifications: state.notifications,
