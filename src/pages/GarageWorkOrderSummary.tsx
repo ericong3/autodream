@@ -186,20 +186,6 @@ export default function GarageWorkOrderSummary() {
                 </button>
               </div>
 
-              <div className="flex flex-col gap-2 mb-4">
-                {OTHER_SERVICES.map((s) => (
-                  <button
-                    key={s.key}
-                    onClick={() => openAddonModal(s.label)}
-                    className="flex items-center gap-2.5 px-4 py-3 rounded-xl border text-sm font-medium
-                      bg-white/[0.03] border-white/10 text-white/60 hover:text-gold-400 hover:border-gold-400/40 transition-colors"
-                  >
-                    <s.icon size={16} strokeWidth={1.5} />
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-
               {addons.length === 0 ? (
                 <p className="text-white/30 text-xs">No add-on products yet</p>
               ) : (
@@ -218,6 +204,24 @@ export default function GarageWorkOrderSummary() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {!loading && (
+          <div className="grid grid-cols-3 gap-4 mt-6">
+            {OTHER_SERVICES.map((s) => (
+              <button
+                key={s.key}
+                onClick={() => openAddonModal(s.label)}
+                className="flex flex-col items-center justify-center gap-3 py-10 rounded-[28px] border
+                  bg-white/[0.04] backdrop-blur-xl border-gold-400/15 shadow-card-lg
+                  text-white/70 hover:text-gold-400 hover:border-gold-400/50 hover:bg-white/[0.06]
+                  hover:-translate-y-1 transition-all duration-300"
+              >
+                <s.icon size={40} strokeWidth={1.5} />
+                <span className="font-display text-lg font-semibold tracking-wide">{s.label}</span>
+              </button>
+            ))}
           </div>
         )}
 
