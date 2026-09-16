@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Car, User, Phone, Layers, Plus, X, ArrowRight } from 'lucide-react';
+import { Car, User, Phone, Layers, X, ArrowRight } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import Modal from '../components/Modal';
 import { getGarageVehicle, getGarageCustomer } from '../lib/garageCustomers';
@@ -176,15 +176,7 @@ export default function GarageWorkOrderSummary() {
 
             {/* Add-on products */}
             <div className="relative overflow-hidden rounded-[28px] p-6 sm:p-8 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg h-fit">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-white/50 text-xs font-semibold uppercase tracking-wider">Add-on Products</h3>
-                <button
-                  onClick={() => openAddonModal()}
-                  className="flex items-center gap-1.5 text-gold-400 hover:text-gold-300 text-xs font-medium transition-colors"
-                >
-                  <Plus size={13} /> Add Product
-                </button>
-              </div>
+              <h3 className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-4">Add-on Products</h3>
 
               <div className="flex flex-col gap-3 mb-5">
                 {OTHER_SERVICES.map((s) => (
