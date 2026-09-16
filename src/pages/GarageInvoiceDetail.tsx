@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Car, User, ShieldCheck, RefreshCw, AlertCircle } from 'lucide-react';
+import { Car, User, Phone, ShieldCheck, RefreshCw, AlertCircle } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import Modal from '../components/Modal';
 import { useStore } from '../store';
@@ -123,6 +123,11 @@ export default function GarageInvoiceDetail() {
             {customer && (
               <div className="flex items-center gap-2.5 text-white/70">
                 <User size={15} className="text-white/30 shrink-0" /> {customer.name}
+              </div>
+            )}
+            {customer?.phone && (
+              <div className="flex items-center gap-2.5 text-white/70">
+                <Phone size={15} className="text-white/30 shrink-0" /> {customer.phone}
               </div>
             )}
           </div>
