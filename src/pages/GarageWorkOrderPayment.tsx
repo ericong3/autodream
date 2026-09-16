@@ -83,7 +83,7 @@ export default function GarageWorkOrderPayment() {
   if (done) {
     return (
       <GarageShell title="Payment" showBack={false}>
-        <div className="max-w-2xl mx-auto flex flex-col items-center text-center py-16">
+        <div className="max-w-5xl mx-auto flex flex-col items-center text-center py-16">
           <div className="relative mb-5 flex items-center justify-center">
             <div className="absolute w-20 h-20 rounded-full bg-emerald-400/10 blur-xl" />
             <CheckCircle2 size={40} strokeWidth={1.5} className="relative text-emerald-400" />
@@ -103,7 +103,7 @@ export default function GarageWorkOrderPayment() {
 
   return (
     <GarageShell title="Payment">
-      <div className="max-w-2xl mx-auto space-y-6">
+      <div className="max-w-5xl mx-auto space-y-6">
         <div className="relative overflow-hidden rounded-[28px] p-8 sm:p-10
           bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
           <div className="flex justify-between items-baseline mb-8 pb-6 border-b border-white/10">
