@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Banknote, CreditCard, ArrowRightLeft, CalendarClock, CheckCircle2, AlertCircle, Send } from 'lucide-react';
+import { Banknote, CreditCard, ArrowRightLeft, CalendarClock, CheckCircle2, AlertCircle, Send, Clock } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import { useStore } from '../store';
 import { createGarageInvoice, createInvoiceAddon } from '../lib/garageInvoices';
 import { createTintOrder } from '../lib/garageTint';
 import { createInstallerJob } from '../lib/garageInstallerJobs';
 import { formatRM } from '../utils/format';
-import type { GaragePaymentMethod } from '../types';
+import type { GaragePaymentMethod, GaragePaymentStatus } from '../types';
 import type { PendingTintOrder, PendingAddon } from './GarageWorkOrderSummary';
 
 interface PendingPayment {
@@ -24,6 +24,14 @@ const PAYMENT_METHODS: { key: GaragePaymentMethod; label: string; icon: typeof B
   { key: 'installment', label: 'Installment', icon: CalendarClock },
 ];
 
+// Some customers pay before the job starts, some after — but always before
+// the car is handed back. "Now" needs a method right away; "Later" just
+// records that payment is still owed, to be settled before delivery.
+const PAYMENT_TIMINGS: { key: GaragePaymentStatus; label: string; desc: string }[] = [
+  { key: 'paid', label: 'Pay Now', desc: 'Customer pays before the job starts' },
+  { key: 'pending', label: 'Pay Later', desc: 'Customer pays after the job — before delivery' },
+];
+
 export default function GarageWorkOrderPayment() {
   const { id, vehicleId } = useParams<{ id: string; vehicleId: string }>();
   const navigate = useNavigate();
@@ -32,6 +40,7 @@ export default function GarageWorkOrderPayment() {
 
   const state = location.state as PendingPayment | undefined;
 
+  const [timing, setTiming] = useState<GaragePaymentStatus>('paid');
   const [method, setMethod] = useState<GaragePaymentMethod | ''>('');
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState('');
@@ -48,12 +57,13 @@ export default function GarageWorkOrderPayment() {
   const { pending, addons, grandTotal } = state;
 
   const handleConfirm = async () => {
-    if (!method) { setError('Choose a payment method'); return; }
+    if (timing === 'paid' && !method) { setError('Choose a payment method'); return; }
     setError('');
     setConfirming(true);
     try {
       const invoice = await createGarageInvoice({
-        customerId: id!, vehicleId: vehicleId!, service: 'tinted', paymentMethod: method, createdBy: currentUser?.id,
+        customerId: id!, vehicleId: vehicleId!, service: 'tinted',
+        paymentMethod: method || undefined, paymentStatus: timing, createdBy: currentUser?.id,
       });
       await createTintOrder({
         invoiceId: invoice.id,
@@ -89,7 +99,11 @@ export default function GarageWorkOrderPayment() {
             <CheckCircle2 size={40} strokeWidth={1.5} className="relative text-emerald-400" />
           </div>
           <h2 className="font-display text-xl text-white font-semibold tracking-wide mb-2">Work Order Confirmed</h2>
-          <p className="text-white/50 text-sm mb-8">Sent to the installer — they can now accept the job.</p>
+          <p className="text-white/50 text-sm mb-8">
+            {timing === 'pending'
+              ? 'Sent to the installer — they can now accept the job. Payment is still owed, to be collected before delivery.'
+              : 'Sent to the installer — they can now accept the job.'}
+          </p>
           <button
             onClick={() => navigate('/garage/dashboard')}
             className="btn-gold px-6 py-2.5 rounded-xl text-sm"
@@ -111,7 +125,29 @@ export default function GarageWorkOrderPayment() {
             <span className="text-gold-400 font-display text-3xl font-bold">{formatRM(grandTotal)}</span>
           </div>
 
-          <p className="text-white/50 text-xs font-medium uppercase tracking-wider mb-4">Payment Method</p>
+          <p className="text-white/50 text-xs font-medium uppercase tracking-wider mb-4">When</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-8">
+            {PAYMENT_TIMINGS.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setTiming(t.key)}
+                className={`flex flex-col items-start gap-1 px-5 py-4 rounded-xl border text-left transition-colors ${
+                  timing === t.key
+                    ? 'bg-gold-500/15 border-gold-400/50'
+                    : 'bg-white/[0.03] border-white/10 hover:border-white/20'
+                }`}
+              >
+                <span className={`flex items-center gap-2 text-sm font-semibold ${timing === t.key ? 'text-gold-400' : 'text-white/80'}`}>
+                  <Clock size={15} /> {t.label}
+                </span>
+                <span className="text-white/40 text-xs">{t.desc}</span>
+              </button>
+            ))}
+          </div>
+
+          <p className="text-white/50 text-xs font-medium uppercase tracking-wider mb-4">
+            Payment Method {timing === 'pending' && <span className="text-white/30 normal-case">(optional — set later when collected)</span>}
+          </p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {PAYMENT_METHODS.map((m) => (
               <button

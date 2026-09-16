@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Car, User, Phone, ShieldCheck, RefreshCw, AlertCircle, Banknote, CreditCard, ArrowRightLeft, CalendarClock } from 'lucide-react';
+import { Car, User, Phone, ShieldCheck, RefreshCw, AlertCircle, Banknote, CreditCard, ArrowRightLeft, CalendarClock, Clock, CheckCircle2 } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import Modal from '../components/Modal';
 import { useStore } from '../store';
 import { getGarageVehicle, getGarageCustomer } from '../lib/garageCustomers';
-import { getGarageInvoice, listInvoiceClaims, createInvoiceClaim, listInvoiceAddons } from '../lib/garageInvoices';
+import { getGarageInvoice, listInvoiceClaims, createInvoiceClaim, listInvoiceAddons, markInvoicePaid } from '../lib/garageInvoices';
 import { getTintOrder } from '../lib/garageTint';
 import { GARAGE_SERVICE_MAP } from '../utils/garageServices';
 import { TINT_SERIES, GLASS_POSITIONS, EXTRA_GLASS_OPTIONS } from '../utils/tintPricing';
@@ -46,6 +46,7 @@ export default function GarageInvoiceDetail() {
   const [claimModal, setClaimModal] = useState<GarageClaimType | null>(null);
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
+  const [markingPaid, setMarkingPaid] = useState(false);
 
   const load = () => {
     if (!invoiceId) return;
@@ -88,6 +89,17 @@ export default function GarageInvoiceDetail() {
     }
   };
 
+  const handleMarkPaid = async () => {
+    if (!invoice) return;
+    setMarkingPaid(true);
+    try {
+      await markInvoicePaid(invoice.id);
+      load();
+    } finally {
+      setMarkingPaid(false);
+    }
+  };
+
   const backTo = invoice ? `/garage/work-order/customer/${invoice.customerId}/vehicle/${invoice.vehicleId}` : '/garage';
 
   if (loading) {
@@ -125,13 +137,37 @@ export default function GarageInvoiceDetail() {
               <h2 className="font-display text-lg text-white font-semibold tracking-wide">{invoice.invoiceNumber}</h2>
               <p className="text-white/40 text-xs">{meta.label} · {new Date(invoice.invoiceDate).toLocaleDateString('en-MY')}</p>
             </div>
-            {invoice.paymentMethod && (
-              <span className="ml-auto flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-full border bg-white/[0.03] border-white/10 text-white/60">
-                {(() => { const M = PAYMENT_METHOD_META[invoice.paymentMethod].icon; return <M size={12} />; })()}
-                {PAYMENT_METHOD_META[invoice.paymentMethod].label}
-              </span>
-            )}
+            <div className="ml-auto flex items-center gap-2">
+              {invoice.paymentMethod && (
+                <span className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-full border bg-white/[0.03] border-white/10 text-white/60">
+                  {(() => { const M = PAYMENT_METHOD_META[invoice.paymentMethod].icon; return <M size={12} />; })()}
+                  {PAYMENT_METHOD_META[invoice.paymentMethod].label}
+                </span>
+              )}
+              {invoice.paymentStatus === 'paid' ? (
+                <span className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-full border bg-emerald-500/15 border-emerald-500/30 text-emerald-400">
+                  <CheckCircle2 size={12} /> Paid
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-full border bg-orange-500/15 border-orange-500/30 text-orange-400">
+                  <Clock size={12} /> Pending Payment
+                </span>
+              )}
+            </div>
           </div>
+
+          {invoice.paymentStatus === 'pending' && (
+            <div className="flex items-center justify-between gap-3 mt-5 pt-5 border-t border-white/10">
+              <p className="text-white/40 text-xs">Payment must be collected before the car is delivered.</p>
+              <button
+                onClick={handleMarkPaid}
+                disabled={markingPaid}
+                className="shrink-0 flex items-center gap-1.5 btn-gold px-4 py-2 rounded-lg text-xs font-medium disabled:opacity-60"
+              >
+                <CheckCircle2 size={13} /> {markingPaid ? 'Marking…' : 'Mark as Paid'}
+              </button>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             {vehicle && (

@@ -71,6 +71,9 @@ export interface GarageTintOrder {
 }
 
 export type GaragePaymentMethod = 'cash' | 'card' | 'transfer' | 'installment';
+// Some customers pay before the installer starts, others pay after the job
+// is done — but always before the car is delivered back to them.
+export type GaragePaymentStatus = 'paid' | 'pending';
 
 // A completed/sold job for a vehicle — the record a salesman pulls up when a
 // customer comes back for a warranty claim or replacement after delivery.
@@ -82,6 +85,7 @@ export interface GarageInvoice {
   service: GarageService;
   invoiceDate: string; // 'YYYY-MM-DD'
   paymentMethod?: GaragePaymentMethod;
+  paymentStatus: GaragePaymentStatus;
   createdAt: string;
   createdBy?: string;
 }
