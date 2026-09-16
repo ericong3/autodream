@@ -97,13 +97,13 @@ export default function GarageWorkOrderSummary() {
 
   return (
     <GarageShell title="Order Summary" showBack backTo={backToPackage}>
-      <div className="max-w-2xl mx-auto space-y-6">
-        <div className="relative overflow-hidden rounded-[28px] p-8
-          bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
-          {loading ? (
-            <p className="text-white/40 text-sm text-center py-10">Loading…</p>
-          ) : (
-            <>
+      <div className="max-w-5xl mx-auto">
+        {loading ? (
+          <p className="text-white/40 text-sm text-center py-10">Loading…</p>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
+            {/* Order details */}
+            <div className="relative overflow-hidden rounded-[28px] p-6 sm:p-8 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm mb-6">
                 {vehicle && (
                   <div className="flex items-center gap-2.5 text-white/70">
@@ -166,61 +166,60 @@ export default function GarageWorkOrderSummary() {
                   </div>
                 </div>
               </div>
+            </div>
 
-              {/* Add-on products */}
-              <div className="mt-6 pt-5 border-t border-white/10">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-white/50 text-xs font-semibold uppercase tracking-wider">Add-on Products</h3>
-                  <button
-                    onClick={openAddonModal}
-                    className="flex items-center gap-1.5 text-gold-400 hover:text-gold-300 text-xs font-medium transition-colors"
-                  >
-                    <Plus size={13} /> Add Product
-                  </button>
-                </div>
-
-                {addons.length === 0 ? (
-                  <p className="text-white/30 text-xs">No add-on products yet</p>
-                ) : (
-                  <div className="space-y-1.5">
-                    {addons.map((a) => (
-                      <div key={a.clientId} className="flex items-center justify-between text-sm gap-3">
-                        <span className="text-white/60 truncate">{a.name} {a.qty > 1 && <span className="text-white/30">× {a.qty}</span>}</span>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-white">{formatRM(a.price * a.qty)}</span>
-                          <button onClick={() => removeAddon(a.clientId)} className="text-white/30 hover:text-red-400 transition-colors">
-                            <X size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+            {/* Add-on products + order total */}
+            <div className="relative overflow-hidden rounded-[28px] p-6 sm:p-8 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg h-fit">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-white/50 text-xs font-semibold uppercase tracking-wider">Add-on Products</h3>
+                <button
+                  onClick={openAddonModal}
+                  className="flex items-center gap-1.5 text-gold-400 hover:text-gold-300 text-xs font-medium transition-colors"
+                >
+                  <Plus size={13} /> Add Product
+                </button>
               </div>
 
-              <div className="mt-6 pt-5 border-t border-white/10 flex justify-between items-baseline">
+              {addons.length === 0 ? (
+                <p className="text-white/30 text-xs mb-4">No add-on products yet</p>
+              ) : (
+                <div className="space-y-1.5 mb-4">
+                  {addons.map((a) => (
+                    <div key={a.clientId} className="flex items-center justify-between text-sm gap-3">
+                      <span className="text-white/60 truncate">{a.name} {a.qty > 1 && <span className="text-white/30">× {a.qty}</span>}</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-white">{formatRM(a.price * a.qty)}</span>
+                        <button onClick={() => removeAddon(a.clientId)} className="text-white/30 hover:text-red-400 transition-colors">
+                          <X size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="pt-4 border-t border-white/10 flex justify-between items-baseline mb-6">
                 <span className="text-white font-semibold text-sm">Order Total</span>
                 <span className="text-gold-400 font-display text-lg font-bold">{formatRM(grandTotal)}</span>
               </div>
-            </>
-          )}
-        </div>
 
-        <div className="flex gap-3">
-          <button
-            onClick={() => navigate(backToPackage)}
-            className="flex-1 px-4 py-3 btn-ghost rounded-xl text-sm"
-          >
-            Edit
-          </button>
-          <button
-            onClick={handleContinue}
-            disabled={loading}
-            className="flex-[2] flex items-center justify-center gap-2 btn-gold px-4 py-3 rounded-xl text-sm disabled:opacity-60"
-          >
-            Continue to Payment <ArrowRight size={15} />
-          </button>
-        </div>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={handleContinue}
+                  className="flex items-center justify-center gap-2 btn-gold px-4 py-3 rounded-xl text-sm"
+                >
+                  Continue to Payment <ArrowRight size={15} />
+                </button>
+                <button
+                  onClick={() => navigate(backToPackage)}
+                  className="px-4 py-2.5 btn-ghost rounded-xl text-sm"
+                >
+                  Edit
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <Modal isOpen={addonModalOpen} onClose={() => setAddonModalOpen(false)} title="Add Product">
