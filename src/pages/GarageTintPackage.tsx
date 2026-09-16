@@ -15,6 +15,12 @@ import type {
 type MixState = Record<GlassPosition, { series: TintSeries | ''; vlt: string }>;
 type FullVltState = Record<GlassPosition, string>;
 type ExtraState = Record<ExtraGlassKey, { included: boolean; series: TintSeries | ''; vlt: string }>;
+type VltGroupMode = 'individual' | 'whole' | 'front_rear';
+
+// "Front" = the 3 pieces facing forward; "rear" = whatever's left (just the
+// rear windscreen, with the current 4-position set).
+const FRONT_GROUP: GlassPosition[] = ['front_windscreen', 'door_window', 'rear_panel_window'];
+const REAR_GROUP: GlassPosition[] = ['rear_windscreen'];
 
 const emptyMix: MixState = {
   front_windscreen: { series: '', vlt: '' },
@@ -54,6 +60,10 @@ export default function GarageTintPackage() {
   const [packageType, setPackageType] = useState<TintPackageType>('full');
   const [fullSeries, setFullSeries] = useState<TintSeries | ''>('');
   const [fullVlt, setFullVlt] = useState<FullVltState>(emptyFullVlt);
+  const [vltGroupMode, setVltGroupMode] = useState<VltGroupMode>('individual');
+  const [wholeVlt, setWholeVlt] = useState('');
+  const [frontVlt, setFrontVlt] = useState('');
+  const [rearVlt, setRearVlt] = useState('');
   const [mix, setMix] = useState<MixState>(emptyMix);
   const [extras, setExtras] = useState<ExtraState>(emptyExtras);
   const [discount, setDiscount] = useState(0);
@@ -69,6 +79,13 @@ export default function GarageTintPackage() {
 
   const size = vehicle?.size ?? 'standard';
   const availableExtras = EXTRA_GLASS_OPTIONS.filter((ex) => !ex.xlargeOnly || size === 'xlarge');
+
+  // Full Package's VLT, resolved for whichever grouping mode is active.
+  function effectiveFullVlt(pos: GlassPosition): string {
+    if (vltGroupMode === 'whole') return wholeVlt;
+    if (vltGroupMode === 'front_rear') return FRONT_GROUP.includes(pos) ? frontVlt : rearVlt;
+    return fullVlt[pos];
+  }
 
   const fullPrice = fullSeries ? (fullPrices[`${fullSeries}|${size}`] ?? 0) : 0;
   const mixTotal = GLASS_POSITIONS.reduce((sum, pos) => {
@@ -91,7 +108,9 @@ export default function GarageTintPackage() {
   const handleSave = async () => {
     if (packageType === 'full') {
       if (!fullSeries) { setError('Choose a series for the Full Package'); return; }
-      if (GLASS_POSITIONS.some((p) => !fullVlt[p.key])) { setError('Choose a VLT for every window'); return; }
+      if (vltGroupMode === 'whole' && !wholeVlt) { setError('Choose a VLT for the whole car'); return; }
+      if (vltGroupMode === 'front_rear' && (!frontVlt || !rearVlt)) { setError('Choose a VLT for both the front and rear groups'); return; }
+      if (vltGroupMode === 'individual' && GLASS_POSITIONS.some((p) => !fullVlt[p.key])) { setError('Choose a VLT for every window'); return; }
       if (availableExtras.some((ex) => extras[ex.key].included && !extras[ex.key].vlt)) { setError('Choose a VLT for every selected extra'); return; }
     } else {
       if (GLASS_POSITIONS.some((p) => !mix[p.key].series || !mix[p.key].vlt)) { setError('Choose a series and VLT for every glass position'); return; }
@@ -107,7 +126,7 @@ export default function GarageTintPackage() {
         customerId: id!, vehicleId: vehicleId!, service: 'tinted', createdBy: currentUser?.id,
       });
       const selections: TintPositionSelection[] = packageType === 'full'
-        ? GLASS_POSITIONS.map((p) => ({ position: p.key, series: fullSeries as TintSeries, vlt: fullVlt[p.key], price: 0 }))
+        ? GLASS_POSITIONS.map((p) => ({ position: p.key, series: fullSeries as TintSeries, vlt: effectiveFullVlt(p.key), price: 0 }))
         : GLASS_POSITIONS.map((p) => ({
             position: p.key,
             series: mix[p.key].series as TintSeries,
@@ -205,23 +224,102 @@ export default function GarageTintPackage() {
                   ))}
                 </div>
 
-                <label className="block text-white/50 text-xs font-medium mb-2">VLT (Darkness) per window</label>
-                <div className="space-y-2 mb-6">
-                  {GLASS_POSITIONS.map((pos) => (
-                    <div key={pos.key} className="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-2 items-center">
-                      <span className="text-white/70 text-sm">{pos.label}</span>
+                <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+                  <label className="block text-white/50 text-xs font-medium">VLT (Darkness)</label>
+                  <div className="flex gap-1.5">
+                    {([
+                      ['individual', 'Per Window'],
+                      ['whole', 'Whole Car'],
+                      ['front_rear', 'Front & Rear'],
+                    ] as [VltGroupMode, string][]).map(([mode, label]) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setVltGroupMode(mode)}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors ${
+                          vltGroupMode === mode
+                            ? 'bg-gold-500/15 border-gold-400/50 text-gold-400'
+                            : 'bg-white/[0.03] border-white/10 text-white/50 hover:text-white/80 hover:border-white/20'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {vltGroupMode === 'individual' && (
+                  <div className="space-y-2 mb-6">
+                    {GLASS_POSITIONS.map((pos) => (
+                      <div key={pos.key} className="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-2 items-center">
+                        <span className="text-white/70 text-sm">{pos.label}</span>
+                        <select
+                          className="bg-white/[0.04] border border-white/10 focus:border-gold-400/50 rounded-lg px-3 py-2
+                            text-white text-sm outline-none transition-colors appearance-none"
+                          value={fullVlt[pos.key]}
+                          onChange={(e) => setFullVlt({ ...fullVlt, [pos.key]: e.target.value })}
+                        >
+                          <option value="" className="bg-obsidian-800">VLT</option>
+                          {VLT_OPTIONS.map((v) => <option key={v} value={v} className="bg-obsidian-800">{v}</option>)}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {vltGroupMode === 'whole' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-2 items-center mb-6">
+                    <span className="text-white/70 text-sm">Whole Car</span>
+                    <select
+                      className="bg-white/[0.04] border border-white/10 focus:border-gold-400/50 rounded-lg px-3 py-2
+                        text-white text-sm outline-none transition-colors appearance-none"
+                      value={wholeVlt}
+                      onChange={(e) => setWholeVlt(e.target.value)}
+                    >
+                      <option value="" className="bg-obsidian-800">VLT</option>
+                      {VLT_OPTIONS.map((v) => <option key={v} value={v} className="bg-obsidian-800">{v}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                {vltGroupMode === 'front_rear' && (
+                  <div className="space-y-2 mb-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-2 items-center">
+                      <span className="text-white/70 text-sm">
+                        Front
+                        <span className="block text-white/30 text-[11px]">
+                          {FRONT_GROUP.map((k) => GLASS_POSITIONS.find((p) => p.key === k)?.label).join(', ')}
+                        </span>
+                      </span>
                       <select
                         className="bg-white/[0.04] border border-white/10 focus:border-gold-400/50 rounded-lg px-3 py-2
                           text-white text-sm outline-none transition-colors appearance-none"
-                        value={fullVlt[pos.key]}
-                        onChange={(e) => setFullVlt({ ...fullVlt, [pos.key]: e.target.value })}
+                        value={frontVlt}
+                        onChange={(e) => setFrontVlt(e.target.value)}
                       >
                         <option value="" className="bg-obsidian-800">VLT</option>
                         {VLT_OPTIONS.map((v) => <option key={v} value={v} className="bg-obsidian-800">{v}</option>)}
                       </select>
                     </div>
-                  ))}
-                </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-2 items-center">
+                      <span className="text-white/70 text-sm">
+                        Rear
+                        <span className="block text-white/30 text-[11px]">
+                          {REAR_GROUP.map((k) => GLASS_POSITIONS.find((p) => p.key === k)?.label).join(', ')}
+                        </span>
+                      </span>
+                      <select
+                        className="bg-white/[0.04] border border-white/10 focus:border-gold-400/50 rounded-lg px-3 py-2
+                          text-white text-sm outline-none transition-colors appearance-none"
+                        value={rearVlt}
+                        onChange={(e) => setRearVlt(e.target.value)}
+                      >
+                        <option value="" className="bg-obsidian-800">VLT</option>
+                        {VLT_OPTIONS.map((v) => <option key={v} value={v} className="bg-obsidian-800">{v}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                )}
 
                 <div className="pt-5 border-t border-white/10 space-y-2.5">
                   <p className="text-white/50 text-xs font-medium">Extras (no extra charge)</p>
