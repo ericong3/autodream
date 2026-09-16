@@ -124,9 +124,10 @@ export default function GarageTintPackage() {
   const [extras, setExtras] = useState<ExtraState>(() => detectExtras(incoming?.extras));
   const [discount, setDiscount] = useState(incoming?.discount ?? 0);
   // No visible trigger at all — a customer watching the screen shouldn't be
-  // able to spot anything to ask about. Only reveals via 5 quick taps on the
-  // "Price Summary" title (a plain-looking heading, not a button), or if a
-  // discount was already applied earlier (e.g. after Back).
+  // able to spot anything to ask about. 5 quick taps on the "Price Summary"
+  // title (a plain-looking heading, not a button) toggles it — same gesture
+  // shows it and hides it again, so an accidental reveal is easy to undo.
+  // The discount amount itself isn't cleared when hidden, only the input.
   const [showDiscount, setShowDiscount] = useState(!!incoming?.discount);
   const discountTapCount = useRef(0);
   const discountTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -134,7 +135,7 @@ export default function GarageTintPackage() {
     discountTapCount.current += 1;
     if (discountTapTimer.current) clearTimeout(discountTapTimer.current);
     if (discountTapCount.current >= 5) {
-      setShowDiscount(true);
+      setShowDiscount((v) => !v);
       discountTapCount.current = 0;
       return;
     }
