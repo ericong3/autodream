@@ -123,6 +123,10 @@ export default function GarageTintPackage() {
   const [mix, setMix] = useState<MixState>(() => detectMix(incoming?.packageType === 'mix' ? incoming.selections : undefined));
   const [extras, setExtras] = useState<ExtraState>(() => detectExtras(incoming?.extras));
   const [discount, setDiscount] = useState(incoming?.discount ?? 0);
+  // Kept out of sight by default — a customer watching the screen shouldn't
+  // see a "Discount" field and ask for one. Only reveals once the salesman
+  // deliberately taps for it, or if a discount was already applied earlier.
+  const [showDiscount, setShowDiscount] = useState(!!incoming?.discount);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -486,20 +490,33 @@ export default function GarageTintPackage() {
               )}
             </div>
 
-            <div className="flex items-center justify-between gap-3 py-3 border-t border-white/10">
-              <label className="text-white/50 text-sm">Discount</label>
-              <div className="relative w-32">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/30 text-xs">RM</span>
-                <input
-                  type="number"
-                  min={0}
-                  className="w-full bg-white/[0.04] border border-white/10 focus:border-gold-400/50 rounded-lg
-                    pl-8 pr-2 py-1.5 text-white text-sm text-right outline-none transition-colors"
-                  value={discount || ''}
-                  onChange={(e) => setDiscount(Number(e.target.value) || 0)}
-                />
+            {showDiscount ? (
+              <div className="flex items-center justify-between gap-3 py-3 border-t border-white/10">
+                <label className="text-white/50 text-sm">Discount</label>
+                <div className="relative w-32">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/30 text-xs">RM</span>
+                  <input
+                    type="number"
+                    min={0}
+                    autoFocus
+                    className="w-full bg-white/[0.04] border border-white/10 focus:border-gold-400/50 rounded-lg
+                      pl-8 pr-2 py-1.5 text-white text-sm text-right outline-none transition-colors"
+                    value={discount || ''}
+                    onChange={(e) => setDiscount(Number(e.target.value) || 0)}
+                  />
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="flex justify-end py-3 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setShowDiscount(true)}
+                  className="text-white/15 hover:text-white/40 text-[10px] transition-colors"
+                >
+                  + discount
+                </button>
+              </div>
+            )}
 
             <div className="flex justify-between items-baseline pt-3 border-t border-white/10 mb-6">
               <span className="text-white font-semibold">Final Total</span>
