@@ -1067,7 +1067,7 @@ export default function History() {
                     });
                     const disbCar = cars.find(c => c.id === disbursalCarId);
                     if (disbCar && grossAmt > 0) {
-                      generateLoanDisbursement({ car: disbCar, disbursementAmount: grossAmt, payments, addPayment, updatePayment });
+                      generateLoanDisbursement({ car: disbCar, disbursementAmount: grossAmt, payments, addPayment, updatePayment, transferredBy: currentUser?.id });
                       // Clears the receivable booked at sale — skip dealer-consignment
                       // cars, which never went through that sale entry in the first place.
                       if (!disbCar.consignment && !disbCar.outgoingConsignment && currentUser) {

@@ -327,22 +327,43 @@ export async function generateLoanDisbursement(opts: {
   payments: Payment[];
   addPayment: AddPayment;
   updatePayment: UpdatePayment;
+  transferredBy?: string;
 }) {
-  const { car, disbursementAmount, payments, addPayment, updatePayment } = opts;
+  const { car, disbursementAmount, payments, addPayment, updatePayment, transferredBy } = opts;
   if (disbursementAmount <= 0) return;
   const label = `${car.make} ${car.model}${car.carPlate ? ` (${car.carPlate})` : ''}`;
   const existing = payments.find(p => p.type === 'loan_disbursement' && p.carId === car.id);
+  // This only runs once the director has actually confirmed the bank paid out
+  // (see the Record Bank Disbursement modal in History.tsx), so the payment
+  // should read as collected immediately — leaving it "pending" here is what
+  // silently desynced the Receivable tab from reality until someone noticed
+  // and fixed it separately.
+  const transferredAt = car.disbursementDate ? new Date(car.disbursementDate).toISOString() : new Date().toISOString();
   if (existing) {
-    await updatePayment(existing.id, { amount: disbursementAmount });
+    await updatePayment(existing.id, { amount: disbursementAmount, status: 'transferred', transferredAt, transferredBy });
   } else {
     await addPayment({
       id: generateId(), type: 'loan_disbursement', carId: car.id,
       recipientType: 'customer', recipientId: car.id, recipientName: `Bank — ${label}`,
-      amount: disbursementAmount, description: `Loan disbursement — ${label}`, status: 'pending', createdAt: new Date().toISOString(),
+      amount: disbursementAmount, description: `Loan disbursement — ${label}`,
+      status: 'transferred', transferredAt, transferredBy, createdAt: new Date().toISOString(),
     });
   }
 }
 
+// One-off catch-up for cars whose disbursement was recorded before the fix
+// above existed — the car itself already says moneyReceived, but its
+// loan_disbursement payment is still stuck "pending" because nothing ever
+// flipped it. Surfaced as a "Sync" action on the Receivable tab.
+export function findStaleDisbursements(cars: Car[], payments: Payment[]): { payment: Payment; car: Car }[] {
+  const result: { payment: Payment; car: Car }[] = [];
+  for (const p of payments) {
+    if (p.type !== 'loan_disbursement' || p.status !== 'pending' || !p.carId) continue;
+    const car = cars.find(c => c.id === p.carId);
+    if (car?.moneyReceived) result.push({ payment: p, car });
+  }
+  return result;
+}
 // ── Backfill: collect all missing payment entries ─────────────────────────────
 export function collectMissingPayments(data: {
   cars: Car[];

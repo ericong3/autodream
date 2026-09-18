@@ -3,12 +3,12 @@ import {
   Wallet, CheckCircle2, X, Search, CreditCard, Camera,
   Trash2, Plus, ChevronDown, ArrowUpRight, ArrowDownLeft, Receipt, CalendarDays,
   Users, Wrench, Building2, UserCircle, DollarSign, RefreshCw, TrendingDown, TrendingUp,
-  Clock, AlertTriangle, Check, FileText,
+  Clock, AlertTriangle, Check, FileText, Landmark, Car as CarIcon,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { Payment, PaymentType, RecipientType } from '../types';
 import { formatRM, generateId } from '../utils/format';
-import { collectMissingPayments } from '../utils/generatePayments';
+import { collectMissingPayments, findStaleDisbursements } from '../utils/generatePayments';
 import { buildClaimConfirmedEntry, buildClaimPaidEntry, buildPayablePaidEntry, LEDGER_ACCOUNTS } from '../utils/generateJournalEntries';
 import { supabase } from '../lib/supabase';
 import Modal from '../components/Modal';
@@ -469,6 +469,23 @@ export default function Payments({ embedded }: PaymentsProps) {
   const monthTransferred = payments
     .filter(p => p.status === 'transferred' && p.transferredAt?.startsWith(thisMonth))
     .reduce((s, p) => s + p.amount, 0);
+
+  // Loan disbursements the car already shows as received, but whose payment
+  // record never got flipped to collected — see generateLoanDisbursement.
+  const staleDisbursements = useMemo(() => findStaleDisbursements(cars, payments), [cars, payments]);
+  const [syncingDisbursements, setSyncingDisbursements] = useState(false);
+  const handleSyncDisbursements = async () => {
+    setSyncingDisbursements(true);
+    try {
+      await Promise.all(staleDisbursements.map(({ payment, car }) => updatePayment(payment.id, {
+        status: 'transferred',
+        transferredAt: car.disbursementDate ?? payment.createdAt,
+        transferredBy: currentUser?.id,
+      })));
+    } finally {
+      setSyncingDisbursements(false);
+    }
+  };
 
   // ── Recipient options ────────────────────────────────────────────────────────
   function recipientOptions(type: RecipientType | '') {
@@ -933,6 +950,76 @@ export default function Payments({ embedded }: PaymentsProps) {
     );
   }
 
+  // Receivable — money coming to us (bank disbursements, cash collections,
+  // outgoing-consignment collections). A distinct, lighter card than
+  // PaymentRow: none of the claim-review/vendor-registration states that
+  // apply to outbound payments are possible on this side.
+  function ReceivableRow({ p }: { p: Payment }) {
+    const isChecked = selected.has(p.id);
+    const isPending = p.status === 'pending';
+    const car = p.carId ? cars.find(c => c.id === p.carId) : undefined;
+    const Icon = p.type === 'loan_disbursement' ? Landmark : RECIPIENT_ICON[p.recipientType] ?? UserCircle;
+
+    return (
+      <div className={`relative rounded-2xl p-4 flex items-center gap-3 bg-white/[0.04] backdrop-blur-xl border transition-colors ${
+        isChecked ? 'border-emerald-400/40 bg-emerald-500/[0.06]' : 'border-gold-400/15 hover:border-gold-400/30'
+      }`}>
+        {isPending ? (
+          <button
+            onClick={() => toggleSelect(p.id)}
+            className={`shrink-0 w-4 h-4 rounded border transition-colors ${isChecked ? 'bg-emerald-500 border-emerald-500' : 'border-white/20 hover:border-emerald-400/50'}`}
+          >
+            {isChecked && <svg viewBox="0 0 12 12" fill="none" className="w-4 h-4 -m-px"><path d="M2.5 6l2.5 2.5 4.5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-obsidian-950" /></svg>}
+          </button>
+        ) : <div className="shrink-0 w-4" />}
+
+        <div className="shrink-0 w-10 h-10 rounded-full bg-gold-400/10 border border-gold-400/20 flex items-center justify-center text-gold-400">
+          <Icon size={17} strokeWidth={1.5} />
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm text-white font-medium truncate">{p.recipientName}</span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${TYPE_COLORS[p.type]}`}>{TYPE_LABELS[p.type]}</span>
+          </div>
+          <div className="flex items-center gap-1.5 mt-1 text-[11px] text-white/40 flex-wrap">
+            {car && <span className="flex items-center gap-1"><CarIcon size={11} />{car.make} {car.model}{car.carPlate ? ` · ${car.carPlate}` : ''}</span>}
+            {p.bankName && <span>· {p.bankName}</span>}
+            {!isPending && p.transferredAt && (
+              <span>· Collected {new Date(p.transferredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}</span>
+            )}
+          </div>
+        </div>
+
+        <div className="shrink-0 flex items-center gap-3">
+          <span className={`text-sm font-bold tabular-nums ${isPending ? 'text-emerald-300' : 'text-white/40'}`}>{formatRM(p.amount)}</span>
+          {isPending ? (
+            <button
+              onClick={() => { setSingleId(p.id); setTransferTarget('single'); }}
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border bg-emerald-500/15 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25 transition-colors whitespace-nowrap"
+            >
+              <ArrowDownLeft size={12} /> Collect
+            </button>
+          ) : (
+            <span className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border bg-white/[0.03] border-white/10 text-white/40 whitespace-nowrap">
+              <CheckCircle2 size={12} /> Collected
+            </span>
+          )}
+          {isDirectorView && (
+            p.deleteRequestedBy ? (
+              <div className="flex items-center gap-1">
+                <button onClick={() => handleApproveDelete(p.id)} title="Approve deletion" className="p-1 rounded text-red-400 hover:bg-red-500/20 transition-colors"><Check size={12} /></button>
+                <button onClick={() => handleRejectDelete(p.id)} title="Reject deletion" className="p-1 rounded text-gray-500 hover:text-gray-300 transition-colors"><X size={12} /></button>
+              </div>
+            ) : (
+              <button onClick={() => handleDelete(p.id)} className="p-1 rounded text-white/20 hover:text-red-400 transition-colors"><Trash2 size={12} /></button>
+            )
+          )}
+        </div>
+      </div>
+    );
+  }
+
   const transferPayments = transferTarget === 'batch' ? selectedPending : singleId ? payments.filter(p => p.id === singleId) : [];
   const transferTotal = transferPayments.reduce((s, p) => s + p.amount, 0);
 
@@ -965,7 +1052,7 @@ export default function Payments({ embedded }: PaymentsProps) {
               <p className="text-[10px] text-gray-600">{pendingOutbound.length} pending</p>
             </div>
             <div className="rounded-xl bg-obsidian-800/60 border border-emerald-500/20 px-3 py-2.5">
-              <p className="text-[10px] text-emerald-600 uppercase tracking-wider mb-0.5">To Collect</p>
+              <p className="text-[10px] text-emerald-600 uppercase tracking-wider mb-0.5">Receivable</p>
               <p className="text-sm font-bold text-emerald-300 tabular-nums">{formatRM(toCollectTotal)}</p>
               <p className="text-[10px] text-gray-600">{pendingInbound.length} pending</p>
             </div>
@@ -994,7 +1081,7 @@ export default function Payments({ embedded }: PaymentsProps) {
           <div className="flex gap-1 rounded-xl bg-obsidian-800/60 border border-white/[0.06] p-1 mb-3">
             {([
               { key: 'to_pay',     label: 'To Pay',    icon: TrendingDown, count: pendingOutbound.length },
-              { key: 'to_collect', label: 'To Collect', icon: TrendingUp,  count: pendingInbound.length },
+              { key: 'to_collect', label: 'Receivable', icon: Landmark,  count: pendingInbound.length },
               { key: 'refund_claims', label: 'Refund Claims', icon: Receipt, count: pendingRefundClaims.length },
               { key: 'expense_claims', label: 'Expense Claims', icon: CreditCard, count: pendingExpenseClaims.length },
               { key: 'transferred',label: 'Done',       icon: CheckCircle2, count: 0 },
@@ -1081,6 +1168,27 @@ export default function Payments({ embedded }: PaymentsProps) {
 
       {/* List */}
       <div className="px-4 pt-3">
+        {tab === 'to_collect' && staleDisbursements.length > 0 && (
+          <div className="relative overflow-hidden rounded-2xl p-4 mb-3 bg-white/[0.04] backdrop-blur-xl border border-amber-400/25 flex items-center gap-3 flex-wrap">
+            <div className="shrink-0 w-10 h-10 rounded-full bg-amber-400/10 border border-amber-400/20 flex items-center justify-center text-amber-400">
+              <RefreshCw size={16} strokeWidth={1.5} className={syncingDisbursements ? 'animate-spin' : ''} />
+            </div>
+            <div className="flex-1 min-w-[200px]">
+              <p className="text-white text-sm font-medium">
+                {staleDisbursements.length} disbursement{staleDisbursements.length === 1 ? '' : 's'} already received on the car, not yet marked collected here
+              </p>
+              <p className="text-white/40 text-xs mt-0.5">These fell out of sync before the fix — sync them to mark all as Collected.</p>
+            </div>
+            <button
+              onClick={handleSyncDisbursements}
+              disabled={syncingDisbursements}
+              className="shrink-0 flex items-center gap-1.5 text-xs font-medium px-3.5 py-2 rounded-full border bg-amber-500/15 border-amber-500/30 text-amber-400 hover:bg-amber-500/25 transition-colors disabled:opacity-50"
+            >
+              {syncingDisbursements ? 'Syncing…' : `Sync ${staleDisbursements.length}`}
+            </button>
+          </div>
+        )}
+
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
             <Wallet size={40} className="text-gray-700" />
@@ -1101,10 +1209,30 @@ export default function Payments({ embedded }: PaymentsProps) {
               </p>
             )}
           </div>
+        ) : tab === 'to_collect' ? (
+          <div className="space-y-2">
+            {filtered.some(p => p.status === 'pending') && (
+              <div className="flex items-center gap-3 px-1 pb-1">
+                <button onClick={selectAll} className="text-[11px] text-white/40 hover:text-white transition-colors">
+                  {selected.size > 0 ? `${selected.size} selected` : 'Select all'}
+                </button>
+                {selected.size > 0 && (
+                  <>
+                    <span className="text-white/20 text-[11px]">·</span>
+                    <span className="text-[11px] text-emerald-400 font-medium">{formatRM(selectedTotal)}</span>
+                    <button onClick={() => setSelected(new Set())} className="ml-auto text-[11px] text-white/30 hover:text-white transition-colors">
+                      Clear
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+            {filtered.map(p => <ReceivableRow key={p.id} p={p} />)}
+          </div>
         ) : (
           <div className="rounded-xl overflow-hidden border border-white/[0.06] bg-obsidian-900/40">
             {/* Select-all bar for pending tabs */}
-            {(tab === 'to_pay' || tab === 'to_collect' || tab === 'refund_claims' || tab === 'expense_claims') && filtered.some(p => p.status === 'pending') && (
+            {(tab === 'to_pay' || tab === 'refund_claims' || tab === 'expense_claims') && filtered.some(p => p.status === 'pending') && (
               <div className="flex items-center gap-3 px-4 py-2.5 border-b border-white/[0.06] bg-obsidian-800/40">
                 <button
                   onClick={selectAll}
