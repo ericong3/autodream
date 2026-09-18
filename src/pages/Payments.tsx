@@ -441,8 +441,9 @@ export default function Payments({ embedded }: PaymentsProps) {
   // of the generic transfer flow — see DisbursementCollectModal.
   const [collectingDisbursementId, setCollectingDisbursementId] = useState<string | null>(null);
   const [receivablePage, setReceivablePage] = useState(1);
-  const [openReceivableMenuId, setOpenReceivableMenuId] = useState<string | null>(null);
-  useEffect(() => { setReceivablePage(1); }, [tab, search]);
+  const [payPage, setPayPage] = useState(1);
+  const [openRowMenuId, setOpenRowMenuId] = useState<string | null>(null);
+  useEffect(() => { setReceivablePage(1); setPayPage(1); }, [tab, search]);
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ ...EMPTY_ADD });
   const [addSaving, setAddSaving] = useState(false);
@@ -971,21 +972,20 @@ export default function Payments({ embedded }: PaymentsProps) {
     );
   }
 
-  // Receivable — money coming to us (bank disbursements, cash collections,
-  // outgoing-consignment collections), as a real table: 540+ rows on other
-  // tabs makes a stack of cards unusable at scale, and a table is the shape
-  // this data actually has (one thing per row, a handful of comparable
-  // columns) — column headers let the eye scan straight down "Amount" or
-  // "Status" instead of re-parsing every card's layout each time.
-  const RECEIVABLE_COLS = 'grid-cols-[28px_minmax(180px,1.6fr)_150px_110px_130px_110px_150px]';
-  const RECEIVABLE_PAGE_SIZE = 10;
+  // Shared table shell for To Pay / Receivable — 540+ rows on To Pay alone
+  // makes a stack of cards unusable at scale, and a table is the shape this
+  // data actually has (one thing per row, a handful of comparable columns) —
+  // column headers let the eye scan straight down "Amount" or "Status"
+  // instead of re-parsing every card's layout each time.
+  const DATA_TABLE_COLS = 'grid-cols-[28px_minmax(180px,1.6fr)_150px_110px_130px_110px_150px]';
+  const DATA_TABLE_PAGE_SIZE = 10;
 
   function ReceivableTable({ items }: { items: Payment[] }) {
-    const totalPages = Math.max(1, Math.ceil(items.length / RECEIVABLE_PAGE_SIZE));
+    const totalPages = Math.max(1, Math.ceil(items.length / DATA_TABLE_PAGE_SIZE));
     const page = Math.min(receivablePage, totalPages);
-    const pageItems = items.slice((page - 1) * RECEIVABLE_PAGE_SIZE, page * RECEIVABLE_PAGE_SIZE);
-    const from = items.length === 0 ? 0 : (page - 1) * RECEIVABLE_PAGE_SIZE + 1;
-    const to = Math.min(page * RECEIVABLE_PAGE_SIZE, items.length);
+    const pageItems = items.slice((page - 1) * DATA_TABLE_PAGE_SIZE, page * DATA_TABLE_PAGE_SIZE);
+    const from = items.length === 0 ? 0 : (page - 1) * DATA_TABLE_PAGE_SIZE + 1;
+    const to = Math.min(page * DATA_TABLE_PAGE_SIZE, items.length);
 
     return (
       <div
@@ -1017,7 +1017,7 @@ export default function Payments({ embedded }: PaymentsProps) {
         <div className="overflow-x-auto">
           <div className="min-w-[880px]">
             {/* Column headers */}
-            <div className={`grid ${RECEIVABLE_COLS} gap-3 px-5 py-3 text-[10px] uppercase tracking-wider text-white/30 font-semibold border-b border-white/[0.06]`}>
+            <div className={`grid ${DATA_TABLE_COLS} gap-3 px-5 py-3 text-[10px] uppercase tracking-wider text-white/30 font-semibold border-b border-white/[0.06]`}>
               <div />
               <div>Vehicle / Recipient</div>
               <div>Type</div>
@@ -1074,11 +1074,11 @@ export default function Payments({ embedded }: PaymentsProps) {
     const Icon = p.type === 'loan_disbursement' ? Landmark : RECIPIENT_ICON[p.recipientType] ?? UserCircle;
     const typeStyle = RECEIVABLE_TYPE_STYLE[p.type] ?? { bg: 'rgba(234,184,32,0.1)', text: '#F7D96A', border: 'rgba(234,184,32,0.22)' };
     const reference = car?.carPlate ?? p.referenceNumber ?? '—';
-    const menuOpen = openReceivableMenuId === p.id;
+    const menuOpen = openRowMenuId === p.id;
 
     return (
       <div
-        className={`group grid ${RECEIVABLE_COLS} gap-3 items-center px-5 py-3.5 border-b border-white/[0.04] last:border-0 transition-colors ${
+        className={`group grid ${DATA_TABLE_COLS} gap-3 items-center px-5 py-3.5 border-b border-white/[0.04] last:border-0 transition-colors ${
           isChecked ? 'bg-emerald-500/[0.05]' : 'hover:bg-white/[0.02]'
         }`}
       >
@@ -1154,7 +1154,7 @@ export default function Payments({ embedded }: PaymentsProps) {
               </div>
             ) : (
               <button
-                onClick={() => setOpenReceivableMenuId(menuOpen ? null : p.id)}
+                onClick={() => setOpenRowMenuId(menuOpen ? null : p.id)}
                 className={`p-1.5 rounded-lg transition-colors ${menuOpen ? 'text-white bg-white/[0.08]' : 'text-white/0 group-hover:text-white/30 hover:!text-white'}`}
               >
                 <MoreVertical size={14} />
@@ -1163,10 +1163,261 @@ export default function Payments({ embedded }: PaymentsProps) {
           )}
           {menuOpen && (
             <>
-              <div className="fixed inset-0 z-10" onClick={() => setOpenReceivableMenuId(null)} />
+              <div className="fixed inset-0 z-10" onClick={() => setOpenRowMenuId(null)} />
               <div className="absolute right-0 top-9 z-20 w-36 rounded-xl bg-obsidian-800 border border-white/10 shadow-card-lg overflow-hidden">
                 <button
-                  onClick={() => { handleDelete(p.id); setOpenReceivableMenuId(null); }}
+                  onClick={() => { handleDelete(p.id); setOpenRowMenuId(null); }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-white/60 hover:bg-red-500/10 hover:text-red-400 transition-colors"
+                >
+                  <Trash2 size={12} /> Delete
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function PayTable({ items }: { items: Payment[] }) {
+    const totalPages = Math.max(1, Math.ceil(items.length / DATA_TABLE_PAGE_SIZE));
+    const page = Math.min(payPage, totalPages);
+    const pageItems = items.slice((page - 1) * DATA_TABLE_PAGE_SIZE, page * DATA_TABLE_PAGE_SIZE);
+    const from = items.length === 0 ? 0 : (page - 1) * DATA_TABLE_PAGE_SIZE + 1;
+    const to = Math.min(page * DATA_TABLE_PAGE_SIZE, items.length);
+
+    return (
+      <div
+        className="relative overflow-hidden rounded-[22px]"
+        style={{
+          background: 'linear-gradient(160deg, rgba(255,255,255,0.035) 0%, rgba(255,255,255,0.012) 100%)',
+          backdropFilter: 'blur(28px) saturate(170%)', WebkitBackdropFilter: 'blur(28px) saturate(170%)',
+          border: '1px solid rgba(234,184,32,0.13)',
+          boxShadow: '0 6px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06)',
+        }}
+      >
+        {items.some(p => p.status === 'pending') && (
+          <div className="flex items-center gap-3 px-5 py-2.5 border-b border-white/[0.06]">
+            <button onClick={selectAll} className="text-[11px] text-white/40 hover:text-white transition-colors font-medium tracking-wide">
+              {selected.size > 0 ? `${selected.size} selected` : 'Select all'}
+            </button>
+            {selected.size > 0 && (
+              <>
+                <span className="text-white/15 text-[11px]">·</span>
+                <span className="text-[11px] text-gold-300 font-semibold">{formatRM(selectedTotal)}</span>
+                <button onClick={() => setSelected(new Set())} className="ml-auto text-[11px] text-white/30 hover:text-white transition-colors">
+                  Clear
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        <div className="overflow-x-auto">
+          <div className="min-w-[880px]">
+            {/* Column headers */}
+            <div className={`grid ${DATA_TABLE_COLS} gap-3 px-5 py-3 text-[10px] uppercase tracking-wider text-white/30 font-semibold border-b border-white/[0.06]`}>
+              <div />
+              <div>Recipient</div>
+              <div>Type</div>
+              <div>Reference</div>
+              <div className="text-right">Amount</div>
+              <div>Status</div>
+              <div className="text-right">Action</div>
+            </div>
+
+            {pageItems.map(p => <PayTableRow key={p.id} p={p} />)}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between px-5 py-3 border-t border-white/[0.06] text-xs text-white/35">
+          <span>{items.length === 0 ? 'No rows' : `${from}–${to} of ${items.length}`}</span>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPayPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/[0.05] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
+                <button
+                  key={n}
+                  onClick={() => setPayPage(n)}
+                  className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${
+                    n === page ? 'bg-gold-500/20 text-gold-300 border border-gold-500/30' : 'text-white/40 hover:text-white hover:bg-white/[0.05]'
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+              <button
+                onClick={() => setPayPage(p => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/[0.05] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function PayTableRow({ p }: { p: Payment }) {
+    const isChecked = selected.has(p.id);
+    const isPending = p.status === 'pending';
+    const Icon = RECIPIENT_ICON[p.recipientType] ?? UserCircle;
+    const refundMissingBankDetails = p.type === 'customer_refund' && !p.bankName;
+    const claimNeedsVendor = p.type === 'expense_claim' && p.recipientType !== 'user' && !p.recipientId;
+    const unconfirmedClaim = p.type === 'expense_claim' && !p.claimConfirmedBy;
+    const selectable = isPending && !refundMissingBankDetails && !unconfirmedClaim && !claimNeedsVendor;
+    const reference = (p.carId && carMap[p.carId]) || p.referenceNumber || p.bankName || '—';
+    const menuOpen = openRowMenuId === p.id;
+
+    return (
+      <div
+        className={`group grid ${DATA_TABLE_COLS} gap-3 items-center px-5 py-3.5 border-b border-white/[0.04] last:border-0 transition-colors ${
+          p.deleteRequestedBy && isDirectorView ? 'bg-red-500/[0.05]' : isChecked ? 'bg-gold-500/[0.05]' : 'hover:bg-white/[0.02]'
+        }`}
+      >
+        {selectable ? (
+          <button
+            onClick={() => toggleSelect(p.id)}
+            className={`shrink-0 w-[17px] h-[17px] rounded-md border transition-colors ${isChecked ? 'bg-gold-400 border-gold-400' : 'border-white/15 hover:border-gold-400/50'}`}
+          >
+            {isChecked && <svg viewBox="0 0 12 12" fill="none" className="w-full h-full"><path d="M2.5 6l2.5 2.5 4.5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-obsidian-950" /></svg>}
+          </button>
+        ) : <div />}
+
+        <div className="flex items-center gap-3 min-w-0">
+          <div
+            className="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-gold-300"
+            style={{ background: 'radial-gradient(circle at 30% 30%, rgba(234,184,32,0.2), rgba(234,184,32,0.04))', border: '1px solid rgba(234,184,32,0.2)' }}
+          >
+            <Icon size={15} strokeWidth={1.5} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[13px] text-white font-medium truncate">{p.recipientName}</p>
+            <p className="text-[11px] text-white/35 truncate">
+              {RECIPIENT_TYPE_LABELS[p.recipientType]}
+              {p.description && ` · ${p.description}`}
+              {!isPending && p.transferredAt && ` · Paid ${new Date(p.transferredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}`}
+            </p>
+          </div>
+        </div>
+
+        <div>
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold tracking-wide whitespace-nowrap border ${TYPE_COLORS[p.type]}`}>
+            {TYPE_LABELS[p.type]}
+          </span>
+        </div>
+
+        <div className="text-xs text-white/45 truncate">{reference}</div>
+
+        <div className={`text-right font-display text-base tabular-nums ${isPending ? 'text-white' : 'text-white/25'}`}>
+          {formatRM(p.amount)}
+        </div>
+
+        <div>
+          {refundMissingBankDetails ? (
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" /> Awaiting details
+            </span>
+          ) : claimNeedsVendor ? (
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-violet-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-400" /> Needs vendor
+            </span>
+          ) : unconfirmedClaim ? (
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-sky-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-sky-400" /> Awaiting review
+            </span>
+          ) : (
+            <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${isPending ? 'text-amber-300' : 'text-white/30'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${isPending ? 'bg-amber-400' : 'bg-white/20'}`} />
+              {isPending ? 'Pending' : 'Paid'}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-1.5 relative">
+          {refundMissingBankDetails ? (
+            <span className="text-xs font-medium px-3.5 py-2 text-white/20 whitespace-nowrap">—</span>
+          ) : claimNeedsVendor ? (
+            (isDirectorView || isAdmin) ? (
+              <button
+                onClick={() => setLinkVendorTarget(p.id)}
+                title="This vendor isn't registered yet — add them in Data before this can be confirmed"
+                className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full text-violet-200 bg-violet-500/20 border border-violet-500/30 hover:bg-violet-500/30 transition-colors whitespace-nowrap"
+              >
+                <Building2 size={12} /> Register Vendor
+              </button>
+            ) : (
+              <span className="text-xs font-medium px-3.5 py-2 text-white/20 whitespace-nowrap">—</span>
+            )
+          ) : unconfirmedClaim ? (
+            (isDirectorView || isAdmin) ? (
+              <button
+                onClick={() => handleConfirmClaim(p.id)}
+                title="Check the receipt matches the amount, then confirm"
+                className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full text-sky-200 bg-sky-500/20 border border-sky-500/30 hover:bg-sky-500/30 transition-colors whitespace-nowrap"
+              >
+                <Check size={12} /> Confirm
+              </button>
+            ) : (
+              <span className="text-xs font-medium px-3.5 py-2 text-white/20 whitespace-nowrap">—</span>
+            )
+          ) : isPending ? (
+            <button
+              onClick={() => { setSingleId(p.id); setTransferTarget('single'); }}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full text-obsidian-950 transition-all hover:scale-[1.03] active:scale-95 whitespace-nowrap"
+              style={{ background: 'linear-gradient(135deg, #F7D96A 0%, #EAB820 45%, #C99A16 100%)', boxShadow: '0 4px 16px rgba(234,184,32,0.32)' }}
+            >
+              <ArrowUpRight size={12} /> Transfer
+            </button>
+          ) : (
+            <span className="text-xs font-medium px-3.5 py-2 text-white/20 whitespace-nowrap">
+              <CheckCircle2 size={12} className="inline -mt-0.5 mr-1" />Done
+            </span>
+          )}
+          {isDirectorView && (
+            p.deleteRequestedBy ? (
+              <div className="flex items-center gap-1">
+                <button onClick={() => handleApproveDelete(p.id)} title="Approve deletion" className="p-1 rounded text-red-400 hover:bg-red-500/20 transition-colors"><Check size={12} /></button>
+                <button onClick={() => handleRejectDelete(p.id)} title="Reject deletion" className="p-1 rounded text-gray-500 hover:text-gray-300 transition-colors"><X size={12} /></button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setOpenRowMenuId(menuOpen ? null : p.id)}
+                className={`p-1.5 rounded-lg transition-colors ${menuOpen ? 'text-white bg-white/[0.08]' : 'text-white/0 group-hover:text-white/30 hover:!text-white'}`}
+              >
+                <MoreVertical size={14} />
+              </button>
+            )
+          )}
+          {isAdmin && !isDirectorView && (
+            p.deleteRequestedBy ? (
+              <span title="Pending director approval" className="flex items-center gap-1 text-[10px] text-amber-400 px-1.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                <Clock size={10} /> Pending
+              </span>
+            ) : (
+              <button
+                onClick={() => handleRequestDelete(p.id)}
+                title="Request deletion"
+                className="p-1.5 rounded-lg text-white/0 group-hover:text-white/30 hover:!text-red-400 transition-colors"
+              >
+                <Trash2 size={14} />
+              </button>
+            )
+          )}
+          {menuOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setOpenRowMenuId(null)} />
+              <div className="absolute right-0 top-9 z-20 w-36 rounded-xl bg-obsidian-800 border border-white/10 shadow-card-lg overflow-hidden">
+                <button
+                  onClick={() => { handleDelete(p.id); setOpenRowMenuId(null); }}
                   className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-white/60 hover:bg-red-500/10 hover:text-red-400 transition-colors"
                 >
                   <Trash2 size={12} /> Delete
@@ -1390,10 +1641,12 @@ export default function Payments({ embedded }: PaymentsProps) {
           </div>
         ) : tab === 'to_collect' ? (
           <ReceivableTable items={filtered} />
+        ) : tab === 'to_pay' ? (
+          <PayTable items={filtered} />
         ) : (
           <div className="rounded-xl overflow-hidden border border-white/[0.06] bg-obsidian-900/40">
             {/* Select-all bar for pending tabs */}
-            {(tab === 'to_pay' || tab === 'refund_claims' || tab === 'expense_claims') && filtered.some(p => p.status === 'pending') && (
+            {(tab === 'refund_claims' || tab === 'expense_claims') && filtered.some(p => p.status === 'pending') && (
               <div className="flex items-center gap-3 px-4 py-2.5 border-b border-white/[0.06] bg-obsidian-800/40">
                 <button
                   onClick={selectAll}
