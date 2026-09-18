@@ -46,8 +46,8 @@ import { Car, Payment } from '../types';
 import { formatRM as _formatRM } from '../utils/format';
 import Modal from '../components/Modal';
 import { useStore } from '../store';
-import { generateLoanDisbursement, getDeliveryDate, calcDealPrice, calcConsignmentPayoutAmount } from '../utils/generatePayments';
-import { buildDisbursementReceivedEntry } from '../utils/generateJournalEntries';
+import { getDeliveryDate, calcDealPrice, calcConsignmentPayoutAmount } from '../utils/generatePayments';
+import { recordDisbursement } from '../utils/recordDisbursement';
 import { getCaseCompletion } from '../utils/caseCompletion';
 import { formatRM, formatMileage, shortName, generateId } from '../utils/format';
 import StatCard from '../components/StatCard';
@@ -385,19 +385,6 @@ export default function History() {
   const getConsignmentPaid = (car: typeof cars[0]) =>
     car.consignment ? payments.find(p => p.type === 'consignment_payout' && p.carId === car.id && p.status === 'transferred') : undefined;
 
-  // Each distinct deduction label (Processing Fee, Service Charge, Insurance
-  // Cover Note, ...) gets its own expense account so the ledger shows how
-  // much is being lost to each type of bank/panel charge over time, without
-  // requiring the account to be pre-set-up — it's created on first use.
-  const getOrCreateChargeAccount = async (label: string): Promise<string> => {
-    const trimmed = label.trim();
-    const existing = ledgerAccounts.find(a => a.type === 'expense' && a.name.toLowerCase() === trimmed.toLowerCase());
-    if (existing) return existing.id;
-    const slug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || crypto.randomUUID().slice(0, 8);
-    const id = `acct-exp-disb-${slug}`;
-    await addLedgerAccount({ id, name: trimmed, type: 'expense' });
-    return id;
-  };
 
   const getSalesperson = (id?: string) => {
     const name = id ? users.find((u) => u.id === id)?.name : undefined;
@@ -1051,45 +1038,18 @@ export default function History() {
                   type="button"
                   disabled={!canConfirm}
                   onClick={async () => {
-                    if (!disbursalCarId) return;
+                    if (!disbursalCarId || !currentUser) return;
+                    const disbCar = cars.find(c => c.id === disbursalCarId);
+                    if (!disbCar) return;
                     const grossAmt = expectedNum || actualNum;
                     const chargeItems = disbursalForm.charges
                       .map(c => ({ label: c.label.trim(), amount: Number(c.amount || 0) }))
                       .filter(c => c.label && c.amount > 0);
 
-                    await updateCar(disbursalCarId, {
-                      moneyReceived: true,
-                      disbursementStatus: 'disbursed',
-                      disbursementAmount: actualNum,
-                      disbursementExpectedAmount: grossAmt || undefined,
-                      disbursementCharges: chargeItems.length ? chargeItems : undefined,
-                      disbursementDate: disbursalForm.date || undefined,
-                    });
-                    const disbCar = cars.find(c => c.id === disbursalCarId);
-                    if (disbCar && grossAmt > 0) {
-                      generateLoanDisbursement({ car: disbCar, disbursementAmount: grossAmt, payments, addPayment, updatePayment, transferredBy: currentUser?.id });
-                      // Clears the receivable booked at sale — skip dealer-consignment
-                      // cars, which never went through that sale entry in the first place.
-                      if (!disbCar.consignment && !disbCar.outgoingConsignment && currentUser) {
-                        const resolvedCharges = [];
-                        for (const c of chargeItems) {
-                          resolvedCharges.push({ accountId: await getOrCreateChargeAccount(c.label), amount: c.amount });
-                        }
-                        // Editing an already-disbursed car re-runs this — void the old ledger
-                        // entry first so the correction doesn't double-count the disbursement.
-                        const existingEntry = journalEntries.find(e => e.sourceType === 'disbursement_received' && e.sourceId === disbCar.id && !e.voided);
-                        if (existingEntry) {
-                          await voidJournalEntry(existingEntry.id, currentUser.id, 'Disbursement details corrected');
-                        }
-                        await addJournalEntry(buildDisbursementReceivedEntry({
-                          car: disbCar,
-                          amount: grossAmt,
-                          netAmount: actualNum,
-                          charges: resolvedCharges,
-                          createdBy: currentUser.id,
-                        }));
-                      }
-                    }
+                    await recordDisbursement(
+                      { car: disbCar, grossAmount: grossAmt, netAmount: actualNum, charges: chargeItems, date: disbursalForm.date, currentUserId: currentUser.id },
+                      { updateCar, payments, addPayment, updatePayment, ledgerAccounts, addLedgerAccount, journalEntries, addJournalEntry, voidJournalEntry },
+                    );
                     setDisbursalCarId(null);
                     setDisbursalDealInfo(null);
                   }}

@@ -12,6 +12,7 @@ import { collectMissingPayments, findStaleDisbursements } from '../utils/generat
 import { buildClaimConfirmedEntry, buildClaimPaidEntry, buildPayablePaidEntry, LEDGER_ACCOUNTS } from '../utils/generateJournalEntries';
 import { supabase } from '../lib/supabase';
 import Modal from '../components/Modal';
+import DisbursementCollectModal from '../components/DisbursementCollectModal';
 
 async function uploadReceipt(file: File): Promise<string> {
   const ext = file.type === 'application/pdf' ? 'pdf' : 'jpg';
@@ -389,6 +390,7 @@ export default function Payments({ embedded }: PaymentsProps) {
     payments, addPayment, batchAddPayments, updatePayment, deletePayment,
     currentUser, users, externalSalesmen, workshops, dealers, merchants, cars, customers, repairs, loaded,
     addRepair, addMiscCost, deleteRepair, deleteMiscCost, addJournalEntry, voidJournalEntry, journalEntries,
+    updateCar, ledgerAccounts, addLedgerAccount,
   } = useStore(s => ({
     payments:          s.payments,
     addPayment:        s.addPayment,
@@ -412,6 +414,9 @@ export default function Payments({ embedded }: PaymentsProps) {
     addJournalEntry:   s.addJournalEntry,
     voidJournalEntry:  s.voidJournalEntry,
     journalEntries:    s.journalEntries,
+    updateCar:         s.updateCar,
+    ledgerAccounts:    s.ledgerAccounts,
+    addLedgerAccount:  s.addLedgerAccount,
   }));
 
   const [tab, setTab] = useState<StatusTab>('to_pay');
@@ -422,6 +427,9 @@ export default function Payments({ embedded }: PaymentsProps) {
   const [showBulkAttach, setShowBulkAttach] = useState(false);
   const [transferTarget, setTransferTarget] = useState<'single' | 'batch' | null>(null);
   const [singleId, setSingleId] = useState<string | null>(null);
+  // Loan disbursements collect through their own deal-summary modal instead
+  // of the generic transfer flow — see DisbursementCollectModal.
+  const [collectingDisbursementId, setCollectingDisbursementId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ ...EMPTY_ADD });
   const [addSaving, setAddSaving] = useState(false);
@@ -961,28 +969,30 @@ export default function Payments({ embedded }: PaymentsProps) {
     const Icon = p.type === 'loan_disbursement' ? Landmark : RECIPIENT_ICON[p.recipientType] ?? UserCircle;
 
     return (
-      <div className={`relative rounded-2xl p-4 flex items-center gap-3 bg-white/[0.04] backdrop-blur-xl border transition-colors ${
-        isChecked ? 'border-emerald-400/40 bg-emerald-500/[0.06]' : 'border-gold-400/15 hover:border-gold-400/30'
-      }`}>
+      <div
+        className={`group relative rounded-2xl px-5 py-4 flex items-center gap-4 bg-white/[0.02] border transition-colors duration-200 ${
+          isChecked ? 'border-white/[0.14]' : 'border-white/[0.06] hover:border-white/[0.1]'
+        }`}
+      >
         {isPending ? (
           <button
             onClick={() => toggleSelect(p.id)}
-            className={`shrink-0 w-4 h-4 rounded border transition-colors ${isChecked ? 'bg-emerald-500 border-emerald-500' : 'border-white/20 hover:border-emerald-400/50'}`}
+            className={`shrink-0 w-[17px] h-[17px] rounded-md border transition-colors ${isChecked ? 'bg-gold-400 border-gold-400' : 'border-white/15 hover:border-white/30'}`}
           >
-            {isChecked && <svg viewBox="0 0 12 12" fill="none" className="w-4 h-4 -m-px"><path d="M2.5 6l2.5 2.5 4.5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-obsidian-950" /></svg>}
+            {isChecked && <svg viewBox="0 0 12 12" fill="none" className="w-full h-full"><path d="M2.5 6l2.5 2.5 4.5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-obsidian-950" /></svg>}
           </button>
-        ) : <div className="shrink-0 w-4" />}
+        ) : <div className="shrink-0 w-[17px]" />}
 
-        <div className="shrink-0 w-10 h-10 rounded-full bg-gold-400/10 border border-gold-400/20 flex items-center justify-center text-gold-400">
-          <Icon size={17} strokeWidth={1.5} />
+        <div className="shrink-0 w-10 h-10 rounded-full bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-white/50">
+          <Icon size={16} strokeWidth={1.5} />
         </div>
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm text-white font-medium truncate">{p.recipientName}</span>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${TYPE_COLORS[p.type]}`}>{TYPE_LABELS[p.type]}</span>
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="text-[15px] text-white/90 font-medium truncate">{p.recipientName}</span>
+            <span className="text-[10px] text-white/30 tracking-wide uppercase">{TYPE_LABELS[p.type]}</span>
           </div>
-          <div className="flex items-center gap-1.5 mt-1 text-[11px] text-white/40 flex-wrap">
+          <div className="flex items-center gap-1.5 mt-1 text-xs text-white/35 flex-wrap">
             {car && <span className="flex items-center gap-1"><CarIcon size={11} />{car.make} {car.model}{car.carPlate ? ` · ${car.carPlate}` : ''}</span>}
             {p.bankName && <span>· {p.bankName}</span>}
             {!isPending && p.transferredAt && (
@@ -991,18 +1001,21 @@ export default function Payments({ embedded }: PaymentsProps) {
           </div>
         </div>
 
-        <div className="shrink-0 flex items-center gap-3">
-          <span className={`text-sm font-bold tabular-nums ${isPending ? 'text-emerald-300' : 'text-white/40'}`}>{formatRM(p.amount)}</span>
+        <div className="shrink-0 flex items-center gap-4">
+          <span className={`font-display text-lg tabular-nums ${isPending ? 'text-gold-300' : 'text-white/25'}`}>{formatRM(p.amount)}</span>
           {isPending ? (
             <button
-              onClick={() => { setSingleId(p.id); setTransferTarget('single'); }}
-              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border bg-emerald-500/15 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25 transition-colors whitespace-nowrap"
+              onClick={() => {
+                if (p.type === 'loan_disbursement') setCollectingDisbursementId(p.id);
+                else { setSingleId(p.id); setTransferTarget('single'); }
+              }}
+              className="text-xs font-medium px-3.5 py-1.5 rounded-full border border-white/15 text-white/70 hover:border-gold-400/50 hover:text-gold-300 transition-colors whitespace-nowrap"
             >
-              <ArrowDownLeft size={12} /> Collect
+              Collect
             </button>
           ) : (
-            <span className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border bg-white/[0.03] border-white/10 text-white/40 whitespace-nowrap">
-              <CheckCircle2 size={12} /> Collected
+            <span className="text-xs font-medium px-3.5 py-1.5 rounded-full border border-white/[0.06] text-white/20 whitespace-nowrap">
+              Collected
             </span>
           )}
           {isDirectorView && (
@@ -1012,7 +1025,7 @@ export default function Payments({ embedded }: PaymentsProps) {
                 <button onClick={() => handleRejectDelete(p.id)} title="Reject deletion" className="p-1 rounded text-gray-500 hover:text-gray-300 transition-colors"><X size={12} /></button>
               </div>
             ) : (
-              <button onClick={() => handleDelete(p.id)} className="p-1 rounded text-white/20 hover:text-red-400 transition-colors"><Trash2 size={12} /></button>
+              <button onClick={() => handleDelete(p.id)} className="p-1 rounded text-white/0 group-hover:text-white/20 hover:!text-red-400 transition-colors"><Trash2 size={12} /></button>
             )
           )}
         </div>
@@ -1169,20 +1182,20 @@ export default function Payments({ embedded }: PaymentsProps) {
       {/* List */}
       <div className="px-4 pt-3">
         {tab === 'to_collect' && staleDisbursements.length > 0 && (
-          <div className="relative overflow-hidden rounded-2xl p-4 mb-3 bg-white/[0.04] backdrop-blur-xl border border-amber-400/25 flex items-center gap-3 flex-wrap">
-            <div className="shrink-0 w-10 h-10 rounded-full bg-amber-400/10 border border-amber-400/20 flex items-center justify-center text-amber-400">
-              <RefreshCw size={16} strokeWidth={1.5} className={syncingDisbursements ? 'animate-spin' : ''} />
+          <div className="rounded-2xl px-5 py-4 mb-4 flex items-center gap-4 flex-wrap bg-white/[0.02] border border-white/[0.06]">
+            <div className="shrink-0 w-9 h-9 rounded-full bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-white/50">
+              <RefreshCw size={15} strokeWidth={1.5} className={syncingDisbursements ? 'animate-spin' : ''} />
             </div>
             <div className="flex-1 min-w-[200px]">
-              <p className="text-white text-sm font-medium">
+              <p className="text-white/80 text-sm">
                 {staleDisbursements.length} disbursement{staleDisbursements.length === 1 ? '' : 's'} already received on the car, not yet marked collected here
               </p>
-              <p className="text-white/40 text-xs mt-0.5">These fell out of sync before the fix — sync them to mark all as Collected.</p>
+              <p className="text-white/35 text-xs mt-0.5">These fell out of sync before the fix — sync them to mark all as Collected.</p>
             </div>
             <button
               onClick={handleSyncDisbursements}
               disabled={syncingDisbursements}
-              className="shrink-0 flex items-center gap-1.5 text-xs font-medium px-3.5 py-2 rounded-full border bg-amber-500/15 border-amber-500/30 text-amber-400 hover:bg-amber-500/25 transition-colors disabled:opacity-50"
+              className="shrink-0 text-xs font-medium px-4 py-2 rounded-full border border-white/15 text-white/70 hover:border-gold-400/50 hover:text-gold-300 transition-colors disabled:opacity-50"
             >
               {syncingDisbursements ? 'Syncing…' : `Sync ${staleDisbursements.length}`}
             </button>
@@ -1210,16 +1223,16 @@ export default function Payments({ embedded }: PaymentsProps) {
             )}
           </div>
         ) : tab === 'to_collect' ? (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {filtered.some(p => p.status === 'pending') && (
-              <div className="flex items-center gap-3 px-1 pb-1">
-                <button onClick={selectAll} className="text-[11px] text-white/40 hover:text-white transition-colors">
+              <div className="flex items-center gap-3 px-2 pb-1">
+                <button onClick={selectAll} className="text-[11px] text-white/40 hover:text-white transition-colors font-medium tracking-wide">
                   {selected.size > 0 ? `${selected.size} selected` : 'Select all'}
                 </button>
                 {selected.size > 0 && (
                   <>
-                    <span className="text-white/20 text-[11px]">·</span>
-                    <span className="text-[11px] text-emerald-400 font-medium">{formatRM(selectedTotal)}</span>
+                    <span className="text-white/15 text-[11px]">·</span>
+                    <span className="text-[11px] text-emerald-400 font-semibold">{formatRM(selectedTotal)}</span>
                     <button onClick={() => setSelected(new Set())} className="ml-auto text-[11px] text-white/30 hover:text-white transition-colors">
                       Clear
                     </button>
@@ -1304,6 +1317,42 @@ export default function Payments({ embedded }: PaymentsProps) {
           onClose={() => { setTransferTarget(null); setSingleId(null); }}
         />
       )}
+
+      {/* Collect a loan disbursement — shows the deal it's attached to first */}
+      {collectingDisbursementId && (() => {
+        const payment = payments.find(p => p.id === collectingDisbursementId);
+        const car = payment?.carId ? cars.find(c => c.id === payment.carId) : undefined;
+        if (!payment || !car || !currentUser) { setCollectingDisbursementId(null); return null; }
+        const wo = customers.find(c => c.interestedCarId === car.id && c.loanWorkOrder)?.loanWorkOrder;
+        const dealInfo = wo ? {
+          bank: wo.bank,
+          sellingPrice: wo.sellingPrice ?? 0,
+          discount: wo.discount ?? 0,
+          insurance: wo.insurance ?? 0,
+          bankProduct: wo.bankProduct ?? 0,
+          additionalTotal: (wo.additionalItems ?? []).reduce((s, i) => s + (i.amount || 0), 0),
+          bookingFee: wo.bookingFee ?? 0,
+          loanAmount: wo.loanAmount ?? 0,
+        } : null;
+        return (
+          <DisbursementCollectModal
+            payment={payment}
+            car={car}
+            dealInfo={dealInfo}
+            currentUserId={currentUser.id}
+            onClose={() => setCollectingDisbursementId(null)}
+            updateCar={updateCar}
+            payments={payments}
+            addPayment={addPayment}
+            updatePayment={updatePayment}
+            ledgerAccounts={ledgerAccounts}
+            addLedgerAccount={addLedgerAccount}
+            journalEntries={journalEntries}
+            addJournalEntry={addJournalEntry}
+            voidJournalEntry={voidJournalEntry}
+          />
+        );
+      })()}
 
       {/* Link claim to a registered vendor */}
       <Modal isOpen={!!linkVendorTarget} onClose={() => { setLinkVendorTarget(null); setVendorQuery(''); }} title="Register Vendor" maxWidth="max-w-sm">
