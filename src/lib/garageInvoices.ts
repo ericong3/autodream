@@ -17,6 +17,8 @@ function rowToInvoice(r: any): GarageInvoice {
     paymentStatus: r.payment_status,
     receiptPath: r.receipt_path ?? undefined,
     receiptName: r.receipt_name ?? undefined,
+    deliveredAt: r.delivered_at ?? undefined,
+    warrantyRegisteredAt: r.warranty_registered_at ?? undefined,
     createdAt: r.created_at,
     createdBy: r.created_by ?? undefined,
   };
@@ -59,6 +61,17 @@ export async function getGarageInvoice(id: string): Promise<GarageInvoice | null
   const { data, error } = await supabase.from('garage_invoices').select('*').eq('id', id).maybeSingle();
   if (error) throw error;
   return data ? rowToInvoice(data) : null;
+}
+
+// "My Work Orders" — every invoice a given salesman created, newest first.
+export async function listInvoicesCreatedBy(userId: string): Promise<GarageInvoice[]> {
+  const { data, error } = await supabase
+    .from('garage_invoices')
+    .select('*')
+    .eq('created_by', userId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(rowToInvoice);
 }
 
 export async function createGarageInvoice(input: {
@@ -111,6 +124,33 @@ export async function getInvoiceReceiptUrl(path: string): Promise<string> {
   const { data, error } = await supabase.storage.from('garage-invoice-receipts').createSignedUrl(path, 60);
   if (error) throw error;
   return data.signedUrl;
+}
+
+// Car handed back to the customer — the caller is responsible for checking
+// the job is complete and payment is settled before calling this; those are
+// UI-level gates (see getWorkOrderStage), not enforced here.
+export async function markInvoiceDelivered(invoiceId: string): Promise<GarageInvoice> {
+  const { data, error } = await supabase
+    .from('garage_invoices')
+    .update({ delivered_at: new Date().toISOString() })
+    .eq('id', invoiceId)
+    .select()
+    .single();
+  if (error) throw error;
+  return rowToInvoice(data);
+}
+
+// Final step — the tint registered with the manufacturer's e-warranty.
+// Setting this is what makes a work order "closed" (asleep).
+export async function registerInvoiceWarranty(invoiceId: string): Promise<GarageInvoice> {
+  const { data, error } = await supabase
+    .from('garage_invoices')
+    .update({ warranty_registered_at: new Date().toISOString() })
+    .eq('id', invoiceId)
+    .select()
+    .single();
+  if (error) throw error;
+  return rowToInvoice(data);
 }
 
 export async function listInvoiceAddons(invoiceId: string): Promise<GarageInvoiceAddon[]> {

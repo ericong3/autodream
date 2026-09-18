@@ -52,6 +52,7 @@ import GarageTintPackage from './pages/GarageTintPackage';
 import GarageWorkOrderSummary from './pages/GarageWorkOrderSummary';
 import GarageWorkOrderPayment from './pages/GarageWorkOrderPayment';
 import GarageInstallerJobs from './pages/GarageInstallerJobs';
+import GarageMyWorkOrders from './pages/GarageMyWorkOrders';
 import GarageTintPricing from './pages/GarageTintPricing';
 import { roleHome, landingPath, garageHome } from './utils/landingPath';
 
@@ -194,6 +195,7 @@ export default function App() {
         <Route path="/garage" element={<RequireGarage><GarageHome /></RequireGarage>} />
         <Route path="/garage/dashboard" element={<RequireGarage><GarageDashboard /></RequireGarage>} />
         <Route path="/garage/sales-tools" element={<RequireGarage><GarageSalesTools /></RequireGarage>} />
+        <Route path="/garage/my-work-orders" element={<RequireGarage><GarageMyWorkOrders /></RequireGarage>} />
         <Route path="/garage/work-order/new" element={<RequireGarage><GarageWorkOrderStart /></RequireGarage>} />
         <Route path="/garage/work-order/new-customer" element={<RequireGarage><GarageWorkOrderNewCustomer /></RequireGarage>} />
         <Route path="/garage/work-order/existing-customer" element={<RequireGarage><GarageWorkOrderExistingCustomer /></RequireGarage>} />

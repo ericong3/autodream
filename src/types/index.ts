@@ -88,6 +88,13 @@ export interface GarageInvoice {
   paymentStatus: GaragePaymentStatus;
   receiptPath?: string; // path in the 'garage-invoice-receipts' storage bucket
   receiptName?: string;
+  // Work order lifecycle's final two steps — car handed back to the
+  // customer, then the tint registered with the manufacturer's e-warranty.
+  // A work order is "closed" (asleep) once warrantyRegisteredAt is set;
+  // "active" until then. Pay-later orders must reach paymentStatus 'paid'
+  // before deliveredAt can be set.
+  deliveredAt?: string;
+  warrantyRegisteredAt?: string;
   createdAt: string;
   createdBy?: string;
 }
@@ -119,10 +126,11 @@ export interface GarageInvoiceClaim {
 }
 
 // A job handed to an installer once a salesman confirms a Tint work order —
-// shows up in the installer's job queue until they accept it. Other
-// services don't have a worker queue yet, so this only ever gets created
-// for service === 'tinted' for now.
-export type GarageJobStatus = 'pending' | 'accepted';
+// shows up in the installer's job queue until they accept it, then in their
+// "in progress" list until they mark it complete. Other services don't have
+// a worker queue yet, so this only ever gets created for service === 'tinted'
+// for now.
+export type GarageJobStatus = 'pending' | 'accepted' | 'completed';
 
 export interface GarageInstallerJob {
   id: string;
@@ -132,6 +140,7 @@ export interface GarageInstallerJob {
   createdAt: string;
   acceptedBy?: string;
   acceptedAt?: string;
+  completedAt?: string;
 }
 
 export interface User {

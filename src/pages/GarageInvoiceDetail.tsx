@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   Car, User, Phone, ShieldCheck, RefreshCw, AlertCircle, Banknote, CreditCard, ArrowRightLeft, CalendarClock,
-  Clock, CheckCircle2, FileText,
+  Clock, CheckCircle2, FileText, Package, Award,
 } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import Modal from '../components/Modal';
@@ -10,14 +10,18 @@ import { useStore } from '../store';
 import { getGarageVehicle, getGarageCustomer } from '../lib/garageCustomers';
 import {
   getGarageInvoice, listInvoiceClaims, createInvoiceClaim, listInvoiceAddons, markInvoicePaid, getInvoiceReceiptUrl,
+  markInvoiceDelivered, registerInvoiceWarranty,
 } from '../lib/garageInvoices';
+import { getInstallerJobForInvoice } from '../lib/garageInstallerJobs';
 import { getTintOrder } from '../lib/garageTint';
 import { GARAGE_SERVICE_MAP } from '../utils/garageServices';
 import { TINT_SERIES, GLASS_POSITIONS, EXTRA_GLASS_OPTIONS } from '../utils/tintPricing';
 import { formatRM } from '../utils/format';
+import { getWorkOrderStage, WORK_ORDER_STAGE_LABEL } from '../utils/garageWorkOrderStatus';
+import type { WorkOrderStage } from '../utils/garageWorkOrderStatus';
 import type {
   GarageInvoice, GarageVehicle, GarageCustomer, GarageInvoiceClaim, GarageClaimType, GarageTintOrder,
-  GarageInvoiceAddon, GaragePaymentMethod,
+  GarageInvoiceAddon, GaragePaymentMethod, GarageInstallerJob, GarageJobStatus,
 } from '../types';
 
 const TINT_SERIES_LABEL = Object.fromEntries(TINT_SERIES.map((s) => [s.key, s.label]));
@@ -35,6 +39,22 @@ const PAYMENT_METHOD_META: Record<GaragePaymentMethod, { label: string; icon: ty
   installment: { label: 'Installment', icon: CalendarClock },
 };
 
+const JOB_STATUS_LABEL: Record<GarageJobStatus, string> = {
+  pending: 'Waiting for installer to accept',
+  accepted: 'In progress',
+  completed: 'Completed',
+};
+
+const STAGE_BADGE: Record<WorkOrderStage, string> = {
+  awaiting_payment: 'bg-orange-500/15 border-orange-500/30 text-orange-400',
+  awaiting_installer: 'bg-white/[0.03] border-white/10 text-white/60',
+  in_progress: 'bg-blue-500/15 border-blue-500/30 text-blue-400',
+  payment_due: 'bg-orange-500/15 border-orange-500/30 text-orange-400',
+  ready_for_delivery: 'bg-gold-500/15 border-gold-400/40 text-gold-400',
+  ready_for_warranty: 'bg-gold-500/15 border-gold-400/40 text-gold-400',
+  closed: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400',
+};
+
 export default function GarageInvoiceDetail() {
   const { invoiceId } = useParams<{ invoiceId: string }>();
   const currentUser = useStore((s) => s.currentUser);
@@ -45,6 +65,7 @@ export default function GarageInvoiceDetail() {
   const [claims, setClaims] = useState<GarageInvoiceClaim[]>([]);
   const [tintOrder, setTintOrder] = useState<GarageTintOrder | null>(null);
   const [addons, setAddons] = useState<GarageInvoiceAddon[]>([]);
+  const [job, setJob] = useState<GarageInstallerJob | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
@@ -53,6 +74,8 @@ export default function GarageInvoiceDetail() {
   const [saving, setSaving] = useState(false);
   const [markingPaid, setMarkingPaid] = useState(false);
   const [openingReceipt, setOpeningReceipt] = useState(false);
+  const [delivering, setDelivering] = useState(false);
+  const [registeringWarranty, setRegisteringWarranty] = useState(false);
 
   const load = () => {
     if (!invoiceId) return;
@@ -60,18 +83,20 @@ export default function GarageInvoiceDetail() {
     getGarageInvoice(invoiceId).then(async (inv) => {
       if (!inv) { setNotFound(true); setLoading(false); return; }
       setInvoice(inv);
-      const [v, c, cl, to, ad] = await Promise.all([
+      const [v, c, cl, to, ad, j] = await Promise.all([
         getGarageVehicle(inv.vehicleId),
         getGarageCustomer(inv.customerId),
         listInvoiceClaims(inv.id),
         inv.service === 'tinted' ? getTintOrder(inv.id) : Promise.resolve(null),
         listInvoiceAddons(inv.id),
+        inv.service === 'tinted' ? getInstallerJobForInvoice(inv.id) : Promise.resolve(null),
       ]);
       setVehicle(v);
       setCustomer(c);
       setClaims(cl);
       setTintOrder(to);
       setAddons(ad);
+      setJob(j);
       setLoading(false);
     });
   };
@@ -117,6 +142,28 @@ export default function GarageInvoiceDetail() {
     }
   };
 
+  const handleMarkDelivered = async () => {
+    if (!invoice) return;
+    setDelivering(true);
+    try {
+      await markInvoiceDelivered(invoice.id);
+      load();
+    } finally {
+      setDelivering(false);
+    }
+  };
+
+  const handleRegisterWarranty = async () => {
+    if (!invoice) return;
+    setRegisteringWarranty(true);
+    try {
+      await registerInvoiceWarranty(invoice.id);
+      load();
+    } finally {
+      setRegisteringWarranty(false);
+    }
+  };
+
   const backTo = invoice ? `/garage/work-order/customer/${invoice.customerId}/vehicle/${invoice.vehicleId}` : '/garage';
 
   if (loading) {
@@ -139,6 +186,11 @@ export default function GarageInvoiceDetail() {
   }
 
   const meta = GARAGE_SERVICE_MAP[invoice.service];
+  const stage = getWorkOrderStage(invoice, job);
+  const jobRequired = invoice.service === 'tinted';
+  const jobDone = !jobRequired || job?.status === 'completed';
+  const canDeliver = !invoice.deliveredAt && jobDone && invoice.paymentStatus === 'paid';
+  const canRegisterWarranty = !!invoice.deliveredAt && !invoice.warrantyRegisteredAt;
 
   return (
     <GarageShell title={invoice.invoiceNumber} showBack backTo={backTo}>
@@ -229,6 +281,74 @@ export default function GarageInvoiceDetail() {
             >
               <RefreshCw size={15} /> File Replacement
             </button>
+          </div>
+        </div>
+
+        {/* Work order progress */}
+        <div className="relative overflow-hidden rounded-[28px] p-8
+          bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
+            <h3 className="text-white/50 text-xs font-semibold uppercase tracking-wider">Work Order Progress</h3>
+            <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${STAGE_BADGE[stage]}`}>
+              {WORK_ORDER_STAGE_LABEL[stage]}
+            </span>
+          </div>
+
+          {jobRequired && (
+            <div className="flex items-center gap-2.5 text-sm text-white/70 mb-5">
+              <Package size={15} className="text-white/30 shrink-0" />
+              Installer: {job ? JOB_STATUS_LABEL[job.status] : 'Not yet sent'}
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <p className="text-white/80 text-sm font-medium">Delivered to Customer</p>
+                {invoice.deliveredAt ? (
+                  <p className="text-white/40 text-xs mt-0.5">{new Date(invoice.deliveredAt).toLocaleDateString('en-MY')}</p>
+                ) : (
+                  <p className="text-white/30 text-xs mt-0.5">
+                    {!jobDone ? 'Waiting for installer to complete the job'
+                      : invoice.paymentStatus !== 'paid' ? 'Payment must be collected first'
+                      : 'Ready to deliver'}
+                  </p>
+                )}
+              </div>
+              {invoice.deliveredAt ? (
+                <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
+              ) : (
+                <button
+                  onClick={handleMarkDelivered}
+                  disabled={!canDeliver || delivering}
+                  className="shrink-0 flex items-center gap-1.5 btn-gold px-4 py-2 rounded-lg text-xs font-medium disabled:opacity-40"
+                >
+                  <CheckCircle2 size={13} /> {delivering ? 'Marking…' : 'Mark as Delivered'}
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between gap-3 flex-wrap pt-4 border-t border-white/10">
+              <div>
+                <p className="text-white/80 text-sm font-medium">E-Warranty Registered</p>
+                {invoice.warrantyRegisteredAt ? (
+                  <p className="text-white/40 text-xs mt-0.5">{new Date(invoice.warrantyRegisteredAt).toLocaleDateString('en-MY')}</p>
+                ) : (
+                  <p className="text-white/30 text-xs mt-0.5">{!invoice.deliveredAt ? 'Deliver the car first' : 'Ready to register'}</p>
+                )}
+              </div>
+              {invoice.warrantyRegisteredAt ? (
+                <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
+              ) : (
+                <button
+                  onClick={handleRegisterWarranty}
+                  disabled={!canRegisterWarranty || registeringWarranty}
+                  className="shrink-0 flex items-center gap-1.5 btn-gold px-4 py-2 rounded-lg text-xs font-medium disabled:opacity-40"
+                >
+                  <Award size={13} /> {registeringWarranty ? 'Registering…' : 'Register E-Warranty'}
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
