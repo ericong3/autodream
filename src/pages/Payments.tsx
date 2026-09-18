@@ -1118,7 +1118,7 @@ export default function Payments({ embedded }: PaymentsProps) {
 
         <div className="text-xs text-white/45 truncate">{reference}</div>
 
-        <div className={`text-right font-display text-base tabular-nums ${isPending ? 'headline-gold' : 'text-white/25'}`}>
+        <div className={`text-right text-[13px] font-semibold tabular-nums ${isPending ? 'text-gold-300' : 'text-white/25'}`}>
           {formatRM(p.amount)}
         </div>
 
@@ -1317,7 +1317,7 @@ export default function Payments({ embedded }: PaymentsProps) {
 
         <div className="text-xs text-white/45 truncate">{reference}</div>
 
-        <div className={`text-right font-display text-base tabular-nums ${isPending ? 'text-white' : 'text-white/25'}`}>
+        <div className={`text-right text-[13px] font-semibold tabular-nums ${isPending ? 'text-white' : 'text-white/25'}`}>
           {formatRM(p.amount)}
         </div>
 
