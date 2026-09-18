@@ -3,7 +3,8 @@ import {
   Wallet, CheckCircle2, X, Search, CreditCard, Camera,
   Trash2, Plus, ChevronDown, ArrowUpRight, ArrowDownLeft, Receipt, CalendarDays,
   Users, Wrench, Building2, UserCircle, DollarSign, RefreshCw, TrendingDown, TrendingUp,
-  Clock, AlertTriangle, Check, FileText, Landmark, Car as CarIcon,
+  Clock, AlertTriangle, Check, FileText, Landmark,
+  ChevronLeft, ChevronRight, MoreVertical,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { Payment, PaymentType, RecipientType } from '../types';
@@ -439,6 +440,9 @@ export default function Payments({ embedded }: PaymentsProps) {
   // Loan disbursements collect through their own deal-summary modal instead
   // of the generic transfer flow — see DisbursementCollectModal.
   const [collectingDisbursementId, setCollectingDisbursementId] = useState<string | null>(null);
+  const [receivablePage, setReceivablePage] = useState(1);
+  const [openReceivableMenuId, setOpenReceivableMenuId] = useState<string | null>(null);
+  useEffect(() => { setReceivablePage(1); }, [tab, search]);
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ ...EMPTY_ADD });
   const [addSaving, setAddSaving] = useState(false);
@@ -968,82 +972,178 @@ export default function Payments({ embedded }: PaymentsProps) {
   }
 
   // Receivable — money coming to us (bank disbursements, cash collections,
-  // outgoing-consignment collections). A distinct, lighter card than
-  // PaymentRow: none of the claim-review/vendor-registration states that
-  // apply to outbound payments are possible on this side.
-  function ReceivableRow({ p }: { p: Payment }) {
+  // outgoing-consignment collections), as a real table: 540+ rows on other
+  // tabs makes a stack of cards unusable at scale, and a table is the shape
+  // this data actually has (one thing per row, a handful of comparable
+  // columns) — column headers let the eye scan straight down "Amount" or
+  // "Status" instead of re-parsing every card's layout each time.
+  const RECEIVABLE_COLS = 'grid-cols-[28px_minmax(180px,1.6fr)_150px_110px_130px_110px_150px]';
+  const RECEIVABLE_PAGE_SIZE = 10;
+
+  function ReceivableTable({ items }: { items: Payment[] }) {
+    const totalPages = Math.max(1, Math.ceil(items.length / RECEIVABLE_PAGE_SIZE));
+    const page = Math.min(receivablePage, totalPages);
+    const pageItems = items.slice((page - 1) * RECEIVABLE_PAGE_SIZE, page * RECEIVABLE_PAGE_SIZE);
+    const from = items.length === 0 ? 0 : (page - 1) * RECEIVABLE_PAGE_SIZE + 1;
+    const to = Math.min(page * RECEIVABLE_PAGE_SIZE, items.length);
+
+    return (
+      <div
+        className="relative overflow-hidden rounded-[22px]"
+        style={{
+          background: 'linear-gradient(160deg, rgba(255,255,255,0.035) 0%, rgba(255,255,255,0.012) 100%)',
+          backdropFilter: 'blur(28px) saturate(170%)', WebkitBackdropFilter: 'blur(28px) saturate(170%)',
+          border: '1px solid rgba(234,184,32,0.13)',
+          boxShadow: '0 6px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06)',
+        }}
+      >
+        {items.some(p => p.status === 'pending') && (
+          <div className="flex items-center gap-3 px-5 py-2.5 border-b border-white/[0.06]">
+            <button onClick={selectAll} className="text-[11px] text-white/40 hover:text-white transition-colors font-medium tracking-wide">
+              {selected.size > 0 ? `${selected.size} selected` : 'Select all'}
+            </button>
+            {selected.size > 0 && (
+              <>
+                <span className="text-white/15 text-[11px]">·</span>
+                <span className="text-[11px] text-emerald-400 font-semibold">{formatRM(selectedTotal)}</span>
+                <button onClick={() => setSelected(new Set())} className="ml-auto text-[11px] text-white/30 hover:text-white transition-colors">
+                  Clear
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        <div className="overflow-x-auto">
+          <div className="min-w-[880px]">
+            {/* Column headers */}
+            <div className={`grid ${RECEIVABLE_COLS} gap-3 px-5 py-3 text-[10px] uppercase tracking-wider text-white/30 font-semibold border-b border-white/[0.06]`}>
+              <div />
+              <div>Vehicle / Recipient</div>
+              <div>Type</div>
+              <div>Reference</div>
+              <div className="text-right">Amount</div>
+              <div>Status</div>
+              <div className="text-right">Action</div>
+            </div>
+
+            {pageItems.map(p => <ReceivableTableRow key={p.id} p={p} />)}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between px-5 py-3 border-t border-white/[0.06] text-xs text-white/35">
+          <span>{items.length === 0 ? 'No rows' : `${from}–${to} of ${items.length}`}</span>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setReceivablePage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/[0.05] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
+                <button
+                  key={n}
+                  onClick={() => setReceivablePage(n)}
+                  className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${
+                    n === page ? 'bg-gold-500/20 text-gold-300 border border-gold-500/30' : 'text-white/40 hover:text-white hover:bg-white/[0.05]'
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+              <button
+                onClick={() => setReceivablePage(p => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/[0.05] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function ReceivableTableRow({ p }: { p: Payment }) {
     const isChecked = selected.has(p.id);
     const isPending = p.status === 'pending';
     const car = p.carId ? cars.find(c => c.id === p.carId) : undefined;
     const Icon = p.type === 'loan_disbursement' ? Landmark : RECIPIENT_ICON[p.recipientType] ?? UserCircle;
     const typeStyle = RECEIVABLE_TYPE_STYLE[p.type] ?? { bg: 'rgba(234,184,32,0.1)', text: '#F7D96A', border: 'rgba(234,184,32,0.22)' };
+    const reference = car?.carPlate ?? p.referenceNumber ?? '—';
+    const menuOpen = openReceivableMenuId === p.id;
 
     return (
       <div
-        className={`group relative rounded-[22px] p-5 flex items-center gap-4 transition-all duration-300 ${isChecked || isPending ? 'hover:-translate-y-0.5' : ''}`}
-        style={{
-          background: isChecked
-            ? 'linear-gradient(160deg, rgba(52,211,153,0.09) 0%, rgba(255,255,255,0.025) 100%)'
-            : 'linear-gradient(160deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.015) 100%)',
-          backdropFilter: 'blur(28px) saturate(170%)',
-          WebkitBackdropFilter: 'blur(28px) saturate(170%)',
-          border: `1px solid ${isChecked ? 'rgba(52,211,153,0.32)' : 'rgba(234,184,32,0.13)'}`,
-          boxShadow: isChecked
-            ? '0 10px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08)'
-            : '0 6px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06)',
-        }}
+        className={`group grid ${RECEIVABLE_COLS} gap-3 items-center px-5 py-3.5 border-b border-white/[0.04] last:border-0 transition-colors ${
+          isChecked ? 'bg-emerald-500/[0.05]' : 'hover:bg-white/[0.02]'
+        }`}
       >
         {isPending ? (
           <button
             onClick={() => toggleSelect(p.id)}
-            className={`shrink-0 w-[18px] h-[18px] rounded-md border transition-colors ${isChecked ? 'bg-emerald-400 border-emerald-400' : 'border-white/15 hover:border-emerald-400/50'}`}
+            className={`shrink-0 w-[17px] h-[17px] rounded-md border transition-colors ${isChecked ? 'bg-emerald-400 border-emerald-400' : 'border-white/15 hover:border-emerald-400/50'}`}
           >
             {isChecked && <svg viewBox="0 0 12 12" fill="none" className="w-full h-full"><path d="M2.5 6l2.5 2.5 4.5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-obsidian-950" /></svg>}
           </button>
-        ) : <div className="shrink-0 w-[18px]" />}
+        ) : <div />}
 
-        <div
-          className="shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center text-gold-300"
-          style={{ background: 'radial-gradient(circle at 30% 30%, rgba(234,184,32,0.2), rgba(234,184,32,0.04))', border: '1px solid rgba(234,184,32,0.2)' }}
-        >
-          <Icon size={19} strokeWidth={1.5} />
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[15px] text-white font-medium truncate">{p.recipientName}</span>
-            <span
-              className="text-[10px] px-2 py-0.5 rounded-full font-semibold tracking-wide whitespace-nowrap"
-              style={{ background: typeStyle.bg, color: typeStyle.text, border: `1px solid ${typeStyle.border}` }}
-            >
-              {TYPE_LABELS[p.type]}
-            </span>
+        <div className="flex items-center gap-3 min-w-0">
+          <div
+            className="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-gold-300"
+            style={{ background: 'radial-gradient(circle at 30% 30%, rgba(234,184,32,0.2), rgba(234,184,32,0.04))', border: '1px solid rgba(234,184,32,0.2)' }}
+          >
+            <Icon size={15} strokeWidth={1.5} />
           </div>
-          <div className="flex items-center gap-1.5 mt-1.5 text-xs text-white/35 flex-wrap">
-            {car && <span className="flex items-center gap-1"><CarIcon size={11} />{car.make} {car.model}{car.carPlate ? ` · ${car.carPlate}` : ''}</span>}
-            {p.bankName && <span>· {p.bankName}</span>}
-            {!isPending && p.transferredAt && (
-              <span>· Collected {new Date(p.transferredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}</span>
-            )}
+          <div className="min-w-0">
+            <p className="text-[13px] text-white font-medium truncate">{p.recipientName}</p>
+            <p className="text-[11px] text-white/35 truncate">
+              {car ? `${car.make} ${car.model}` : p.bankName ?? ''}
+              {!isPending && p.transferredAt && ` · Collected ${new Date(p.transferredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}`}
+            </p>
           </div>
         </div>
 
-        <div className="shrink-0 flex items-center gap-4">
-          <span className={`font-display text-xl tabular-nums ${isPending ? 'headline-gold' : 'text-white/25'}`}>{formatRM(p.amount)}</span>
+        <div>
+          <span
+            className="text-[10px] px-2 py-0.5 rounded-full font-semibold tracking-wide whitespace-nowrap"
+            style={{ background: typeStyle.bg, color: typeStyle.text, border: `1px solid ${typeStyle.border}` }}
+          >
+            {TYPE_LABELS[p.type]}
+          </span>
+        </div>
+
+        <div className="text-xs text-white/45 truncate">{reference}</div>
+
+        <div className={`text-right font-display text-base tabular-nums ${isPending ? 'headline-gold' : 'text-white/25'}`}>
+          {formatRM(p.amount)}
+        </div>
+
+        <div>
+          <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${isPending ? 'text-amber-300' : 'text-white/30'}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${isPending ? 'bg-amber-400' : 'bg-white/20'}`} />
+            {isPending ? 'Pending' : 'Collected'}
+          </span>
+        </div>
+
+        <div className="flex items-center justify-end gap-1.5 relative">
           {isPending ? (
             <button
               onClick={() => {
                 if (p.type === 'loan_disbursement') setCollectingDisbursementId(p.id);
                 else { setSingleId(p.id); setTransferTarget('single'); }
               }}
-              className="flex items-center gap-1.5 text-xs font-semibold px-4 py-2.5 rounded-full text-obsidian-950 transition-all hover:scale-[1.03] active:scale-95 whitespace-nowrap"
+              className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full text-obsidian-950 transition-all hover:scale-[1.03] active:scale-95 whitespace-nowrap"
               style={{ background: 'linear-gradient(135deg, #6ee7b7 0%, #34d399 45%, #10b981 100%)', boxShadow: '0 4px 16px rgba(16,185,129,0.32)' }}
             >
-              <ArrowDownLeft size={13} /> Collect
+              <ArrowDownLeft size={12} /> Collect
             </button>
           ) : (
-            <span className="flex items-center gap-1.5 text-xs font-medium px-3.5 py-2 rounded-full border border-white/[0.08] text-white/25 whitespace-nowrap">
-              <CheckCircle2 size={12} /> Collected
+            <span className="text-xs font-medium px-3.5 py-2 text-white/20 whitespace-nowrap">
+              <CheckCircle2 size={12} className="inline -mt-0.5 mr-1" />Done
             </span>
           )}
           {isDirectorView && (
@@ -1053,8 +1153,26 @@ export default function Payments({ embedded }: PaymentsProps) {
                 <button onClick={() => handleRejectDelete(p.id)} title="Reject deletion" className="p-1 rounded text-gray-500 hover:text-gray-300 transition-colors"><X size={12} /></button>
               </div>
             ) : (
-              <button onClick={() => handleDelete(p.id)} className="p-1 rounded text-white/0 group-hover:text-white/20 hover:!text-red-400 transition-colors"><Trash2 size={12} /></button>
+              <button
+                onClick={() => setOpenReceivableMenuId(menuOpen ? null : p.id)}
+                className={`p-1.5 rounded-lg transition-colors ${menuOpen ? 'text-white bg-white/[0.08]' : 'text-white/0 group-hover:text-white/30 hover:!text-white'}`}
+              >
+                <MoreVertical size={14} />
+              </button>
             )
+          )}
+          {menuOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setOpenReceivableMenuId(null)} />
+              <div className="absolute right-0 top-9 z-20 w-36 rounded-xl bg-obsidian-800 border border-white/10 shadow-card-lg overflow-hidden">
+                <button
+                  onClick={() => { handleDelete(p.id); setOpenReceivableMenuId(null); }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-white/60 hover:bg-red-500/10 hover:text-red-400 transition-colors"
+                >
+                  <Trash2 size={12} /> Delete
+                </button>
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -1271,25 +1389,7 @@ export default function Payments({ embedded }: PaymentsProps) {
             )}
           </div>
         ) : tab === 'to_collect' ? (
-          <div className="space-y-3">
-            {filtered.some(p => p.status === 'pending') && (
-              <div className="flex items-center gap-3 px-2 pb-1">
-                <button onClick={selectAll} className="text-[11px] text-white/40 hover:text-white transition-colors font-medium tracking-wide">
-                  {selected.size > 0 ? `${selected.size} selected` : 'Select all'}
-                </button>
-                {selected.size > 0 && (
-                  <>
-                    <span className="text-white/15 text-[11px]">·</span>
-                    <span className="text-[11px] text-emerald-400 font-semibold">{formatRM(selectedTotal)}</span>
-                    <button onClick={() => setSelected(new Set())} className="ml-auto text-[11px] text-white/30 hover:text-white transition-colors">
-                      Clear
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-            {filtered.map(p => <ReceivableRow key={p.id} p={p} />)}
-          </div>
+          <ReceivableTable items={filtered} />
         ) : (
           <div className="rounded-xl overflow-hidden border border-white/[0.06] bg-obsidian-900/40">
             {/* Select-all bar for pending tabs */}

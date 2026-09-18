@@ -189,6 +189,20 @@ export default function Finance() {
 
   return (
     <div className="space-y-4">
+      {financeTab === 'payments' && (
+        <div className="relative overflow-hidden rounded-2xl border border-white/[0.06] bg-gradient-to-br from-obsidian-800/70 to-obsidian-950 px-6 py-8 sm:px-10">
+          <div className="absolute -top-24 -right-24 w-[420px] h-[420px] rounded-full pointer-events-none opacity-[0.12] -z-0" style={{ background: 'radial-gradient(circle, #EAB820 0%, transparent 70%)', filter: 'blur(90px)' }} />
+          <div className="relative">
+            <p className="label-caps mb-2">Accounting</p>
+            <h1 className="font-display text-white text-3xl sm:text-4xl font-semibold tracking-wide">Payments &amp; Receivables</h1>
+            <p className="text-white/40 text-sm mt-2 max-w-sm">Manage customer payments, receivables, and financial records.</p>
+          </div>
+          <p className="hidden md:block absolute right-10 top-1/2 -translate-y-1/2 text-white/20 text-[11px] tracking-[0.3em] uppercase text-right leading-relaxed">
+            Premium<br />Used Cars
+          </p>
+        </div>
+      )}
+
       {/* Tab switcher */}
       <div className="flex gap-1 rounded-xl bg-obsidian-800/60 border border-white/[0.06] p-1">
         <button
