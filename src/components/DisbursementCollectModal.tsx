@@ -90,10 +90,15 @@ export default function DisbursementCollectModal({
           boxShadow: '0 24px 80px rgba(0,0,0,0.6), 0 2px 0 rgba(255,255,255,0.06) inset, 0 -1px 0 rgba(0,0,0,0.4) inset',
         }}
       >
-        {/* Specular highlight — a soft, quiet band of light along the top edge */}
+        {/* Specular highlight — a soft band of light along the top edge, like glass catching light from above */}
         <div
-          className="absolute inset-x-0 top-0 h-24 pointer-events-none rounded-t-[32px]"
-          style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0) 100%)' }}
+          className="absolute inset-x-0 top-0 h-32 pointer-events-none rounded-t-[32px]"
+          style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0) 100%)' }}
+        />
+        {/* Ambient gold glow, low and to one side — quiet, not a spotlight */}
+        <div
+          className="absolute -top-24 -left-24 w-64 h-64 rounded-full pointer-events-none opacity-[0.15]"
+          style={{ background: 'radial-gradient(circle, #EAB820 0%, transparent 70%)', filter: 'blur(40px)' }}
         />
 
         <button
@@ -118,7 +123,7 @@ export default function DisbursementCollectModal({
           {/* Hero: amount to collect */}
           <div>
             <p className="label-caps mb-1">Amount to Collect</p>
-            <p className="font-display text-gold-300 text-4xl tabular-nums animate-price-in leading-tight">
+            <p className="font-display headline-gold text-5xl tabular-nums animate-price-in leading-tight">
               {formatRM(payment.amount)}
             </p>
           </div>

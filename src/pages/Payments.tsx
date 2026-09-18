@@ -66,6 +66,15 @@ const TYPE_COLORS: Record<PaymentType, string> = {
 // Payments we RECEIVE (not pay out)
 const INBOUND_TYPES = new Set<PaymentType>(['customer_collection', 'loan_disbursement', 'consignment_collection']);
 
+// Jewel-tone glass badges for the Receivable tab specifically — a quieter,
+// more deliberate palette than the generic TYPE_COLORS map (whose bright
+// saturated fills read fine in a dense table but clash against glass).
+const RECEIVABLE_TYPE_STYLE: Partial<Record<PaymentType, { bg: string; text: string; border: string }>> = {
+  loan_disbursement:      { bg: 'rgba(234,184,32,0.1)',  text: '#F7D96A', border: 'rgba(234,184,32,0.22)' },
+  customer_collection:    { bg: 'rgba(52,211,153,0.1)',  text: '#6ee7b7', border: 'rgba(52,211,153,0.22)' },
+  consignment_collection: { bg: 'rgba(96,165,250,0.1)',  text: '#93c5fd', border: 'rgba(96,165,250,0.22)' },
+};
+
 const RECIPIENT_ICON: Record<RecipientType, React.ElementType> = {
   user:             UserCircle,
   external_salesman: Users,
@@ -967,32 +976,50 @@ export default function Payments({ embedded }: PaymentsProps) {
     const isPending = p.status === 'pending';
     const car = p.carId ? cars.find(c => c.id === p.carId) : undefined;
     const Icon = p.type === 'loan_disbursement' ? Landmark : RECIPIENT_ICON[p.recipientType] ?? UserCircle;
+    const typeStyle = RECEIVABLE_TYPE_STYLE[p.type] ?? { bg: 'rgba(234,184,32,0.1)', text: '#F7D96A', border: 'rgba(234,184,32,0.22)' };
 
     return (
       <div
-        className={`group relative rounded-2xl px-5 py-4 flex items-center gap-4 bg-white/[0.02] border transition-colors duration-200 ${
-          isChecked ? 'border-white/[0.14]' : 'border-white/[0.06] hover:border-white/[0.1]'
-        }`}
+        className={`group relative rounded-[22px] p-5 flex items-center gap-4 transition-all duration-300 ${isChecked || isPending ? 'hover:-translate-y-0.5' : ''}`}
+        style={{
+          background: isChecked
+            ? 'linear-gradient(160deg, rgba(52,211,153,0.09) 0%, rgba(255,255,255,0.025) 100%)'
+            : 'linear-gradient(160deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.015) 100%)',
+          backdropFilter: 'blur(28px) saturate(170%)',
+          WebkitBackdropFilter: 'blur(28px) saturate(170%)',
+          border: `1px solid ${isChecked ? 'rgba(52,211,153,0.32)' : 'rgba(234,184,32,0.13)'}`,
+          boxShadow: isChecked
+            ? '0 10px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08)'
+            : '0 6px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06)',
+        }}
       >
         {isPending ? (
           <button
             onClick={() => toggleSelect(p.id)}
-            className={`shrink-0 w-[17px] h-[17px] rounded-md border transition-colors ${isChecked ? 'bg-gold-400 border-gold-400' : 'border-white/15 hover:border-white/30'}`}
+            className={`shrink-0 w-[18px] h-[18px] rounded-md border transition-colors ${isChecked ? 'bg-emerald-400 border-emerald-400' : 'border-white/15 hover:border-emerald-400/50'}`}
           >
             {isChecked && <svg viewBox="0 0 12 12" fill="none" className="w-full h-full"><path d="M2.5 6l2.5 2.5 4.5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-obsidian-950" /></svg>}
           </button>
-        ) : <div className="shrink-0 w-[17px]" />}
+        ) : <div className="shrink-0 w-[18px]" />}
 
-        <div className="shrink-0 w-10 h-10 rounded-full bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-white/50">
-          <Icon size={16} strokeWidth={1.5} />
+        <div
+          className="shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center text-gold-300"
+          style={{ background: 'radial-gradient(circle at 30% 30%, rgba(234,184,32,0.2), rgba(234,184,32,0.04))', border: '1px solid rgba(234,184,32,0.2)' }}
+        >
+          <Icon size={19} strokeWidth={1.5} />
         </div>
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-baseline gap-2 flex-wrap">
-            <span className="text-[15px] text-white/90 font-medium truncate">{p.recipientName}</span>
-            <span className="text-[10px] text-white/30 tracking-wide uppercase">{TYPE_LABELS[p.type]}</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[15px] text-white font-medium truncate">{p.recipientName}</span>
+            <span
+              className="text-[10px] px-2 py-0.5 rounded-full font-semibold tracking-wide whitespace-nowrap"
+              style={{ background: typeStyle.bg, color: typeStyle.text, border: `1px solid ${typeStyle.border}` }}
+            >
+              {TYPE_LABELS[p.type]}
+            </span>
           </div>
-          <div className="flex items-center gap-1.5 mt-1 text-xs text-white/35 flex-wrap">
+          <div className="flex items-center gap-1.5 mt-1.5 text-xs text-white/35 flex-wrap">
             {car && <span className="flex items-center gap-1"><CarIcon size={11} />{car.make} {car.model}{car.carPlate ? ` · ${car.carPlate}` : ''}</span>}
             {p.bankName && <span>· {p.bankName}</span>}
             {!isPending && p.transferredAt && (
@@ -1002,20 +1029,21 @@ export default function Payments({ embedded }: PaymentsProps) {
         </div>
 
         <div className="shrink-0 flex items-center gap-4">
-          <span className={`font-display text-lg tabular-nums ${isPending ? 'text-gold-300' : 'text-white/25'}`}>{formatRM(p.amount)}</span>
+          <span className={`font-display text-xl tabular-nums ${isPending ? 'headline-gold' : 'text-white/25'}`}>{formatRM(p.amount)}</span>
           {isPending ? (
             <button
               onClick={() => {
                 if (p.type === 'loan_disbursement') setCollectingDisbursementId(p.id);
                 else { setSingleId(p.id); setTransferTarget('single'); }
               }}
-              className="text-xs font-medium px-3.5 py-1.5 rounded-full border border-white/15 text-white/70 hover:border-gold-400/50 hover:text-gold-300 transition-colors whitespace-nowrap"
+              className="flex items-center gap-1.5 text-xs font-semibold px-4 py-2.5 rounded-full text-obsidian-950 transition-all hover:scale-[1.03] active:scale-95 whitespace-nowrap"
+              style={{ background: 'linear-gradient(135deg, #6ee7b7 0%, #34d399 45%, #10b981 100%)', boxShadow: '0 4px 16px rgba(16,185,129,0.32)' }}
             >
-              Collect
+              <ArrowDownLeft size={13} /> Collect
             </button>
           ) : (
-            <span className="text-xs font-medium px-3.5 py-1.5 rounded-full border border-white/[0.06] text-white/20 whitespace-nowrap">
-              Collected
+            <span className="flex items-center gap-1.5 text-xs font-medium px-3.5 py-2 rounded-full border border-white/[0.08] text-white/25 whitespace-nowrap">
+              <CheckCircle2 size={12} /> Collected
             </span>
           )}
           {isDirectorView && (
@@ -1180,22 +1208,42 @@ export default function Payments({ embedded }: PaymentsProps) {
       )}
 
       {/* List */}
-      <div className="px-4 pt-3">
+      <div className={`px-4 pt-3 ${tab === 'to_collect' ? 'relative' : ''}`}>
+        {tab === 'to_collect' && (
+          <>
+            {/* Ambient wash — gives the glass cards below something to actually
+                refract. Flat backgrounds make backdrop-blur invisible; this is
+                what turns it from "translucent rectangle" into real glass. */}
+            <div className="absolute -top-16 left-[8%] w-[420px] h-[420px] rounded-full pointer-events-none opacity-[0.10] -z-10" style={{ background: 'radial-gradient(circle, #EAB820 0%, transparent 70%)', filter: 'blur(90px)' }} />
+            <div className="absolute top-40 right-[5%] w-[380px] h-[380px] rounded-full pointer-events-none opacity-[0.08] -z-10" style={{ background: 'radial-gradient(circle, #34D399 0%, transparent 70%)', filter: 'blur(100px)' }} />
+          </>
+        )}
+
         {tab === 'to_collect' && staleDisbursements.length > 0 && (
-          <div className="rounded-2xl px-5 py-4 mb-4 flex items-center gap-4 flex-wrap bg-white/[0.02] border border-white/[0.06]">
-            <div className="shrink-0 w-9 h-9 rounded-full bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-white/50">
-              <RefreshCw size={15} strokeWidth={1.5} className={syncingDisbursements ? 'animate-spin' : ''} />
+          <div
+            className="relative overflow-hidden rounded-[22px] p-5 mb-4 flex items-center gap-4 flex-wrap"
+            style={{
+              background: 'linear-gradient(160deg, rgba(251,191,36,0.07) 0%, rgba(255,255,255,0.02) 100%)',
+              backdropFilter: 'blur(24px) saturate(160%)', WebkitBackdropFilter: 'blur(24px) saturate(160%)',
+              border: '1px solid rgba(251,191,36,0.2)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06)',
+            }}
+          >
+            <div className="shrink-0 w-11 h-11 rounded-2xl flex items-center justify-center text-amber-300"
+              style={{ background: 'radial-gradient(circle at 30% 30%, rgba(251,191,36,0.2), rgba(251,191,36,0.04))', border: '1px solid rgba(251,191,36,0.22)' }}>
+              <RefreshCw size={17} strokeWidth={1.5} className={syncingDisbursements ? 'animate-spin' : ''} />
             </div>
             <div className="flex-1 min-w-[200px]">
-              <p className="text-white/80 text-sm">
+              <p className="text-white text-sm font-medium">
                 {staleDisbursements.length} disbursement{staleDisbursements.length === 1 ? '' : 's'} already received on the car, not yet marked collected here
               </p>
-              <p className="text-white/35 text-xs mt-0.5">These fell out of sync before the fix — sync them to mark all as Collected.</p>
+              <p className="text-white/40 text-xs mt-0.5">These fell out of sync before the fix — sync them to mark all as Collected.</p>
             </div>
             <button
               onClick={handleSyncDisbursements}
               disabled={syncingDisbursements}
-              className="shrink-0 text-xs font-medium px-4 py-2 rounded-full border border-white/15 text-white/70 hover:border-gold-400/50 hover:text-gold-300 transition-colors disabled:opacity-50"
+              className="shrink-0 flex items-center gap-1.5 text-xs font-semibold px-4 py-2.5 rounded-full text-obsidian-950 transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50"
+              style={{ background: 'linear-gradient(135deg, #FDE68A 0%, #F7D96A 40%, #EAB820 100%)', boxShadow: '0 4px 16px rgba(234,184,32,0.3)' }}
             >
               {syncingDisbursements ? 'Syncing…' : `Sync ${staleDisbursements.length}`}
             </button>
