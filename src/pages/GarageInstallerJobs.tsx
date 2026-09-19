@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ClipboardList, Car, User, Layers, CheckCircle2, Wrench, Clock3 } from 'lucide-react';
+import { ClipboardList, Car, User, Layers, CheckCircle2, Wrench, Clock3, CalendarClock } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import Modal from '../components/Modal';
 import { useStore } from '../store';
@@ -13,6 +13,11 @@ import { formatRM } from '../utils/format';
 import type { GarageInstallerJob, GarageInvoice, GarageVehicle, GarageCustomer, GarageTintOrder } from '../types';
 
 const TINT_SERIES_LABEL = Object.fromEntries(TINT_SERIES.map((s) => [s.key, s.label]));
+
+// Car tint jobs are same-day work — accepted before 3pm means done today,
+// no date to pick. Accepted at/after 3pm, the installer can choose to bring
+// it forward to tomorrow instead of committing to finishing today.
+const CUTOFF_HOUR = 15;
 
 interface JobCard {
   job: GarageInstallerJob;
@@ -44,7 +49,9 @@ export default function GarageInstallerJobs() {
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const [acceptTarget, setAcceptTarget] = useState<JobCard | null>(null);
-  const [estimate, setEstimate] = useState('');
+  const [estimateTime, setEstimateTime] = useState('');
+  const [bringForward, setBringForward] = useState(false);
+  const [pastCutoff, setPastCutoff] = useState(false);
   const [estimateError, setEstimateError] = useState('');
 
   const load = () => {
@@ -61,17 +68,23 @@ export default function GarageInstallerJobs() {
   useEffect(load, []);
 
   const openAcceptModal = (card: JobCard) => {
-    setEstimate('');
+    setEstimateTime('');
+    setBringForward(false);
+    setPastCutoff(new Date().getHours() >= CUTOFF_HOUR);
     setEstimateError('');
     setAcceptTarget(card);
   };
 
   const handleConfirmAccept = async () => {
     if (!currentUser || !acceptTarget) return;
-    if (!estimate) { setEstimateError('Enter an estimated completion time'); return; }
+    if (!estimateTime) { setEstimateError('Enter an estimated completion time'); return; }
+    const [h, m] = estimateTime.split(':').map(Number);
+    const target = new Date();
+    if (bringForward) target.setDate(target.getDate() + 1);
+    target.setHours(h, m, 0, 0);
     setBusyId(acceptTarget.job.id);
     try {
-      await acceptInstallerJob(acceptTarget.job.id, currentUser.id, new Date(estimate).toISOString());
+      await acceptInstallerJob(acceptTarget.job.id, currentUser.id, target.toISOString());
       setAcceptTarget(null);
       load();
     } finally {
@@ -196,15 +209,32 @@ export default function GarageInstallerJobs() {
 
       <Modal isOpen={!!acceptTarget} onClose={() => setAcceptTarget(null)} title="Accept Job">
         <p className="text-gray-400 text-sm mb-4">
-          When do you estimate {acceptTarget?.invoice.invoiceNumber} will be complete?
+          Tint jobs are completed the same day — what time will {acceptTarget?.invoice.invoiceNumber} be done {bringForward ? 'tomorrow' : 'today'}?
         </p>
-        <label className="block text-gray-300 text-xs font-medium mb-1.5">Estimated Completion</label>
+
+        {pastCutoff && (
+          <button
+            type="button"
+            onClick={() => setBringForward((v) => !v)}
+            className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium border mb-4 transition-colors ${
+              bringForward
+                ? 'bg-gold-500/15 border-gold-400/50 text-gold-400'
+                : 'bg-white/[0.03] border-white/10 text-white/60 hover:text-white/90 hover:border-white/20'
+            }`}
+          >
+            <CalendarClock size={15} /> {bringForward ? 'Bringing Forward to Next Day' : 'Bring Forward to Next Day'}
+          </button>
+        )}
+
+        <label className="block text-gray-300 text-xs font-medium mb-1.5">
+          Estimated Completion Time {bringForward ? '(tomorrow)' : '(today)'}
+        </label>
         <input
-          type="datetime-local"
+          type="time"
           className="w-full bg-obsidian-700/60 border border-obsidian-400/60 text-white
             rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500 transition-colors"
-          value={estimate}
-          onChange={(e) => setEstimate(e.target.value)}
+          value={estimateTime}
+          onChange={(e) => setEstimateTime(e.target.value)}
         />
         {estimateError && <p className="text-red-400 text-xs mt-2">{estimateError}</p>}
         <div className="flex gap-3 mt-5">
