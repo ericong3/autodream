@@ -30,6 +30,7 @@ function startOfDay(d: Date) { const x = new Date(d); x.setHours(0, 0, 0, 0); re
 function addDays(d: Date, n: number) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 function startOfWeek(d: Date) { const x = startOfDay(d); x.setDate(x.getDate() - x.getDay()); return x; }
 function isSameDay(a: Date, b: Date) { return a.toDateString() === b.toDateString(); }
+const MINI_DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 function pad2(n: number) { return String(n).padStart(2, '0'); }
 function toDateInput(d: Date) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
 function toTimeInput(d: Date) { return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
@@ -247,6 +248,16 @@ export default function GarageCalendar() {
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(range.start, i)), [range.start]);
   const monthDays = useMemo(() => Array.from({ length: 42 }, (_, i) => addDays(range.start, i)), [range.start]);
 
+  // Mini nav always steps by month regardless of the main view mode, and
+  // always tracks whichever month `cursor` is in — same single source of
+  // truth as the main grid.
+  const miniMonthDays = useMemo(() => {
+    const gridStart = startOfWeek(new Date(cursor.getFullYear(), cursor.getMonth(), 1));
+    return Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
+  }, [cursor.getFullYear(), cursor.getMonth()]);
+  const miniPrevMonth = () => setCursor((c) => new Date(c.getFullYear(), c.getMonth() - 1, 1));
+  const miniNextMonth = () => setCursor((c) => new Date(c.getFullYear(), c.getMonth() + 1, 1));
+
   const appointmentsForDay = (day: Date) => visibleAppointments.filter((a) => isSameDay(new Date(a.startsAt), day));
 
   const renderHourGrid = (days: Date[]) => (
@@ -314,106 +325,152 @@ export default function GarageCalendar() {
 
   return (
     <GarageShell title="AutoDream Garage" tabs={SALESMAN_TABS} showBack>
-      <div className="max-w-5xl mx-auto">
-        <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
-          <div className="flex items-center gap-3">
-            <button onClick={goPrev} className="p-2 rounded-lg text-white/50 hover:text-white hover:bg-white/5 transition-colors">
-              <ChevronLeft size={17} />
-            </button>
-            <h2 className="font-display text-lg text-white font-semibold tracking-wide min-w-[200px]">{headerLabel}</h2>
-            <button onClick={goNext} className="p-2 rounded-lg text-white/50 hover:text-white hover:bg-white/5 transition-colors">
-              <ChevronRight size={17} />
-            </button>
-            <button onClick={goToday} className="px-3 py-1.5 rounded-lg text-xs font-medium border border-white/10 text-white/60 hover:text-white hover:border-white/20 transition-colors">
-              Today
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            {isManager && (
-              <select
-                value={staffFilter}
-                onChange={(e) => setStaffFilter(e.target.value)}
-                className="bg-white/[0.04] border border-white/10 rounded-lg px-2.5 py-1.5 text-white/70 text-xs outline-none"
-              >
-                <option value="all" className="bg-obsidian-800">All Salesmen</option>
-                {garageSalesmen.map((u) => (
-                  <option key={u.id} value={u.id} className="bg-obsidian-800">{u.name}</option>
-                ))}
-              </select>
-            )}
-            <div className="flex gap-1 bg-white/[0.03] border border-white/10 rounded-lg p-1">
-              {(['day', 'week', 'month'] as ViewMode[]).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setView(v)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors ${
-                    view === v ? 'bg-gold-500/15 text-gold-400' : 'text-white/50 hover:text-white/80'
-                  }`}
-                >
-                  {v}
-                </button>
-              ))}
+      <div className="w-full flex flex-col lg:flex-row gap-6">
+        {/* Sidebar — mini month navigator + legend, like Google Calendar */}
+        <aside className="lg:w-48 shrink-0 space-y-5">
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+            <div className="flex items-center justify-between mb-2">
+              <button onClick={miniPrevMonth} className="p-1 rounded text-white/40 hover:text-white transition-colors">
+                <ChevronLeft size={14} />
+              </button>
+              <span className="text-white/70 text-xs font-medium">{MONTH_LABELS[cursor.getMonth()]} {cursor.getFullYear()}</span>
+              <button onClick={miniNextMonth} className="p-1 rounded text-white/40 hover:text-white transition-colors">
+                <ChevronRight size={14} />
+              </button>
             </div>
-            <button
-              onClick={() => openCreate(view === 'month' ? new Date() : cursor, 9)}
-              className="flex items-center gap-1.5 btn-gold px-3 py-1.5 rounded-lg text-xs font-medium"
-            >
-              <Plus size={14} /> New
-            </button>
-          </div>
-        </div>
-
-        {/* Legend */}
-        <div className="flex items-center gap-4 mb-4 flex-wrap">
-          {GARAGE_SERVICES.map((s) => (
-            <span key={s.key} className="flex items-center gap-1.5 text-white/40 text-[11px]">
-              <span className={`w-2 h-2 rounded-full ${GARAGE_SERVICE_COLOR[s.key].dot}`} /> {s.label}
-            </span>
-          ))}
-        </div>
-
-        {loading ? (
-          <p className="text-white/40 text-sm text-center py-20">Loading…</p>
-        ) : view === 'month' ? (
-          <div className="border border-white/10 rounded-xl overflow-hidden bg-white/[0.02]">
-            <div className="grid grid-cols-7">
-              {DAY_LABELS.map((d) => (
-                <div key={d} className="text-center text-white/40 text-[11px] font-medium py-2 border-b border-white/10">{d}</div>
+            <div className="grid grid-cols-7 gap-y-1">
+              {MINI_DAY_LETTERS.map((l, i) => (
+                <div key={i} className="text-center text-white/30 text-[10px]">{l}</div>
               ))}
-            </div>
-            <div className="grid grid-cols-7">
-              {monthDays.map((day) => {
+              {miniMonthDays.map((day) => {
                 const inMonth = day.getMonth() === cursor.getMonth();
                 const today = isSameDay(day, new Date());
-                const dayAppts = appointmentsForDay(day);
+                const selected = isSameDay(day, cursor);
                 return (
                   <button
                     key={day.toISOString()}
-                    onClick={() => { setCursor(day); setView('day'); }}
-                    className={`min-h-[84px] p-1.5 border-r border-b border-white/[0.06] text-left align-top last:border-r-0
-                      hover:bg-white/[0.04] transition-colors ${!inMonth ? 'opacity-30' : ''}`}
+                    onClick={() => setCursor(day)}
+                    className={`text-center text-[11px] py-1 rounded-full transition-colors ${
+                      selected
+                        ? 'bg-gold-500 text-obsidian-950 font-semibold'
+                        : today
+                          ? 'text-gold-400 font-semibold hover:bg-white/10'
+                          : inMonth
+                            ? 'text-white/60 hover:bg-white/10'
+                            : 'text-white/20 hover:bg-white/5'
+                    }`}
                   >
-                    <span className={`text-xs ${today ? 'text-gold-400 font-semibold' : 'text-white/60'}`}>{day.getDate()}</span>
-                    <div className="mt-1 space-y-0.5">
-                      {dayAppts.slice(0, 3).map((a) => (
-                        <div key={a.id} className={`flex items-center gap-1 text-[10px] truncate px-1 py-0.5 rounded ${GARAGE_SERVICE_COLOR[a.service].bg}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${GARAGE_SERVICE_COLOR[a.service].dot}`} />
-                          <span className="text-white/70 truncate">{a.title || customerCache[a.customerId]?.name || 'Appt'}</span>
-                        </div>
-                      ))}
-                      {dayAppts.length > 3 && <p className="text-white/30 text-[10px] pl-1">+{dayAppts.length - 3} more</p>}
-                    </div>
+                    {day.getDate()}
                   </button>
                 );
               })}
             </div>
           </div>
-        ) : view === 'week' ? (
-          renderHourGrid(weekDays)
-        ) : (
-          renderHourGrid([cursor])
-        )}
+
+          <div>
+            <p className="text-white/30 text-[10px] font-semibold uppercase tracking-wider mb-2">Services</p>
+            <div className="space-y-1.5">
+              {GARAGE_SERVICES.map((s) => (
+                <span key={s.key} className="flex items-center gap-1.5 text-white/50 text-[11px]">
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${GARAGE_SERVICE_COLOR[s.key].dot}`} /> {s.label}
+                </span>
+              ))}
+            </div>
+          </div>
+        </aside>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
+            <div className="flex items-center gap-3">
+              <button onClick={goPrev} className="p-2 rounded-lg text-white/50 hover:text-white hover:bg-white/5 transition-colors">
+                <ChevronLeft size={17} />
+              </button>
+              <h2 className="font-display text-lg text-white font-semibold tracking-wide min-w-[200px]">{headerLabel}</h2>
+              <button onClick={goNext} className="p-2 rounded-lg text-white/50 hover:text-white hover:bg-white/5 transition-colors">
+                <ChevronRight size={17} />
+              </button>
+              <button onClick={goToday} className="px-3 py-1.5 rounded-lg text-xs font-medium border border-white/10 text-white/60 hover:text-white hover:border-white/20 transition-colors">
+                Today
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              {isManager && (
+                <select
+                  value={staffFilter}
+                  onChange={(e) => setStaffFilter(e.target.value)}
+                  className="bg-white/[0.04] border border-white/10 rounded-lg px-2.5 py-1.5 text-white/70 text-xs outline-none"
+                >
+                  <option value="all" className="bg-obsidian-800">All Salesmen</option>
+                  {garageSalesmen.map((u) => (
+                    <option key={u.id} value={u.id} className="bg-obsidian-800">{u.name}</option>
+                  ))}
+                </select>
+              )}
+              <div className="flex gap-1 bg-white/[0.03] border border-white/10 rounded-lg p-1">
+                {(['day', 'week', 'month'] as ViewMode[]).map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => setView(v)}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors ${
+                      view === v ? 'bg-gold-500/15 text-gold-400' : 'text-white/50 hover:text-white/80'
+                    }`}
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => openCreate(view === 'month' ? new Date() : cursor, 9)}
+                className="flex items-center gap-1.5 btn-gold px-3 py-1.5 rounded-lg text-xs font-medium"
+              >
+                <Plus size={14} /> New
+              </button>
+            </div>
+          </div>
+
+          {loading ? (
+            <p className="text-white/40 text-sm text-center py-20">Loading…</p>
+          ) : view === 'month' ? (
+            <div className="border border-white/10 rounded-xl overflow-hidden bg-white/[0.02]">
+              <div className="grid grid-cols-7">
+                {DAY_LABELS.map((d) => (
+                  <div key={d} className="text-center text-white/40 text-[11px] font-medium py-2 border-b border-white/10">{d}</div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7">
+                {monthDays.map((day) => {
+                  const inMonth = day.getMonth() === cursor.getMonth();
+                  const today = isSameDay(day, new Date());
+                  const dayAppts = appointmentsForDay(day);
+                  return (
+                    <button
+                      key={day.toISOString()}
+                      onClick={() => { setCursor(day); setView('day'); }}
+                      className={`min-h-[84px] p-1.5 border-r border-b border-white/[0.06] text-left align-top last:border-r-0
+                        hover:bg-white/[0.04] transition-colors ${!inMonth ? 'opacity-30' : ''}`}
+                    >
+                      <span className={`text-xs ${today ? 'text-gold-400 font-semibold' : 'text-white/60'}`}>{day.getDate()}</span>
+                      <div className="mt-1 space-y-0.5">
+                        {dayAppts.slice(0, 3).map((a) => (
+                          <div key={a.id} className={`flex items-center gap-1 text-[10px] truncate px-1 py-0.5 rounded ${GARAGE_SERVICE_COLOR[a.service].bg}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${GARAGE_SERVICE_COLOR[a.service].dot}`} />
+                            <span className="text-white/70 truncate">{a.title || customerCache[a.customerId]?.name || 'Appt'}</span>
+                          </div>
+                        ))}
+                        {dayAppts.length > 3 && <p className="text-white/30 text-[10px] pl-1">+{dayAppts.length - 3} more</p>}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : view === 'week' ? (
+            renderHourGrid(weekDays)
+          ) : (
+            renderHourGrid([cursor])
+          )}
+        </div>
       </div>
 
       <Modal
