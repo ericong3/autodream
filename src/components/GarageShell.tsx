@@ -1,8 +1,9 @@
 import { useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, ArrowLeftRight, LogOut } from 'lucide-react';
 import { useStore } from '../store';
-import Modal from './Modal';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 
 export interface GarageTab {
   label: string;
@@ -29,6 +30,7 @@ export default function GarageShell({
   const navigate = useNavigate();
   const location = useLocation();
   const [confirmLogout, setConfirmLogout] = useState(false);
+  useBodyScrollLock(confirmLogout);
 
   const handleLogout = () => { logout(); navigate('/login'); };
 
@@ -107,22 +109,50 @@ export default function GarageShell({
         </main>
       </div>
 
-      <Modal isOpen={confirmLogout} onClose={() => setConfirmLogout(false)} title="Log Out?" maxWidth="max-w-sm">
-        <p className="text-gray-300 text-sm leading-relaxed">
-          Are you sure you want to log out?
-        </p>
-        <div className="flex gap-3 mt-5">
-          <button onClick={() => setConfirmLogout(false)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">
-            Cancel
-          </button>
-          <button
-            onClick={handleLogout}
-            className="flex-1 px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors"
-          >
-            Log Out
-          </button>
-        </div>
-      </Modal>
+      {confirmLogout && createPortal(
+        <div
+          className="fixed inset-0 z-[600] flex flex-col bg-obsidian-950"
+          style={{
+            paddingTop: 'calc(1.5rem + env(safe-area-inset-top, 0px))',
+            paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))',
+          }}
+        >
+          <div
+            className="fixed inset-0 bg-cover bg-center"
+            style={{ backgroundImage: "url('/garage-bg.png')" }}
+          />
+          <div className="fixed inset-0 bg-black/80" />
+
+          <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 text-center">
+            <div className="relative mb-6 flex items-center justify-center">
+              <div className="absolute w-24 h-24 rounded-full bg-red-500/10 blur-xl" />
+              <div className="relative w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+                <LogOut size={26} className="text-red-400" strokeWidth={1.5} />
+              </div>
+            </div>
+            <h2 className="font-display text-white text-2xl font-semibold tracking-wide mb-2">Log Out?</h2>
+            <p className="text-white/50 text-sm max-w-xs">
+              You'll need to sign in again to access Garage.
+            </p>
+          </div>
+
+          <div className="relative z-10 w-full max-w-sm mx-auto px-6 space-y-3">
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 text-white rounded-xl py-3.5 text-sm font-semibold transition-colors"
+            >
+              <LogOut size={16} /> Log Out
+            </button>
+            <button
+              onClick={() => setConfirmLogout(false)}
+              className="w-full btn-ghost rounded-xl py-3.5 text-sm font-medium !text-white/90"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }
