@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Wrench, Users, Layers, Sparkles, SprayCan, Settings2, ClipboardList, CalendarDays, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Wrench, Users, Settings2, ClipboardList, CalendarDays, ChevronRight, FolderKanban } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import { useStore } from '../store';
 
@@ -7,9 +7,6 @@ const MODULES = [
   { key: 'dashboard', label: 'Dashboard', desc: 'Overview', icon: LayoutDashboard, path: '/garage/dashboard', active: true },
   { key: 'sales-tools', label: 'Sales Tools', desc: 'Work orders & more', icon: Wrench, path: '/garage/sales-tools', active: true },
   { key: 'team', label: 'Team Members', desc: 'Staff, roles & access', icon: Users, path: '/garage/team', active: true },
-  { key: 'tint', label: 'Tinting', desc: 'Car & building tint jobs', icon: Layers, path: null, active: false },
-  { key: 'coating', label: 'Coating', desc: 'Detailing jobs', icon: Sparkles, path: null, active: false },
-  { key: 'spray', label: 'Car Spray', desc: 'Spray jobs', icon: SprayCan, path: null, active: false },
 ];
 
 export default function GarageHome() {
@@ -22,6 +19,7 @@ export default function GarageHome() {
         ...MODULES,
         { key: 'calendar', label: 'Calendar', desc: 'All salesmen appointments', icon: CalendarDays, path: '/garage/calendar', active: true },
         { key: 'installer-jobs', label: 'Installer Job Queue', desc: 'Pending & in-progress tint jobs', icon: ClipboardList, path: '/garage/installer', active: true },
+        { key: 'work-order-tracking', label: 'Work Order Tracking', desc: 'Tinted, Coating, PPF & Spray', icon: FolderKanban, path: '/garage/work-order-tracking', active: true },
         { key: 'tint-pricing', label: 'Tint Pricing', desc: 'Package & VLT price grid', icon: Settings2, path: '/garage/tint-pricing', active: true },
       ]
     : MODULES;

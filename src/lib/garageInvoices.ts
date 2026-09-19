@@ -74,6 +74,19 @@ export async function listInvoicesCreatedBy(userId: string): Promise<GarageInvoi
   return (data ?? []).map(rowToInvoice);
 }
 
+// Work Order Tracking — every invoice for a given service, across every
+// salesman, newest first. Manager-level oversight, unlike listInvoicesCreatedBy
+// above which is scoped to one salesman's own orders.
+export async function listInvoicesByService(service: GarageService): Promise<GarageInvoice[]> {
+  const { data, error } = await supabase
+    .from('garage_invoices')
+    .select('*')
+    .eq('service', service)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(rowToInvoice);
+}
+
 export async function createGarageInvoice(input: {
   customerId: string; vehicleId: string; service: GarageService;
   paymentMethod?: GaragePaymentMethod; paymentStatus: GaragePaymentStatus; createdBy?: string;

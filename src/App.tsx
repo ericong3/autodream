@@ -55,6 +55,8 @@ import GarageInstallerJobs from './pages/GarageInstallerJobs';
 import GarageMyWorkOrders from './pages/GarageMyWorkOrders';
 import GarageCalendar from './pages/GarageCalendar';
 import GarageTintPricing from './pages/GarageTintPricing';
+import GarageWorkOrderTracking from './pages/GarageWorkOrderTracking';
+import GarageServiceWorkOrders from './pages/GarageServiceWorkOrders';
 import { roleHome, landingPath, garageHome } from './utils/landingPath';
 
 // Layout wrapper for regular users — mounts once, stays mounted across navigation
@@ -212,6 +214,8 @@ export default function App() {
         <Route path="/garage/installer" element={<RequireGarage><GarageInstallerJobs /></RequireGarage>} />
         <Route path="/garage/tint-pricing" element={<RequireGarageManager><GarageTintPricing /></RequireGarageManager>} />
         <Route path="/garage/team" element={<RequireGarageManager><GarageTeamMembers /></RequireGarageManager>} />
+        <Route path="/garage/work-order-tracking" element={<RequireGarageManager><GarageWorkOrderTracking /></RequireGarageManager>} />
+        <Route path="/garage/work-order-tracking/:service" element={<RequireGarageManager><GarageServiceWorkOrders /></RequireGarageManager>} />
 
         {/* Regular users — Layout mounts once, stays alive across all these routes */}
         <Route element={<AuthedLayout />}>
