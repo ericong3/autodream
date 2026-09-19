@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ClipboardList, Car, User, Layers, CheckCircle2, Wrench, Clock3, CalendarClock } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import Modal from '../components/Modal';
-import TimeSlotPicker from '../components/TimeSlotPicker';
+import DayTimelinePicker from '../components/DayTimelinePicker';
 import { useStore } from '../store';
 import { listPendingInstallerJobs, listAcceptedInstallerJobs, acceptInstallerJob, completeInstallerJob } from '../lib/garageInstallerJobs';
 import { getGarageInvoice } from '../lib/garageInvoices';
@@ -19,6 +19,8 @@ const TINT_SERIES_LABEL = Object.fromEntries(TINT_SERIES.map((s) => [s.key, s.la
 // no date to pick. Accepted at/after 3pm, the installer can choose to bring
 // it forward to tomorrow instead of committing to finishing today.
 const CUTOFF_HOUR = 15;
+
+function isSameDay(a: Date, b: Date) { return a.toDateString() === b.toDateString(); }
 
 interface JobCard {
   job: GarageInstallerJob;
@@ -92,6 +94,19 @@ export default function GarageInstallerJobs() {
       setBusyId(null);
     }
   };
+
+  // This installer's own already-accepted jobs landing on the target day —
+  // shown as context markers on the timeline so they can see their existing
+  // workload while picking a new completion time.
+  const timelineMarkers = useMemo(() => {
+    if (!currentUser) return [];
+    const target = new Date();
+    if (bringForward) target.setDate(target.getDate() + 1);
+    return accepted
+      .filter((c) => c.job.acceptedBy === currentUser.id && c.job.estimatedCompleteAt)
+      .map((c) => ({ id: c.job.id, time: new Date(c.job.estimatedCompleteAt!), label: c.invoice.invoiceNumber }))
+      .filter((m) => isSameDay(m.time, target));
+  }, [accepted, currentUser, bringForward]);
 
   const handleComplete = async (jobId: string) => {
     setBusyId(jobId);
@@ -230,7 +245,7 @@ export default function GarageInstallerJobs() {
         <label className="block text-gray-300 text-xs font-medium mb-1.5">
           Estimated Completion Time {bringForward ? '(tomorrow)' : '(today)'}
         </label>
-        <TimeSlotPicker value={estimateTime} onChange={setEstimateTime} />
+        <DayTimelinePicker value={estimateTime} onChange={setEstimateTime} markers={timelineMarkers} />
         {estimateError && <p className="text-red-400 text-xs mt-2">{estimateError}</p>}
         <div className="flex gap-3 mt-5">
           <button onClick={() => setAcceptTarget(null)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
