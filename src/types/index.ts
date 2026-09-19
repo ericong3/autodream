@@ -140,6 +140,9 @@ export interface GarageInstallerJob {
   createdAt: string;
   acceptedBy?: string;
   acceptedAt?: string;
+  // Keyed in by the installer at the moment they accept — when they expect
+  // to finish, so the salesman/customer have a rough ETA.
+  estimatedCompleteAt?: string;
   completedAt?: string;
 }
 

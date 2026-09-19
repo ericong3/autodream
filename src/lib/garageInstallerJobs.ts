@@ -11,6 +11,7 @@ function rowToJob(r: any): GarageInstallerJob {
     createdAt: r.created_at,
     acceptedBy: r.accepted_by ?? undefined,
     acceptedAt: r.accepted_at ?? undefined,
+    estimatedCompleteAt: r.estimated_complete_at ?? undefined,
     completedAt: r.completed_at ?? undefined,
   };
 }
@@ -48,10 +49,13 @@ export async function getInstallerJobForInvoice(invoiceId: string): Promise<Gara
   return data ? rowToJob(data) : null;
 }
 
-export async function acceptInstallerJob(jobId: string, userId: string): Promise<GarageInstallerJob> {
+export async function acceptInstallerJob(jobId: string, userId: string, estimatedCompleteAt: string): Promise<GarageInstallerJob> {
   const { data, error } = await supabase
     .from('garage_installer_jobs')
-    .update({ status: 'accepted', accepted_by: userId, accepted_at: new Date().toISOString() })
+    .update({
+      status: 'accepted', accepted_by: userId, accepted_at: new Date().toISOString(),
+      estimated_complete_at: estimatedCompleteAt,
+    })
     .eq('id', jobId)
     .select()
     .single();

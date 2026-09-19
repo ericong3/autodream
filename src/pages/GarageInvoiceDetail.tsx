@@ -295,9 +295,16 @@ export default function GarageInvoiceDetail() {
           </div>
 
           {jobRequired && (
-            <div className="flex items-center gap-2.5 text-sm text-white/70 mb-5">
-              <Package size={15} className="text-white/30 shrink-0" />
-              Installer: {job ? JOB_STATUS_LABEL[job.status] : 'Not yet sent'}
+            <div className="space-y-1.5 mb-5">
+              <div className="flex items-center gap-2.5 text-sm text-white/70">
+                <Package size={15} className="text-white/30 shrink-0" />
+                Installer: {job ? JOB_STATUS_LABEL[job.status] : 'Not yet sent'}
+              </div>
+              {job?.estimatedCompleteAt && job.status !== 'completed' && (
+                <div className="flex items-center gap-2.5 text-sm text-white/50 pl-[23px]">
+                  Est. complete {new Date(job.estimatedCompleteAt).toLocaleString('en-MY', { dateStyle: 'medium', timeStyle: 'short' })}
+                </div>
+              )}
             </div>
           )}
 
