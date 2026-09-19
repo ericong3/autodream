@@ -151,7 +151,12 @@ export default function GarageWorkOrderPayment() {
             {PAYMENT_TIMINGS.map((t) => (
               <button
                 key={t.key}
-                onClick={() => setTiming(t.key)}
+                onClick={() => {
+                  setTiming(t.key);
+                  // Pay Later means payment isn't happening now — no method
+                  // to record until it's actually collected at delivery.
+                  if (t.key === 'pending') { setMethod(''); setReceiptFile(null); }
+                }}
                 className={`flex flex-col items-start gap-1 px-5 py-4 rounded-xl border text-left transition-colors ${
                   timing === t.key
                     ? 'bg-gold-500/15 border-gold-400/50'
@@ -166,25 +171,31 @@ export default function GarageWorkOrderPayment() {
             ))}
           </div>
 
-          <p className="text-white/50 text-xs font-medium uppercase tracking-wider mb-4">
-            Payment Method {timing === 'pending' && <span className="text-white/30 normal-case">(optional — set later when collected)</span>}
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {PAYMENT_METHODS.map((m) => (
-              <button
-                key={m.key}
-                onClick={() => setMethod(m.key)}
-                className={`flex flex-col items-center justify-center gap-2.5 px-4 py-7 rounded-xl border text-sm font-medium transition-colors ${
-                  method === m.key
-                    ? 'bg-gold-500/15 border-gold-400/50 text-gold-400'
-                    : 'bg-white/[0.03] border-white/10 text-white/60 hover:text-white/90 hover:border-white/20'
-                }`}
-              >
-                <m.icon size={24} strokeWidth={1.5} />
-                {m.label}
-              </button>
-            ))}
-          </div>
+          {timing === 'paid' && (
+            <>
+              <p className="text-white/50 text-xs font-medium uppercase tracking-wider mb-4">Payment Method</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {PAYMENT_METHODS.map((m) => (
+                  <button
+                    key={m.key}
+                    onClick={() => setMethod(m.key)}
+                    className={`flex flex-col items-center justify-center gap-2.5 px-4 py-7 rounded-xl border text-sm font-medium transition-colors ${
+                      method === m.key
+                        ? 'bg-gold-500/15 border-gold-400/50 text-gold-400'
+                        : 'bg-white/[0.03] border-white/10 text-white/60 hover:text-white/90 hover:border-white/20'
+                    }`}
+                  >
+                    <m.icon size={24} strokeWidth={1.5} />
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {timing === 'pending' && (
+            <p className="text-white/40 text-sm">Payment will be collected later, before the car is delivered.</p>
+          )}
 
           {timing === 'paid' && method && (
             <div className="mt-8 pt-6 border-t border-white/10">
