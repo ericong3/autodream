@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ClipboardList, Car, User, Layers, CheckCircle2, Wrench, Clock3, CalendarClock } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import Modal from '../components/Modal';
+import TimeSlotPicker from '../components/TimeSlotPicker';
 import { useStore } from '../store';
 import { listPendingInstallerJobs, listAcceptedInstallerJobs, acceptInstallerJob, completeInstallerJob } from '../lib/garageInstallerJobs';
 import { getGarageInvoice } from '../lib/garageInvoices';
@@ -229,13 +230,7 @@ export default function GarageInstallerJobs() {
         <label className="block text-gray-300 text-xs font-medium mb-1.5">
           Estimated Completion Time {bringForward ? '(tomorrow)' : '(today)'}
         </label>
-        <input
-          type="time"
-          className="w-full bg-obsidian-700/60 border border-obsidian-400/60 text-white
-            rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500 transition-colors"
-          value={estimateTime}
-          onChange={(e) => setEstimateTime(e.target.value)}
-        />
+        <TimeSlotPicker value={estimateTime} onChange={setEstimateTime} />
         {estimateError && <p className="text-red-400 text-xs mt-2">{estimateError}</p>}
         <div className="flex gap-3 mt-5">
           <button onClick={() => setAcceptTarget(null)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
