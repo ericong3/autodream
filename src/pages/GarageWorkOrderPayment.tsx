@@ -64,12 +64,25 @@ export default function GarageWorkOrderPayment() {
     setReceiptFile(file);
   };
 
+  // The URL here is keyed only on customer + vehicle, not on a per-order id —
+  // creating a second work order for the same customer/vehicle resolves to
+  // the identical pathname, so React Router reuses this component instance
+  // instead of remounting it. Without this, a stale `done: true` from the
+  // first order would show "Work Order Confirmed" again without ever
+  // calling handleConfirm, silently dropping every order after the first.
   useEffect(() => {
     if (!state) {
       navigate(`/garage/work-order/customer/${id}/vehicle/${vehicleId}/service/tinted`, { replace: true });
+      return;
     }
+    setDone(false);
+    setConfirming(false);
+    setError('');
+    setTiming('paid');
+    setMethod('');
+    setReceiptFile(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [location.key]);
 
   if (!state) return null;
   const { pending, addons, grandTotal } = state;

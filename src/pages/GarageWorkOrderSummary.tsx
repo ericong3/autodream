@@ -56,17 +56,24 @@ export default function GarageWorkOrderSummary() {
   const [addonQty, setAddonQty] = useState('1');
   const [addonError, setAddonError] = useState('');
 
+  // Same customer/vehicle means the same pathname for a second work order,
+  // so React Router reuses this component instance instead of remounting —
+  // reset per-order local state (add-ons especially) on every fresh arrival
+  // here, keyed on location.key rather than mount.
   useEffect(() => {
     if (!pending) {
       navigate(`/garage/work-order/customer/${id}/vehicle/${vehicleId}/service/tinted`, { replace: true });
       return;
     }
     if (!id || !vehicleId) return;
+    setAddons([]);
+    setAddonModalOpen(false);
+    setLoading(true);
     Promise.all([getGarageVehicle(vehicleId), getGarageCustomer(id)])
       .then(([v, c]) => { setVehicle(v); setCustomer(c); })
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [location.key]);
 
   if (!pending) return null;
 
