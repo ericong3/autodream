@@ -135,6 +135,8 @@ export default function GarageInstallerJobDetail() {
     }
   };
 
+  const pipelinePath = job ? `/garage/installer/${job.service}` : '/garage/installer';
+
   const handleComplete = async () => {
     if (!job) return;
     if (!allFilled) { setError('Assign an installer and film usage for every piece first'); return; }
@@ -142,7 +144,7 @@ export default function GarageInstallerJobDetail() {
     setCompleting(true);
     try {
       await completeInstallerJob(job.id, remark);
-      navigate('/garage/installer');
+      navigate(pipelinePath);
     } finally {
       setCompleting(false);
     }
@@ -150,14 +152,14 @@ export default function GarageInstallerJobDetail() {
 
   if (loading) {
     return (
-      <GarageShell title="Job Detail" showBack backTo="/garage/installer">
+      <GarageShell title="Job Detail" showBack backTo={pipelinePath}>
         <p className="text-white/40 text-sm text-center py-20">Loading…</p>
       </GarageShell>
     );
   }
 
   return (
-    <GarageShell title="Job Detail" showBack backTo="/garage/installer">
+    <GarageShell title="Job Detail" showBack backTo={pipelinePath}>
       <div className="max-w-2xl mx-auto space-y-6">
         <div className="relative overflow-hidden rounded-2xl p-6 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card">
           <div className="flex items-center justify-between flex-wrap gap-3 mb-4">

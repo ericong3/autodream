@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { ClipboardList, Car, User, Layers, CheckCircle2, ArrowRight, Wrench, Clock3, CalendarClock } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import Modal from '../components/Modal';
@@ -12,7 +12,7 @@ import { getTintOrder } from '../lib/garageTint';
 import { GARAGE_SERVICE_MAP } from '../utils/garageServices';
 import { TINT_SERIES } from '../utils/tintPricing';
 import { formatRM } from '../utils/format';
-import type { GarageInstallerJob, GarageInvoice, GarageVehicle, GarageCustomer, GarageTintOrder } from '../types';
+import type { GarageInstallerJob, GarageInvoice, GarageVehicle, GarageCustomer, GarageTintOrder, GarageService } from '../types';
 
 const TINT_SERIES_LABEL = Object.fromEntries(TINT_SERIES.map((s) => [s.key, s.label]));
 
@@ -46,6 +46,7 @@ async function buildCards(jobs: GarageInstallerJob[]): Promise<JobCard[]> {
 }
 
 export default function GarageInstallerJobs() {
+  const { service } = useParams<{ service: string }>();
   const navigate = useNavigate();
   const currentUser = useStore((s) => s.currentUser);
   const [pending, setPending] = useState<JobCard[]>([]);
@@ -59,9 +60,12 @@ export default function GarageInstallerJobs() {
   const [pastCutoff, setPastCutoff] = useState(false);
   const [estimateError, setEstimateError] = useState('');
 
+  const meta = GARAGE_SERVICE_MAP[service as GarageService];
+
   const load = () => {
+    if (!service) return;
     setLoading(true);
-    Promise.all([listPendingInstallerJobs(), listAcceptedInstallerJobs()])
+    Promise.all([listPendingInstallerJobs(service as GarageService), listAcceptedInstallerJobs(service as GarageService)])
       .then(async ([p, a]) => {
         const [pCards, aCards] = await Promise.all([buildCards(p), buildCards(a)]);
         setPending(pCards);
@@ -70,7 +74,7 @@ export default function GarageInstallerJobs() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, []);
+  useEffect(load, [service]);
 
   const openAcceptModal = (card: JobCard) => {
     setEstimateTime('');
@@ -170,7 +174,7 @@ export default function GarageInstallerJobs() {
   };
 
   return (
-    <GarageShell title="Work Flow" showBack>
+    <GarageShell title={`${meta?.label ?? 'Service'} Work Flow`} showBack backTo="/garage/installer">
       <div className="max-w-2xl mx-auto space-y-10">
         <div>
           <div className="flex items-center gap-2.5 mb-6">
@@ -217,7 +221,7 @@ export default function GarageInstallerJobs() {
 
       <Modal isOpen={!!acceptTarget} onClose={() => setAcceptTarget(null)} title="Accept Job">
         <p className="text-gray-400 text-sm mb-4">
-          Tint jobs are completed the same day — what time will {acceptTarget?.invoice.invoiceNumber} be done {bringForward ? 'tomorrow' : 'today'}?
+          {meta?.label ?? 'This'} jobs are completed the same day — what time will {acceptTarget?.invoice.invoiceNumber} be done {bringForward ? 'tomorrow' : 'today'}?
         </p>
 
         {pastCutoff && (

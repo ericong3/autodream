@@ -30,21 +30,23 @@ export async function createInstallerJob(input: { invoiceId: string; service: Ga
   return rowToJob(data);
 }
 
-export async function listPendingInstallerJobs(): Promise<GarageInstallerJob[]> {
+export async function listPendingInstallerJobs(service: GarageService): Promise<GarageInstallerJob[]> {
   const { data, error } = await supabase
     .from('garage_installer_jobs')
     .select('*')
     .eq('status', 'pending')
+    .eq('service', service)
     .order('created_at', { ascending: true });
   if (error) throw error;
   return (data ?? []).map(rowToJob);
 }
 
-export async function listAcceptedInstallerJobs(): Promise<GarageInstallerJob[]> {
+export async function listAcceptedInstallerJobs(service: GarageService): Promise<GarageInstallerJob[]> {
   const { data, error } = await supabase
     .from('garage_installer_jobs')
     .select('*')
     .eq('status', 'accepted')
+    .eq('service', service)
     .order('accepted_at', { ascending: true });
   if (error) throw error;
   return (data ?? []).map(rowToJob);
