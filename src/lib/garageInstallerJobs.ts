@@ -52,6 +52,17 @@ export async function listAcceptedInstallerJobs(service: GarageService): Promise
   return (data ?? []).map(rowToJob);
 }
 
+export async function listCompletedInstallerJobs(service: GarageService): Promise<GarageInstallerJob[]> {
+  const { data, error } = await supabase
+    .from('garage_installer_jobs')
+    .select('*')
+    .eq('status', 'completed')
+    .eq('service', service)
+    .order('completed_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(rowToJob);
+}
+
 export async function getInstallerJobForInvoice(invoiceId: string): Promise<GarageInstallerJob | null> {
   const { data, error } = await supabase.from('garage_installer_jobs').select('*').eq('invoice_id', invoiceId).maybeSingle();
   if (error) throw error;

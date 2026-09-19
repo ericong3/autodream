@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ClipboardList, Car, User, Layers, CheckCircle2, ArrowRight, Wrench, Clock3, CalendarClock } from 'lucide-react';
+import {
+  ClipboardList, Car, User, Layers, CheckCircle2, ArrowRight, Eye, Clock3, CalendarClock,
+} from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import Modal from '../components/Modal';
 import DayTimelinePicker from '../components/DayTimelinePicker';
 import { useStore } from '../store';
-import { listPendingInstallerJobs, listAcceptedInstallerJobs, acceptInstallerJob } from '../lib/garageInstallerJobs';
+import {
+  listPendingInstallerJobs, listAcceptedInstallerJobs, listCompletedInstallerJobs, acceptInstallerJob,
+} from '../lib/garageInstallerJobs';
 import { getGarageInvoice } from '../lib/garageInvoices';
 import { getGarageVehicle, getGarageCustomer } from '../lib/garageCustomers';
 import { getTintOrder } from '../lib/garageTint';
@@ -15,6 +19,34 @@ import { formatRM } from '../utils/format';
 import type { GarageInstallerJob, GarageInvoice, GarageVehicle, GarageCustomer, GarageTintOrder, GarageService } from '../types';
 
 const TINT_SERIES_LABEL = Object.fromEntries(TINT_SERIES.map((s) => [s.key, s.label]));
+
+type StageKey = 'pending' | 'accepted' | 'completed';
+
+// Colors mirror the stage badges used elsewhere (My Work Orders, Work
+// Order Tracking) — gold for waiting, blue for active work, green for done.
+const STAGE_CONFIG: Record<StageKey, { label: string; dot: string; node: string; nodeActive: string; text: string }> = {
+  pending: {
+    label: 'Incoming',
+    dot: 'bg-gold-400',
+    node: 'bg-gold-500/15 border-gold-400/40 text-gold-400',
+    nodeActive: 'bg-gold-500 border-gold-300 text-obsidian-950 shadow-[0_0_24px_rgba(212,175,55,0.55)]',
+    text: 'text-gold-400',
+  },
+  accepted: {
+    label: 'In Progress',
+    dot: 'bg-blue-400',
+    node: 'bg-blue-500/15 border-blue-400/40 text-blue-400',
+    nodeActive: 'bg-blue-500 border-blue-300 text-white shadow-[0_0_24px_rgba(59,130,246,0.55)]',
+    text: 'text-blue-400',
+  },
+  completed: {
+    label: 'Completed',
+    dot: 'bg-emerald-400',
+    node: 'bg-emerald-500/15 border-emerald-400/40 text-emerald-400',
+    nodeActive: 'bg-emerald-500 border-emerald-300 text-white shadow-[0_0_24px_rgba(16,185,129,0.55)]',
+    text: 'text-emerald-400',
+  },
+};
 
 // Car tint jobs are same-day work — accepted before 3pm means done today,
 // no date to pick. Accepted at/after 3pm, the installer can choose to bring
@@ -51,6 +83,8 @@ export default function GarageInstallerJobs() {
   const currentUser = useStore((s) => s.currentUser);
   const [pending, setPending] = useState<JobCard[]>([]);
   const [accepted, setAccepted] = useState<JobCard[]>([]);
+  const [completed, setCompleted] = useState<JobCard[]>([]);
+  const [activeStage, setActiveStage] = useState<StageKey>('pending');
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -65,16 +99,24 @@ export default function GarageInstallerJobs() {
   const load = () => {
     if (!service) return;
     setLoading(true);
-    Promise.all([listPendingInstallerJobs(service as GarageService), listAcceptedInstallerJobs(service as GarageService)])
-      .then(async ([p, a]) => {
-        const [pCards, aCards] = await Promise.all([buildCards(p), buildCards(a)]);
+    Promise.all([
+      listPendingInstallerJobs(service as GarageService),
+      listAcceptedInstallerJobs(service as GarageService),
+      listCompletedInstallerJobs(service as GarageService),
+    ])
+      .then(async ([p, a, c]) => {
+        const [pCards, aCards, cCards] = await Promise.all([buildCards(p), buildCards(a), buildCards(c)]);
         setPending(pCards);
         setAccepted(aCards);
+        setCompleted(cCards);
       })
       .finally(() => setLoading(false));
   };
 
   useEffect(load, [service]);
+
+  const stageJobs: Record<StageKey, JobCard[]> = { pending, accepted, completed };
+  const activeJobs = stageJobs[activeStage];
 
   const openAcceptModal = (card: JobCard) => {
     setEstimateTime('');
@@ -154,7 +196,12 @@ export default function GarageInstallerJobs() {
               {tintOrder.fullSeries && ` · ${TINT_SERIES_LABEL[tintOrder.fullSeries]}`}
             </div>
           )}
-          {job.estimatedCompleteAt && (
+          {job.completedAt ? (
+            <div className="flex items-center gap-2.5 text-white/70 sm:col-span-2">
+              <Clock3 size={14} className="text-white/30 shrink-0" />
+              Completed {new Date(job.completedAt).toLocaleString('en-MY', { dateStyle: 'medium', timeStyle: 'short' })}
+            </div>
+          ) : job.estimatedCompleteAt && (
             <div className="flex items-center gap-2.5 text-white/70 sm:col-span-2">
               <Clock3 size={14} className="text-white/30 shrink-0" />
               Est. complete {new Date(job.estimatedCompleteAt).toLocaleString('en-MY', { dateStyle: 'medium', timeStyle: 'short' })}
@@ -173,47 +220,61 @@ export default function GarageInstallerJobs() {
     );
   };
 
+  const STAGE_ORDER: StageKey[] = ['pending', 'accepted', 'completed'];
+
+  const stageAction = (stage: StageKey, card: JobCard): { label: string; busyLabel: string; icon: typeof CheckCircle2; onClick: () => void } => {
+    if (stage === 'pending') return { label: 'Accept Job', busyLabel: 'Accepting…', icon: CheckCircle2, onClick: () => openAcceptModal(card) };
+    if (stage === 'accepted') return { label: 'View & Complete', busyLabel: '', icon: ArrowRight, onClick: () => navigate(`/garage/installer/job/${card.job.id}`) };
+    return { label: 'View', busyLabel: '', icon: Eye, onClick: () => navigate(`/garage/installer/job/${card.job.id}`) };
+  };
+
+  const EMPTY_TEXT: Record<StageKey, string> = {
+    pending: 'No jobs waiting right now',
+    accepted: 'Nothing in progress right now',
+    completed: 'Nothing completed yet',
+  };
+
   return (
     <GarageShell title={`${meta?.label ?? 'Service'} Work Flow`} showBack backTo="/garage/installer">
-      <div className="max-w-2xl mx-auto space-y-10">
-        <div>
-          <div className="flex items-center gap-2.5 mb-6">
-            <ClipboardList size={18} className="text-gold-400" />
-            <h2 className="font-display text-lg text-white font-semibold tracking-wide">Incoming Orders</h2>
-          </div>
+      <div className="max-w-2xl mx-auto space-y-8">
+        {/* Pipeline — one clickable, coloured stage per step */}
+        <div className="flex items-start">
+          {STAGE_ORDER.map((stage, i) => {
+            const cfg = STAGE_CONFIG[stage];
+            const isActive = activeStage === stage;
+            return (
+              <div key={stage} className={i === 0 ? 'flex items-start' : 'flex items-start flex-1'}>
+                {i > 0 && (
+                  <div className="flex-1 h-0.5 mt-7 rounded-full bg-white/10" />
+                )}
+                <button
+                  onClick={() => setActiveStage(stage)}
+                  className="flex flex-col items-center gap-2 shrink-0 px-1"
+                >
+                  <div className={`w-14 h-14 rounded-full flex items-center justify-center font-display font-bold text-lg border-2 transition-all duration-200 ${isActive ? cfg.nodeActive : `${cfg.node} hover:opacity-90`}`}>
+                    {stageJobs[stage].length}
+                  </div>
+                  <span className={`text-xs font-medium whitespace-nowrap ${isActive ? cfg.text : 'text-white/40'}`}>{cfg.label}</span>
+                </button>
+              </div>
+            );
+          })}
+        </div>
 
+        <div>
           {loading ? (
             <p className="text-white/40 text-sm text-center py-10">Loading…</p>
-          ) : pending.length === 0 ? (
+          ) : activeJobs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <div className="relative mb-5 flex items-center justify-center">
                 <div className="absolute w-20 h-20 rounded-full bg-gold-400/10 blur-xl" />
                 <ClipboardList size={34} strokeWidth={1.5} className="relative text-gold-400/70" />
               </div>
-              <p className="text-white/40 text-sm">No jobs waiting right now</p>
+              <p className="text-white/40 text-sm">{EMPTY_TEXT[activeStage]}</p>
             </div>
           ) : (
             <div className="space-y-4">
-              {pending.map((c) => renderCard(c, {
-                label: 'Accept Job', busyLabel: 'Accepting…', icon: CheckCircle2, onClick: () => openAcceptModal(c),
-              }))}
-            </div>
-          )}
-        </div>
-
-        <div>
-          <div className="flex items-center gap-2.5 mb-6">
-            <Wrench size={18} className="text-gold-400" />
-            <h2 className="font-display text-lg text-white font-semibold tracking-wide">In Progress</h2>
-          </div>
-
-          {!loading && accepted.length === 0 ? (
-            <p className="text-white/30 text-sm text-center py-10">Nothing accepted yet</p>
-          ) : (
-            <div className="space-y-4">
-              {accepted.map((c) => renderCard(c, {
-                label: 'View & Complete', busyLabel: '', icon: ArrowRight, onClick: () => navigate(`/garage/installer/job/${c.job.id}`),
-              }))}
+              {activeJobs.map((c) => renderCard(c, stageAction(activeStage, c)))}
             </div>
           )}
         </div>
