@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, ArrowLeftRight, LogOut } from 'lucide-react';
 import { useStore } from '../store';
+import Modal from './Modal';
 
 export interface GarageTab {
   label: string;
@@ -27,6 +28,7 @@ export default function GarageShell({
   const logout = useStore((s) => s.logout);
   const navigate = useNavigate();
   const location = useLocation();
+  const [confirmLogout, setConfirmLogout] = useState(false);
 
   const handleLogout = () => { logout(); navigate('/login'); };
 
@@ -69,7 +71,7 @@ export default function GarageShell({
               </button>
             )}
             <button
-              onClick={handleLogout}
+              onClick={() => setConfirmLogout(true)}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg
                 text-gold-400 hover:text-gold-300 hover:bg-white/5 transition-colors text-sm"
             >
@@ -104,6 +106,23 @@ export default function GarageShell({
           {children}
         </main>
       </div>
+
+      <Modal isOpen={confirmLogout} onClose={() => setConfirmLogout(false)} title="Log Out?" maxWidth="max-w-sm">
+        <p className="text-gray-300 text-sm leading-relaxed">
+          Are you sure you want to log out?
+        </p>
+        <div className="flex gap-3 mt-5">
+          <button onClick={() => setConfirmLogout(false)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">
+            Cancel
+          </button>
+          <button
+            onClick={handleLogout}
+            className="flex-1 px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors"
+          >
+            Log Out
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }
