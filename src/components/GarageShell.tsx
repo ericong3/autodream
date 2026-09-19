@@ -41,7 +41,10 @@ export default function GarageShell({
       <div className="fixed inset-0 bg-gradient-to-b from-black/40 via-transparent to-obsidian-950" />
 
       <div className="relative z-10 min-h-screen flex flex-col">
-        <header className="flex items-center justify-between px-5 sm:px-8 py-4 border-b border-white/[0.06] backdrop-blur-sm">
+        <header
+          className="flex items-center justify-between px-5 sm:px-8 pb-4 border-b border-white/[0.06] backdrop-blur-sm"
+          style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top, 0px))' }}
+        >
           <div className="flex items-center gap-3">
             {showBack && (
               <button
