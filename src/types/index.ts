@@ -169,7 +169,9 @@ export interface User {
   password: string;
   role: 'director' | 'salesperson' | 'mechanic' | 'admin' | 'investor' | 'shareholder' | 'banker'
     // Garage-side roles — director/shareholder above are reused as-is for Garage too.
-    | 'garage_salesman' | 'garage_installer' | 'garage_detailer' | 'garage_spray';
+    // garage_head is director-level access but scoped only to Garage (businessAccess
+    // locked to 'garage'), for someone who runs Garage without touching Used Car.
+    | 'garage_salesman' | 'garage_installer' | 'garage_detailer' | 'garage_spray' | 'garage_head';
   // Optional — missing/undefined means 'used_car' (see rowToUser's default).
   // Kept optional so existing User-creation call sites don't all need updating.
   businessAccess?: BusinessAccess;

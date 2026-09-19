@@ -15,7 +15,7 @@ const MODULES = [
 export default function GarageHome() {
   const navigate = useNavigate();
   const currentUser = useStore((s) => s.currentUser);
-  const isManager = currentUser?.role === 'director' || currentUser?.role === 'shareholder';
+  const isManager = currentUser?.role === 'director' || currentUser?.role === 'shareholder' || currentUser?.role === 'garage_head';
 
   const modules = isManager
     ? [

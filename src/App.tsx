@@ -81,7 +81,7 @@ function RequireGarageManager({ children }: { children: React.ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
   if (!currentUser) return <Navigate to="/login" replace />;
   if (currentUser.businessAccess === 'used_car') return <Navigate to={roleHome(currentUser.role)} replace />;
-  if (currentUser.role !== 'director' && currentUser.role !== 'shareholder') return <Navigate to={garageHome(currentUser.role)} replace />;
+  if (currentUser.role !== 'director' && currentUser.role !== 'shareholder' && currentUser.role !== 'garage_head') return <Navigate to={garageHome(currentUser.role)} replace />;
   return <>{children}</>;
 }
 

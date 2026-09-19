@@ -80,7 +80,7 @@ function blankDraft(date: Date, startHour?: number): DraftAppointment {
 export default function GarageCalendar() {
   const currentUser = useStore((s) => s.currentUser);
   const allUsers = useStore((s) => s.users);
-  const isManager = currentUser?.role === 'director' || currentUser?.role === 'shareholder';
+  const isManager = currentUser?.role === 'director' || currentUser?.role === 'shareholder' || currentUser?.role === 'garage_head';
   const garageSalesmen = useMemo(
     () => allUsers.filter((u) => u.businessAccess === 'garage' && u.role === 'garage_salesman'),
     [allUsers],

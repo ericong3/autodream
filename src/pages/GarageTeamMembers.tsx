@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   Plus, Edit, Trash2, Users, AlertCircle, Shield, TrendingUp,
-  UserCheck, Layers, Sparkles, SprayCan, KeyRound,
+  UserCheck, Layers, Sparkles, SprayCan, KeyRound, Crown,
 } from 'lucide-react';
 import { useStore } from '../store';
 import type { User, BusinessAccess } from '../types';
@@ -31,11 +31,12 @@ function FormField({
   );
 }
 
-type GarageRole = 'director' | 'shareholder' | 'garage_salesman' | 'garage_installer' | 'garage_detailer' | 'garage_spray';
+type GarageRole = 'director' | 'shareholder' | 'garage_head' | 'garage_salesman' | 'garage_installer' | 'garage_detailer' | 'garage_spray';
 
 const GARAGE_ROLE_CONFIG: Record<GarageRole, { label: string; icon: typeof Shield; badgeBg: string; avatarBg: string }> = {
   director: { label: 'Director', icon: Shield, badgeBg: 'bg-purple-500/20 border-purple-500/30 text-purple-400', avatarBg: 'bg-purple-500/20 border-purple-500/30 text-purple-400' },
   shareholder: { label: 'Shareholder', icon: TrendingUp, badgeBg: 'bg-cyan-500/20 border-cyan-500/30 text-cyan-400', avatarBg: 'bg-cyan-500/20 border-cyan-500/30 text-cyan-400' },
+  garage_head: { label: 'Tint & Coat Head', icon: Crown, badgeBg: 'bg-rose-500/20 border-rose-500/30 text-rose-400', avatarBg: 'bg-rose-500/20 border-rose-500/30 text-rose-400' },
   garage_salesman: { label: 'Salesman', icon: UserCheck, badgeBg: 'bg-gold-500/20 border-gold-500/30 text-gold-400', avatarBg: 'bg-gold-500/20 border-gold-500/30 text-gold-400' },
   garage_installer: { label: 'Installer (Tint)', icon: Layers, badgeBg: 'bg-blue-500/20 border-blue-500/30 text-blue-400', avatarBg: 'bg-blue-500/20 border-blue-500/30 text-blue-400' },
   garage_detailer: { label: 'Detailer (Coating)', icon: Sparkles, badgeBg: 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400', avatarBg: 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400' },
@@ -96,7 +97,7 @@ export default function GarageTeamMembers() {
   const handleSubmit = () => {
     if (!validate()) return;
     const isDirectorLike = form.role === 'director' || form.role === 'shareholder';
-    const businessAccess: BusinessAccess = isDirectorLike ? 'both' : form.businessAccess;
+    const businessAccess: BusinessAccess = isDirectorLike ? 'both' : form.role === 'garage_head' ? 'garage' : form.businessAccess;
     const target = editTarget;
     setShowModal(false);
     setEditTarget(null);
@@ -266,11 +267,17 @@ export default function GarageTeamMembers() {
                 const cfg = GARAGE_ROLE_CONFIG[role];
                 const selected = form.role === role;
                 const isDirectorLike = role === 'director' || role === 'shareholder';
+                const isGarageHead = role === 'garage_head';
                 return (
                   <button
                     key={role}
                     type="button"
-                    onClick={() => setForm({ ...form, role, ...(isDirectorLike ? { businessAccess: 'both' as BusinessAccess } : {}) })}
+                    onClick={() => setForm({
+                      ...form,
+                      role,
+                      ...(isDirectorLike ? { businessAccess: 'both' as BusinessAccess } : {}),
+                      ...(isGarageHead ? { businessAccess: 'garage' as BusinessAccess } : {}),
+                    })}
                     className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
                       selected ? cfg.badgeBg.replace('/20', '/25') : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:text-gray-200 hover:border-gray-600'
                     }`}
@@ -286,7 +293,7 @@ export default function GarageTeamMembers() {
           <FormField label="Business Access">
             <div className="grid grid-cols-3 gap-2">
               {BUSINESS_OPTIONS.map((opt) => {
-                const locked = form.role === 'director' || form.role === 'shareholder';
+                const locked = form.role === 'director' || form.role === 'shareholder' || form.role === 'garage_head';
                 const selected = form.businessAccess === opt.value;
                 return (
                   <button
@@ -305,6 +312,9 @@ export default function GarageTeamMembers() {
             </div>
             {(form.role === 'director' || form.role === 'shareholder') && (
               <p className="text-gray-500 text-[11px] mt-1.5">Directors &amp; shareholders always have access to both businesses.</p>
+            )}
+            {form.role === 'garage_head' && (
+              <p className="text-gray-500 text-[11px] mt-1.5">Tint &amp; Coat Head has full manager access within Garage only.</p>
             )}
           </FormField>
         </div>
