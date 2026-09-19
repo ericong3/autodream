@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Wrench, Users, Layers, Sparkles, SprayCan, Settings2, ClipboardList, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Wrench, Users, Layers, Sparkles, SprayCan, Settings2, ClipboardList, CalendarDays, ChevronRight } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import { useStore } from '../store';
 
@@ -20,6 +20,7 @@ export default function GarageHome() {
   const modules = isManager
     ? [
         ...MODULES,
+        { key: 'calendar', label: 'Calendar', desc: 'All salesmen appointments', icon: CalendarDays, path: '/garage/calendar', active: true },
         { key: 'installer-jobs', label: 'Installer Job Queue', desc: 'Pending & in-progress tint jobs', icon: ClipboardList, path: '/garage/installer', active: true },
         { key: 'tint-pricing', label: 'Tint Pricing', desc: 'Package & VLT price grid', icon: Settings2, path: '/garage/tint-pricing', active: true },
       ]

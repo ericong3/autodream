@@ -32,6 +32,22 @@ export interface GarageVehicle {
 
 export type GarageService = 'tinted' | 'coating' | 'ppf' | 'spray';
 
+// Garage's own appointment calendar — separate from the Used Car side's
+// shared Test Drive calendar. Each salesman books their own customer
+// appointments here; service decides the color on the calendar grid.
+export interface GarageAppointment {
+  id: string;
+  customerId: string;
+  vehicleId?: string;
+  service: GarageService;
+  title?: string;
+  notes?: string;
+  startsAt: string;
+  endsAt: string;
+  createdBy?: string;
+  createdAt: string;
+}
+
 // Tint package config — Full Package applies one series to every window at
 // a size-based auto price; Mix & Match prices each glass position on its
 // own series + VLT (darkness) choice.

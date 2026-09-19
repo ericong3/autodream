@@ -12,6 +12,7 @@ export interface GarageTab {
 export const SALESMAN_TABS: GarageTab[] = [
   { label: 'Dashboard', path: '/garage/dashboard' },
   { label: 'Sales Tools', path: '/garage/sales-tools' },
+  { label: 'Calendar', path: '/garage/calendar' },
 ];
 
 // Shared chrome for every Garage page — cinematic background + a light
