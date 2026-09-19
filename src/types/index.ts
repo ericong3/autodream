@@ -160,6 +160,31 @@ export interface GarageInstallerJob {
   // to finish, so the salesman/customer have a rough ETA.
   estimatedCompleteAt?: string;
   completedAt?: string;
+  remark?: string;
+}
+
+// One row per glass piece being worked on a tinted job — which installer
+// did it and how much film (sqft) it used. Positions are seeded from the
+// tint order's own selections/extras (see GarageTintOrder), not a fixed
+// 8-piece layout, so a Standard car's 4 positions and an X-Large's extras
+// both work the same way.
+export interface GarageTintInstallationPiece {
+  id: string;
+  invoiceId: string;
+  position: GlassPosition | ExtraGlassKey;
+  installerId?: string;
+  sqft?: number;
+  updatedAt: string;
+}
+
+// Film roll stock, one row per tint series — used to show remaining film
+// and a low-stock warning on the job execution page as sqft gets logged.
+export interface GarageFilmStock {
+  series: TintSeries;
+  rollSqft: number;
+  remainingSqft: number;
+  lowStockThreshold: number;
+  updatedAt: string;
 }
 
 export interface User {

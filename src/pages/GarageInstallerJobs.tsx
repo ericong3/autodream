@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ClipboardList, Car, User, Layers, CheckCircle2, Wrench, Clock3, CalendarClock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ClipboardList, Car, User, Layers, CheckCircle2, ArrowRight, Wrench, Clock3, CalendarClock } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import Modal from '../components/Modal';
 import DayTimelinePicker from '../components/DayTimelinePicker';
 import { useStore } from '../store';
-import { listPendingInstallerJobs, listAcceptedInstallerJobs, acceptInstallerJob, completeInstallerJob } from '../lib/garageInstallerJobs';
+import { listPendingInstallerJobs, listAcceptedInstallerJobs, acceptInstallerJob } from '../lib/garageInstallerJobs';
 import { getGarageInvoice } from '../lib/garageInvoices';
 import { getGarageVehicle, getGarageCustomer } from '../lib/garageCustomers';
 import { getTintOrder } from '../lib/garageTint';
@@ -45,6 +46,7 @@ async function buildCards(jobs: GarageInstallerJob[]): Promise<JobCard[]> {
 }
 
 export default function GarageInstallerJobs() {
+  const navigate = useNavigate();
   const currentUser = useStore((s) => s.currentUser);
   const [pending, setPending] = useState<JobCard[]>([]);
   const [accepted, setAccepted] = useState<JobCard[]>([]);
@@ -108,17 +110,7 @@ export default function GarageInstallerJobs() {
       .filter((m) => isSameDay(m.time, target));
   }, [accepted, currentUser, bringForward]);
 
-  const handleComplete = async (jobId: string) => {
-    setBusyId(jobId);
-    try {
-      await completeInstallerJob(jobId);
-      setAccepted((prev) => prev.filter((c) => c.job.id !== jobId));
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const renderCard = ({ job, invoice, vehicle, customer, tintOrder }: JobCard, action: { label: string; busyLabel: string; onClick: () => void }) => {
+  const renderCard = ({ job, invoice, vehicle, customer, tintOrder }: JobCard, action: { label: string; busyLabel: string; icon: typeof CheckCircle2; onClick: () => void }) => {
     const meta = GARAGE_SERVICE_MAP[invoice.service];
     return (
       <div
@@ -171,7 +163,7 @@ export default function GarageInstallerJobs() {
           disabled={busyId === job.id}
           className="w-full flex items-center justify-center gap-2 btn-gold py-2.5 rounded-xl text-sm disabled:opacity-60"
         >
-          <CheckCircle2 size={15} /> {busyId === job.id ? action.busyLabel : action.label}
+          <action.icon size={15} /> {busyId === job.id ? action.busyLabel : action.label}
         </button>
       </div>
     );
@@ -199,7 +191,7 @@ export default function GarageInstallerJobs() {
           ) : (
             <div className="space-y-4">
               {pending.map((c) => renderCard(c, {
-                label: 'Accept Job', busyLabel: 'Accepting…', onClick: () => openAcceptModal(c),
+                label: 'Accept Job', busyLabel: 'Accepting…', icon: CheckCircle2, onClick: () => openAcceptModal(c),
               }))}
             </div>
           )}
@@ -216,7 +208,7 @@ export default function GarageInstallerJobs() {
           ) : (
             <div className="space-y-4">
               {accepted.map((c) => renderCard(c, {
-                label: 'Mark Complete', busyLabel: 'Marking…', onClick: () => handleComplete(c.job.id),
+                label: 'View & Complete', busyLabel: '', icon: ArrowRight, onClick: () => navigate(`/garage/installer/job/${c.job.id}`),
               }))}
             </div>
           )}
