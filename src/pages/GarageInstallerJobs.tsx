@@ -170,7 +170,7 @@ export default function GarageInstallerJobs() {
   };
 
   return (
-    <GarageShell title="Job Queue" showBack>
+    <GarageShell title="Work Flow" showBack>
       <div className="max-w-2xl mx-auto space-y-10">
         <div>
           <div className="flex items-center gap-2.5 mb-6">

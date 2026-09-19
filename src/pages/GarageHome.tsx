@@ -18,7 +18,7 @@ export default function GarageHome() {
     ? [
         ...MODULES,
         { key: 'calendar', label: 'Calendar', desc: 'All salesmen appointments', icon: CalendarDays, path: '/garage/calendar', active: true },
-        { key: 'installer-jobs', label: 'Installer Job Queue', desc: 'Pending & in-progress tint jobs', icon: ClipboardList, path: '/garage/installer', active: true },
+        { key: 'installer-jobs', label: 'Work Flow', desc: 'Pending & in-progress tint jobs', icon: ClipboardList, path: '/garage/installer', active: true },
         { key: 'work-order-tracking', label: 'Work Order Tracking', desc: 'Tinted, Coating, PPF & Spray', icon: FolderKanban, path: '/garage/work-order-tracking', active: true },
         { key: 'tint-pricing', label: 'Tint Pricing', desc: 'Package & VLT price grid', icon: Settings2, path: '/garage/tint-pricing', active: true },
       ]
