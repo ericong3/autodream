@@ -44,7 +44,13 @@ export function calcConsignmentPayoutAmount(car: Car, dealPrice: number): number
   const c = car.consignment;
   if (!c) return 0;
   if (c.terms === 'fixed_amount' && c.fixedAmount) return Math.max(0, c.fixedAmount - (car.settlementAmount ?? 0));
-  if (c.terms === 'profit_split' && c.splitPercent) return Math.max(0, (dealPrice - car.purchasePrice) * (c.splitPercent / 100));
+  // Profit split still returns the consignor their purchase price back —
+  // the split percentage only applies to the profit on top of that, not
+  // the whole sale price.
+  if (c.terms === 'profit_split' && c.splitPercent) {
+    const profit = dealPrice - car.purchasePrice;
+    return Math.max(0, (car.purchasePrice - (car.settlementAmount ?? 0)) + profit * (c.splitPercent / 100));
+  }
   return 0;
 }
 

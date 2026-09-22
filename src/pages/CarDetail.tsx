@@ -46,7 +46,7 @@ import { Car, RepairJob, ChecklistItem, DEFAULT_CHECKLIST_LABELS, WorkOrderItem 
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, formatMileage, generateId, shortName } from '../utils/format';
-import { generateDeliveryPayments, generateMiscCostPayment, generatePanelChargePayment } from '../utils/generatePayments';
+import { generateDeliveryPayments, generateMiscCostPayment, generatePanelChargePayment, calcConsignmentPayoutAmount, calcDealPrice } from '../utils/generatePayments';
 import { completeRepairJob } from '../utils/completeRepair';
 import { buildCarSaleEntry, buildPayableRecognizedEntry, buildCarCostRecognizedEntry, buildSettlementRecognizedEntry, buildTradeInAcquiredEntry, LEDGER_ACCOUNTS } from '../utils/generateJournalEntries';
 import { getCaseCompletion } from '../utils/caseCompletion';
@@ -529,12 +529,24 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     const newlyAddedSettlement = (editForm.settlementAmount ?? 0) > 0
       && !(car.settlementAmount ?? 0)
       && !payments.some(p => p.type === 'purchase_settlement' && p.carId === car.id);
-    await updateCar(car.id, {
-      ...editForm,
-      consignment: editForm.consignment?.terms === 'fixed_amount'
-        ? { ...editForm.consignment, fixedAmount: editForm.purchasePrice || 0 }
-        : editForm.consignment,
-    });
+    const savedConsignment = editForm.consignment?.terms === 'fixed_amount'
+      ? { ...editForm.consignment, fixedAmount: editForm.purchasePrice || 0 }
+      : editForm.consignment;
+    await updateCar(car.id, { ...editForm, consignment: savedConsignment });
+    // generateDeliveryPayments only creates the consignment payout once, at
+    // delivery — it never revisits it, so editing terms/purchase price
+    // afterward silently left an already-created pending payout showing the
+    // old amount. Keep it in sync here instead.
+    if (savedConsignment) {
+      const pendingPayout = payments.find(p => p.type === 'consignment_payout' && p.carId === car.id && p.status === 'pending');
+      if (pendingPayout) {
+        const updatedCar: Car = { ...car, ...editForm, consignment: savedConsignment };
+        const amount = calcConsignmentPayoutAmount(updatedCar, calcDealPrice(updatedCar, customers));
+        if (amount !== pendingPayout.amount) {
+          await updatePayment(pendingPayout.id, { amount });
+        }
+      }
+    }
     if (newlyAddedSettlement && currentUser) {
       await addPayment({
         id: generateId(), type: 'purchase_settlement', carId: car.id,
