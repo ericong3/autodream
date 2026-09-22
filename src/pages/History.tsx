@@ -385,6 +385,28 @@ export default function History() {
   const getConsignmentPaid = (car: typeof cars[0]) =>
     car.consignment ? payments.find(p => p.type === 'consignment_payout' && p.carId === car.id && p.status === 'transferred') : undefined;
 
+  // The four money-pipeline stages a delivered car moves through — the same
+  // stages the "Money received" button and the "Pay dealer" button below
+  // already encode one click at a time, surfaced here as a single filterable
+  // value so a director can jump straight to "what needs action" instead of
+  // scanning every delivered card.
+  type MoneyStage = 'awaiting' | 'processing' | 'payout' | 'settled';
+  const getMoneyStage = (car: typeof cars[0]): MoneyStage => {
+    const { type } = getPaymentType(car);
+    if (!car.moneyReceived) {
+      return (type !== 'cash' && car.disbursementStatus === 'processing') ? 'processing' : 'awaiting';
+    }
+    if (car.consignment && !getConsignmentPaid(car)) return 'payout';
+    return 'settled';
+  };
+  const [moneyStageFilter, setMoneyStageFilter] = useState<'all' | MoneyStage>('all');
+  const moneyStageCounts = useMemo(() => {
+    const counts: Record<MoneyStage, number> = { awaiting: 0, processing: 0, payout: 0, settled: 0 };
+    for (const c of soldCars) counts[getMoneyStage(c)]++;
+    return counts;
+  }, [soldCars, payments, customers]);
+  const filterByStage = <T extends typeof cars[0]>(list: T[]): T[] =>
+    moneyStageFilter === 'all' ? list : list.filter(c => getMoneyStage(c) === moneyStageFilter);
 
   const getSalesperson = (id?: string) => {
     const name = id ? users.find((u) => u.id === id)?.name : undefined;
@@ -395,7 +417,7 @@ export default function History() {
     ? new Date(monthFilter + '-01').toLocaleString('en-MY', { month: 'long', year: 'numeric' })
     : '';
 
-  const hasFilters = search || filterMake !== 'All';
+  const hasFilters = search || filterMake !== 'All' || moneyStageFilter !== 'all';
 
   if (selectedCarId) {
     return (
@@ -473,6 +495,37 @@ export default function History() {
         {isDirectorView && <StatCard title="Total Profit" value={formatRM(totalProfit)} icon={TrendingUp} borderColor="border-l-yellow-400" iconColor="text-yellow-400" />}
       </div>
 
+      {/* ── Money stage filter — where each delivered car sits in the
+          Submit → Processing → Disbursed → (consignment) Pay Dealer chain,
+          so a director can jump straight to what still needs action. ── */}
+      {isDirectorView && (
+        <div className="flex gap-1 rounded-xl bg-obsidian-800/60 border border-obsidian-400/40 p-1 overflow-x-auto">
+          {([
+            { key: 'all',        label: 'All',                     icon: null,          count: soldCars.length },
+            { key: 'awaiting',   label: 'Awaiting Disbursement',    icon: Banknote,      count: moneyStageCounts.awaiting },
+            { key: 'processing', label: 'Processing',               icon: Clock,         count: moneyStageCounts.processing },
+            { key: 'payout',     label: 'Awaiting Dealer Payout',   icon: HeartHandshake, count: moneyStageCounts.payout },
+            { key: 'settled',    label: 'Settled',                  icon: CheckCircle,  count: moneyStageCounts.settled },
+          ] as { key: 'all' | MoneyStage; label: string; icon: any; count: number }[]).map(({ key, label, icon: Icon, count }) => (
+            <button
+              key={key}
+              onClick={() => setMoneyStageFilter(key)}
+              className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap ${
+                moneyStageFilter === key ? 'bg-gold-gradient text-obsidian-950 font-bold shadow-gold-sm' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              {Icon && <Icon size={11} />}
+              {label}
+              {count > 0 && (
+                <span className={`text-[10px] px-1.5 rounded-full font-bold ${moneyStageFilter === key ? 'bg-obsidian-900/60 text-gold-400' : 'bg-gold-500/20 text-gold-400'}`}>
+                  {count}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* ── Sticky filter bar ── */}
       <div className="sticky top-0 z-10 bg-obsidian-950/95 backdrop-blur-sm -mx-4 px-4 md:-mx-6 md:px-6 py-3 border-b border-obsidian-400/20">
         <div className="flex flex-wrap gap-3 items-center">
@@ -543,9 +596,9 @@ export default function History() {
       </div>
 
       {/* Count */}
-      {!initialLoad && soldCars.length > 0 && (
+      {!initialLoad && filterByStage(soldCars).length > 0 && (
         <p className="text-gray-500 text-sm">
-          <span className="text-white font-medium">{soldCars.length}</span> delivered unit{soldCars.length !== 1 ? 's' : ''}
+          <span className="text-white font-medium">{filterByStage(soldCars).length}</span> delivered unit{filterByStage(soldCars).length !== 1 ? 's' : ''}
           {monthLabel && <span className="ml-1">in {monthLabel}</span>}
         </p>
       )}
@@ -563,7 +616,7 @@ export default function History() {
       )}
 
       {/* ── Empty state ── */}
-      {!initialLoad && soldCars.length === 0 && (
+      {!initialLoad && filterByStage(soldCars).length === 0 && (
         <div className="flex flex-col items-center justify-center py-24 text-center">
           <div className="w-16 h-16 rounded-2xl bg-obsidian-800/80 border border-obsidian-400/40 flex items-center justify-center mb-4">
             <CarIcon size={28} className="text-gray-600" />
@@ -574,7 +627,7 @@ export default function History() {
           </p>
           {hasFilters && (
             <button
-              onClick={() => { setSearch(''); setFilterMake('All'); }}
+              onClick={() => { setSearch(''); setFilterMake('All'); setMoneyStageFilter('all'); }}
               className="mt-4 px-4 py-2 rounded-lg bg-obsidian-700/60 border border-obsidian-400/40 text-gray-300 hover:text-white hover:border-gold-500/30 text-sm transition-colors flex items-center gap-2"
             >
               <SlidersHorizontal size={14} /> Clear Filters
@@ -584,10 +637,10 @@ export default function History() {
       )}
 
       {/* ── Grid view ── */}
-      {!initialLoad && view === 'grid' && soldCars.length > 0 && (
-        <SortableContext items={orderedCars.map(c => c.id)} strategy={rectSortingStrategy}>
+      {!initialLoad && view === 'grid' && filterByStage(soldCars).length > 0 && (
+        <SortableContext items={filterByStage(orderedCars).map(c => c.id)} strategy={rectSortingStrategy}>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {orderedCars.map((car, idx) => {
+          {filterByStage(orderedCars).map((car, idx) => {
             const dealPrice = carCalcMap[car.id]?.dealNetPrice ?? car.sellingPrice;
             const profit = carCalcMap[car.id]?.profit;
             const staggerCls = `stagger-enter stagger-${Math.min(idx + 1, 12)}`;
@@ -752,9 +805,9 @@ export default function History() {
       )}
 
       {/* ── List view ── */}
-      {!initialLoad && view === 'list' && soldCars.length > 0 && (
+      {!initialLoad && view === 'list' && filterByStage(soldCars).length > 0 && (
         <div className="space-y-2">
-          {soldCars.map((car, idx) => {
+          {filterByStage(soldCars).map((car, idx) => {
             const dealPrice = carCalcMap[car.id]?.dealNetPrice ?? car.sellingPrice;
             const profit = carCalcMap[car.id]?.profit;
             return (
