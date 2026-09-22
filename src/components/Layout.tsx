@@ -91,6 +91,13 @@ export default function Layout() {
   const drainToastQueue = useStore((s) => s.drainToastQueue);
   const navigate = useNavigate();
   const location = useLocation();
+  // Pages where a list view and its own inline detail view are really the
+  // same screen (Delivered's card -> car detail -> "Back to Delivered") —
+  // keying the page-in animation by the full pathname was remounting the
+  // whole page on that round trip, silently wiping its search/tab/filter
+  // state. These share one animation key with their list route instead.
+  const STABLE_KEY_PREFIXES = ['/history'];
+  const pageKey = STABLE_KEY_PREFIXES.find(p => location.pathname === p || location.pathname.startsWith(`${p}/`)) ?? location.pathname;
   const [showMore, setShowMore] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showCmd, setShowCmd] = useState(false);
@@ -319,7 +326,7 @@ export default function Layout() {
         {/* ── Main content ────────────────────────────────────── */}
         <main
           ref={mainRef}
-          key={location.pathname}
+          key={pageKey}
           className="flex-1 min-h-0 p-4 md:p-6 overflow-auto md:pb-6 animate-page-in"
           style={{
             paddingBottom: 'calc(6rem + env(safe-area-inset-bottom))',

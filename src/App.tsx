@@ -244,8 +244,7 @@ export default function App() {
           <Route path="/data" element={<RequireDataAccess><Data /></RequireDataAccess>} />
           <Route path="/investors" element={<RequireDirector><Investors /></RequireDirector>} />
           <Route path="/dashboard" element={<RequireDirector><Dashboard /></RequireDirector>} />
-          <Route path="/history" element={<History />} />
-          <Route path="/history/:id" element={<History />} />
+          <Route path="/history/:id?" element={<History />} />
           <Route path="/admin-dashboard" element={<RequireAdmin><AdminDashboard /></RequireAdmin>} />
         </Route>
 
