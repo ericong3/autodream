@@ -1994,6 +1994,15 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       // Restore state on failure — only if re-fetch has data
       const { data } = await supabase.from('cars').select('*');
       if (data && data.length > 0) set({ cars: data.map(rowToCar) });
+      // Surfaced to the caller (DeleteConfirmModal) instead of failing
+      // silently — a swallowed error here used to look like "nothing
+      // happened" to whoever clicked Delete, with the car just quietly
+      // reappearing after the refetch above.
+      throw new Error(
+        error.code === '23503'
+          ? "This car still has linked records (repairs, payments, or ledger entries) and can't be deleted while they exist."
+          : error.message
+      );
     } else {
       // Clear orphaned notifications so badge count stays accurate
       supabase.from('notifications').update({ is_read: true }).eq('reference_id', id).then(() => {});

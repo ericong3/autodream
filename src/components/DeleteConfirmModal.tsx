@@ -36,6 +36,8 @@ export default function DeleteConfirmModal({ isOpen, onClose, onConfirm, itemNam
     try {
       await onConfirm();
       onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete. Please try again.');
     } finally {
       setLoading(false);
     }
