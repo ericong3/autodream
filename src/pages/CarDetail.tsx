@@ -5,6 +5,22 @@ import { thumbUrl } from '../utils/photoUrl';
 import Lightbox from '../components/Lightbox';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
+  DndContext,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  horizontalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import {
   ArrowLeft,
   Car as CarIcon,
   Edit,
@@ -120,6 +136,31 @@ function SectionHeader({ icon: Icon, title, count, color = 'text-gold-400' }: { 
       {count !== undefined && (
         <span className="bg-obsidian-700/60 text-gray-400 text-xs px-2 py-0.5 rounded-full">{count}</span>
       )}
+    </div>
+  );
+}
+
+// Drag-to-reorder wrapper for a gallery thumbnail — a short tap still fires
+// onClick (PointerSensor's activationConstraint distance lets that through
+// without starting a drag), so the same thumbnail keeps working as a page
+// selector in edit mode, not just a drag handle.
+function SortableThumb({ id, dragEnabled, children }: { id: string; dragEnabled: boolean; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled: !dragEnabled });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.3 : 1,
+        touchAction: 'none',
+      }}
+      {...(dragEnabled ? attributes : {})}
+      {...(dragEnabled ? listeners : {})}
+      className={dragEnabled ? 'cursor-grab active:cursor-grabbing' : ''}
+      onDragStart={(e) => e.preventDefault()}
+    >
+      {children}
     </div>
   );
 }
@@ -379,6 +420,23 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     a.href = src;
     a.download = `${car?.make}-${car?.model}-${car?.year}-photo-${idx + 1}.jpg`;
     a.click();
+  };
+  const photoDragSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+  );
+  // photos[0] doubles as the cover photo (car.photo, used everywhere else in
+  // the app), so reordering here isn't just cosmetic — dragging a photo to
+  // the front makes it the cover shot.
+  const handlePhotoReorder = async ({ active, over }: DragEndEvent) => {
+    if (!car || !over || active.id === over.id) return;
+    const oldIndex = allPhotos.indexOf(active.id as string);
+    const newIndex = allPhotos.indexOf(over.id as string);
+    if (oldIndex === -1 || newIndex === -1) return;
+    const reordered = arrayMove(allPhotos, oldIndex, newIndex);
+    const viewedPhoto = allPhotos[galleryIndex];
+    setGalleryIndex(reordered.indexOf(viewedPhoto));
+    await updateCar(car.id, { photos: reordered, photo: reordered[0] });
   };
 
   const handleReplacePhoto = async (files: FileList | null) => {
@@ -3511,26 +3569,36 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             )}
           </div>
 
-          {/* Thumbnail strip */}
+          {/* Thumbnail strip — draggable to reorder while editing; drag[0] becomes the cover photo */}
           {allPhotos.length > 1 && (
-            <div className="flex gap-2 px-5 pt-4 overflow-x-auto flex-shrink-0" onClick={(e) => e.stopPropagation()}
-              style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}>
-              {allPhotos.map((src, i) => (
-                <button
-                  key={i}
-                  onClick={() => setGalleryIndex(i)}
-                  className={`flex-shrink-0 w-16 h-12 rounded-lg overflow-hidden border-2 transition-colors ${i === galleryIndex ? 'border-gold-400' : 'border-transparent opacity-50 hover:opacity-80'}`}
-                >
-                  <img
-                    src={thumbUrl(src, 200, 70)!}
-                    alt={`thumb-${i}`}
-                    className="w-full h-full object-cover opacity-0 transition-opacity duration-200"
-                    loading="lazy"
-                    onLoad={(e) => e.currentTarget.classList.replace('opacity-0', 'opacity-100')}
-                  />
-                </button>
-              ))}
-            </div>
+            <DndContext sensors={photoDragSensors} collisionDetection={closestCenter} onDragEnd={handlePhotoReorder}>
+              <SortableContext items={allPhotos} strategy={horizontalListSortingStrategy}>
+                {editingPhotos && (
+                  <p className="text-gray-500 text-xs px-5 pt-3 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                    Drag a photo to reorder — the first photo is used as the cover.
+                  </p>
+                )}
+                <div className="flex gap-2 px-5 pt-2 overflow-x-auto flex-shrink-0" onClick={(e) => e.stopPropagation()}
+                  style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}>
+                  {allPhotos.map((src, i) => (
+                    <SortableThumb key={src} id={src} dragEnabled={editingPhotos}>
+                      <button
+                        onClick={() => setGalleryIndex(i)}
+                        className={`flex-shrink-0 w-16 h-12 rounded-lg overflow-hidden border-2 transition-colors ${i === galleryIndex ? 'border-gold-400' : 'border-transparent opacity-50 hover:opacity-80'}`}
+                      >
+                        <img
+                          src={thumbUrl(src, 200, 70)!}
+                          alt={`thumb-${i}`}
+                          className="w-full h-full object-cover opacity-0 transition-opacity duration-200 pointer-events-none"
+                          loading="lazy"
+                          onLoad={(e) => e.currentTarget.classList.replace('opacity-0', 'opacity-100')}
+                        />
+                      </button>
+                    </SortableThumb>
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
           )}
         </div>,
         document.body,
