@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../lib/supabase';
+import { toast } from '../utils/toast';
 import { Car, Customer, LoanWorkOrder, CashWorkOrder, PostSaleChecklist } from '../types';
 import ShipmentsPanel from '../components/ShipmentsPanel';
 import MiniCalendar from '../components/MiniCalendar';
@@ -2676,22 +2677,31 @@ export default function Inventory() {
           await supabase.from('cars').update({ status: 'available', final_deal: null }).eq('id', car.id);
         };
 
-        const handleDelivery = () => {
+        const handleDelivery = async () => {
           const { updateCar } = useStore.getState();
           const wo = buyer.loanWorkOrder ?? buyer.cashWorkOrder;
           const dealPrice = wo ? (wo.sellingPrice - (wo.discount ?? 0)) : (car.sellingPrice ?? 0);
           const commission = (car.isStaffSale || car.waiveCommission) ? 0 : (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
-          updateCustomer(buyer.id, {
-            delivered: true,
-            deliveredAt: new Date().toISOString(),
-            commission,
-            lastActionAt: new Date().toISOString(),
-          });
-          updateCar(car.id, {
-            status: 'delivered',
-            deliveryCollected: true,
-            ...(buyer.assignedSalesId && !car.assignedSalesperson ? { assignedSalesperson: buyer.assignedSalesId } : {}),
-          });
+          try {
+            // Car first — it's what actually pulls the unit out of Stock. These
+            // used to fire independently with no error handling, so a failed
+            // updateCar could leave the deal marked Delivered while the car
+            // silently stayed listed as available stock forever.
+            await updateCar(car.id, {
+              status: 'delivered',
+              deliveryCollected: true,
+              ...(buyer.assignedSalesId && !car.assignedSalesperson ? { assignedSalesperson: buyer.assignedSalesId } : {}),
+            });
+            await updateCustomer(buyer.id, {
+              delivered: true,
+              deliveredAt: new Date().toISOString(),
+              commission,
+              lastActionAt: new Date().toISOString(),
+            });
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : 'Failed to confirm delivery — please try again.');
+            return;
+          }
           setWoViewCar(null);
           setWoDeliveryConfirm(false);
         };

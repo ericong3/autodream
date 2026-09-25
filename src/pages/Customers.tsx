@@ -555,21 +555,32 @@ export default function Customers() {
   const handleDeliveryConfirm = async (c: Customer) => {
     const { cars: allCars, updateCar } = useStore.getState();
     const car = allCars.find(x => x.id === c.interestedCarId);
+    if (!car) {
+      toast.error("Can't confirm delivery — no linked car found for this deal.");
+      return;
+    }
     // Commission auto-calc: profit = selling - purchase - repairs; RM 2k if > 12k else RM 1k
     const wo = c.loanWorkOrder ?? c.cashWorkOrder;
-    const dealPrice = wo ? (wo.sellingPrice - (wo.discount ?? 0)) : (car?.sellingPrice ?? 0);
-    const commission = car?.isStaffSale ? 0 : (car?.consignment || (car?.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
+    const dealPrice = wo ? (wo.sellingPrice - (wo.discount ?? 0)) : (car.sellingPrice ?? 0);
+    const commission = car.isStaffSale ? 0 : (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
 
-    updateCustomer(c.id, {
-      delivered: true,
-      deliveredAt: new Date().toISOString(),
-      deliveryPhoto: deliveryPhotoUrl || undefined,
-      commission,
-      lastActionAt: new Date().toISOString(),
-    });
-    // Auto-update car: sold + deliveryCollected
-    if (car) {
-      updateCar(car.id, { status: 'delivered', deliveryCollected: true, deliveryPhoto: deliveryPhotoUrl || undefined });
+    try {
+      // Car first — it's what actually pulls the unit out of Stock. These
+      // used to fire independently with no error handling, so a failed
+      // updateCar could leave the deal marked Delivered while the car
+      // silently stayed listed as available stock forever, with no way to
+      // retry from the UI once the deal showed Delivered.
+      await updateCar(car.id, { status: 'delivered', deliveryCollected: true, deliveryPhoto: deliveryPhotoUrl || undefined });
+      await updateCustomer(c.id, {
+        delivered: true,
+        deliveredAt: new Date().toISOString(),
+        deliveryPhoto: deliveryPhotoUrl || undefined,
+        commission,
+        lastActionAt: new Date().toISOString(),
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to confirm delivery — please try again.');
+      return;
     }
     setShowDeliveryModal(false);
     setDeliveryPhotoUrl('');
