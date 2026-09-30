@@ -1,14 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  ClipboardList, Car, User, Layers, CheckCircle2, ArrowRight, Eye, Clock3, CalendarClock,
+  ClipboardList, Car, User, Layers, CheckCircle2, ArrowRight, Eye, Clock3, CalendarClock, Timer,
 } from 'lucide-react';
-import GarageShell from '../components/GarageShell';
-import Modal from '../components/Modal';
-import DayTimelinePicker from '../components/DayTimelinePicker';
+import GarageShell, { isGarageManager } from '../components/GarageShell';
 import { useStore } from '../store';
 import {
-  listPendingInstallerJobs, listAcceptedInstallerJobs, listCompletedInstallerJobs, acceptInstallerJob,
+  listPendingInstallerJobs, listAcceptedInstallerJobs, listCompletedInstallerJobs,
 } from '../lib/garageInstallerJobs';
 import { getGarageInvoice } from '../lib/garageInvoices';
 import { getGarageVehicle, getGarageCustomer } from '../lib/garageCustomers';
@@ -48,13 +46,6 @@ const STAGE_CONFIG: Record<StageKey, { label: string; dot: string; node: string;
   },
 };
 
-// Car tint jobs are same-day work — accepted before 3pm means done today,
-// no date to pick. Accepted at/after 3pm, the installer can choose to bring
-// it forward to tomorrow instead of committing to finishing today.
-const CUTOFF_HOUR = 15;
-
-function isSameDay(a: Date, b: Date) { return a.toDateString() === b.toDateString(); }
-
 interface JobCard {
   job: GarageInstallerJob;
   invoice: GarageInvoice;
@@ -84,15 +75,16 @@ export default function GarageInstallerJobs() {
   const [pending, setPending] = useState<JobCard[]>([]);
   const [accepted, setAccepted] = useState<JobCard[]>([]);
   const [completed, setCompleted] = useState<JobCard[]>([]);
-  const [activeStage, setActiveStage] = useState<StageKey>('pending');
   const [loading, setLoading] = useState(true);
-  const [busyId, setBusyId] = useState<string | null>(null);
-
-  const [acceptTarget, setAcceptTarget] = useState<JobCard | null>(null);
-  const [estimateTime, setEstimateTime] = useState('');
-  const [bringForward, setBringForward] = useState(false);
-  const [pastCutoff, setPastCutoff] = useState(false);
-  const [estimateError, setEstimateError] = useState('');
+  // Kept in the URL so accepting a job (or coming back from one) lands on
+  // the right tab.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const stageParam = searchParams.get('stage') as StageKey | null;
+  const activeStage: StageKey = stageParam && stageParam in STAGE_CONFIG ? stageParam : 'pending';
+  const setActiveStage = (stage: StageKey) => setSearchParams({ stage }, { replace: true });
+  // Installers see only the jobs they've accepted; managers oversee
+  // everyone's.
+  const isManager = isGarageManager(currentUser?.role);
 
   const meta = GARAGE_SERVICE_MAP[service as GarageService];
 
@@ -107,56 +99,21 @@ export default function GarageInstallerJobs() {
       .then(async ([p, a, c]) => {
         const [pCards, aCards, cCards] = await Promise.all([buildCards(p), buildCards(a), buildCards(c)]);
         setPending(pCards);
-        setAccepted(aCards);
+        setAccepted(isManager ? aCards : aCards.filter((c) => c.job.acceptedBy === currentUser?.id));
         setCompleted(cCards);
       })
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, [service]);
+  useEffect(load, [service, currentUser?.id]);
 
   const stageJobs: Record<StageKey, JobCard[]> = { pending, accepted, completed };
   const activeJobs = stageJobs[activeStage];
 
-  const openAcceptModal = (card: JobCard) => {
-    setEstimateTime('');
-    setBringForward(false);
-    setPastCutoff(new Date().getHours() >= CUTOFF_HOUR);
-    setEstimateError('');
-    setAcceptTarget(card);
-  };
+  const stageLabel = (stage: StageKey) =>
+    stage === 'accepted' ? (isManager ? 'Assigned' : 'My Jobs') : STAGE_CONFIG[stage].label;
 
-  const handleConfirmAccept = async () => {
-    if (!currentUser || !acceptTarget) return;
-    if (!estimateTime) { setEstimateError('Enter an estimated completion time'); return; }
-    const [h, m] = estimateTime.split(':').map(Number);
-    const target = new Date();
-    if (bringForward) target.setDate(target.getDate() + 1);
-    target.setHours(h, m, 0, 0);
-    setBusyId(acceptTarget.job.id);
-    try {
-      await acceptInstallerJob(acceptTarget.job.id, currentUser.id, target.toISOString());
-      setAcceptTarget(null);
-      load();
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  // This installer's own already-accepted jobs landing on the target day —
-  // shown as context markers on the timeline so they can see their existing
-  // workload while picking a new completion time.
-  const timelineMarkers = useMemo(() => {
-    if (!currentUser) return [];
-    const target = new Date();
-    if (bringForward) target.setDate(target.getDate() + 1);
-    return accepted
-      .filter((c) => c.job.acceptedBy === currentUser.id && c.job.estimatedCompleteAt)
-      .map((c) => ({ id: c.job.id, time: new Date(c.job.estimatedCompleteAt!), label: c.invoice.invoiceNumber }))
-      .filter((m) => isSameDay(m.time, target));
-  }, [accepted, currentUser, bringForward]);
-
-  const renderCard = ({ job, invoice, vehicle, customer, tintOrder }: JobCard, action: { label: string; busyLabel: string; icon: typeof CheckCircle2; onClick: () => void }) => {
+  const renderCard = ({ job, invoice, vehicle, customer, tintOrder }: JobCard, action: { label: string; icon: typeof CheckCircle2; onClick: () => void }) => {
     const meta = GARAGE_SERVICE_MAP[invoice.service];
     return (
       <div
@@ -196,6 +153,22 @@ export default function GarageInstallerJobs() {
               {tintOrder.fullSeries && ` · ${TINT_SERIES_LABEL[tintOrder.fullSeries]}`}
             </div>
           )}
+          {!job.completedAt && invoice.appointmentAt && (
+            <div className="flex items-center gap-2.5 text-white/70 sm:col-span-2">
+              <CalendarClock size={14} className="text-white/30 shrink-0" />
+              Appointment {new Date(invoice.appointmentAt).toLocaleString('en-MY', { dateStyle: 'medium', timeStyle: 'short' })}
+            </div>
+          )}
+          {job.status === 'accepted' && (
+            <div className="flex items-center gap-2.5 text-white/70 sm:col-span-2">
+              <Timer size={14} className="text-white/30 shrink-0" />
+              {job.startedAt
+                ? <span className="text-blue-400">In progress · started {new Date(job.startedAt).toLocaleString('en-MY', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                : invoice.workStatus === 'in_progress'
+                  ? <span className="text-blue-400">In progress</span>
+                  : <span className="text-violet-300">Assigned · not started yet</span>}
+            </div>
+          )}
           {job.completedAt ? (
             <div className="flex items-center gap-2.5 text-white/70 sm:col-span-2">
               <Clock3 size={14} className="text-white/30 shrink-0" />
@@ -211,10 +184,9 @@ export default function GarageInstallerJobs() {
 
         <button
           onClick={action.onClick}
-          disabled={busyId === job.id}
-          className="w-full flex items-center justify-center gap-2 btn-gold py-2.5 rounded-xl text-sm disabled:opacity-60"
+          className="w-full flex items-center justify-center gap-2 btn-gold py-2.5 rounded-xl text-sm"
         >
-          <action.icon size={15} /> {busyId === job.id ? action.busyLabel : action.label}
+          <action.icon size={15} /> {action.label}
         </button>
       </div>
     );
@@ -222,15 +194,21 @@ export default function GarageInstallerJobs() {
 
   const STAGE_ORDER: StageKey[] = ['pending', 'accepted', 'completed'];
 
-  const stageAction = (stage: StageKey, card: JobCard): { label: string; busyLabel: string; icon: typeof CheckCircle2; onClick: () => void } => {
-    if (stage === 'pending') return { label: 'Accept Job', busyLabel: 'Accepting…', icon: CheckCircle2, onClick: () => openAcceptModal(card) };
-    if (stage === 'accepted') return { label: 'View & Complete', busyLabel: '', icon: ArrowRight, onClick: () => navigate(`/garage/installer/job/${card.job.id}`) };
-    return { label: 'View', busyLabel: '', icon: Eye, onClick: () => navigate(`/garage/installer/job/${card.job.id}`) };
+  // Every card opens the job page — incoming jobs are reviewed there before
+  // accepting.
+  const stageAction = (stage: StageKey, card: JobCard): { label: string; icon: typeof CheckCircle2; onClick: () => void } => {
+    const open = () => navigate(`/garage/installer/job/${card.job.id}`);
+    if (stage === 'pending') return { label: 'View & Accept', icon: CheckCircle2, onClick: open };
+    if (stage === 'accepted') {
+      const started = !!card.job.startedAt || card.invoice.workStatus === 'in_progress';
+      return { label: started ? 'Continue Job' : 'View & Start', icon: ArrowRight, onClick: open };
+    }
+    return { label: 'View', icon: Eye, onClick: open };
   };
 
   const EMPTY_TEXT: Record<StageKey, string> = {
     pending: 'No jobs waiting right now',
-    accepted: 'Nothing in progress right now',
+    accepted: isManager ? 'No jobs assigned right now' : "You haven't accepted any jobs yet",
     completed: 'Nothing completed yet',
   };
 
@@ -254,7 +232,7 @@ export default function GarageInstallerJobs() {
                   <div className={`w-14 h-14 rounded-full flex items-center justify-center font-display font-bold text-lg border-2 transition-all duration-200 ${isActive ? cfg.nodeActive : `${cfg.node} hover:opacity-90`}`}>
                     {stageJobs[stage].length}
                   </div>
-                  <span className={`text-xs font-medium whitespace-nowrap ${isActive ? cfg.text : 'text-white/40'}`}>{cfg.label}</span>
+                  <span className={`text-xs font-medium whitespace-nowrap ${isActive ? cfg.text : 'text-white/40'}`}>{stageLabel(stage)}</span>
                 </button>
               </div>
             );
@@ -280,41 +258,6 @@ export default function GarageInstallerJobs() {
         </div>
       </div>
 
-      <Modal isOpen={!!acceptTarget} onClose={() => setAcceptTarget(null)} title="Accept Job">
-        <p className="text-gray-400 text-sm mb-4">
-          {meta?.label ?? 'This'} jobs are completed the same day — what time will {acceptTarget?.invoice.invoiceNumber} be done {bringForward ? 'tomorrow' : 'today'}?
-        </p>
-
-        {pastCutoff && (
-          <button
-            type="button"
-            onClick={() => setBringForward((v) => !v)}
-            className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium border mb-4 transition-colors ${
-              bringForward
-                ? 'bg-gold-500/15 border-gold-400/50 text-gold-400'
-                : 'bg-white/[0.03] border-white/10 text-white/60 hover:text-white/90 hover:border-white/20'
-            }`}
-          >
-            <CalendarClock size={15} /> {bringForward ? 'Bringing Forward to Next Day' : 'Bring Forward to Next Day'}
-          </button>
-        )}
-
-        <label className="block text-gray-300 text-xs font-medium mb-1.5">
-          Estimated Completion Time {bringForward ? '(tomorrow)' : '(today)'}
-        </label>
-        <DayTimelinePicker value={estimateTime} onChange={setEstimateTime} markers={timelineMarkers} />
-        {estimateError && <p className="text-red-400 text-xs mt-2">{estimateError}</p>}
-        <div className="flex gap-3 mt-5">
-          <button onClick={() => setAcceptTarget(null)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
-          <button
-            onClick={handleConfirmAccept}
-            disabled={busyId === acceptTarget?.job.id}
-            className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm disabled:opacity-60"
-          >
-            {busyId === acceptTarget?.job.id ? 'Accepting…' : 'Accept Job'}
-          </button>
-        </div>
-      </Modal>
     </GarageShell>
   );
 }

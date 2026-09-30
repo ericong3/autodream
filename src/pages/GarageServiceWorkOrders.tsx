@@ -1,13 +1,18 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { ClipboardList, Car, User, UserCheck, ChevronRight } from 'lucide-react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { ClipboardList, Car, User, UserCheck, ChevronRight, LayoutGrid, List } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
+import GarageWorkOrderBoard from '../components/GarageWorkOrderBoard';
+import { useWorkOrderActivityUpdates } from '../hooks/useWorkOrderActivityUpdates';
 import { useStore } from '../store';
 import { listInvoicesByService } from '../lib/garageInvoices';
 import { getInstallerJobForInvoice } from '../lib/garageInstallerJobs';
 import { getGarageVehicle, getGarageCustomer } from '../lib/garageCustomers';
 import { GARAGE_SERVICE_MAP } from '../utils/garageServices';
-import { getWorkOrderStage, isWorkOrderClosed, WORK_ORDER_STAGE_LABEL } from '../utils/garageWorkOrderStatus';
+import {
+  getWorkOrderStage, isWorkOrderClosed, WORK_ORDER_STAGE_LABEL, WORK_ORDER_STAGE_BADGE, WORK_ORDER_STAGE_ORDER,
+} from '../utils/garageWorkOrderStatus';
+import { useInstallerJobUpdates } from '../hooks/useInstallerJobUpdates';
 import type { GarageInvoice, GarageVehicle, GarageCustomer, GarageInstallerJob, GarageService } from '../types';
 import type { WorkOrderStage } from '../utils/garageWorkOrderStatus';
 
@@ -19,26 +24,11 @@ interface Row {
   stage: WorkOrderStage;
 }
 
-// Closed stages don't need attention — active ones lead, most-recent first
-// within each group.
-const STAGE_ORDER: Record<WorkOrderStage, number> = {
-  payment_due: 0, ready_for_delivery: 1, in_progress: 2, awaiting_installer: 3,
-  awaiting_payment: 4, ready_for_warranty: 5, closed: 6,
-};
-
-const STAGE_BADGE: Record<WorkOrderStage, string> = {
-  awaiting_payment: 'bg-orange-500/15 border-orange-500/30 text-orange-400',
-  awaiting_installer: 'bg-white/[0.03] border-white/10 text-white/60',
-  in_progress: 'bg-blue-500/15 border-blue-500/30 text-blue-400',
-  payment_due: 'bg-orange-500/15 border-orange-500/30 text-orange-400',
-  ready_for_delivery: 'bg-gold-500/15 border-gold-400/40 text-gold-400',
-  ready_for_warranty: 'bg-gold-500/15 border-gold-400/40 text-gold-400',
-  closed: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400',
-};
-
 // Manager-level oversight — every work order for one service, across every
-// salesman, unlike "My Work Orders" which is scoped to the logged-in
-// salesman's own orders.
+// salesman, unlike "My Pipeline" which is scoped to the logged-in
+// salesman's own orders. Two views of the same work orders: an operational
+// Kanban board (the default for Tinted, which has the full installer
+// pipeline) and the original list.
 export default function GarageServiceWorkOrders() {
   const { service } = useParams<{ service: string }>();
   const navigate = useNavigate();
@@ -46,12 +36,18 @@ export default function GarageServiceWorkOrders() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [showClosed, setShowClosed] = useState(false);
+  // In the URL so opening a card and coming back keeps the chosen view.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const hasBoard = service === 'tinted';
+  const view: 'board' | 'list' = hasBoard && searchParams.get('view') !== 'list' ? 'board' : 'list';
+  const setView = (v: 'board' | 'list') => setSearchParams({ view: v }, { replace: true });
+  const nameOf = (id?: string) => (id ? allUsers.find((u) => u.id === id)?.name : undefined);
 
   const meta = GARAGE_SERVICE_MAP[service as GarageService];
 
-  useEffect(() => {
+  const load = (quiet = false) => {
     if (!service) return;
-    setLoading(true);
+    if (!quiet) setLoading(true);
     listInvoicesByService(service as GarageService)
       .then(async (invoices) => {
         const built = await Promise.all(invoices.map(async (invoice): Promise<Row> => {
@@ -62,11 +58,17 @@ export default function GarageServiceWorkOrders() {
           ]);
           return { invoice, vehicle, customer, job, stage: getWorkOrderStage(invoice, job) };
         }));
-        built.sort((a, b) => STAGE_ORDER[a.stage] - STAGE_ORDER[b.stage]);
+        built.sort((a, b) => WORK_ORDER_STAGE_ORDER[a.stage] - WORK_ORDER_STAGE_ORDER[b.stage]);
         setRows(built);
       })
       .finally(() => setLoading(false));
-  }, [service]);
+  };
+
+  useEffect(() => load(), [service]);
+  // Keep the board live: installer job changes, plus every salesman step
+  // (each records an activity-history entry).
+  useInstallerJobUpdates(() => load(true));
+  useWorkOrderActivityUpdates('all', () => load(true));
 
   const active = rows.filter((r) => !isWorkOrderClosed(r.invoice));
   const closed = rows.filter((r) => isWorkOrderClosed(r.invoice));
@@ -74,12 +76,29 @@ export default function GarageServiceWorkOrders() {
 
   return (
     <GarageShell title={`${meta?.label ?? 'Service'} Work Orders`} showBack backTo="/garage/work-order-tracking">
-      <div className="max-w-2xl mx-auto">
+      <div className={view === 'board' ? '' : 'max-w-2xl mx-auto'}>
         <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
           <div className="flex items-center gap-2.5">
             <ClipboardList size={18} className="text-gold-400" />
             <h2 className="font-display text-lg text-white font-semibold tracking-wide">{meta?.label ?? 'Service'} Work Orders</h2>
           </div>
+          <div className="flex items-center gap-3 flex-wrap">
+          {hasBoard && (
+            <div className="flex rounded-lg border border-white/10 overflow-hidden">
+              {([['board', 'Board', LayoutGrid], ['list', 'List', List]] as const).map(([v, label, Icon]) => (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+                    view === v ? 'bg-gold-500/15 text-gold-400' : 'bg-white/[0.03] text-white/50 hover:text-white/80'
+                  }`}
+                >
+                  <Icon size={13} /> {label}
+                </button>
+              ))}
+            </div>
+          )}
+          {view === 'list' && (
           <div className="flex gap-1.5">
             {([[false, `Active (${active.length})`], [true, `Closed (${closed.length})`]] as [boolean, string][]).map(([val, label]) => (
               <button
@@ -95,10 +114,18 @@ export default function GarageServiceWorkOrders() {
               </button>
             ))}
           </div>
+          )}
+          </div>
         </div>
 
         {loading ? (
           <p className="text-white/40 text-sm text-center py-20">Loading…</p>
+        ) : view === 'board' ? (
+          <GarageWorkOrderBoard
+            rows={rows}
+            nameOf={nameOf}
+            onOpen={(invoiceId) => navigate(`/garage/invoice/${invoiceId}`)}
+          />
         ) : visible.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <div className="relative mb-5 flex items-center justify-center">
@@ -126,7 +153,7 @@ export default function GarageServiceWorkOrders() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-white text-sm font-medium">{invoice.invoiceNumber}</p>
-                      <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${STAGE_BADGE[stage]}`}>
+                      <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${WORK_ORDER_STAGE_BADGE[stage]}`}>
                         {WORK_ORDER_STAGE_LABEL[stage]}
                       </span>
                     </div>

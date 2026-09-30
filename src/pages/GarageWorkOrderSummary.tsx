@@ -4,7 +4,7 @@ import { Car, User, Phone, Layers, X, ArrowRight, ArrowLeft } from 'lucide-react
 import GarageShell from '../components/GarageShell';
 import Modal from '../components/Modal';
 import { getGarageVehicle, getGarageCustomer } from '../lib/garageCustomers';
-import { TINT_SERIES, GLASS_POSITIONS, EXTRA_GLASS_OPTIONS } from '../utils/tintPricing';
+import { TINT_SERIES, GLASS_LABEL } from '../utils/tintPricing';
 import { GARAGE_SERVICES } from '../utils/garageServices';
 import { formatRM, generateId } from '../utils/format';
 import type {
@@ -17,7 +17,6 @@ import type {
 const OTHER_SERVICES = GARAGE_SERVICES.filter((s) => s.key !== 'tinted');
 
 const TINT_SERIES_LABEL = Object.fromEntries(TINT_SERIES.map((s) => [s.key, s.label]));
-const GLASS_POSITION_LABEL = Object.fromEntries([...GLASS_POSITIONS, ...EXTRA_GLASS_OPTIONS].map((p) => [p.key, p.label]));
 
 // Built by GarageTintPackage and handed over via router state — nothing is
 // persisted until the Payment page's final Confirm is pressed.
@@ -157,10 +156,8 @@ export default function GarageWorkOrderSummary() {
                 <div className="space-y-1.5">
                   {pending.selections.map((sel) => (
                     <div key={sel.position} className="flex items-center justify-between text-sm">
-                      <span className="text-white/60">{GLASS_POSITION_LABEL[sel.position]}</span>
-                      <span className="text-white">
-                        {pending.packageType === 'mix' ? `${TINT_SERIES_LABEL[sel.series]} · ` : ''}{sel.vlt}
-                      </span>
+                      <span className="text-white/60">{GLASS_LABEL[sel.position]}</span>
+                      <span className="text-white">{TINT_SERIES_LABEL[sel.series]} · {sel.vlt}</span>
                     </div>
                   ))}
                 </div>
@@ -170,7 +167,7 @@ export default function GarageWorkOrderSummary() {
                     <p className="text-white/40 text-xs mb-1">Extras</p>
                     {pending.extras.map((sel) => (
                       <div key={sel.position} className="flex items-center justify-between text-sm">
-                        <span className="text-white/60">{GLASS_POSITION_LABEL[sel.position]}</span>
+                        <span className="text-white/60">{GLASS_LABEL[sel.position]}</span>
                         <span className="text-white">{TINT_SERIES_LABEL[sel.series]} · {sel.vlt}</span>
                       </div>
                     ))}

@@ -4,45 +4,30 @@ import { Car, Layers, AlertCircle } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import { getGarageVehicle } from '../lib/garageCustomers';
 import { getFullPrices, getPositionPrices } from '../lib/garageTint';
-import { TINT_SERIES, GLASS_POSITIONS, EXTRA_GLASS_OPTIONS, VLT_OPTIONS } from '../utils/tintPricing';
+import {
+  TINT_SERIES, EXTRA_GLASS_OPTIONS, VLT_OPTIONS, glassLayoutFor, glassZone, glassPrice,
+} from '../utils/tintPricing';
 import { formatRM } from '../utils/format';
 import type {
   GarageVehicle, TintPackageType, TintSeries, GlassPosition, ExtraGlassKey, TintPositionSelection,
 } from '../types';
 
-type MixState = Record<GlassPosition, { series: TintSeries | ''; vlt: string }>;
-type FullVltState = Record<GlassPosition, string>;
+type GlassChoice = { series: TintSeries | ''; vlt: string };
+// Keyed by glass position; which positions exist comes from the car's
+// layout, so a position missing here just means "not chosen yet".
+type MixState = Partial<Record<GlassPosition, GlassChoice>>;
+type FullVltState = Partial<Record<GlassPosition, string>>;
 type ExtraState = Record<ExtraGlassKey, { included: boolean; series: TintSeries | ''; vlt: string }>;
 type VltGroupMode = 'individual' | 'whole' | 'front_rear';
 
-// "Front" = the 3 pieces facing forward; "rear" = whatever's left (just the
-// rear windscreen, with the current 4-position set).
-const FRONT_GROUP: GlassPosition[] = ['front_windscreen', 'door_window', 'rear_panel_window'];
-const REAR_GROUP: GlassPosition[] = ['rear_windscreen'];
-
-const emptyMix: MixState = {
-  front_windscreen: { series: '', vlt: '' },
-  door_window: { series: '', vlt: '' },
-  rear_panel_window: { series: '', vlt: '' },
-  rear_windscreen: { series: '', vlt: '' },
-};
-
-const emptyFullVlt: FullVltState = {
-  front_windscreen: '', door_window: '', rear_panel_window: '', rear_windscreen: '',
-};
+const EMPTY_CHOICE: GlassChoice = { series: '', vlt: '' };
 
 const emptyExtras: ExtraState = {
   extra_rear_2pc: { included: false, series: '', vlt: '' },
   small_window: { included: false, series: '', vlt: '' },
 };
 
-// Extra Rear Window bills at the Rear Panel Window rate (no separate price
-// to set); Small Window is complimentary. Both are only ever charged in
-// Mix & Match — Full Package's price is flat no matter what's toggled on.
-function extraPrice(key: ExtraGlassKey, series: TintSeries, positionPrices: Record<string, number>): number {
-  if (key === 'small_window') return 0;
-  return positionPrices[`rear_panel_window|${series}`] ?? 0;
-}
+const isGlass = (s: TintPositionSelection) => glassZone(s.position) !== undefined;
 
 // The Summary page's Back button hands the previously built order back here
 // via router state, so the form can be rehydrated instead of resetting —
@@ -58,32 +43,29 @@ interface IncomingOrder {
 function detectFullVlt(selections: TintPositionSelection[] | undefined): {
   mode: VltGroupMode; whole: string; front: string; rear: string; perWindow: FullVltState;
 } {
-  const perWindow: FullVltState = { ...emptyFullVlt };
-  if (!selections || selections.length === 0) {
+  const perWindow: FullVltState = {};
+  const glass = (selections ?? []).filter(isGlass);
+  if (glass.length === 0) {
     return { mode: 'individual', whole: '', front: '', rear: '', perWindow };
   }
-  GLASS_POSITIONS.forEach((p) => {
-    const found = selections.find((s) => s.position === p.key);
-    if (found) perWindow[p.key] = found.vlt;
-  });
-  const values = GLASS_POSITIONS.map((p) => perWindow[p.key]);
+  glass.forEach((s) => { perWindow[s.position as GlassPosition] = s.vlt; });
+  const values = glass.map((s) => s.vlt);
   if (values.every((v) => v && v === values[0])) {
     return { mode: 'whole', whole: values[0], front: '', rear: '', perWindow };
   }
-  const frontValues = FRONT_GROUP.map((k) => perWindow[k]);
-  const rearValues = REAR_GROUP.map((k) => perWindow[k]);
-  if (frontValues.every((v) => v && v === frontValues[0]) && rearValues.every((v) => v && v === rearValues[0])) {
+  const frontValues = glass.filter((s) => glassZone(s.position) === 'front').map((s) => s.vlt);
+  const rearValues = glass.filter((s) => glassZone(s.position) === 'rear').map((s) => s.vlt);
+  const uniform = (vs: string[]) => vs.length > 0 && vs.every((v) => v && v === vs[0]);
+  if (uniform(frontValues) && uniform(rearValues)) {
     return { mode: 'front_rear', whole: '', front: frontValues[0], rear: rearValues[0], perWindow };
   }
   return { mode: 'individual', whole: '', front: '', rear: '', perWindow };
 }
 
 function detectMix(selections: TintPositionSelection[] | undefined): MixState {
-  const mix: MixState = { ...emptyMix };
-  if (!selections) return mix;
-  GLASS_POSITIONS.forEach((p) => {
-    const found = selections.find((s) => s.position === p.key);
-    if (found) mix[p.key] = { series: found.series, vlt: found.vlt };
+  const mix: MixState = {};
+  (selections ?? []).filter(isGlass).forEach((s) => {
+    mix[s.position as GlassPosition] = { series: s.series, vlt: s.vlt };
   });
   return mix;
 }
@@ -122,6 +104,9 @@ export default function GarageTintPackage() {
   const [rearVlt, setRearVlt] = useState(initialFullVlt.rear);
   const [mix, setMix] = useState<MixState>(() => detectMix(incoming?.packageType === 'mix' ? incoming.selections : undefined));
   const [extras, setExtras] = useState<ExtraState>(() => detectExtras(incoming?.extras));
+  // Mix & Match shortcut — fills every window with one series/VLT, which the
+  // salesman can then override glass by glass.
+  const [fillAll, setFillAll] = useState<GlassChoice>(EMPTY_CHOICE);
   const [discount, setDiscount] = useState(incoming?.discount ?? 0);
   // No visible trigger at all — a customer watching the screen shouldn't be
   // able to spot anything to ask about. 5 quick taps on the "Price Summary"
@@ -151,20 +136,36 @@ export default function GarageTintPackage() {
   }, [vehicleId]);
 
   const size = vehicle?.size ?? 'standard';
+  const layout = glassLayoutFor(size);
+  const frontGlass = layout.filter((g) => g.zone === 'front');
+  const rearGlass = layout.filter((g) => g.zone === 'rear');
   const availableExtras = EXTRA_GLASS_OPTIONS.filter((ex) => !ex.xlargeOnly || size === 'xlarge');
+  const mixChoice = (pos: GlassPosition) => mix[pos] ?? EMPTY_CHOICE;
 
   // Full Package's VLT, resolved for whichever grouping mode is active.
   function effectiveFullVlt(pos: GlassPosition): string {
     if (vltGroupMode === 'whole') return wholeVlt;
-    if (vltGroupMode === 'front_rear') return FRONT_GROUP.includes(pos) ? frontVlt : rearVlt;
-    return fullVlt[pos];
+    if (vltGroupMode === 'front_rear') return glassZone(pos) === 'front' ? frontVlt : rearVlt;
+    return fullVlt[pos] ?? '';
   }
 
+  const applyFillAll = () => {
+    const next: MixState = { ...mix };
+    layout.forEach((g) => {
+      next[g.key] = {
+        series: fillAll.series || mixChoice(g.key).series,
+        vlt: fillAll.vlt || mixChoice(g.key).vlt,
+      };
+    });
+    setMix(next);
+  };
+
   const fullPrice = fullSeries ? (fullPrices[`${fullSeries}|${size}`] ?? 0) : 0;
-  const mixTotal = GLASS_POSITIONS.reduce((sum, pos) => {
-    const sel = mix[pos.key];
+  // Mix & Match prices are per individual window.
+  const mixTotal = layout.reduce((sum, g) => {
+    const sel = mixChoice(g.key);
     if (!sel.series) return sum;
-    return sum + (positionPrices[`${pos.key}|${sel.series}`] ?? 0);
+    return sum + glassPrice(g.key, sel.series, positionPrices);
   }, 0);
   // Extras only ever add cost in Mix & Match — Full Package's price never
   // changes regardless of what's toggled on.
@@ -172,7 +173,7 @@ export default function GarageTintPackage() {
     ? availableExtras.reduce((sum, ex) => {
         const state = extras[ex.key];
         if (!state.included || !state.series) return sum;
-        return sum + extraPrice(ex.key, state.series, positionPrices);
+        return sum + glassPrice(ex.key, state.series, positionPrices);
       }, 0)
     : 0;
   const subtotal = (packageType === 'full' ? fullPrice : mixTotal) + extrasTotal;
@@ -186,30 +187,29 @@ export default function GarageTintPackage() {
       if (!fullSeries) { setError('Choose a series for the Full Package'); return; }
       if (vltGroupMode === 'whole' && !wholeVlt) { setError('Choose a VLT for the whole car'); return; }
       if (vltGroupMode === 'front_rear' && (!frontVlt || !rearVlt)) { setError('Choose a VLT for both the front and rear groups'); return; }
-      if (vltGroupMode === 'individual' && GLASS_POSITIONS.some((p) => !fullVlt[p.key])) { setError('Choose a VLT for every window'); return; }
+      if (vltGroupMode === 'individual' && layout.some((g) => !fullVlt[g.key])) { setError('Choose a VLT for every window'); return; }
       if (availableExtras.some((ex) => extras[ex.key].included && !extras[ex.key].vlt)) { setError('Choose a VLT for every selected extra'); return; }
     } else {
-      if (GLASS_POSITIONS.some((p) => !mix[p.key].series || !mix[p.key].vlt)) { setError('Choose a series and VLT for every glass position'); return; }
+      if (layout.some((g) => !mixChoice(g.key).series || !mixChoice(g.key).vlt)) { setError('Choose a series and VLT for every glass position'); return; }
       if (availableExtras.some((ex) => extras[ex.key].included && (!extras[ex.key].series || !extras[ex.key].vlt))) {
         setError('Choose a series and VLT for every selected extra');
         return;
       }
     }
     setError('');
+    // One entry per individual glass on the car, in both modes.
     const selections: TintPositionSelection[] = packageType === 'full'
-      ? GLASS_POSITIONS.map((p) => ({ position: p.key, series: fullSeries as TintSeries, vlt: effectiveFullVlt(p.key), price: 0 }))
-      : GLASS_POSITIONS.map((p) => ({
-          position: p.key,
-          series: mix[p.key].series as TintSeries,
-          vlt: mix[p.key].vlt,
-          price: positionPrices[`${p.key}|${mix[p.key].series}`] ?? 0,
-        }));
+      ? layout.map((g) => ({ position: g.key, series: fullSeries as TintSeries, vlt: effectiveFullVlt(g.key), price: 0 }))
+      : layout.map((g) => {
+          const series = mixChoice(g.key).series as TintSeries;
+          return { position: g.key, series, vlt: mixChoice(g.key).vlt, price: glassPrice(g.key, series, positionPrices) };
+        });
     const extraSelections: TintPositionSelection[] = availableExtras
       .filter((ex) => extras[ex.key].included)
       .map((ex) => {
         const series = (packageType === 'full' ? fullSeries : extras[ex.key].series) as TintSeries;
         const vlt = extras[ex.key].vlt;
-        const price = packageType === 'full' ? 0 : extraPrice(ex.key, series, positionPrices);
+        const price = packageType === 'full' ? 0 : glassPrice(ex.key, series, positionPrices);
         return { position: ex.key, series, vlt, price };
       });
     navigate(`/garage/work-order/customer/${id}/vehicle/${vehicleId}/service/tinted/summary`, {
@@ -309,13 +309,13 @@ export default function GarageTintPackage() {
 
                 {vltGroupMode === 'individual' && (
                   <div className="space-y-2 mb-6">
-                    {GLASS_POSITIONS.map((pos) => (
-                      <div key={pos.key} className="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-2 items-center">
+                    {layout.map((pos) => (
+                      <div key={pos.key} className="grid grid-cols-1 sm:grid-cols-[190px_1fr] gap-2 items-center">
                         <span className="text-white/70 text-sm">{pos.label}</span>
                         <select
                           className="bg-white/[0.04] border border-white/10 focus:border-gold-400/50 rounded-lg px-3 py-2
                             text-white text-sm outline-none transition-colors appearance-none"
-                          value={fullVlt[pos.key]}
+                          value={fullVlt[pos.key] ?? ''}
                           onChange={(e) => setFullVlt({ ...fullVlt, [pos.key]: e.target.value })}
                         >
                           <option value="" className="bg-obsidian-800">VLT</option>
@@ -327,7 +327,7 @@ export default function GarageTintPackage() {
                 )}
 
                 {vltGroupMode === 'whole' && (
-                  <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-2 items-center mb-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-[190px_1fr] gap-2 items-center mb-6">
                     <span className="text-white/70 text-sm">Whole Car</span>
                     <select
                       className="bg-white/[0.04] border border-white/10 focus:border-gold-400/50 rounded-lg px-3 py-2
@@ -343,11 +343,11 @@ export default function GarageTintPackage() {
 
                 {vltGroupMode === 'front_rear' && (
                   <div className="space-y-2 mb-6">
-                    <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-2 items-center">
+                    <div className="grid grid-cols-1 sm:grid-cols-[190px_1fr] gap-2 items-center">
                       <span className="text-white/70 text-sm">
                         Front
                         <span className="block text-white/30 text-[11px]">
-                          {FRONT_GROUP.map((k) => GLASS_POSITIONS.find((p) => p.key === k)?.label).join(', ')}
+                          {frontGlass.map((g) => g.label).join(', ')}
                         </span>
                       </span>
                       <select
@@ -360,11 +360,11 @@ export default function GarageTintPackage() {
                         {VLT_OPTIONS.map((v) => <option key={v} value={v} className="bg-obsidian-800">{v}</option>)}
                       </select>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-2 items-center">
+                    <div className="grid grid-cols-1 sm:grid-cols-[190px_1fr] gap-2 items-center">
                       <span className="text-white/70 text-sm">
                         Rear
                         <span className="block text-white/30 text-[11px]">
-                          {REAR_GROUP.map((k) => GLASS_POSITIONS.find((p) => p.key === k)?.label).join(', ')}
+                          {rearGlass.map((g) => g.label).join(', ')}
                         </span>
                       </span>
                       <select
@@ -383,7 +383,7 @@ export default function GarageTintPackage() {
                 <div className="pt-5 border-t border-white/10 space-y-2.5">
                   <p className="text-white/50 text-xs font-medium">Extras (no extra charge)</p>
                   {availableExtras.map((ex) => (
-                    <div key={ex.key} className="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-2 items-center">
+                    <div key={ex.key} className="grid grid-cols-1 sm:grid-cols-[190px_1fr] gap-2 items-center">
                       <label className="flex items-center gap-2 text-sm text-white/80 cursor-pointer">
                         <input
                           type="checkbox"
@@ -410,16 +410,48 @@ export default function GarageTintPackage() {
             ) : (
               <>
                 <h2 className="font-display text-lg text-white font-semibold tracking-wide mb-1">Mix &amp; Match</h2>
-                <p className="text-white/40 text-sm mb-6">Select series and VLT for each glass position</p>
+                <p className="text-white/40 text-sm mb-6">Select series and VLT for each individual glass — priced per window</p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-[190px_1fr_100px_auto] gap-2 items-center mb-5 pb-5 border-b border-white/10">
+                  <span className="text-white/50 text-xs font-medium">Fill every window</span>
+                  <select
+                    className="bg-white/[0.04] border border-white/10 focus:border-gold-400/50 rounded-lg px-3 py-2
+                      text-white text-sm outline-none transition-colors appearance-none"
+                    value={fillAll.series}
+                    onChange={(e) => setFillAll({ ...fillAll, series: e.target.value as TintSeries })}
+                  >
+                    <option value="" className="bg-obsidian-800">Series</option>
+                    {TINT_SERIES.map((s) => <option key={s.key} value={s.key} className="bg-obsidian-800">{s.label}</option>)}
+                  </select>
+                  <select
+                    className="bg-white/[0.04] border border-white/10 focus:border-gold-400/50 rounded-lg px-3 py-2
+                      text-white text-sm outline-none transition-colors appearance-none"
+                    value={fillAll.vlt}
+                    onChange={(e) => setFillAll({ ...fillAll, vlt: e.target.value })}
+                  >
+                    <option value="" className="bg-obsidian-800">VLT</option>
+                    {VLT_OPTIONS.map((v) => <option key={v} value={v} className="bg-obsidian-800">{v}</option>)}
+                  </select>
+                  <button
+                    type="button"
+                    disabled={!fillAll.series && !fillAll.vlt}
+                    onClick={applyFillAll}
+                    className="px-3 py-2 rounded-lg text-xs font-medium border transition-colors
+                      bg-gold-500/15 border-gold-400/50 text-gold-400 hover:bg-gold-500/25 disabled:opacity-40"
+                  >
+                    Apply
+                  </button>
+                </div>
+
                 <div className="space-y-3 mb-6">
-                  {GLASS_POSITIONS.map((pos) => (
-                    <div key={pos.key} className="grid grid-cols-1 sm:grid-cols-[140px_1fr_100px] gap-2 items-center">
+                  {layout.map((pos) => (
+                    <div key={pos.key} className="grid grid-cols-1 sm:grid-cols-[190px_1fr_100px] gap-2 items-center">
                       <span className="text-white/70 text-sm">{pos.label}</span>
                       <select
                         className="bg-white/[0.04] border border-white/10 focus:border-gold-400/50 rounded-lg px-3 py-2
                           text-white text-sm outline-none transition-colors appearance-none"
-                        value={mix[pos.key].series}
-                        onChange={(e) => setMix({ ...mix, [pos.key]: { ...mix[pos.key], series: e.target.value as TintSeries } })}
+                        value={mixChoice(pos.key).series}
+                        onChange={(e) => setMix({ ...mix, [pos.key]: { ...mixChoice(pos.key), series: e.target.value as TintSeries } })}
                       >
                         <option value="" className="bg-obsidian-800">Select series</option>
                         {TINT_SERIES.map((s) => <option key={s.key} value={s.key} className="bg-obsidian-800">{s.label}</option>)}
@@ -427,8 +459,8 @@ export default function GarageTintPackage() {
                       <select
                         className="bg-white/[0.04] border border-white/10 focus:border-gold-400/50 rounded-lg px-3 py-2
                           text-white text-sm outline-none transition-colors appearance-none"
-                        value={mix[pos.key].vlt}
-                        onChange={(e) => setMix({ ...mix, [pos.key]: { ...mix[pos.key], vlt: e.target.value } })}
+                        value={mixChoice(pos.key).vlt}
+                        onChange={(e) => setMix({ ...mix, [pos.key]: { ...mixChoice(pos.key), vlt: e.target.value } })}
                       >
                         <option value="" className="bg-obsidian-800">VLT</option>
                         {VLT_OPTIONS.map((v) => <option key={v} value={v} className="bg-obsidian-800">{v}</option>)}
@@ -440,7 +472,7 @@ export default function GarageTintPackage() {
                 <div className="pt-5 border-t border-white/10 space-y-3">
                   <p className="text-white/50 text-xs font-medium">Extras</p>
                   {availableExtras.map((ex) => (
-                    <div key={ex.key} className="grid grid-cols-1 sm:grid-cols-[140px_1fr_100px] gap-2 items-center">
+                    <div key={ex.key} className="grid grid-cols-1 sm:grid-cols-[190px_1fr_100px] gap-2 items-center">
                       <label className="flex items-center gap-2 text-sm text-white/70 cursor-pointer">
                         <input
                           type="checkbox"

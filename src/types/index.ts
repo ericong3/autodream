@@ -53,15 +53,31 @@ export interface GarageAppointment {
 // own series + VLT (darkness) choice.
 export type TintPackageType = 'full' | 'mix';
 export type TintSeries = 'eco' | 'lite' | 'classic' | 'majestic' | 'unique' | 'royal';
-export type GlassPosition = 'front_windscreen' | 'door_window' | 'rear_panel_window' | 'rear_windscreen';
+// Every individual piece of glass on the car — left and right are always
+// separate items. Which of these a given car has comes from its glass
+// layout (see glassLayoutFor in utils/tintPricing), not from this type.
+export type GlassPosition =
+  | 'front_windscreen'
+  | 'front_left_window' | 'front_right_window'
+  | 'rear_left_window' | 'rear_right_window'
+  | 'rear_left_panel_window' | 'rear_right_panel_window'
+  | 'rear_windscreen';
+// Key into the Mix & Match price grid (garage_tint_position_prices). Prices
+// are per individual window, so each GlassPosition bills at its group's
+// rate — e.g. all 4 door windows bill at the 'door_window' rate each.
+export type TintPriceGroup = 'front_windscreen' | 'door_window' | 'rear_panel_window' | 'rear_windscreen';
+// Grouped positions that orders were saved with before left/right were
+// split. Only ever read from old data — normalizeTintSelections expands them.
+export type LegacyGlassPosition = 'door_window' | 'rear_panel_window';
 // Optional add-ons, priced the same way as a glass position (series-based,
-// no size dimension) but not part of the standard 4-window set — shown as
-// a toggle rather than always-on. Extra Rear Window only applies to
-// X-Large cars; Small Window is offered on any size.
+// no size dimension) but not part of the standard set — shown as a toggle
+// rather than always-on. Extra Rear Window only applies to X-Large cars;
+// Small Window is offered on any size.
 export type ExtraGlassKey = 'extra_rear_2pc' | 'small_window';
+export type TintGlassKey = GlassPosition | ExtraGlassKey;
 
 export interface TintPositionSelection {
-  position: GlassPosition | ExtraGlassKey;
+  position: TintGlassKey;
   series: TintSeries;
   vlt: string; // e.g. '35%'
   price: number;
@@ -77,12 +93,53 @@ export interface GarageTintOrder {
   // Full Package: one series for the whole car (every selections[].series is
   // this same value) but VLT can still differ per window — price is the
   // flat full-package rate regardless. Mix & Match: series and price vary
-  // per position. Both modes populate the same 4 core positions here.
+  // per window. Both modes hold one entry per glass position of the car's
+  // layout (old grouped orders are expanded on read).
   fullSeries?: TintSeries;
   selections: TintPositionSelection[];
   extras: TintPositionSelection[]; // optional add-ons — priced only in Mix & Match; always free in Full Package
   discount: number;
   finalTotal: number;
+  createdAt: string;
+}
+
+// The work order's stored lifecycle status (garage_invoices.work_status) —
+// one value that salesman, installer and management all read. See
+// utils/garageWorkOrderStatus for labels and how it's resolved for display.
+export type GarageWorkStatus =
+  | 'draft'
+  | 'waiting_for_installer'
+  | 'installer_assigned'
+  | 'in_progress'
+  | 'installation_completed'
+  | 'payment_due'
+  | 'ready_for_delivery'
+  | 'ready_for_warranty'
+  | 'closed';
+
+// One entry in a work order's activity history (garage_work_order_activity).
+// Written by the database in the same step as the action itself.
+export type GarageWorkOrderEventType =
+  | 'WORK_ORDER_CREATED'
+  | 'SENT_TO_INSTALLER'
+  | 'INSTALLER_ACCEPTED'
+  | 'INSTALLATION_STARTED'
+  | 'GLASS_ITEM_COMPLETED'
+  | 'GLASS_ITEM_REOPENED'
+  | 'INSTALLATION_COMPLETED'
+  | 'PAYMENT_COLLECTED'
+  | 'VEHICLE_READY'
+  | 'VEHICLE_DELIVERED'
+  | 'WARRANTY_REGISTERED'
+  | 'WORK_ORDER_CLOSED';
+
+export interface GarageWorkOrderActivity {
+  id: string;
+  workOrderId: string; // GarageInvoice.id — the invoice is the work order
+  eventType: GarageWorkOrderEventType;
+  actorId?: string;
+  actorRole?: string;
+  metadata: Record<string, any>;
   createdAt: string;
 }
 
@@ -111,6 +168,16 @@ export interface GarageInvoice {
   // before deliveredAt can be set.
   deliveredAt?: string;
   warrantyRegisteredAt?: string;
+  // Who did each salesman-side step (and when payment was collected) — for
+  // the work order's pipeline / activity timeline.
+  paidAt?: string;
+  paidBy?: string;
+  deliveredBy?: string;
+  warrantyRegisteredBy?: string;
+  workStatus: GarageWorkStatus;
+  // Entered by the salesman at Confirm, for the installer.
+  appointmentAt?: string;
+  remark?: string;
   createdAt: string;
   createdBy?: string;
 }
@@ -159,21 +226,40 @@ export interface GarageInstallerJob {
   // Keyed in by the installer at the moment they accept — when they expect
   // to finish, so the salesman/customer have a rough ETA.
   estimatedCompleteAt?: string;
+  // Set by Start Installation — an accepted job without it is only
+  // assigned, not yet being worked on.
+  startedAt?: string;
+  // Complete Installation — who pressed it, and when final inspection was
+  // confirmed (same moment; recorded so it's explicit on the job).
   completedAt?: string;
+  completedBy?: string;
+  finalInspectionAt?: string;
   remark?: string;
 }
 
-// One row per glass piece being worked on a tinted job — which installer
-// did it and how much film (sqft) it used. Positions are seeded from the
-// tint order's own selections/extras (see GarageTintOrder), not a fixed
-// 8-piece layout, so a Standard car's 4 positions and an X-Large's extras
-// both work the same way.
-export interface GarageTintInstallationPiece {
+// One row per individual glass piece on a tinted work order (table
+// garage_tint_installation_pieces). Seeded from the tint order's
+// selections/extras when the order is confirmed (and lazily for older
+// orders), so whatever layout the car has, each glass is its own item.
+// requested* is what the salesman sold; installed* / sqft / status are the
+// installer's side — installedSeries and status aren't set by any screen
+// yet, they're here so installer confirmation can be added without a
+// schema change.
+export type TintItemStatus = 'pending' | 'installed';
+
+export interface GarageTintWorkOrderItem {
   id: string;
   invoiceId: string;
-  position: GlassPosition | ExtraGlassKey;
+  // Legacy grouped keys only appear on rows seeded before the left/right
+  // split; nothing reads those rows any more.
+  glassPosition: TintGlassKey | LegacyGlassPosition;
+  requestedSeries?: TintSeries;
+  requestedVlt?: string;
+  installedSeries?: TintSeries;
   installerId?: string;
   sqft?: number;
+  status: TintItemStatus;
+  remark?: string;
   updatedAt: string;
 }
 

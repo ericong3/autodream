@@ -99,6 +99,9 @@ export default function GarageTeamMembers() {
     const isDirectorLike = form.role === 'director' || form.role === 'shareholder';
     const businessAccess: BusinessAccess = isDirectorLike ? 'both' : form.role === 'garage_head' ? 'garage' : form.businessAccess;
     const target = editTarget;
+    // Login trims the username it looks up, so a stray space saved here
+    // (easy on a phone keyboard) makes the account impossible to log into.
+    const username = form.username.trim();
     setShowModal(false);
     setEditTarget(null);
     setForm(emptyForm);
@@ -106,7 +109,7 @@ export default function GarageTeamMembers() {
     if (target) {
       updateUser(target.id, {
         name: form.name,
-        username: form.username,
+        username,
         phone: form.phone,
         role: form.role,
         businessAccess,
@@ -116,7 +119,7 @@ export default function GarageTeamMembers() {
       addUser({
         id: generateId(),
         name: form.name,
-        username: form.username,
+        username,
         password: form.password,
         role: form.role,
         businessAccess,

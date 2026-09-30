@@ -1,9 +1,10 @@
 import { supabase } from './supabase';
 import type {
-  TintSeries, GlassPosition, ExtraGlassKey, GarageVehicleSize, TintPackageType,
-  TintPositionSelection, GarageTintOrder, GarageTintInstallationPiece, GarageFilmStock,
+  TintSeries, TintPriceGroup, GarageVehicleSize, TintPackageType, TintItemStatus,
+  TintPositionSelection, GarageTintOrder, GarageTintWorkOrderItem, GarageFilmStock,
 } from '../types';
 import { generateId } from '../utils/format';
+import { normalizeTintSelections } from '../utils/tintPricing';
 
 // Full Package price grid — keyed "series|size" for cheap client-side lookup.
 export async function getFullPrices(): Promise<Record<string, number>> {
@@ -21,8 +22,8 @@ export async function setFullPrice(series: TintSeries, vehicleSize: GarageVehicl
   if (error) throw error;
 }
 
-// Mix & Match / extras price grid — per piece, by series only (no size
-// dimension) — keyed "position|series".
+// Mix & Match / extras price grid — per individual window, by series only
+// (no size dimension) — keyed "priceGroup|series" (see glassPrice).
 export async function getPositionPrices(): Promise<Record<string, number>> {
   const { data, error } = await supabase.from('garage_tint_position_prices').select('*');
   if (error) throw error;
@@ -32,7 +33,7 @@ export async function getPositionPrices(): Promise<Record<string, number>> {
 }
 
 export async function setPositionPrice(
-  position: GlassPosition | ExtraGlassKey, series: TintSeries, price: number,
+  position: TintPriceGroup, series: TintSeries, price: number,
 ): Promise<void> {
   const { error } = await supabase
     .from('garage_tint_position_prices')
@@ -45,7 +46,9 @@ function rowToTintOrder(r: any): GarageTintOrder {
     invoiceId: r.invoice_id,
     packageType: r.package_type,
     fullSeries: r.full_series ?? undefined,
-    selections: r.selections ?? [],
+    // Stored as-is; orders from before the left/right split are expanded
+    // here so every screen only ever sees individual glass positions.
+    selections: normalizeTintSelections(r.selections ?? []),
     extras: r.extras ?? [],
     discount: Number(r.discount),
     finalTotal: Number(r.final_total),
@@ -77,54 +80,89 @@ export async function createTintOrder(input: {
   return rowToTintOrder(data);
 }
 
-function rowToPiece(r: any): GarageTintInstallationPiece {
+// Tint work-order items live in garage_tint_installation_pieces (the table
+// predates the item model — `position` is the item's glass position).
+function rowToItem(r: any): GarageTintWorkOrderItem {
   return {
     id: r.id,
     invoiceId: r.invoice_id,
-    position: r.position,
+    glassPosition: r.position,
+    requestedSeries: r.requested_series ?? undefined,
+    requestedVlt: r.requested_vlt ?? undefined,
+    installedSeries: r.installed_series ?? undefined,
     installerId: r.installer_id ?? undefined,
     sqft: r.sqft === null ? undefined : Number(r.sqft),
+    status: r.status ?? 'pending',
+    remark: r.remark ?? undefined,
     updatedAt: r.updated_at,
   };
 }
 
-export async function listInstallationPieces(invoiceId: string): Promise<GarageTintInstallationPiece[]> {
+export async function listTintWorkOrderItems(invoiceId: string): Promise<GarageTintWorkOrderItem[]> {
   const { data, error } = await supabase.from('garage_tint_installation_pieces').select('*').eq('invoice_id', invoiceId);
   if (error) throw error;
-  return (data ?? []).map(rowToPiece);
+  return (data ?? []).map(rowToItem);
 }
 
-// Seeds a row for every position in the tint order that doesn't have one yet
-// (idempotent — ignores positions already seeded) — called when the job
-// execution page first opens, not at job-accept time, so it works the same
-// for jobs created before this feature existed.
-export async function ensureInstallationPieces(
-  invoiceId: string, positions: (GlassPosition | ExtraGlassKey)[],
-): Promise<GarageTintInstallationPiece[]> {
-  if (positions.length > 0) {
-    const rows = positions.map((position) => ({ id: generateId(), invoice_id: invoiceId, position }));
+// Creates one item per glass in the order that doesn't have one yet
+// (idempotent — positions already seeded are left untouched, so installer
+// progress is never overwritten). Called when the order is confirmed, and
+// again when the job page opens so orders from before items were seeded at
+// confirm time still get theirs.
+export async function ensureTintWorkOrderItems(
+  invoiceId: string, selections: TintPositionSelection[],
+): Promise<GarageTintWorkOrderItem[]> {
+  if (selections.length > 0) {
+    const rows = selections.map((sel) => ({
+      id: generateId(),
+      invoice_id: invoiceId,
+      position: sel.position,
+      requested_series: sel.series,
+      requested_vlt: sel.vlt,
+    }));
     const { error } = await supabase
       .from('garage_tint_installation_pieces')
       .upsert(rows, { onConflict: 'invoice_id,position', ignoreDuplicates: true });
     if (error) throw error;
   }
-  return listInstallationPieces(invoiceId);
+  return listTintWorkOrderItems(invoiceId);
 }
 
-export async function updateInstallationPiece(
-  pieceId: string, updates: { installerId?: string | null; sqft?: number | null },
-): Promise<GarageTintInstallationPiece> {
+// Confirm one glass as completed (or reopen it). Done by a database
+// function so the change and its GLASS_ITEM_COMPLETED / _REOPENED history
+// entry are one step; confirming records installed = requested series, and
+// the confirming installer as the glass's installer if none was set.
+export async function setTintWorkOrderItemStatus(
+  itemId: string, status: TintItemStatus, actorId: string,
+): Promise<GarageTintWorkOrderItem> {
+  const { data, error } = await supabase.rpc('set_garage_glass_item_status', {
+    p_item_id: itemId, p_status: status, p_actor_id: actorId,
+  });
+  if (error) throw error;
+  return rowToItem(data);
+}
+
+export async function updateTintWorkOrderItem(
+  itemId: string,
+  updates: {
+    installerId?: string | null; sqft?: number | null; installedSeries?: TintSeries | null;
+    status?: TintItemStatus; remark?: string | null;
+  },
+): Promise<GarageTintWorkOrderItem> {
   const row: Record<string, any> = { updated_at: new Date().toISOString() };
   if ('installerId' in updates) row.installer_id = updates.installerId || null;
   if ('sqft' in updates) row.sqft = updates.sqft ?? null;
+  if ('installedSeries' in updates) row.installed_series = updates.installedSeries || null;
+  if ('status' in updates) row.status = updates.status;
+  if ('remark' in updates) row.remark = updates.remark || null;
   const { data, error } = await supabase
     .from('garage_tint_installation_pieces')
     .update(row)
-    .eq('id', pieceId)
+    .eq('id', itemId)
     .select()
     .single();
   if (error) throw error;
-  return rowToPiece(data);
+  return rowToItem(data);
 }
 
 function rowToFilmStock(r: any): GarageFilmStock {

@@ -4,13 +4,14 @@ import GarageShell from '../components/GarageShell';
 import {
   getFullPrices, setFullPrice, getPositionPrices, setPositionPrice, listFilmStock, setFilmStockConfig,
 } from '../lib/garageTint';
-import { TINT_SERIES, VEHICLE_SIZES, GLASS_POSITIONS } from '../utils/tintPricing';
-import type { TintSeries, GlassPosition, GarageVehicleSize, GarageFilmStock } from '../types';
+import { TINT_SERIES, VEHICLE_SIZES, TINT_PRICE_GROUPS } from '../utils/tintPricing';
+import type { TintSeries, TintPriceGroup, GarageVehicleSize, GarageFilmStock } from '../types';
 
-// Extra Rear Window bills at the Rear Panel Window rate and Small Window is
-// always free — neither needs its own price, so this grid only covers the
-// 4 standard glass positions.
-const POSITION_TABS = GLASS_POSITIONS;
+// One per-window rate per group — every individual door window bills at the
+// Door Window rate, each panel at the Rear Panel Window rate. Extra Rear
+// Window bills at the Rear Panel Window rate and Small Window is always
+// free, so neither needs its own price.
+const POSITION_TABS = TINT_PRICE_GROUPS;
 
 function PriceCell({
   value, saved, onCommit,
@@ -69,7 +70,7 @@ export default function GarageTintPricing() {
   const [positionPrices, setPositionPrices] = useState<Record<string, number>>({});
   const [filmStock, setFilmStock] = useState<GarageFilmStock[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activePosition, setActivePosition] = useState<GlassPosition>('front_windscreen');
+  const [activePosition, setActivePosition] = useState<TintPriceGroup>('front_windscreen');
   const [justSaved, setJustSaved] = useState<string | null>(null);
 
   useEffect(() => {
@@ -90,7 +91,7 @@ export default function GarageTintPricing() {
     flashSaved(key);
   };
 
-  const commitPosition = async (position: GlassPosition, series: TintSeries, price: number) => {
+  const commitPosition = async (position: TintPriceGroup, series: TintSeries, price: number) => {
     const key = `${position}|${series}`;
     setPositionPrices((p) => ({ ...p, [key]: price }));
     await setPositionPrice(position, series, price);
@@ -156,7 +157,7 @@ export default function GarageTintPricing() {
         {/* Mix & Match / extras — per piece, by series only */}
         <div className="relative overflow-hidden rounded-[28px] p-6 sm:p-8 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
           <h2 className="font-display text-lg text-white font-semibold tracking-wide mb-1">Mix &amp; Match / Extras</h2>
-          <p className="text-white/40 text-sm mb-5">Price per piece, by series — set separately for each glass position</p>
+          <p className="text-white/40 text-sm mb-5">Price per individual window, by series — e.g. each of the 4 door windows is charged the Door Window rate</p>
 
           <div className="flex items-center gap-2 mb-5 overflow-x-auto">
             {POSITION_TABS.map((pos) => (

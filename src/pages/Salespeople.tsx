@@ -85,7 +85,7 @@ export default function Salespeople() {
     if (editTarget) {
       updateUser(editTarget.id, {
         name: form.name,
-        username: form.username,
+        username: form.username.trim(),
         phone: form.phone,
         monthlyTarget: form.monthlyTarget,
         ...(form.password ? { password: form.password } : {}),
@@ -94,7 +94,7 @@ export default function Salespeople() {
       addUser({
         id: generateId(),
         name: form.name,
-        username: form.username,
+        username: form.username.trim(),
         password: form.password,
         role: 'salesperson',
         phone: form.phone,

@@ -13,6 +13,7 @@ export interface GarageTab {
 const SALESMAN_TABS: GarageTab[] = [
   { label: 'Dashboard', path: '/garage/dashboard' },
   { label: 'Sales Tools', path: '/garage/sales-tools' },
+  { label: 'My Pipeline', path: '/garage/my-work-orders' },
   { label: 'Calendar', path: '/garage/calendar' },
 ];
 

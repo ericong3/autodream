@@ -6,8 +6,8 @@ import {
 } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import { useStore } from '../store';
-import { createGarageInvoice, createInvoiceAddon, uploadInvoiceReceipt } from '../lib/garageInvoices';
-import { createTintOrder } from '../lib/garageTint';
+import { createGarageInvoice, createInvoiceAddon, uploadInvoiceReceipt, discardGarageInvoice } from '../lib/garageInvoices';
+import { createTintOrder, ensureTintWorkOrderItems } from '../lib/garageTint';
 import { createInstallerJob } from '../lib/garageInstallerJobs';
 import { formatRM } from '../utils/format';
 import type { GaragePaymentMethod, GaragePaymentStatus } from '../types';
@@ -48,6 +48,9 @@ export default function GarageWorkOrderPayment() {
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  // For the installer — shown on the job before they accept it.
+  const [appointmentAt, setAppointmentAt] = useState(''); // datetime-local value
+  const [remark, setRemark] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
@@ -81,6 +84,8 @@ export default function GarageWorkOrderPayment() {
     setTiming('paid');
     setMethod('');
     setReceiptFile(null);
+    setAppointmentAt('');
+    setRemark('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.key]);
 
@@ -91,11 +96,15 @@ export default function GarageWorkOrderPayment() {
     if (timing === 'paid' && !method) { setError('Choose a payment method'); return; }
     setError('');
     setConfirming(true);
+    let invoiceId: string | null = null;
     try {
       const invoice = await createGarageInvoice({
         customerId: id!, vehicleId: vehicleId!, service: 'tinted',
         paymentMethod: method || undefined, paymentStatus: timing, createdBy: currentUser?.id,
+        appointmentAt: appointmentAt ? new Date(appointmentAt).toISOString() : undefined,
+        remark: remark.trim() || undefined,
       });
+      invoiceId = invoice.id;
       await createTintOrder({
         invoiceId: invoice.id,
         packageType: pending.packageType,
@@ -105,6 +114,9 @@ export default function GarageWorkOrderPayment() {
         discount: pending.discount,
         finalTotal: pending.finalTotal,
       });
+      // One work-order item per individual glass (and extra), carrying the
+      // series/VLT sold for it — what the installer works through.
+      await ensureTintWorkOrderItems(invoice.id, [...pending.selections, ...pending.extras]);
       await Promise.all(addons.map((a) => createInvoiceAddon({
         invoiceId: invoice.id, name: a.name, price: a.price, qty: a.qty,
       })));
@@ -118,6 +130,19 @@ export default function GarageWorkOrderPayment() {
       }
       setDone(true);
     } catch (err: any) {
+      // Any step after the invoice failing would otherwise leave a
+      // half-saved order behind (invoice with no installer job) — and a
+      // retry would then create a duplicate. Roll the whole order back so
+      // "try again" really starts clean.
+      if (invoiceId) {
+        try {
+          await discardGarageInvoice(invoiceId);
+        } catch (rollbackErr) {
+          console.error('Failed to roll back partial work order', invoiceId, rollbackErr);
+          setError('Something went wrong and this order was only partly saved — please tell a manager before trying again');
+          return;
+        }
+      }
       setError(err?.message ?? 'Something went wrong — please try again');
     } finally {
       setConfirming(false);
@@ -246,6 +271,34 @@ export default function GarageWorkOrderPayment() {
               <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleReceiptPick} className="hidden" />
             </div>
           )}
+        </div>
+
+        <div className="relative overflow-hidden rounded-[28px] p-8 sm:p-10
+          bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
+          <p className="text-white/50 text-xs font-medium uppercase tracking-wider mb-4">For the Installer (optional)</p>
+          <div className="grid grid-cols-1 sm:grid-cols-[220px_1fr] gap-3 items-start">
+            <label className="block">
+              <span className="block text-white/40 text-xs mb-1.5">Appointment date &amp; time</span>
+              <input
+                type="datetime-local"
+                value={appointmentAt}
+                onChange={(e) => setAppointmentAt(e.target.value)}
+                className="w-full bg-white/[0.04] border border-white/10 focus:border-gold-400/50 rounded-lg
+                  px-3 py-2.5 text-white text-sm outline-none transition-colors [color-scheme:dark]"
+              />
+            </label>
+            <label className="block">
+              <span className="block text-white/40 text-xs mb-1.5">Remarks</span>
+              <textarea
+                value={remark}
+                onChange={(e) => setRemark(e.target.value)}
+                rows={2}
+                placeholder="Anything the installer should know…"
+                className="w-full bg-white/[0.04] border border-white/10 focus:border-gold-400/50 rounded-lg
+                  px-3 py-2.5 text-white text-sm outline-none transition-colors resize-none"
+              />
+            </label>
+          </div>
         </div>
 
         {error && (

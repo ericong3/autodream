@@ -35,7 +35,7 @@ export default function GarageSalesTools() {
             <ClipboardList size={22} strokeWidth={1.5} />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="font-display text-white font-semibold tracking-wide">My Work Orders</h3>
+            <h3 className="font-display text-white font-semibold tracking-wide">My Pipeline</h3>
             <p className="text-white/40 text-xs mt-0.5">Track jobs from payment to delivery</p>
           </div>
         </button>

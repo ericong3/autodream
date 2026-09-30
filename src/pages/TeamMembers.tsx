@@ -493,7 +493,7 @@ export default function TeamMembers() {
     if (target) {
       updateUser(target.id, {
         name: form.name,
-        username: form.username,
+        username: form.username.trim(),
         phone: form.phone,
         role: form.role,
         businessAccess,
@@ -508,7 +508,7 @@ export default function TeamMembers() {
       addUser({
         id: generateId(),
         name: form.name,
-        username: form.username,
+        username: form.username.trim(),
         password: form.password,
         role: form.role,
         businessAccess,
