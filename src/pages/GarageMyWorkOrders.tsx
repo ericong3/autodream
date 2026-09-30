@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ClipboardList, Car, User, ChevronRight } from 'lucide-react';
-import GarageShell, { SALESMAN_TABS } from '../components/GarageShell';
+import GarageShell from '../components/GarageShell';
 import { useStore } from '../store';
 import { listInvoicesCreatedBy } from '../lib/garageInvoices';
 import { getInstallerJobForInvoice } from '../lib/garageInstallerJobs';
@@ -66,7 +66,7 @@ export default function GarageMyWorkOrders() {
   const visible = showClosed ? closed : active;
 
   return (
-    <GarageShell title="AutoDream Garage" tabs={SALESMAN_TABS} showBack>
+    <GarageShell title="AutoDream Garage" nav>
       <div className="max-w-2xl mx-auto">
         <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
           <div className="flex items-center gap-2.5">

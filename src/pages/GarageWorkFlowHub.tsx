@@ -11,7 +11,7 @@ export default function GarageWorkFlowHub() {
   const navigate = useNavigate();
 
   return (
-    <GarageShell title="Work Flow" showBack>
+    <GarageShell title="Work Flow" nav>
       <div className="max-w-2xl mx-auto grid grid-cols-1 sm:grid-cols-2 gap-4">
         {GARAGE_SERVICES.map((s) => (
           <button

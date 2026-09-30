@@ -166,7 +166,7 @@ export default function GarageTeamMembers() {
   };
 
   return (
-    <GarageShell title="Garage — Team Members" showBack>
+    <GarageShell title="Garage — Team Members" nav>
       <div className="space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <p className="text-white/40 text-sm">{garageUsers.length} member{garageUsers.length === 1 ? '' : 's'}</p>

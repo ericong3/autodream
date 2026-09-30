@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ChevronLeft, ChevronRight, Plus, X, Trash2, User, Clock, Search,
 } from 'lucide-react';
-import GarageShell, { SALESMAN_TABS } from '../components/GarageShell';
+import GarageShell from '../components/GarageShell';
 import Modal from '../components/Modal';
 import { useStore } from '../store';
 import {
@@ -324,7 +324,7 @@ export default function GarageCalendar() {
   );
 
   return (
-    <GarageShell title="AutoDream Garage" tabs={SALESMAN_TABS} showBack>
+    <GarageShell title="AutoDream Garage" nav>
       <div className="w-full flex flex-col lg:flex-row gap-6">
         {/* Sidebar — mini month navigator + legend, like Google Calendar */}
         <aside className="lg:w-48 shrink-0 space-y-5">

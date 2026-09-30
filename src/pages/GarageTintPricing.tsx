@@ -106,14 +106,14 @@ export default function GarageTintPricing() {
 
   if (loading) {
     return (
-      <GarageShell title="Tint Pricing" showBack backTo="/garage">
+      <GarageShell title="Tint Pricing" nav>
         <p className="text-white/40 text-sm text-center py-20">Loading…</p>
       </GarageShell>
     );
   }
 
   return (
-    <GarageShell title="Tint Pricing" showBack backTo="/garage">
+    <GarageShell title="Tint Pricing" nav>
       <div className="max-w-3xl mx-auto space-y-8">
         {/* Full Package grid */}
         <div className="relative overflow-hidden rounded-[28px] p-6 sm:p-8 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">

@@ -10,27 +10,53 @@ export interface GarageTab {
   path: string;
 }
 
-// Shared by every page in the Salesman nav (Dashboard, Sales Tools, ...).
-export const SALESMAN_TABS: GarageTab[] = [
+const SALESMAN_TABS: GarageTab[] = [
   { label: 'Dashboard', path: '/garage/dashboard' },
   { label: 'Sales Tools', path: '/garage/sales-tools' },
   { label: 'Calendar', path: '/garage/calendar' },
 ];
 
+// Management gets every Garage module in the top bar — it replaces the old
+// card hub at /garage as the main control room.
+const MANAGER_TABS: GarageTab[] = [
+  { label: 'Dashboard', path: '/garage/dashboard' },
+  { label: 'Sales Tools', path: '/garage/sales-tools' },
+  { label: 'Team Members', path: '/garage/team' },
+  { label: 'Calendar', path: '/garage/calendar' },
+  { label: 'Work Flow', path: '/garage/installer' },
+  { label: 'Work Order Tracking', path: '/garage/work-order-tracking' },
+  { label: 'Tint Pricing', path: '/garage/tint-pricing' },
+];
+
+export function isGarageManager(role?: string) {
+  return role === 'director' || role === 'shareholder' || role === 'garage_head';
+}
+
+// Installers only have their Work Flow pages, so they get no tab strip.
+function garageTabsFor(role?: string): GarageTab[] | null {
+  if (isGarageManager(role)) return MANAGER_TABS;
+  if (role === 'garage_installer') return null;
+  return SALESMAN_TABS;
+}
+
 // Shared chrome for every Garage page — cinematic background + a light
-// header (back / switch-business / logout), plus an optional tab strip for
-// role-specific nav (e.g. the Salesman Dashboard/Sales Tools pages).
-// Deliberately separate from the Used Car Layout/Sidebar so nothing here
-// can affect that side of the app.
+// header (back / switch-business / logout), plus the role-specific tab
+// strip on top-level pages (`nav`). Deliberately separate from the Used Car
+// Layout/Sidebar so nothing here can affect that side of the app.
 export default function GarageShell({
-  title, showBack, backTo = '/garage', tabs, children,
-}: { title: string; showBack?: boolean; backTo?: string; tabs?: GarageTab[]; children: ReactNode }) {
+  title, showBack, backTo = '/garage', nav, children,
+}: { title: string; showBack?: boolean; backTo?: string; nav?: boolean; children: ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
   const logout = useStore((s) => s.logout);
   const navigate = useNavigate();
   const location = useLocation();
   const [confirmLogout, setConfirmLogout] = useState(false);
   useBodyScrollLock(confirmLogout);
+
+  const tabs = nav ? garageTabsFor(currentUser?.role) : null;
+  // The tab strip is the way around, so a back arrow on a tabbed page would
+  // only lead to the (now redirecting) hub.
+  const backVisible = showBack && !tabs;
 
   const handleLogout = () => { logout(); navigate('/login'); };
 
@@ -50,7 +76,7 @@ export default function GarageShell({
           style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top, 0px))' }}
         >
           <div className="flex items-center gap-3">
-            {showBack && (
+            {backVisible && (
               <button
                 onClick={() => navigate(backTo)}
                 className="p-2 -ml-2 rounded-lg text-white/60 hover:text-gold-400 hover:bg-white/5 transition-colors"

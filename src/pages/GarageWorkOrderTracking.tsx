@@ -11,7 +11,7 @@ export default function GarageWorkOrderTracking() {
   const navigate = useNavigate();
 
   return (
-    <GarageShell title="Work Order Tracking" showBack>
+    <GarageShell title="Work Order Tracking" nav>
       <div className="max-w-2xl mx-auto grid grid-cols-1 sm:grid-cols-2 gap-4">
         {GARAGE_SERVICES.map((s) => (
           <button

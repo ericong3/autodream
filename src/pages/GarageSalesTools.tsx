@@ -1,12 +1,12 @@
 import { useNavigate } from 'react-router-dom';
 import { FilePlus, ClipboardList } from 'lucide-react';
-import GarageShell, { SALESMAN_TABS } from '../components/GarageShell';
+import GarageShell from '../components/GarageShell';
 
 export default function GarageSalesTools() {
   const navigate = useNavigate();
 
   return (
-    <GarageShell title="AutoDream Garage" tabs={SALESMAN_TABS} showBack>
+    <GarageShell title="AutoDream Garage" nav>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <button
           onClick={() => navigate('/garage/work-order/new')}

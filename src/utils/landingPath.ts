@@ -10,14 +10,12 @@ export function roleHome(role: string) {
   return '/inventory';
 }
 
-// Where a role lands *inside* Garage — mirrors roleHome above. Salesmen go
-// straight to their own Dashboard/Sales Tools pages instead of the
-// management hub; everyone else (director, shareholder, other Garage roles
-// not built out yet) lands on the hub.
+// Where a role lands *inside* Garage — mirrors roleHome above. Installers go
+// straight to their Work Flow; everyone else lands on the Dashboard, where
+// the top tab bar (role-aware, see GarageShell) reaches every module.
 export function garageHome(role: string) {
-  if (role === 'garage_salesman') return '/garage/dashboard';
   if (role === 'garage_installer') return '/garage/installer';
-  return '/garage';
+  return '/garage/dashboard';
 }
 
 // Top-level landing spot right after login (or when hitting "/").
