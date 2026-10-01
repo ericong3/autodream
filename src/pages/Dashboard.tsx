@@ -57,8 +57,10 @@ export default function Dashboard() {
     .filter((r) => r.status === 'done')
     .reduce((sum, r) => sum + (r.actualCost ?? r.totalCost), 0);
 
-  // Per-car P&L using the same formula as Commission and InvestorPortal
-  const soldCarData = useMemo(() => soldCars.map((car) => {
+  // Per-car P&L using the same formula as Commission and InvestorPortal —
+  // shared so the Own Capital breakdown below (which needs this for
+  // deal_pending cars too, not just delivered ones) stays in sync with it.
+  const calcCarPL = (car: typeof cars[0]) => {
     const repairCost = repairs
       .filter((r) => r.carId === car.id && r.status === 'done')
       .reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
@@ -80,7 +82,8 @@ export default function Dashboard() {
 
     const netCarProfit = car.isStaffSale ? 0 : profitBeforeComm - commission - intakeComm - sourceComm;
     return { car, dealPrice, repairCost, miscCost, additionalTotal, commission, intakeComm, sourceComm, netCarProfit };
-  }), [soldCars, repairs, customers]);
+  };
+  const soldCarData = useMemo(() => soldCars.map(calcCarPL), [soldCars, repairs, customers]);
 
   const totalRevenue   = soldCarData.reduce((s, d) => s + d.dealPrice, 0);
   const totalCosts     = soldCarData.reduce((s, d) => s + d.car.purchasePrice, 0);
@@ -93,27 +96,38 @@ export default function Dashboard() {
 
   // ── Own Capital ──────────────────────────────────────────
   // What's actually tied up as the director's own money right now.
-  // Unsold own cars: the full purchase price hasn't come back at all yet.
-  // Delivered own cars still awaiting disbursement: NO money has landed
-  // yet either, so both the purchase price and the net profit on top are
-  // still outstanding. Once disbursement lands (moneyReceived), the car
-  // drops out entirely — the capital has cycled back. Incoming-consignment
-  // cars (car.consignment) were never the dealership's own money, so
-  // they're excluded outright.
+  // "Sold" here means delivered OR deal_pending — a deal_pending car
+  // already has a confirmed deal (the price, and therefore the purchase
+  // price recovery + profit, are locked in), it just hasn't physically
+  // changed hands yet, so it belongs with the other not-yet-disbursed cars,
+  // not in the true-unsold bucket. Unsold own cars (no deal locked in at
+  // all): the full purchase price hasn't come back at all yet. Sold own
+  // cars still awaiting disbursement: NO money has landed yet either, so
+  // both the purchase price and the net profit on top are still
+  // outstanding. Once disbursement lands (moneyReceived), the car drops
+  // out entirely — the capital has cycled back. Incoming-consignment cars
+  // (car.consignment) were never the dealership's own money, so they're
+  // excluded outright.
+  const capitalCommittedCars = useMemo(
+    () => cars.filter(c => !c.consignment && (c.status === 'delivered' || c.status === 'deal_pending')),
+    [cars]
+  );
+  const capitalCommittedCarData = useMemo(() => capitalCommittedCars.map(calcCarPL), [capitalCommittedCars, repairs, customers]);
+
   const capitalUnsoldCars = useMemo(
     () => cars
-      .filter(c => !c.consignment && c.status !== 'delivered')
+      .filter(c => !c.consignment && c.status !== 'delivered' && c.status !== 'deal_pending')
       .sort((a, b) => b.purchasePrice - a.purchasePrice),
     [cars]
   );
   const capitalUnsoldTotal = capitalUnsoldCars.reduce((s, c) => s + c.purchasePrice, 0);
 
   const capitalPendingDisbursement = useMemo(
-    () => soldCarData
-      .filter(d => !d.car.consignment && !d.car.moneyReceived)
+    () => capitalCommittedCarData
+      .filter(d => !d.car.moneyReceived)
       .map(d => ({ ...d, capitalAtStake: d.car.purchasePrice + d.netCarProfit }))
       .sort((a, b) => b.capitalAtStake - a.capitalAtStake),
-    [soldCarData]
+    [capitalCommittedCarData]
   );
   const capitalPendingTotal = capitalPendingDisbursement.reduce((s, d) => s + d.capitalAtStake, 0);
 
