@@ -57,7 +57,7 @@ export default function GarageWorkOrderBoard({
   }, []);
 
   return (
-    <div className="overflow-x-auto pb-3 -mx-5 px-5 sm:-mx-8 sm:px-8">
+    <div className="overflow-x-auto pb-3">
       <div className="flex gap-4 min-w-max">
         {COLUMNS.map((col) => {
           const all = rows
@@ -70,7 +70,7 @@ export default function GarageWorkOrderBoard({
           const cards = col.stage === 'closed' ? all.slice(0, CLOSED_LIMIT) : all;
 
           return (
-            <section key={col.stage} className="w-72 shrink-0 flex flex-col rounded-2xl bg-white/[0.025] border border-white/[0.07]">
+            <section key={col.stage} className="w-64 shrink-0 flex flex-col rounded-2xl bg-white/[0.025] border border-white/[0.07]">
               <header className="flex items-center justify-between gap-2 px-4 py-3 border-b border-white/[0.07]">
                 <span className="flex items-center gap-2 text-white/80 text-xs font-semibold uppercase tracking-wider">
                   <span className={`w-2 h-2 rounded-full ${col.dot}`} /> {col.label}
@@ -98,8 +98,8 @@ export default function GarageWorkOrderBoard({
                         }`}
                     >
                       <div className="flex items-start justify-between gap-2 mb-2">
-                        <p className="text-white text-sm font-semibold">{invoice.invoiceNumber}</p>
-                        <span className={`shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${WORK_ORDER_STAGE_BADGE[stage]}`}>
+                        <p className="text-white text-sm font-semibold whitespace-nowrap">{invoice.invoiceNumber}</p>
+                        <span className={`min-w-0 truncate text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${WORK_ORDER_STAGE_BADGE[stage]}`}>
                           {WORK_ORDER_STAGE_LABEL[stage]}
                         </span>
                       </div>

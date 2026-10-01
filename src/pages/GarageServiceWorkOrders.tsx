@@ -125,11 +125,15 @@ export default function GarageServiceWorkOrders() {
         {loading ? (
           <p className="text-white/40 text-sm text-center py-20">Loading…</p>
         ) : view === 'board' ? (
-          <GarageWorkOrderBoard
-            rows={rows}
-            nameOf={nameOf}
-            onOpen={(invoiceId) => navigate(`/garage/invoice/${invoiceId}`)}
-          />
+          // The board breaks out of the page's reading-width column to use
+          // the whole screen — seven columns don't fit in a form-width frame.
+          <div className="relative left-1/2 w-screen -translate-x-1/2 px-5 sm:px-8">
+            <GarageWorkOrderBoard
+              rows={rows}
+              nameOf={nameOf}
+              onOpen={(invoiceId) => navigate(`/garage/invoice/${invoiceId}`)}
+            />
+          </div>
         ) : visible.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <div className="relative mb-5 flex items-center justify-center">
