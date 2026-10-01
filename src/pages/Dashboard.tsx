@@ -187,6 +187,16 @@ export default function Dashboard() {
   const totalOwnCapital = capitalUnsoldTotal + capitalPendingTotal;
   const animatedOwnCapital = useAnimatedRM(totalOwnCapital, 1400, 400);
 
+  // Projected total funding if every one of these cars sells (or finishes
+  // disbursing) at its current LISTED selling price rather than a
+  // discounted deal price — a best-case ceiling for "how much comes back
+  // in total," separate from Own Capital's cost-basis + locked-in-profit
+  // total above.
+  const capitalProjectedFundingTotal =
+    capitalUnsoldCars.reduce((s, c) => s + c.sellingPrice, 0) +
+    capitalPendingDisbursement.reduce((s, d) => s + d.car.sellingPrice, 0);
+  const animatedProjectedFunding = useAnimatedRM(capitalProjectedFundingTotal, 1400, 420);
+
   // Animated stat card values
   const animatedInventory  = useAnimatedCounter(cars.length, 800, 0);
   const animatedSold       = useAnimatedCounter(soldCars.length, 800, 100);
@@ -337,6 +347,14 @@ export default function Dashboard() {
               ))}
             </div>
           </div>
+        </div>
+        {/* Best-case ceiling: everything above, but at listed selling price instead of cost + profit */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-t border-obsidian-400/60 bg-obsidian-700/30">
+          <div>
+            <p className="text-white/70 text-sm font-semibold">Projected Total Funding</p>
+            <p className="text-white/35 text-xs mt-0.5">If every car above sells at its current listed selling price</p>
+          </div>
+          <span className="text-gold-300 text-lg font-bold">{animatedProjectedFunding}</span>
         </div>
       </div>
 
