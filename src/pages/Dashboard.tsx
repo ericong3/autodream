@@ -11,12 +11,14 @@ import {
   AlertTriangle,
   CalendarCheck,
   Wallet,
+  HeartHandshake,
 } from 'lucide-react';
 import { useStore } from '../store';
 import StatCard from '../components/StatCard';
 import Sparkline from '../components/Sparkline';
 import MyPayslipCard from '../components/MyPayslipCard';
 import { formatRM } from '../utils/format';
+import { calcConsignmentPayoutAmount } from '../utils/generatePayments';
 import { useAnimatedCounter } from '../hooks/useAnimatedCounter';
 import { useAnimatedRM } from '../hooks/useAnimatedRM';
 
@@ -130,6 +132,61 @@ export default function Dashboard() {
     [capitalCommittedCarData]
   );
   const capitalPendingTotal = capitalPendingDisbursement.reduce((s, d) => s + d.capitalAtStake, 0);
+
+  // ── Consignment Profit ───────────────────────────────────
+  // AutoDream's own margin on consigned (dealer-owned) cars — not "our
+  // capital" since we never paid for these, but it's real profit that
+  // hasn't landed yet, so it's tracked the same shape as Own Capital:
+  // unsold consignment cars use the asking price as a projection (no
+  // deal locked in yet), sold-not-disbursed cars use the confirmed deal
+  // price. Our margin = deal price minus what we owe the consignor
+  // (calcConsignmentPayoutAmount, same helper the Receivable/Delivered
+  // flows use) minus repairs/misc/commission — netCarProfit's shape, with
+  // the consignor payout standing in for purchase price since we never
+  // bought the car.
+  const calcConsignmentProfit = (car: typeof cars[0]) => {
+    const repairCost = repairs
+      .filter((r) => r.carId === car.id && r.status === 'done')
+      .reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
+    const miscCost = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
+    const customer = customers.find((c) => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
+    const wo = customer?.loanWorkOrder ?? customer?.cashWorkOrder;
+    const dealPrice = wo
+      ? wo.sellingPrice - (wo.discount ?? 0)
+      : car.finalDeal?.dealPrice ?? car.sellingPrice;
+    const dealerPayout = calcConsignmentPayoutAmount(car, dealPrice);
+    const profitBeforeComm = dealPrice - dealerPayout - repairCost - miscCost;
+    const commission = (car.isStaffSale || car.waiveCommission) ? 0 : 1000;
+    const intakeComm = car.intakeCommission ?? 0;
+    const sourceComm = car.sourceCommission ?? 0;
+    const netProfit = car.isStaffSale ? 0 : profitBeforeComm - commission - intakeComm - sourceComm;
+    return { car, dealPrice, dealerPayout, netProfit };
+  };
+
+  const consignmentUnsoldCars = useMemo(
+    () => cars
+      .filter(c => !!c.consignment && c.status !== 'delivered' && c.status !== 'deal_pending')
+      .map(calcConsignmentProfit)
+      .sort((a, b) => b.netProfit - a.netProfit),
+    [cars, repairs, customers]
+  );
+  const consignmentUnsoldTotal = consignmentUnsoldCars.reduce((s, d) => s + d.netProfit, 0);
+
+  const consignmentCommittedCars = useMemo(
+    () => cars.filter(c => !!c.consignment && (c.status === 'delivered' || c.status === 'deal_pending')),
+    [cars]
+  );
+  const consignmentPendingDisbursement = useMemo(
+    () => consignmentCommittedCars
+      .filter(c => !c.moneyReceived)
+      .map(calcConsignmentProfit)
+      .sort((a, b) => b.netProfit - a.netProfit),
+    [consignmentCommittedCars, repairs, customers]
+  );
+  const consignmentPendingTotal = consignmentPendingDisbursement.reduce((s, d) => s + d.netProfit, 0);
+
+  const totalConsignmentProfit = consignmentUnsoldTotal + consignmentPendingTotal;
+  const animatedConsignmentProfit = useAnimatedRM(totalConsignmentProfit, 1400, 500);
 
   const totalOwnCapital = capitalUnsoldTotal + capitalPendingTotal;
   const animatedOwnCapital = useAnimatedRM(totalOwnCapital, 1400, 400);
@@ -280,6 +337,66 @@ export default function Dashboard() {
                 <div key={d.car.id} className="flex justify-between items-center gap-3 py-1.5 text-xs border-b border-obsidian-400/20 last:border-0">
                   <span className="text-white/60 truncate">{d.car.year} {d.car.make} {d.car.model}{d.car.carPlate ? ` · ${d.car.carPlate}` : ''}</span>
                   <span className={`font-medium shrink-0 tabular-nums ${d.capitalAtStake >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatRM(d.capitalAtStake)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Consignment Profit ──────────────────────────────── */}
+      <div className="card-surface rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-obsidian-400/60
+          bg-gradient-to-r from-obsidian-600/40 to-transparent">
+          <div className="flex items-center gap-2.5">
+            <div className="w-[3px] h-5 rounded-full bg-gold-gradient" />
+            <div>
+              <h3 className="text-white font-semibold text-base">Consignment Profit</h3>
+              <p className="text-white/40 text-xs mt-0.5">Your margin on dealer-owned cars — projected until sold, confirmed once sold</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <HeartHandshake size={18} className="text-gold-400" />
+            <span className="text-2xl font-bold text-gold-400">{animatedConsignmentProfit}</span>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-obsidian-400/40">
+          {/* Unsold consignment cars — projected margin at asking price */}
+          <div className="p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <p className="text-white/70 text-sm font-semibold">Unsold — Projected Profit</p>
+                <p className="text-white/35 text-xs mt-0.5">{consignmentUnsoldCars.length} car{consignmentUnsoldCars.length !== 1 ? 's' : ''}</p>
+              </div>
+              <span className="text-white text-sm font-bold">{formatRM(consignmentUnsoldTotal)}</span>
+            </div>
+            <div className="space-y-0.5 max-h-72 overflow-y-auto pr-1">
+              {consignmentUnsoldCars.length === 0 ? (
+                <p className="text-white/30 text-xs py-3">No unsold consignment stock</p>
+              ) : consignmentUnsoldCars.map(d => (
+                <div key={d.car.id} className="flex justify-between items-center gap-3 py-1.5 text-xs border-b border-obsidian-400/20 last:border-0">
+                  <span className="text-white/60 truncate">{d.car.year} {d.car.make} {d.car.model}{d.car.carPlate ? ` · ${d.car.carPlate}` : ''}</span>
+                  <span className={`font-medium shrink-0 tabular-nums ${d.netProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatRM(d.netProfit)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Sold consignment cars, not yet disbursed — confirmed margin */}
+          <div className="p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <p className="text-white/70 text-sm font-semibold">Sold, Not Disbursed — Net Profit</p>
+                <p className="text-white/35 text-xs mt-0.5">{consignmentPendingDisbursement.length} car{consignmentPendingDisbursement.length !== 1 ? 's' : ''}</p>
+              </div>
+              <span className="text-white text-sm font-bold">{formatRM(consignmentPendingTotal)}</span>
+            </div>
+            <div className="space-y-0.5 max-h-72 overflow-y-auto pr-1">
+              {consignmentPendingDisbursement.length === 0 ? (
+                <p className="text-white/30 text-xs py-3">Nothing awaiting disbursement</p>
+              ) : consignmentPendingDisbursement.map(d => (
+                <div key={d.car.id} className="flex justify-between items-center gap-3 py-1.5 text-xs border-b border-obsidian-400/20 last:border-0">
+                  <span className="text-white/60 truncate">{d.car.year} {d.car.make} {d.car.model}{d.car.carPlate ? ` · ${d.car.carPlate}` : ''}</span>
+                  <span className={`font-medium shrink-0 tabular-nums ${d.netProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatRM(d.netProfit)}</span>
                 </div>
               ))}
             </div>
