@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import type {
-  TintSeries, TintPriceGroup, GarageVehicleSize, TintPackageType, TintItemStatus,
+  TintSeries, TintPriceGroup, GarageVehicleSize, TintPackageType,
   TintPositionSelection, GarageTintOrder, GarageTintWorkOrderItem, GarageFilmStock,
 } from '../types';
 import { generateId } from '../utils/format';
@@ -94,6 +94,11 @@ function rowToItem(r: any): GarageTintWorkOrderItem {
     sqft: r.sqft === null ? undefined : Number(r.sqft),
     status: r.status ?? 'pending',
     remark: r.remark ?? undefined,
+    claimedAt: r.claimed_at ?? undefined,
+    completedAt: r.completed_at ?? undefined,
+    completedBy: r.completed_by ?? undefined,
+    needsCorrection: !!r.needs_correction,
+    correctionNote: r.correction_note ?? undefined,
     updatedAt: r.updated_at,
   };
 }
@@ -102,6 +107,24 @@ export async function listTintWorkOrderItems(invoiceId: string): Promise<GarageT
   const { data, error } = await supabase.from('garage_tint_installation_pieces').select('*').eq('invoice_id', invoiceId);
   if (error) throw error;
   return (data ?? []).map(rowToItem);
+}
+
+// Glass items for many work orders in one request (team queue, board).
+// The pre-split grouped rows are left out.
+export async function listTintItemsForInvoices(invoiceIds: string[]): Promise<GarageTintWorkOrderItem[]> {
+  if (invoiceIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from('garage_tint_installation_pieces')
+    .select('*')
+    .in('invoice_id', invoiceIds);
+  if (error) throw error;
+  return (data ?? []).map(rowToItem).filter((i) => isRequiredGlass(i));
+}
+
+// The grouped 'door_window' / 'rear_panel_window' rows from before
+// left/right were split don't count — individual glass replaced them.
+export function isRequiredGlass(item: GarageTintWorkOrderItem): boolean {
+  return item.glassPosition !== 'door_window' && item.glassPosition !== 'rear_panel_window';
 }
 
 // Creates one item per glass in the order that doesn't have one yet
@@ -128,50 +151,63 @@ export async function ensureTintWorkOrderItems(
   return listTintWorkOrderItems(invoiceId);
 }
 
-// Confirm one glass as completed (or reopen it). Done by a database
-// function so the change and its GLASS_ITEM_COMPLETED / _REOPENED history
-// entry are one step; confirming records installed = requested series, and
-// the confirming installer as the glass's installer if none was set.
-export async function setTintWorkOrderItemStatus(
-  itemId: string, status: TintItemStatus, actorId: string,
-): Promise<GarageTintWorkOrderItem> {
-  const { data, error } = await supabase.rpc('set_garage_glass_item_status', {
-    p_item_id: itemId, p_status: status, p_actor_id: actorId,
-  });
-  if (error) throw glassWorkError(error);
-  return rowToItem(data);
+// ── Per-glass work ──────────────────────────────────────────────────────
+// Tinted installation is team work owned per glass: an installer claims an
+// available glass and from then on only they (or a Garage Head / Director /
+// Shareholder) can change or confirm it. Every step is a database function
+// that checks ownership and stage and records the activity history; the
+// database refuses direct writes to these fields.
+
+// Thrown when another installer claimed the glass first — carries who.
+export class GlassAlreadyTakenError extends Error {
+  constructor(public takenBy?: string) { super('Someone else has just taken this glass'); }
 }
 
-// Every change to a glass's installation work goes through a database
-// function that checks the actor owns the job (the installer who accepted
-// it) or is a Garage manager, and that installation is in progress. The
-// database refuses direct writes to these fields.
 function glassWorkError(error: { message?: string }): Error {
   const msg = error.message ?? '';
-  if (msg.includes('NOT_YOUR_JOB')) return new Error('Only the installer who accepted this job (or a Garage Head / Director / Shareholder) can change it');
-  if (msg.includes('NOT_IN_PROGRESS')) return new Error('Glass work can only be changed while the installation is in progress');
-  if (msg.includes('NOT_AN_INSTALLER')) return new Error('Only an installer can be set as the glass installer');
+  const taken = msg.match(/GLASS_ALREADY_TAKEN ?(\S*)/);
+  if (taken) return new GlassAlreadyTakenError(taken[1] || undefined);
+  if (msg.includes('NOT_YOUR_GLASS')) return new Error('Only the installer who took this glass (or a Garage Head / Director / Shareholder) can change it');
+  if (msg.includes('NOT_IN_PROGRESS') || msg.includes('NOT_OPEN_FOR_INSTALLATION')) {
+    return new Error('Glass can only be changed while the installation is in progress — refresh to see the latest');
+  }
+  if (msg.includes('GLASS_NOT_TAKEN')) return new Error('Take this glass first');
+  if (msg.includes('GLASS_HAS_FILM_LOGGED')) return new Error('Clear the sqft logged on this glass before releasing it');
+  if (msg.includes('NOT_A_MANAGER')) return new Error('Only a Garage Head, Director or Shareholder can do that');
+  if (msg.includes('NOT_AN_INSTALLER')) return new Error('Only installers can take glass — management assigns it instead');
   return error as Error;
 }
 
-export async function setTintWorkOrderItemInstaller(
-  itemId: string, installerId: string | null, actorId: string,
-): Promise<GarageTintWorkOrderItem> {
-  const { data, error } = await supabase.rpc('set_garage_glass_item_installer', {
-    p_item_id: itemId, p_installer_id: installerId, p_actor_id: actorId,
-  });
+async function glassStep(fn: string, args: Record<string, unknown>): Promise<GarageTintWorkOrderItem> {
+  const { data, error } = await supabase.rpc(fn, args);
   if (error) throw glassWorkError(error);
   return rowToItem(data);
 }
 
-export async function setTintWorkOrderItemRemark(
-  itemId: string, remark: string, actorId: string,
-): Promise<GarageTintWorkOrderItem> {
-  const { data, error } = await supabase.rpc('set_garage_glass_item_remark', {
-    p_item_id: itemId, p_remark: remark, p_actor_id: actorId,
-  });
-  if (error) throw glassWorkError(error);
-  return rowToItem(data);
+// An installer takes an available glass. Race-safe in the database: if two
+// installers tap at once, only the first gets it (the other gets
+// GlassAlreadyTakenError). Taking the first glass also starts the car.
+export function claimTintWorkOrderItem(itemId: string, actorId: string) {
+  return glassStep('claim_garage_glass_item', { p_item_id: itemId, p_actor_id: actorId });
+}
+
+// Hand a taken (not yet installed) glass back to the pool.
+export function releaseTintWorkOrderItem(itemId: string, actorId: string) {
+  return glassStep('release_garage_glass_item', { p_item_id: itemId, p_actor_id: actorId });
+}
+
+// Management assigns / reassigns / clears a glass's installer.
+export function assignTintWorkOrderItem(itemId: string, installerId: string | null, actorId: string) {
+  return glassStep('assign_garage_glass_item', { p_item_id: itemId, p_installer_id: installerId, p_actor_id: actorId });
+}
+
+// 'installed' — the glass's installer confirms it; 'taken' — undo / reopen.
+export function setTintWorkOrderItemStatus(itemId: string, status: 'installed' | 'taken', actorId: string) {
+  return glassStep('set_garage_glass_item_status', { p_item_id: itemId, p_status: status, p_actor_id: actorId });
+}
+
+export function setTintWorkOrderItemRemark(itemId: string, remark: string, actorId: string) {
+  return glassStep('set_garage_glass_item_remark', { p_item_id: itemId, p_remark: remark, p_actor_id: actorId });
 }
 
 function rowToFilmStock(r: any): GarageFilmStock {
@@ -207,8 +243,7 @@ export async function setTintWorkOrderItemSqft(
     if (short) {
       throw new Error(`Not enough ${short[1]} film in stock (${Number(short[2])} sqft left) — ask a manager to update Film Stock`);
     }
-    if (msg.includes('NOT_YOUR_JOB')) throw new Error('Only the installer who accepted this job (or a Garage Head / Director / Shareholder) can change it');
-    if (msg.includes('NOT_IN_PROGRESS')) throw new Error('Film usage can only be logged while the installation is in progress');
+    if (msg.includes('NOT_YOUR_GLASS') || msg.includes('GLASS_NOT_TAKEN') || msg.includes('NOT_IN_PROGRESS')) throw glassWorkError(error);
     if (msg.includes('INVALID_SQFT')) throw new Error('Enter a sqft of 0 or more');
     if (msg.includes('NO_FILM_STOCK') || msg.includes('NO_SERIES_FOR_GLASS')) {
       throw new Error('No film stock is set up for this glass\'s series — ask a manager');

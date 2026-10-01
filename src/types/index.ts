@@ -109,9 +109,10 @@ export interface GarageTintOrder {
 export type GarageWorkStatus =
   | 'draft'
   | 'waiting_for_installer'
-  | 'installer_assigned'
+  | 'installer_assigned' // legacy: one installer had claimed the whole car
   | 'in_progress'
-  | 'installation_completed'
+  | 'pending_approval' // installers submitted; awaiting the Garage Head
+  | 'installation_completed' // passed through only, never displayed
   | 'payment_due'
   | 'ready_for_delivery'
   | 'ready_for_warranty'
@@ -122,12 +123,18 @@ export type GarageWorkStatus =
 export type GarageWorkOrderEventType =
   | 'WORK_ORDER_CREATED'
   | 'SENT_TO_INSTALLER'
-  | 'INSTALLER_ACCEPTED'
-  | 'INSTALLER_ASSIGNED'
+  | 'INSTALLER_ACCEPTED' // legacy whole-car claim
+  | 'INSTALLER_ASSIGNED' // legacy whole-car assignment
   | 'INSTALLATION_STARTED'
+  | 'GLASS_ITEM_CLAIMED'
+  | 'GLASS_ITEM_RELEASED'
+  | 'GLASS_ITEM_ASSIGNED'
   | 'GLASS_ITEM_COMPLETED'
   | 'GLASS_ITEM_REOPENED'
-  | 'INSTALLATION_COMPLETED'
+  | 'INSTALLATION_SUBMITTED'
+  | 'INSTALLATION_APPROVED'
+  | 'INSTALLATION_RETURNED'
+  | 'INSTALLATION_COMPLETED' // legacy single-installer completion
   | 'PAYMENT_COLLECTED'
   | 'VEHICLE_READY'
   | 'VEHICLE_DELIVERED'
@@ -214,7 +221,10 @@ export interface GarageInvoiceClaim {
 // "in progress" list until they mark it complete. Other services don't have
 // a worker queue yet, so this only ever gets created for service === 'tinted'
 // for now.
-export type GarageJobStatus = 'pending' | 'accepted' | 'completed';
+// The installation's own status: pending (in the team queue) →
+// in_progress → submitted (for approval) → completed (approved);
+// submitted → in_progress when returned. 'accepted' only on old rows.
+export type GarageJobStatus = 'pending' | 'accepted' | 'in_progress' | 'submitted' | 'completed';
 
 export interface GarageInstallerJob {
   id: string;
@@ -222,20 +232,26 @@ export interface GarageInstallerJob {
   service: GarageService;
   status: GarageJobStatus;
   createdAt: string;
+  // Legacy history from the one-installer-per-car model — never used for
+  // permissions now.
   acceptedBy?: string;
   acceptedAt?: string;
-  // Keyed in by the installer at the moment they accept — when they expect
-  // to finish, so the salesman/customer have a rough ETA. Optional when a
-  // manager assigns the job.
-  estimatedCompleteAt?: string;
-  // Set when a manager assigned the job to acceptedBy, rather than the
-  // installer accepting it themselves.
   assignedBy?: string;
-  // Set by Start Installation — an accepted job without it is only
-  // assigned, not yet being worked on.
+  // The car's estimated completion — set by management, optional.
+  estimatedCompleteAt?: string;
+  // When the team started (first glass claimed, or Start pressed).
   startedAt?: string;
-  // Complete Installation — who pressed it, and when final inspection was
-  // confirmed (same moment; recorded so it's explicit on the job).
+  // Submitted for approval once every glass is installed.
+  submittedForApprovalAt?: string;
+  submittedBy?: string;
+  // Garage Head / Director / Shareholder review.
+  approvedAt?: string;
+  approvedBy?: string;
+  returnedAt?: string; // last time it was returned for correction
+  returnedBy?: string;
+  returnReason?: string;
+  // Approval completes the installation (completedBy = the approver);
+  // finalInspectionAt is the inspection confirmed at approval.
   completedAt?: string;
   completedBy?: string;
   finalInspectionAt?: string;
@@ -246,11 +262,11 @@ export interface GarageInstallerJob {
 // garage_tint_installation_pieces). Seeded from the tint order's
 // selections/extras when the order is confirmed (and lazily for older
 // orders), so whatever layout the car has, each glass is its own item.
-// requested* is what the salesman sold; installed* / sqft / status are the
-// installer's side — installedSeries and status aren't set by any screen
-// yet, they're here so installer confirmation can be added without a
-// schema change.
-export type TintItemStatus = 'pending' | 'installed';
+// requested* is what the salesman sold; the rest is installation work,
+// owned by whoever claimed the glass (installerId). Several installers can
+// work on the same car, one glass each.
+//   pending (available) → taken (claimed) → installed (confirmed)
+export type TintItemStatus = 'pending' | 'taken' | 'installed';
 
 export interface GarageTintWorkOrderItem {
   id: string;
@@ -265,6 +281,12 @@ export interface GarageTintWorkOrderItem {
   sqft?: number;
   status: TintItemStatus;
   remark?: string;
+  claimedAt?: string;
+  completedAt?: string;
+  completedBy?: string;
+  // Set when the Garage Head returned the car and flagged this glass.
+  needsCorrection: boolean;
+  correctionNote?: string;
   updatedAt: string;
 }
 

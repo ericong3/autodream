@@ -27,7 +27,6 @@ export const JOB_PRIORITY_META: Record<JobPriorityKey, { label: string; badge: s
 export interface JobTiming {
   appointmentAt?: string;
   estimatedCompleteAt?: string;
-  sinceAssignedMs?: number;
   sinceStartedMs?: number;
   indicators: JobPriorityKey[]; // most urgent first
 }
@@ -36,17 +35,17 @@ export function getJobTiming(invoice: GarageInvoice, job: GarageInstallerJob | n
   const timing: JobTiming = {
     appointmentAt: invoice.appointmentAt,
     estimatedCompleteAt: job?.estimatedCompleteAt,
-    sinceAssignedMs: job?.acceptedAt ? now - new Date(job.acceptedAt).getTime() : undefined,
     sinceStartedMs: job?.startedAt ? now - new Date(job.startedAt).getTime() : undefined,
     indicators: [],
   };
   if (!job || job.status === 'completed') return timing;
 
   // Started = the work order says so (also covers jobs from before
-  // started_at existed).
-  const started = invoice.workStatus === 'in_progress' || !!job.startedAt;
+  // started_at existed). Awaiting approval counts as started.
+  const started = invoice.workStatus === 'in_progress' || invoice.workStatus === 'pending_approval' || !!job.startedAt;
 
-  if (job.status === 'accepted' && job.estimatedCompleteAt && new Date(job.estimatedCompleteAt).getTime() < now) {
+  // The car's ETA (set by management) has passed and it isn't approved yet.
+  if (job.estimatedCompleteAt && new Date(job.estimatedCompleteAt).getTime() < now) {
     timing.indicators.push('running_late');
   }
   if (!started && invoice.appointmentAt) {

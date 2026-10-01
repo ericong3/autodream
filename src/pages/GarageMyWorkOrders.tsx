@@ -32,7 +32,7 @@ interface Row {
 type PipelineTab = 'installer' | 'delivery' | 'warranty' | 'closed';
 
 const PIPELINE_TABS: { key: PipelineTab; label: string; stages: WorkOrderStage[] }[] = [
-  { key: 'installer', label: 'With Installer', stages: ['waiting_for_installer', 'installer_assigned', 'in_progress'] },
+  { key: 'installer', label: 'With Installers', stages: ['waiting_for_installer', 'installer_assigned', 'in_progress', 'pending_approval'] },
   { key: 'delivery', label: 'Ready for Delivery', stages: ['payment_due', 'ready_for_delivery'] },
   { key: 'warranty', label: 'Register Warranty', stages: ['ready_for_warranty'] },
   { key: 'closed', label: 'Closed', stages: ['closed'] },
@@ -41,22 +41,22 @@ const PIPELINE_TABS: { key: PipelineTab; label: string; stages: WorkOrderStage[]
 const formatWhen = (iso: string) =>
   new Date(iso).toLocaleString('en-MY', { dateStyle: 'medium', timeStyle: 'short' });
 
-// What the salesman can tell the customer about the car's installer status.
+// What the salesman can tell the customer about the installation. Tinted
+// installation is team work, so this follows the car, not one installer.
 function installerNote({ job }: Row, users: AppUser[]): string | null {
   if (!job) return null;
+  const name = (id?: string) => users.find((u) => u.id === id)?.name;
+  const eta = job.estimatedCompleteAt ? ` · est. done ${formatWhen(job.estimatedCompleteAt)}` : '';
   if (job.status === 'completed' && job.completedAt) {
-    const who = users.find((u) => u.id === (job.completedBy ?? job.acceptedBy))?.name ?? 'Installer';
-    return `Installation completed · ${who} · ${formatWhen(job.completedAt)}`;
+    return job.approvedAt
+      ? `Installation approved · ${name(job.approvedBy) ?? 'Garage Head'} · ${formatWhen(job.approvedAt)}`
+      : `Installation completed · ${name(job.completedBy ?? job.acceptedBy) ?? 'Installer'} · ${formatWhen(job.completedAt)}`;
   }
-  if (job.status === 'accepted') {
-    const who = users.find((u) => u.id === job.acceptedBy)?.name ?? 'Installer';
-    const parts = job.startedAt
-      ? [`${who} · started ${formatWhen(job.startedAt)}`]
-      : [`${who} · accepted ${job.acceptedAt ? formatWhen(job.acceptedAt) : ''}`.trim()];
-    if (job.estimatedCompleteAt) parts.push(`est. done ${formatWhen(job.estimatedCompleteAt)}`);
-    return parts.join(' · ');
+  if (job.status === 'submitted') return 'Installed — waiting for Garage Head approval';
+  if (job.status === 'in_progress' || job.status === 'accepted') {
+    return `${job.startedAt ? `Installation started ${formatWhen(job.startedAt)}` : 'Installation in progress'}${eta}`;
   }
-  if (job.status === 'pending') return 'Waiting for an installer to accept';
+  if (job.status === 'pending') return `Waiting for installers to start${eta}`;
   return null;
 }
 

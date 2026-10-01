@@ -6,22 +6,25 @@ import {
 import type { WorkOrderStage } from '../utils/garageWorkOrderStatus';
 import { getJobTiming } from '../utils/garageJobPriority';
 import { JobPriorityBadges } from './GarageJobPriority';
-import type { GarageInvoice, GarageVehicle, GarageInstallerJob } from '../types';
+import type { GarageInvoice, GarageVehicle, GarageInstallerJob, GarageTintWorkOrderItem } from '../types';
 
 export interface BoardRow {
   invoice: GarageInvoice;
   vehicle: GarageVehicle | null;
   job: GarageInstallerJob | null;
   stage: WorkOrderStage;
+  glass?: GarageTintWorkOrderItem[]; // who's on which glass
 }
 
 // Operational board — one column per stage, left to right in pipeline
 // order. Read-only: cards open the work order, there's no dragging between
 // columns; stages only change through each role's own actions.
-const COLUMNS: { stage: WorkOrderStage; label: string; dot: string }[] = [
+// Tinted installation is team work: no "assigned to one installer" column.
+// Old orders still at installer_assigned are shown under In Progress.
+const COLUMNS: { stage: WorkOrderStage; also?: WorkOrderStage[]; label: string; dot: string }[] = [
   { stage: 'waiting_for_installer', label: 'Waiting for Installer', dot: 'bg-white/40' },
-  { stage: 'installer_assigned', label: 'Assigned', dot: 'bg-violet-400' },
-  { stage: 'in_progress', label: 'In Progress', dot: 'bg-blue-400' },
+  { stage: 'in_progress', also: ['installer_assigned'], label: 'In Progress', dot: 'bg-blue-400' },
+  { stage: 'pending_approval', label: 'Pending Approval', dot: 'bg-indigo-400' },
   { stage: 'payment_due', label: 'Payment Due', dot: 'bg-orange-400' },
   { stage: 'ready_for_delivery', label: 'Ready for Delivery', dot: 'bg-gold-400' },
   { stage: 'ready_for_warranty', label: 'Ready for Warranty', dot: 'bg-gold-300' },
@@ -61,7 +64,7 @@ export default function GarageWorkOrderBoard({
       <div className="flex gap-4 min-w-max">
         {COLUMNS.map((col) => {
           const all = rows
-            .filter((r) => r.stage === col.stage)
+            .filter((r) => r.stage === col.stage || (col.also ?? []).includes(r.stage))
             .map((r) => ({ ...r, enteredAt: stageEnteredAt(r.invoice, r.job) }))
             // Longest-waiting first — except Closed, most recent first.
             .sort((a, b) => col.stage === 'closed'
@@ -82,10 +85,15 @@ export default function GarageWorkOrderBoard({
                 {cards.length === 0 && (
                   <p className="text-white/20 text-xs text-center py-6">Nothing here</p>
                 )}
-                {cards.map(({ invoice, vehicle, job, stage, enteredAt }) => {
+                {cards.map(({ invoice, vehicle, job, stage, enteredAt, glass }) => {
                   const inStageMs = now - new Date(enteredAt).getTime();
                   const slow = stage !== 'closed' && inStageMs > SLOW_AFTER_MS;
-                  const installer = nameOf(job?.completedBy ?? job?.acceptedBy);
+                  // The team on this car (per-glass installers); old orders fall
+                  // back to the one installer who took the whole car.
+                  const teamIds = [...new Set((glass ?? []).map((g) => g.installerId).filter((x): x is string => !!x))];
+                  const installer = (teamIds.length ? teamIds : job?.acceptedBy ? [job.acceptedBy] : [])
+                    .map((id) => nameOf(id) ?? 'Installer').join(', ') || undefined;
+                  const glassDone = (glass ?? []).filter((g) => g.status === 'installed').length;
                   const timing = getJobTiming(invoice, job, now);
                   const urgent = timing.indicators.includes('overdue') || timing.indicators.includes('running_late');
                   return (
@@ -122,7 +130,10 @@ export default function GarageWorkOrderBoard({
                         </p>
                         <p className="flex items-center gap-1.5">
                           <Wrench size={11} className="text-white/30 shrink-0" />
-                          <span className="truncate">{installer ?? 'No installer yet'}</span>
+                          <span className="truncate">{installer ?? 'No installers yet'}</span>
+                          {(glass ?? []).length > 0 && stage !== 'closed' && (
+                            <span className="ml-auto shrink-0 text-white/40">{glassDone}/{glass!.length}</span>
+                          )}
                         </p>
                       </div>
 

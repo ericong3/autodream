@@ -1,4 +1,6 @@
-import type { GarageInvoice, GarageInstallerJob, GarageWorkOrderActivity, GarageWorkOrderEventType } from '../types';
+import type {
+  GarageInvoice, GarageInstallerJob, GarageWorkOrderActivity, GarageWorkOrderEventType, GarageTintWorkOrderItem,
+} from '../types';
 import { getWorkOrderStage } from './garageWorkOrderStatus';
 import type { WorkOrderStage } from './garageWorkOrderStatus';
 import { GLASS_LABEL, TINT_SERIES } from './tintPricing';
@@ -10,7 +12,10 @@ import { GLASS_LABEL, TINT_SERIES } from './tintPricing';
 // each history entry, so the two always agree. Nothing here changes the
 // work order; the page's single main action button does that.
 
-export type PipelineStageKey = 'created' | 'installer' | 'installation' | 'payment' | 'delivery' | 'warranty' | 'closed';
+// Tinted installation is team work (per-glass installers), so there's no
+// single "installer accepts the car" step: Created → Installation →
+// Approval (Garage Head) → Payment → Delivery → Warranty → Closed.
+export type PipelineStageKey = 'created' | 'installation' | 'approval' | 'payment' | 'delivery' | 'warranty' | 'closed';
 export type PipelineStageState = 'done' | 'current' | 'upcoming';
 
 export interface PipelineFact {
@@ -36,8 +41,8 @@ export interface PipelineStage {
 
 const RESPONSIBLE: Record<PipelineStageKey, string> = {
   created: 'Salesman',
-  installer: 'Installer',
-  installation: 'Installer',
+  installation: 'Installers',
+  approval: 'Garage Head',
   payment: 'Salesman',
   delivery: 'Salesman',
   warranty: 'Salesman',
@@ -59,8 +64,14 @@ const EVENT_LABEL: Record<GarageWorkOrderEventType, string> = {
   INSTALLER_ACCEPTED: 'Installer accepted',
   INSTALLER_ASSIGNED: 'Installer assigned',
   INSTALLATION_STARTED: 'Installation started',
-  GLASS_ITEM_COMPLETED: 'Glass completed',
+  GLASS_ITEM_CLAIMED: 'Glass taken',
+  GLASS_ITEM_RELEASED: 'Glass released',
+  GLASS_ITEM_ASSIGNED: 'Glass assigned',
+  GLASS_ITEM_COMPLETED: 'Glass installed',
   GLASS_ITEM_REOPENED: 'Glass reopened',
+  INSTALLATION_SUBMITTED: 'Submitted for approval',
+  INSTALLATION_APPROVED: 'Installation approved',
+  INSTALLATION_RETURNED: 'Returned for correction',
   INSTALLATION_COMPLETED: 'Installation completed',
   PAYMENT_COLLECTED: 'Payment collected',
   VEHICLE_READY: 'Vehicle ready for delivery',
@@ -86,12 +97,22 @@ function eventDetail(a: GarageWorkOrderActivity, nameOf: (userId?: string) => st
         `To ${nameOf(m.installer_id) ?? 'an installer'}`,
         m.estimated_complete_at && `est. finish ${formatTime(m.estimated_complete_at)}`,
       ].filter(Boolean).join(' · ');
+    case 'GLASS_ITEM_CLAIMED':
+    case 'GLASS_ITEM_RELEASED':
     case 'GLASS_ITEM_COMPLETED':
     case 'GLASS_ITEM_REOPENED': {
       const glass = GLASS_LABEL[m.glass_position] ?? m.glass_position;
       const series = m.installed_series ? SERIES_LABEL[m.installed_series] ?? m.installed_series : undefined;
       return [glass, series].filter(Boolean).join(' · ') || undefined;
     }
+    case 'GLASS_ITEM_ASSIGNED': {
+      const glass = GLASS_LABEL[m.glass_position] ?? m.glass_position;
+      const to = m.to_installer ? nameOf(m.to_installer) ?? 'an installer' : 'nobody (unassigned)';
+      return `${glass} → ${to}`;
+    }
+    case 'INSTALLATION_RETURNED':
+      return m.reason ? `“${m.reason}”` : undefined;
+    case 'INSTALLATION_APPROVED':
     case 'INSTALLATION_COMPLETED':
       return m.remark ? `“${m.remark}”` : undefined;
     case 'PAYMENT_COLLECTED':
@@ -122,9 +143,10 @@ export function activityToEvents(
 
 // Which pipeline stage the work order is currently sitting in.
 const CURRENT_STAGE: Record<WorkOrderStage, PipelineStageKey> = {
-  waiting_for_installer: 'installer',
+  waiting_for_installer: 'installation',
   installer_assigned: 'installation',
   in_progress: 'installation',
+  pending_approval: 'approval',
   payment_due: 'payment',
   ready_for_delivery: 'delivery',
   ready_for_warranty: 'warranty',
@@ -136,18 +158,26 @@ export function buildWorkOrderPipeline(
   job: GarageInstallerJob | null,
   activity: GarageWorkOrderActivity[],
   nameOf: (userId?: string) => string | undefined,
+  items: GarageTintWorkOrderItem[] = [],
 ): { stages: PipelineStage[]; events: ActivityEvent[]; stage: WorkOrderStage; currentKey: PipelineStageKey } {
   const stage = getWorkOrderStage(invoice);
   const currentKey = CURRENT_STAGE[stage];
-  const started = !!job?.startedAt || (job?.status === 'accepted' && invoice.workStatus === 'in_progress');
+  const started = !!job?.startedAt || ['in_progress', 'pending_approval'].includes(invoice.workStatus);
+  // Approval completes the installation (legacy orders completed directly).
   const installDone = job?.status === 'completed';
-  const installerName = nameOf(job?.completedBy ?? job?.acceptedBy);
+  const submitted = invoice.workStatus === 'pending_approval';
   const paid = invoice.paymentStatus === 'paid';
+  // Everyone who worked a glass on this car — or, for orders from before
+  // per-glass installers, the one installer who took the whole car.
+  const installerIds = [...new Set(items.map((i) => i.installerId).filter((x): x is string => !!x))];
+  const installerNames = (installerIds.length ? installerIds : job?.acceptedBy ? [job.acceptedBy] : [])
+    .map((id) => nameOf(id)).filter(Boolean).join(', ');
+  const installedCount = items.filter((i) => i.status === 'installed').length;
 
   const done: Record<PipelineStageKey, boolean> = {
     created: true,
-    installer: !!job?.acceptedAt || installDone,
-    installation: installDone,
+    installation: installDone || submitted,
+    approval: installDone,
     payment: paid,
     delivery: !!invoice.deliveredAt,
     warranty: !!invoice.warrantyRegisteredAt,
@@ -172,45 +202,44 @@ export function buildWorkOrderPipeline(
       note: invoice.remark ? `Remarks for installer: ${invoice.remark}` : 'Confirmed and sent to the installer queue.',
     },
     {
-      key: 'installer',
-      label: 'Installer',
-      state: stateOf('installer'),
-      headline: done.installer ? 'Installer Assigned' : 'Waiting for Installer',
-      at: job?.acceptedAt,
-      by: nameOf(job?.acceptedBy),
-      facts: job?.acceptedAt
-        ? [
-            job.assignedBy
-              ? { label: `Assigned to ${nameOf(job.acceptedBy) ?? 'installer'}`, at: job.acceptedAt, by: nameOf(job.assignedBy) }
-              : { label: 'Accepted', at: job.acceptedAt, by: nameOf(job.acceptedBy) },
-            ...(job.estimatedCompleteAt ? [{ label: 'Estimated finish', at: job.estimatedCompleteAt }] : []),
-          ]
-        : [],
-      note: done.installer
-        ? 'An installer has taken this job.'
-        : 'Waiting for an installer to accept the job from their Incoming queue.',
-    },
-    {
       key: 'installation',
       label: 'Installation',
       state: stateOf('installation'),
-      headline: installDone ? 'Installation Completed'
+      headline: done.installation ? 'Installation Done'
         : started ? 'Installation Started'
-        : done.installer ? 'Waiting to Start'
-        : 'Installation',
-      at: installDone ? job?.completedAt : job?.startedAt,
-      by: installDone || started ? installerName : undefined,
+        : 'Waiting for Installers',
+      at: job?.submittedForApprovalAt ?? job?.startedAt,
+      by: installerNames || undefined,
       facts: [
-        ...(job?.startedAt ? [{ label: 'Started', at: job.startedAt, by: nameOf(job.acceptedBy) }] : []),
+        ...(job?.startedAt ? [{ label: 'Started', at: job.startedAt }] : []),
         ...(started && !job?.startedAt ? [{ label: 'Started (time not recorded)' }] : []),
-        ...(job?.completedAt ? [{ label: 'Completed', at: job.completedAt, by: installerName }] : []),
+        ...(installerNames ? [{ label: 'Installers', by: installerNames }] : []),
+        ...(items.length ? [{ label: `Glass installed: ${installedCount} of ${items.length}` }] : []),
+        ...(job?.estimatedCompleteAt && !installDone ? [{ label: 'Estimated completion', at: job.estimatedCompleteAt }] : []),
+        ...(job?.submittedForApprovalAt ? [{ label: 'Submitted for approval', at: job.submittedForApprovalAt, by: nameOf(job.submittedBy) }] : []),
+      ],
+      note: done.installation ? 'Every glass is installed.'
+        : job?.returnReason && job.returnedAt ? `Returned for correction: ${job.returnReason}`
+        : started ? 'Installers are working on the car — each glass is taken and confirmed by its installer.'
+        : 'Any installer can take a glass to start the car.',
+    },
+    {
+      key: 'approval',
+      label: 'Approval',
+      state: stateOf('approval'),
+      headline: installDone ? 'Approved' : submitted ? 'Pending Approval' : 'Approval',
+      at: job?.approvedAt ?? job?.completedAt,
+      by: nameOf(job?.approvedBy ?? job?.completedBy),
+      facts: [
+        ...(job?.returnedAt ? [{ label: 'Last returned', at: job.returnedAt, by: nameOf(job.returnedBy) }] : []),
+        ...(job?.approvedAt ? [{ label: 'Approved', at: job.approvedAt, by: nameOf(job.approvedBy) }] : []),
+        ...(!job?.approvedAt && job?.completedAt ? [{ label: 'Completed', at: job.completedAt, by: nameOf(job.completedBy ?? job.acceptedBy) }] : []),
         ...(job?.finalInspectionAt ? [{ label: 'Final inspection confirmed', at: job.finalInspectionAt }] : []),
       ],
       note: installDone
-        ? job?.remark ? `Installer remarks: ${job.remark}` : 'Installation completed and inspected.'
-        : started ? 'The installer is working on the car.'
-        : done.installer ? 'Assigned — the installer hasn\'t started yet.'
-        : 'Starts once an installer accepts the job.',
+        ? job?.remark ? `Remarks: ${job.remark}` : 'Installation approved after final inspection.'
+        : submitted ? 'Waiting for the Garage Head to inspect and approve.'
+        : 'The Garage Head approves once every glass is installed and submitted.',
     },
     {
       key: 'payment',

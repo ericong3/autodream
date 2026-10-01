@@ -5,6 +5,7 @@ import GarageShell from '../components/GarageShell';
 import GarageWorkOrderBoard from '../components/GarageWorkOrderBoard';
 import { JobPriorityBadges, useNow } from '../components/GarageJobPriority';
 import { getJobTiming } from '../utils/garageJobPriority';
+import { listTintItemsForInvoices } from '../lib/garageTint';
 import { useWorkOrderActivityUpdates } from '../hooks/useWorkOrderActivityUpdates';
 import { useStore } from '../store';
 import { listInvoicesByService } from '../lib/garageInvoices';
@@ -15,7 +16,7 @@ import {
   getWorkOrderStage, isWorkOrderClosed, WORK_ORDER_STAGE_LABEL, WORK_ORDER_STAGE_BADGE, WORK_ORDER_STAGE_ORDER,
 } from '../utils/garageWorkOrderStatus';
 import { useInstallerJobUpdates } from '../hooks/useInstallerJobUpdates';
-import type { GarageInvoice, GarageVehicle, GarageCustomer, GarageInstallerJob, GarageService } from '../types';
+import type { GarageInvoice, GarageVehicle, GarageCustomer, GarageInstallerJob, GarageService, GarageTintWorkOrderItem } from '../types';
 import type { WorkOrderStage } from '../utils/garageWorkOrderStatus';
 
 interface Row {
@@ -24,6 +25,7 @@ interface Row {
   customer: GarageCustomer | null;
   job: GarageInstallerJob | null;
   stage: WorkOrderStage;
+  glass: GarageTintWorkOrderItem[];
 }
 
 // Manager-level oversight — every work order for one service, across every
@@ -54,13 +56,15 @@ export default function GarageServiceWorkOrders() {
     if (!quiet) setLoading(true);
     listInvoicesByService(service as GarageService)
       .then(async (invoices) => {
+        // Per-glass installers for every order, in one request.
+        const allGlass = await listTintItemsForInvoices(invoices.filter((i) => i.service === 'tinted').map((i) => i.id)).catch(() => []);
         const built = await Promise.all(invoices.map(async (invoice): Promise<Row> => {
           const [vehicle, customer, job] = await Promise.all([
             getGarageVehicle(invoice.vehicleId),
             getGarageCustomer(invoice.customerId),
             invoice.service === 'tinted' ? getInstallerJobForInvoice(invoice.id) : Promise.resolve(null),
           ]);
-          return { invoice, vehicle, customer, job, stage: getWorkOrderStage(invoice) };
+          return { invoice, vehicle, customer, job, stage: getWorkOrderStage(invoice), glass: allGlass.filter((g) => g.invoiceId === invoice.id) };
         }));
         built.sort((a, b) => WORK_ORDER_STAGE_ORDER[a.stage] - WORK_ORDER_STAGE_ORDER[b.stage]);
         setRows(built);

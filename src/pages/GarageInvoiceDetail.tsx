@@ -14,7 +14,7 @@ import {
   markInvoiceDelivered, registerInvoiceWarranty, listWorkOrderActivity,
 } from '../lib/garageInvoices';
 import { getInstallerJobForInvoice } from '../lib/garageInstallerJobs';
-import { getTintOrder } from '../lib/garageTint';
+import { getTintOrder, listTintWorkOrderItems, isRequiredGlass } from '../lib/garageTint';
 import { GARAGE_SERVICE_MAP } from '../utils/garageServices';
 import { TINT_SERIES, GLASS_LABEL } from '../utils/tintPricing';
 import { formatRM } from '../utils/format';
@@ -28,7 +28,7 @@ import {
 } from '../components/GarageWorkOrderPipeline';
 import type {
   GarageInvoice, GarageVehicle, GarageCustomer, GarageInvoiceClaim, GarageClaimType, GarageTintOrder,
-  GarageInvoiceAddon, GaragePaymentMethod, GarageInstallerJob, GarageWorkOrderActivity,
+  GarageInvoiceAddon, GaragePaymentMethod, GarageInstallerJob, GarageWorkOrderActivity, GarageTintWorkOrderItem,
 } from '../types';
 
 const TINT_SERIES_LABEL = Object.fromEntries(TINT_SERIES.map((s) => [s.key, s.label]));
@@ -58,6 +58,8 @@ export default function GarageInvoiceDetail() {
   const [addons, setAddons] = useState<GarageInvoiceAddon[]>([]);
   const [job, setJob] = useState<GarageInstallerJob | null>(null);
   const [activity, setActivity] = useState<GarageWorkOrderActivity[]>([]);
+  // Glass items — for who installed what (team installation, per glass).
+  const [glassItems, setGlassItems] = useState<GarageTintWorkOrderItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
@@ -81,7 +83,7 @@ export default function GarageInvoiceDetail() {
     getGarageInvoice(invoiceId).then(async (inv) => {
       if (!inv) { setNotFound(true); setLoading(false); return; }
       setInvoice(inv);
-      const [v, c, cl, to, ad, j, act] = await Promise.all([
+      const [v, c, cl, to, ad, j, act, gi] = await Promise.all([
         getGarageVehicle(inv.vehicleId),
         getGarageCustomer(inv.customerId),
         listInvoiceClaims(inv.id),
@@ -89,6 +91,7 @@ export default function GarageInvoiceDetail() {
         listInvoiceAddons(inv.id),
         inv.service === 'tinted' ? getInstallerJobForInvoice(inv.id) : Promise.resolve(null),
         listWorkOrderActivity(inv.id).catch(() => []),
+        inv.service === 'tinted' ? listTintWorkOrderItems(inv.id).catch(() => []) : Promise.resolve([]),
       ]);
       setVehicle(v);
       setCustomer(c);
@@ -97,6 +100,7 @@ export default function GarageInvoiceDetail() {
       setAddons(ad);
       setJob(j);
       setActivity(act);
+      setGlassItems(gi.filter(isRequiredGlass));
       setLoading(false);
     });
   };
@@ -113,8 +117,9 @@ export default function GarageInvoiceDetail() {
       getGarageInvoice(invoiceId),
       getInstallerJobForInvoice(invoiceId),
       listWorkOrderActivity(invoiceId),
+      listTintWorkOrderItems(invoiceId).catch(() => []),
     ])
-      .then(([inv, j, act]) => { if (inv) setInvoice(inv); setJob(j); setActivity(act); })
+      .then(([inv, j, act, gi]) => { if (inv) setInvoice(inv); setJob(j); setActivity(act); setGlassItems(gi.filter(isRequiredGlass)); })
       .catch(() => {});
   };
   useWorkOrderActivityUpdates(invoiceId, refreshProgress);
@@ -237,7 +242,7 @@ export default function GarageInvoiceDetail() {
 
   const meta = GARAGE_SERVICE_MAP[invoice.service];
   const nameOf = (id?: string) => (id ? allUsers.find((u) => u.id === id)?.name : undefined);
-  const pipeline = buildWorkOrderPipeline(invoice, job, activity, nameOf);
+  const pipeline = buildWorkOrderPipeline(invoice, job, activity, nameOf, glassItems);
   const { stage } = pipeline;
   const selectedStage = pipeline.stages.find((s) => s.key === (selectedStageKey ?? pipeline.currentKey)) ?? pipeline.stages[0];
   // Payment, delivery, warranty and closing are the salesman's (and
@@ -253,9 +258,10 @@ export default function GarageInvoiceDetail() {
     : stage === 'ready_for_warranty' ? { label: 'Register Warranty', icon: Award, onClick: () => { setActionError(''); setConfirmStep('warranty'); } }
     : null;
   const waitingText: Record<typeof stage, string> = {
-    waiting_for_installer: 'Waiting for an installer to accept',
-    installer_assigned: 'Installer assigned — waiting to start',
+    waiting_for_installer: 'Waiting for installers to start',
+    installer_assigned: 'Waiting for installers to start',
     in_progress: 'Installation in progress',
+    pending_approval: 'Installation awaiting Garage Head approval',
     payment_due: 'Waiting for payment',
     ready_for_delivery: 'Ready for delivery',
     ready_for_warranty: 'Waiting for warranty registration',

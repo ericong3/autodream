@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CalendarClock, Flag, UserCheck, Timer } from 'lucide-react';
+import { CalendarClock, Flag, Timer } from 'lucide-react';
 import { JOB_PRIORITY_META, formatElapsed } from '../utils/garageJobPriority';
 import type { JobTiming } from '../utils/garageJobPriority';
 
@@ -50,7 +50,6 @@ export function JobTimingRows({ timing, compact = false }: { timing: JobTiming; 
       tone: timing.indicators.includes('running_late') ? 'text-orange-400' : undefined,
     });
   }
-  if (timing.sinceAssignedMs !== undefined) rows.push({ icon: UserCheck, text: `Assigned ${formatElapsed(timing.sinceAssignedMs)} ago` });
   if (timing.sinceStartedMs !== undefined) rows.push({ icon: Timer, text: `Started ${formatElapsed(timing.sinceStartedMs)} ago`, tone: 'text-blue-400' });
   if (rows.length === 0) return null;
   return (
