@@ -10,6 +10,7 @@ import {
   ArrowRight,
   AlertTriangle,
   CalendarCheck,
+  Wallet,
 } from 'lucide-react';
 import { useStore } from '../store';
 import StatCard from '../components/StatCard';
@@ -89,6 +90,34 @@ export default function Dashboard() {
   const totalIntakeComm = soldCarData.reduce((s, d) => s + d.intakeComm, 0);
   const totalSourceComm = soldCarData.reduce((s, d) => s + d.sourceComm, 0);
   const netProfit      = soldCarData.reduce((s, d) => s + d.netCarProfit, 0);
+
+  // ── Own Capital ──────────────────────────────────────────
+  // What's actually tied up as the director's own money right now.
+  // Unsold own cars: the full purchase price hasn't come back at all yet.
+  // Delivered own cars still awaiting disbursement: the purchase-price
+  // portion of the deal is already spoken for by the sale itself — only the
+  // net profit on top is still outstanding, so that's what counts here.
+  // Once disbursement lands (moneyReceived), the car drops out entirely —
+  // the capital has cycled back. Incoming-consignment cars (car.consignment)
+  // were never the dealership's own money, so they're excluded outright.
+  const capitalUnsoldCars = useMemo(
+    () => cars
+      .filter(c => !c.consignment && c.status !== 'delivered')
+      .sort((a, b) => b.purchasePrice - a.purchasePrice),
+    [cars]
+  );
+  const capitalUnsoldTotal = capitalUnsoldCars.reduce((s, c) => s + c.purchasePrice, 0);
+
+  const capitalPendingDisbursement = useMemo(
+    () => soldCarData
+      .filter(d => !d.car.consignment && !d.car.moneyReceived)
+      .sort((a, b) => b.netCarProfit - a.netCarProfit),
+    [soldCarData]
+  );
+  const capitalPendingTotal = capitalPendingDisbursement.reduce((s, d) => s + d.netCarProfit, 0);
+
+  const totalOwnCapital = capitalUnsoldTotal + capitalPendingTotal;
+  const animatedOwnCapital = useAnimatedRM(totalOwnCapital, 1400, 400);
 
   // Animated stat card values
   const animatedInventory  = useAnimatedCounter(cars.length, 800, 0);
@@ -181,6 +210,66 @@ export default function Dashboard() {
           borderColor="border-l-orange-400"
           iconColor="text-orange-400"
         />
+      </div>
+
+      {/* ── Own Capital ──────────────────────────────────────── */}
+      <div className="card-surface rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-obsidian-400/60
+          bg-gradient-to-r from-obsidian-600/40 to-transparent">
+          <div className="flex items-center gap-2.5">
+            <div className="w-[3px] h-5 rounded-full bg-gold-gradient" />
+            <div>
+              <h3 className="text-white font-semibold text-base">Own Capital</h3>
+              <p className="text-white/40 text-xs mt-0.5">Your money still tied up in stock — clears once disbursed</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <Wallet size={18} className="text-gold-400" />
+            <span className="text-2xl font-bold text-gold-400">{animatedOwnCapital}</span>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-obsidian-400/40">
+          {/* Unsold cars — full purchase price */}
+          <div className="p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <p className="text-white/70 text-sm font-semibold">Unsold — Purchase Price</p>
+                <p className="text-white/35 text-xs mt-0.5">{capitalUnsoldCars.length} car{capitalUnsoldCars.length !== 1 ? 's' : ''}</p>
+              </div>
+              <span className="text-white text-sm font-bold">{formatRM(capitalUnsoldTotal)}</span>
+            </div>
+            <div className="space-y-0.5 max-h-72 overflow-y-auto pr-1">
+              {capitalUnsoldCars.length === 0 ? (
+                <p className="text-white/30 text-xs py-3">No unsold stock</p>
+              ) : capitalUnsoldCars.map(c => (
+                <div key={c.id} className="flex justify-between items-center gap-3 py-1.5 text-xs border-b border-obsidian-400/20 last:border-0">
+                  <span className="text-white/60 truncate">{c.year} {c.make} {c.model}{c.carPlate ? ` · ${c.carPlate}` : ''}</span>
+                  <span className="text-white/80 font-medium shrink-0 tabular-nums">{formatRM(c.purchasePrice)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Sold but not yet disbursed — net profit only */}
+          <div className="p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <p className="text-white/70 text-sm font-semibold">Sold, Not Disbursed — Net Profit</p>
+                <p className="text-white/35 text-xs mt-0.5">{capitalPendingDisbursement.length} car{capitalPendingDisbursement.length !== 1 ? 's' : ''}</p>
+              </div>
+              <span className="text-white text-sm font-bold">{formatRM(capitalPendingTotal)}</span>
+            </div>
+            <div className="space-y-0.5 max-h-72 overflow-y-auto pr-1">
+              {capitalPendingDisbursement.length === 0 ? (
+                <p className="text-white/30 text-xs py-3">Nothing awaiting disbursement</p>
+              ) : capitalPendingDisbursement.map(d => (
+                <div key={d.car.id} className="flex justify-between items-center gap-3 py-1.5 text-xs border-b border-obsidian-400/20 last:border-0">
+                  <span className="text-white/60 truncate">{d.car.year} {d.car.make} {d.car.model}{d.car.carPlate ? ` · ${d.car.carPlate}` : ''}</span>
+                  <span className={`font-medium shrink-0 tabular-nums ${d.netCarProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatRM(d.netCarProfit)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* ── 7-day Sales Trend ───────────────────────────────────── */}
