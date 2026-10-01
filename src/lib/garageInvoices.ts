@@ -140,6 +140,8 @@ export async function discardGarageInvoice(invoiceId: string): Promise<void> {
 // overwrite who did it), refuses installers, updates the work order and
 // writes its activity-history entry in one atomic step.
 const SALESMAN_STEP_ERRORS: Record<string, string> = {
+  WORK_ORDER_CLOSED: 'This work order is closed',
+  CANNOT_TAKE_PAYMENT: 'Payment can only be collected before the car is delivered',
   NOT_ALLOWED_FOR_INSTALLER: 'Installers can\'t collect payment, deliver or close a work order',
   ALREADY_PAID: 'This work order has already been paid',
   NOT_READY_FOR_DELIVERY: 'Not ready for delivery — installation must be completed and payment collected',

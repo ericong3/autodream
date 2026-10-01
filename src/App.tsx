@@ -59,7 +59,9 @@ import GarageCalendar from './pages/GarageCalendar';
 import GarageTintPricing from './pages/GarageTintPricing';
 import GarageWorkOrderTracking from './pages/GarageWorkOrderTracking';
 import GarageServiceWorkOrders from './pages/GarageServiceWorkOrders';
+import GarageNoAccess from './pages/GarageNoAccess';
 import { roleHome, landingPath, garageHome } from './utils/landingPath';
+import { isGarageManager, canUseGarageSales, canUseGarageWorkshop } from './utils/garageRoles';
 
 // Layout wrapper for regular users — mounts once, stays mounted across navigation
 function AuthedLayout() {
@@ -79,14 +81,30 @@ function RequireGarage({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-// Garage Team Members — management only (mirrors RequireDirector on the
-// Used Car side); other Garage roles get bounced to their own landing spot.
-function RequireGarageManager({ children }: { children: React.ReactNode }) {
+// Garage role guards — enforced on the route itself, so typing a URL can't
+// get past them (hiding a tab isn't enough). Anyone without the role is
+// sent to their own Garage landing page. Rules live in utils/garageRoles.
+function RequireGarageRole({ allow, children }: { allow: (role: string) => boolean; children: React.ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
   if (!currentUser) return <Navigate to="/login" replace />;
   if (currentUser.businessAccess === 'used_car') return <Navigate to={roleHome(currentUser.role)} replace />;
-  if (currentUser.role !== 'director' && currentUser.role !== 'shareholder' && currentUser.role !== 'garage_head') return <Navigate to={garageHome(currentUser.role)} replace />;
+  if (!allow(currentUser.role)) return <Navigate to={garageHome(currentUser.role)} replace />;
   return <>{children}</>;
+}
+
+// Management only — tint pricing, team, work-order tracking.
+function RequireGarageManager({ children }: { children: React.ReactNode }) {
+  return <RequireGarageRole allow={isGarageManager}>{children}</RequireGarageRole>;
+}
+
+// Salesman + management — the sales workflow.
+function RequireGarageSales({ children }: { children: React.ReactNode }) {
+  return <RequireGarageRole allow={canUseGarageSales}>{children}</RequireGarageRole>;
+}
+
+// Installer (workshop roles) + management — the installer workflow.
+function RequireGarageInstaller({ children }: { children: React.ReactNode }) {
+  return <RequireGarageRole allow={canUseGarageWorkshop}>{children}</RequireGarageRole>;
 }
 
 // Choose-business screen — only for accounts with access to both
@@ -198,24 +216,25 @@ export default function App() {
         />
         <Route path="/choose-business" element={<RequireBoth><ChooseBusiness /></RequireBoth>} />
         <Route path="/garage" element={<RequireGarage><GarageHome /></RequireGarage>} />
-        <Route path="/garage/dashboard" element={<RequireGarage><GarageDashboard /></RequireGarage>} />
-        <Route path="/garage/sales-tools" element={<RequireGarage><GarageSalesTools /></RequireGarage>} />
-        <Route path="/garage/my-work-orders" element={<RequireGarage><GarageMyWorkOrders /></RequireGarage>} />
-        <Route path="/garage/calendar" element={<RequireGarage><GarageCalendar /></RequireGarage>} />
-        <Route path="/garage/work-order/new" element={<RequireGarage><GarageWorkOrderStart /></RequireGarage>} />
-        <Route path="/garage/work-order/new-customer" element={<RequireGarage><GarageWorkOrderNewCustomer /></RequireGarage>} />
-        <Route path="/garage/work-order/existing-customer" element={<RequireGarage><GarageWorkOrderExistingCustomer /></RequireGarage>} />
-        <Route path="/garage/work-order/customer/:id" element={<RequireGarage><GarageCustomerProfile /></RequireGarage>} />
-        <Route path="/garage/work-order/customer/:id/add-car" element={<RequireGarage><GarageAddVehicle /></RequireGarage>} />
-        <Route path="/garage/work-order/customer/:id/vehicle/:vehicleId" element={<RequireGarage><GarageWorkOrderContinue /></RequireGarage>} />
-        <Route path="/garage/work-order/customer/:id/vehicle/:vehicleId/service/tinted" element={<RequireGarage><GarageTintPackage /></RequireGarage>} />
-        <Route path="/garage/work-order/customer/:id/vehicle/:vehicleId/service/tinted/summary" element={<RequireGarage><GarageWorkOrderSummary /></RequireGarage>} />
-        <Route path="/garage/work-order/customer/:id/vehicle/:vehicleId/service/tinted/payment" element={<RequireGarage><GarageWorkOrderPayment /></RequireGarage>} />
-        <Route path="/garage/work-order/customer/:id/vehicle/:vehicleId/service/:service" element={<RequireGarage><GarageServiceStub /></RequireGarage>} />
-        <Route path="/garage/invoice/:invoiceId" element={<RequireGarage><GarageInvoiceDetail /></RequireGarage>} />
-        <Route path="/garage/installer" element={<RequireGarage><GarageWorkFlowHub /></RequireGarage>} />
-        <Route path="/garage/installer/job/:jobId" element={<RequireGarage><GarageInstallerJobDetail /></RequireGarage>} />
-        <Route path="/garage/installer/:service" element={<RequireGarage><GarageInstallerJobs /></RequireGarage>} />
+        <Route path="/garage/no-access" element={<RequireGarage><GarageNoAccess /></RequireGarage>} />
+        <Route path="/garage/dashboard" element={<RequireGarageSales><GarageDashboard /></RequireGarageSales>} />
+        <Route path="/garage/sales-tools" element={<RequireGarageSales><GarageSalesTools /></RequireGarageSales>} />
+        <Route path="/garage/my-work-orders" element={<RequireGarageSales><GarageMyWorkOrders /></RequireGarageSales>} />
+        <Route path="/garage/calendar" element={<RequireGarageSales><GarageCalendar /></RequireGarageSales>} />
+        <Route path="/garage/work-order/new" element={<RequireGarageSales><GarageWorkOrderStart /></RequireGarageSales>} />
+        <Route path="/garage/work-order/new-customer" element={<RequireGarageSales><GarageWorkOrderNewCustomer /></RequireGarageSales>} />
+        <Route path="/garage/work-order/existing-customer" element={<RequireGarageSales><GarageWorkOrderExistingCustomer /></RequireGarageSales>} />
+        <Route path="/garage/work-order/customer/:id" element={<RequireGarageSales><GarageCustomerProfile /></RequireGarageSales>} />
+        <Route path="/garage/work-order/customer/:id/add-car" element={<RequireGarageSales><GarageAddVehicle /></RequireGarageSales>} />
+        <Route path="/garage/work-order/customer/:id/vehicle/:vehicleId" element={<RequireGarageSales><GarageWorkOrderContinue /></RequireGarageSales>} />
+        <Route path="/garage/work-order/customer/:id/vehicle/:vehicleId/service/tinted" element={<RequireGarageSales><GarageTintPackage /></RequireGarageSales>} />
+        <Route path="/garage/work-order/customer/:id/vehicle/:vehicleId/service/tinted/summary" element={<RequireGarageSales><GarageWorkOrderSummary /></RequireGarageSales>} />
+        <Route path="/garage/work-order/customer/:id/vehicle/:vehicleId/service/tinted/payment" element={<RequireGarageSales><GarageWorkOrderPayment /></RequireGarageSales>} />
+        <Route path="/garage/work-order/customer/:id/vehicle/:vehicleId/service/:service" element={<RequireGarageSales><GarageServiceStub /></RequireGarageSales>} />
+        <Route path="/garage/invoice/:invoiceId" element={<RequireGarageSales><GarageInvoiceDetail /></RequireGarageSales>} />
+        <Route path="/garage/installer" element={<RequireGarageInstaller><GarageWorkFlowHub /></RequireGarageInstaller>} />
+        <Route path="/garage/installer/job/:jobId" element={<RequireGarageInstaller><GarageInstallerJobDetail /></RequireGarageInstaller>} />
+        <Route path="/garage/installer/:service" element={<RequireGarageInstaller><GarageInstallerJobs /></RequireGarageInstaller>} />
         <Route path="/garage/tint-pricing" element={<RequireGarageManager><GarageTintPricing /></RequireGarageManager>} />
         <Route path="/garage/team" element={<RequireGarageManager><GarageTeamMembers /></RequireGarageManager>} />
         <Route path="/garage/work-order-tracking" element={<RequireGarageManager><GarageWorkOrderTracking /></RequireGarageManager>} />

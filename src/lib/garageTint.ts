@@ -138,30 +138,39 @@ export async function setTintWorkOrderItemStatus(
   const { data, error } = await supabase.rpc('set_garage_glass_item_status', {
     p_item_id: itemId, p_status: status, p_actor_id: actorId,
   });
-  if (error) throw error;
+  if (error) throw glassWorkError(error);
   return rowToItem(data);
 }
 
-export async function updateTintWorkOrderItem(
-  itemId: string,
-  updates: {
-    installerId?: string | null; sqft?: number | null; installedSeries?: TintSeries | null;
-    status?: TintItemStatus; remark?: string | null;
-  },
+// Every change to a glass's installation work goes through a database
+// function that checks the actor owns the job (the installer who accepted
+// it) or is a Garage manager, and that installation is in progress. The
+// database refuses direct writes to these fields.
+function glassWorkError(error: { message?: string }): Error {
+  const msg = error.message ?? '';
+  if (msg.includes('NOT_YOUR_JOB')) return new Error('Only the installer who accepted this job (or a Garage Head / Director / Shareholder) can change it');
+  if (msg.includes('NOT_IN_PROGRESS')) return new Error('Glass work can only be changed while the installation is in progress');
+  if (msg.includes('NOT_AN_INSTALLER')) return new Error('Only an installer can be set as the glass installer');
+  return error as Error;
+}
+
+export async function setTintWorkOrderItemInstaller(
+  itemId: string, installerId: string | null, actorId: string,
 ): Promise<GarageTintWorkOrderItem> {
-  const row: Record<string, any> = { updated_at: new Date().toISOString() };
-  if ('installerId' in updates) row.installer_id = updates.installerId || null;
-  if ('sqft' in updates) row.sqft = updates.sqft ?? null;
-  if ('installedSeries' in updates) row.installed_series = updates.installedSeries || null;
-  if ('status' in updates) row.status = updates.status;
-  if ('remark' in updates) row.remark = updates.remark || null;
-  const { data, error } = await supabase
-    .from('garage_tint_installation_pieces')
-    .update(row)
-    .eq('id', itemId)
-    .select()
-    .single();
-  if (error) throw error;
+  const { data, error } = await supabase.rpc('set_garage_glass_item_installer', {
+    p_item_id: itemId, p_installer_id: installerId, p_actor_id: actorId,
+  });
+  if (error) throw glassWorkError(error);
+  return rowToItem(data);
+}
+
+export async function setTintWorkOrderItemRemark(
+  itemId: string, remark: string, actorId: string,
+): Promise<GarageTintWorkOrderItem> {
+  const { data, error } = await supabase.rpc('set_garage_glass_item_remark', {
+    p_item_id: itemId, p_remark: remark, p_actor_id: actorId,
+  });
+  if (error) throw glassWorkError(error);
   return rowToItem(data);
 }
 
@@ -181,15 +190,35 @@ export async function listFilmStock(): Promise<GarageFilmStock[]> {
   return (data ?? []).map(rowToFilmStock);
 }
 
-// Adjusts remaining stock by however much MORE film this edit consumed
-// (negative delta hands stock back — e.g. a logged sqft value was reduced
-// or cleared). Done as an atomic DB-side UPDATE (adjust_film_stock RPC),
-// not a client-side read-modify-write — two pieces of the same series
-// logged in quick succession would otherwise race and lose an update.
-export async function adjustFilmStock(series: TintSeries, deltaConsumedSqft: number): Promise<GarageFilmStock> {
-  const { data, error } = await supabase.rpc('adjust_film_stock', { p_series: series, p_delta: deltaConsumedSqft });
-  if (error) throw error;
-  return rowToFilmStock(data);
+// Log how much film one glass used. The glass's sqft and the film stock it
+// draws on change together in a single database transaction
+// (set_garage_glass_item_sqft): the glass and stock rows are locked, the
+// difference from the previous value is taken from (or, when lowered,
+// returned to) that series' stock, and if anything fails neither changes.
+export async function setTintWorkOrderItemSqft(
+  itemId: string, sqft: number, actorId: string,
+): Promise<{ item: GarageTintWorkOrderItem; stock: GarageFilmStock | null }> {
+  const { data, error } = await supabase.rpc('set_garage_glass_item_sqft', {
+    p_item_id: itemId, p_sqft: sqft, p_actor_id: actorId,
+  });
+  if (error) {
+    const msg = error.message ?? '';
+    const short = msg.match(/INSUFFICIENT_FILM_STOCK (\w+) has ([\d.]+)/);
+    if (short) {
+      throw new Error(`Not enough ${short[1]} film in stock (${Number(short[2])} sqft left) — ask a manager to update Film Stock`);
+    }
+    if (msg.includes('NOT_YOUR_JOB')) throw new Error('Only the installer who accepted this job (or a Garage Head / Director / Shareholder) can change it');
+    if (msg.includes('NOT_IN_PROGRESS')) throw new Error('Film usage can only be logged while the installation is in progress');
+    if (msg.includes('INVALID_SQFT')) throw new Error('Enter a sqft of 0 or more');
+    if (msg.includes('NO_FILM_STOCK') || msg.includes('NO_SERIES_FOR_GLASS')) {
+      throw new Error('No film stock is set up for this glass\'s series — ask a manager');
+    }
+    throw error;
+  }
+  return {
+    item: rowToItem(data.item),
+    stock: data.stock ? rowToFilmStock(data.stock) : null,
+  };
 }
 
 export async function setFilmStockConfig(

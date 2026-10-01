@@ -16,7 +16,9 @@ export function PipelineStageTiles({
   stages, selectedKey, onSelect,
 }: { stages: PipelineStage[]; selectedKey: PipelineStageKey; onSelect: (key: PipelineStageKey) => void }) {
   return (
-    <div className="overflow-x-auto -mx-1 px-1 pb-1">
+    // Padding on every side so the selected tile's ring (which sits outside
+    // the tile) isn't clipped — overflow-x-auto crops vertically too.
+    <div className="overflow-x-auto -mx-2 px-2 py-2 -my-1">
       <div className="flex items-center min-w-[720px]">
         {stages.map((s, i) => {
           const selected = s.key === selectedKey;

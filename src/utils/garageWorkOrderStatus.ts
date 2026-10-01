@@ -43,22 +43,23 @@ export const WORK_ORDER_STAGE_ORDER: Record<WorkOrderStage, number> = {
   waiting_for_installer: 4, ready_for_warranty: 5, closed: 6,
 };
 
-// The stage to show for a work order. The stored work_status is the source
-// of truth for the installer-acceptance steps; the later steps (completion,
-// payment, delivery, warranty) are still recorded on the job/invoice fields
-// until they're moved onto work_status too, so those fields win when set.
-export function getWorkOrderStage(invoice: GarageInvoice, job: GarageInstallerJob | null): WorkOrderStage {
-  if (invoice.warrantyRegisteredAt) return 'closed';
-  if (invoice.deliveredAt) return 'ready_for_warranty';
-  if (job?.status === 'completed') {
-    return invoice.paymentStatus === 'paid' ? 'ready_for_delivery' : 'payment_due';
+// Where the work order is now — read straight from garage_invoices.work_status,
+// the single source of truth for the lifecycle. The database keeps it right
+// (the pipeline functions set it, and a reconcile trigger re-derives it if
+// the underlying facts are ever written some other way). Timestamps,
+// job.status and payment_status are details: who, when, how — not where.
+//
+// installation_completed is only ever passed through on the way to the next
+// step, and draft is never confirmed, so neither is a displayed stage.
+export function getWorkOrderStage(invoice: GarageInvoice): WorkOrderStage {
+  switch (invoice.workStatus) {
+    case 'installation_completed':
+      return invoice.paymentStatus === 'paid' ? 'ready_for_delivery' : 'payment_due';
+    case 'draft':
+      return 'waiting_for_installer';
+    default:
+      return invoice.workStatus;
   }
-  if (job?.status === 'accepted') {
-    // Jobs accepted before Start Installation existed have no started_at
-    // but were backfilled to in_progress.
-    return job.startedAt || invoice.workStatus === 'in_progress' ? 'in_progress' : 'installer_assigned';
-  }
-  return 'waiting_for_installer';
 }
 
 // When the work order entered the stage it's in now — for "how long has it
@@ -66,7 +67,7 @@ export function getWorkOrderStage(invoice: GarageInvoice, job: GarageInstallerJo
 // itself is derived from (each written in the same database step as the
 // matching activity-history entry).
 export function stageEnteredAt(invoice: GarageInvoice, job: GarageInstallerJob | null): string {
-  const stage = getWorkOrderStage(invoice, job);
+  const stage = getWorkOrderStage(invoice);
   const latest = (...isos: (string | undefined)[]) => {
     const set = isos.filter((x): x is string => !!x).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
     return set[set.length - 1];
@@ -84,5 +85,5 @@ export function stageEnteredAt(invoice: GarageInvoice, job: GarageInstallerJob |
 }
 
 export function isWorkOrderClosed(invoice: GarageInvoice): boolean {
-  return !!invoice.warrantyRegisteredAt;
+  return invoice.workStatus === 'closed';
 }

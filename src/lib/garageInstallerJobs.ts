@@ -12,6 +12,7 @@ function rowToJob(r: any): GarageInstallerJob {
     acceptedBy: r.accepted_by ?? undefined,
     acceptedAt: r.accepted_at ?? undefined,
     estimatedCompleteAt: r.estimated_complete_at ?? undefined,
+    assignedBy: r.assigned_by ?? undefined,
     startedAt: r.started_at ?? undefined,
     completedAt: r.completed_at ?? undefined,
     completedBy: r.completed_by ?? undefined,
@@ -77,6 +78,29 @@ export class JobAlreadyAcceptedError extends Error {
   constructor() { super('This job has already been accepted by another installer'); }
 }
 
+// Garage Head / Director / Shareholder gives an unclaimed job to an
+// installer (assign_garage_installer_job). Same race protection as Accept —
+// whichever lands first wins; the installer becomes the job's owner and the
+// manager is recorded as assignedBy. The finish time is optional here.
+export async function assignInstallerJob(
+  jobId: string, installerId: string, actorId: string, estimatedCompleteAt?: string,
+): Promise<GarageInstallerJob> {
+  const { data, error } = await supabase.rpc('assign_garage_installer_job', {
+    p_job_id: jobId, p_installer_id: installerId, p_actor_id: actorId,
+    p_estimated_complete_at: estimatedCompleteAt ?? null,
+  });
+  if (error) {
+    if (error.message?.includes('JOB_ALREADY_ACCEPTED')) throw new JobAlreadyAcceptedError();
+    if (error.message?.includes('NOT_A_MANAGER')) throw new Error('Only a Garage Head, Director or Shareholder can assign jobs');
+    if (error.message?.includes('NOT_AN_INSTALLER')) throw new Error('Jobs can only be assigned to an installer');
+    if (error.message?.includes('NOT_WAITING_FOR_INSTALLER')) {
+      throw new Error('This work order is no longer waiting for an installer — refresh and try again');
+    }
+    throw error;
+  }
+  return rowToJob(data);
+}
+
 // Claims the job for this installer and moves the work order to
 // installer_assigned, atomically in the database (see the
 // accept_garage_installer_job function) — only succeeds while the job is
@@ -87,6 +111,10 @@ export async function acceptInstallerJob(jobId: string, userId: string, estimate
   });
   if (error) {
     if (error.message?.includes('JOB_ALREADY_ACCEPTED')) throw new JobAlreadyAcceptedError();
+    if (error.message?.includes('NOT_AN_INSTALLER')) throw new Error('Only installers can accept jobs');
+    if (error.message?.includes('NOT_WAITING_FOR_INSTALLER')) {
+      throw new Error('This work order is no longer waiting for an installer — refresh and try again');
+    }
     throw error;
   }
   return rowToJob(data);
@@ -100,12 +128,15 @@ export async function startInstallerJob(jobId: string, actorId: string): Promise
   if (error) {
     if (error.message?.includes('JOB_ALREADY_STARTED')) throw new Error('This job has already been started');
     if (error.message?.includes('JOB_NOT_ASSIGNED')) throw new Error('This job is no longer assigned — refresh and try again');
+    if (error.message?.includes('NOT_YOUR_JOB')) throw new Error('Only the installer who accepted this job (or a Garage Head / Director / Shareholder) can change it');
+    if (error.message?.includes('NOT_INSTALLER_ASSIGNED')) throw new Error('This job can\'t be started from its current stage — refresh and try again');
     throw error;
   }
   return rowToJob(data);
 }
 
 const COMPLETE_ERRORS: Record<string, string> = {
+  NOT_YOUR_JOB: 'Only the installer who accepted this job (or a Garage Head / Director / Shareholder) can change it',
   GLASS_NOT_ALL_CONFIRMED: 'Every glass must be confirmed completed first',
   FINAL_INSPECTION_REQUIRED: 'Confirm the final inspection first',
   JOB_NOT_STARTED: 'Start the installation before completing it',

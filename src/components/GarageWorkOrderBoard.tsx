@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Car, CalendarClock, UserCheck, Wrench, Hourglass } from 'lucide-react';
+import { Car, UserCheck, Wrench, Hourglass, CalendarClock, Flag, Banknote } from 'lucide-react';
 import {
   WORK_ORDER_STAGE_LABEL, WORK_ORDER_STAGE_BADGE, stageEnteredAt,
 } from '../utils/garageWorkOrderStatus';
 import type { WorkOrderStage } from '../utils/garageWorkOrderStatus';
+import { getJobTiming } from '../utils/garageJobPriority';
+import { JobPriorityBadges } from './GarageJobPriority';
 import type { GarageInvoice, GarageVehicle, GarageInstallerJob } from '../types';
 
 export interface BoardRow {
@@ -22,7 +24,7 @@ const COLUMNS: { stage: WorkOrderStage; label: string; dot: string }[] = [
   { stage: 'in_progress', label: 'In Progress', dot: 'bg-blue-400' },
   { stage: 'payment_due', label: 'Payment Due', dot: 'bg-orange-400' },
   { stage: 'ready_for_delivery', label: 'Ready for Delivery', dot: 'bg-gold-400' },
-  { stage: 'ready_for_warranty', label: 'Register Warranty', dot: 'bg-gold-300' },
+  { stage: 'ready_for_warranty', label: 'Ready for Warranty', dot: 'bg-gold-300' },
   { stage: 'closed', label: 'Closed', dot: 'bg-emerald-400' },
 ];
 
@@ -84,12 +86,16 @@ export default function GarageWorkOrderBoard({
                   const inStageMs = now - new Date(enteredAt).getTime();
                   const slow = stage !== 'closed' && inStageMs > SLOW_AFTER_MS;
                   const installer = nameOf(job?.completedBy ?? job?.acceptedBy);
+                  const timing = getJobTiming(invoice, job, now);
+                  const urgent = timing.indicators.includes('overdue') || timing.indicators.includes('running_late');
                   return (
                     <button
                       key={invoice.id}
                       onClick={() => onOpen(invoice.id)}
-                      className="w-full text-left rounded-xl p-3.5 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15
-                        hover:border-gold-400/45 hover:bg-white/[0.07] hover:-translate-y-0.5 transition-all duration-200"
+                      className={`w-full text-left rounded-xl p-3.5 bg-white/[0.04] backdrop-blur-xl border
+                        hover:bg-white/[0.07] hover:-translate-y-0.5 transition-all duration-200 ${
+                          urgent ? 'border-red-500/40 hover:border-red-400/60' : 'border-gold-400/15 hover:border-gold-400/45'
+                        }`}
                     >
                       <div className="flex items-start justify-between gap-2 mb-2">
                         <p className="text-white text-sm font-semibold">{invoice.invoiceNumber}</p>
@@ -98,6 +104,9 @@ export default function GarageWorkOrderBoard({
                         </span>
                       </div>
 
+                      {timing.indicators.length > 0 && (
+                        <div className="mb-2"><JobPriorityBadges timing={timing} size="xs" /></div>
+                      )}
                       {vehicle && (
                         <p className="flex items-center gap-1.5 text-white/80 text-xs">
                           <Car size={12} className="text-white/35 shrink-0" />
@@ -108,16 +117,31 @@ export default function GarageWorkOrderBoard({
 
                       <div className="mt-2 space-y-1 text-[11px] text-white/50">
                         <p className="flex items-center gap-1.5">
-                          <CalendarClock size={11} className="text-white/30 shrink-0" />
-                          {invoice.appointmentAt ? formatWhen(invoice.appointmentAt) : 'No appointment'}
-                        </p>
-                        <p className="flex items-center gap-1.5">
                           <UserCheck size={11} className="text-white/30 shrink-0" />
                           <span className="truncate">{nameOf(invoice.createdBy) ?? '—'}</span>
                         </p>
                         <p className="flex items-center gap-1.5">
                           <Wrench size={11} className="text-white/30 shrink-0" />
                           <span className="truncate">{installer ?? 'No installer yet'}</span>
+                        </p>
+                      </div>
+
+                      <div className="mt-1 space-y-1 text-[11px] text-white/50">
+                        <p className="flex items-center gap-1.5">
+                          <CalendarClock size={11} className="text-white/30 shrink-0" />
+                          {invoice.appointmentAt ? formatWhen(invoice.appointmentAt) : <span className="text-white/30">No appointment</span>}
+                        </p>
+                        <p className={`flex items-center gap-1.5 ${timing.indicators.includes('running_late') ? 'text-orange-400' : ''}`}>
+                          <Flag size={11} className="text-white/30 shrink-0" />
+                          {job?.estimatedCompleteAt
+                            ? <>Est. done {formatWhen(job.estimatedCompleteAt)}</>
+                            : <span className="text-white/30">No estimated completion</span>}
+                        </p>
+                        <p className={`flex items-center gap-1.5 ${invoice.paymentStatus === 'paid' ? 'text-emerald-400' : 'text-orange-400'}`}>
+                          <Banknote size={11} className="shrink-0 opacity-70" />
+                          {invoice.paymentStatus === 'paid'
+                            ? <>Paid{invoice.paymentMethod ? ` · ${invoice.paymentMethod[0].toUpperCase()}${invoice.paymentMethod.slice(1)}` : ''}</>
+                            : 'Unpaid'}
                         </p>
                       </div>
 

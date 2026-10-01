@@ -5,6 +5,7 @@ import {
   Clock, CheckCircle2, FileText, Award,
 } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
+import { isGarageManager } from '../utils/garageRoles';
 import Modal from '../components/Modal';
 import { useStore } from '../store';
 import { getGarageVehicle, getGarageCustomer } from '../lib/garageCustomers';
@@ -214,6 +215,21 @@ export default function GarageInvoiceDetail() {
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <AlertCircle size={30} className="text-white/30 mb-3" />
           <p className="text-white/40 text-sm">Invoice not found</p>
+        </div>
+      </GarageShell>
+    );
+  }
+
+  // Salesmen only see their own work orders (managers see every one). The
+  // route guard can't know who owns an order, so it's checked here once
+  // the order has loaded.
+  if (!isGarageManager(currentUser?.role) && invoice.createdBy !== currentUser?.id) {
+    return (
+      <GarageShell title="Invoice" showBack backTo="/garage/my-work-orders">
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <AlertCircle size={30} className="text-white/30 mb-3" />
+          <p className="text-white/60 text-sm mb-1">This work order belongs to another salesman.</p>
+          <p className="text-white/40 text-xs">You can only open work orders you created.</p>
         </div>
       </GarageShell>
     );

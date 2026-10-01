@@ -123,6 +123,7 @@ export type GarageWorkOrderEventType =
   | 'WORK_ORDER_CREATED'
   | 'SENT_TO_INSTALLER'
   | 'INSTALLER_ACCEPTED'
+  | 'INSTALLER_ASSIGNED'
   | 'INSTALLATION_STARTED'
   | 'GLASS_ITEM_COMPLETED'
   | 'GLASS_ITEM_REOPENED'
@@ -224,8 +225,12 @@ export interface GarageInstallerJob {
   acceptedBy?: string;
   acceptedAt?: string;
   // Keyed in by the installer at the moment they accept — when they expect
-  // to finish, so the salesman/customer have a rough ETA.
+  // to finish, so the salesman/customer have a rough ETA. Optional when a
+  // manager assigns the job.
   estimatedCompleteAt?: string;
+  // Set when a manager assigned the job to acceptedBy, rather than the
+  // installer accepting it themselves.
+  assignedBy?: string;
   // Set by Start Installation — an accepted job without it is only
   // assigned, not yet being worked on.
   startedAt?: string;

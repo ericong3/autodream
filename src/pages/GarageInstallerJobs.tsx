@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  ClipboardList, Car, User, Layers, CheckCircle2, ArrowRight, Eye, Clock3, CalendarClock, Timer,
+  ClipboardList, Car, User, Layers, CheckCircle2, ArrowRight, Eye, Clock3, Timer,
 } from 'lucide-react';
 import GarageShell, { isGarageManager } from '../components/GarageShell';
 import { useStore } from '../store';
@@ -12,13 +12,17 @@ import { getGarageInvoice } from '../lib/garageInvoices';
 import { getGarageVehicle, getGarageCustomer } from '../lib/garageCustomers';
 import { getTintOrder } from '../lib/garageTint';
 import { GARAGE_SERVICE_MAP } from '../utils/garageServices';
+import { getJobTiming } from '../utils/garageJobPriority';
+import { JobPriorityBadges, JobTimingRows, useNow } from '../components/GarageJobPriority';
 import { TINT_SERIES } from '../utils/tintPricing';
 import { formatRM } from '../utils/format';
 import type { GarageInstallerJob, GarageInvoice, GarageVehicle, GarageCustomer, GarageTintOrder, GarageService } from '../types';
 
 const TINT_SERIES_LABEL = Object.fromEntries(TINT_SERIES.map((s) => [s.key, s.label]));
 
-type StageKey = 'pending' | 'accepted' | 'completed';
+// Installer operational pipeline: Incoming → Assigned → In Progress → Completed.
+type StageKey = 'pending' | 'assigned' | 'in_progress' | 'completed';
+const STAGE_ORDER: StageKey[] = ['pending', 'assigned', 'in_progress', 'completed'];
 
 // Colors mirror the stage badges used elsewhere (My Work Orders, Work
 // Order Tracking) — gold for waiting, blue for active work, green for done.
@@ -30,7 +34,14 @@ const STAGE_CONFIG: Record<StageKey, { label: string; dot: string; node: string;
     nodeActive: 'bg-gold-500 border-gold-300 text-obsidian-950 shadow-[0_0_24px_rgba(212,175,55,0.55)]',
     text: 'text-gold-400',
   },
-  accepted: {
+  assigned: {
+    label: 'Assigned',
+    dot: 'bg-violet-400',
+    node: 'bg-violet-500/15 border-violet-400/40 text-violet-300',
+    nodeActive: 'bg-violet-500 border-violet-300 text-white shadow-[0_0_24px_rgba(139,92,246,0.55)]',
+    text: 'text-violet-300',
+  },
+  in_progress: {
     label: 'In Progress',
     dot: 'bg-blue-400',
     node: 'bg-blue-500/15 border-blue-400/40 text-blue-400',
@@ -68,22 +79,32 @@ async function buildCards(jobs: GarageInstallerJob[]): Promise<JobCard[]> {
   return built.filter((c): c is JobCard => c !== null);
 }
 
+// An accepted job is In Progress once its work order is (work_status is the
+// lifecycle source of truth — it also covers jobs accepted before Start
+// Installation existed, which have no started_at).
+function hasStarted({ invoice }: JobCard): boolean {
+  return invoice.workStatus === 'in_progress';
+}
+
 export default function GarageInstallerJobs() {
   const { service } = useParams<{ service: string }>();
   const navigate = useNavigate();
   const currentUser = useStore((s) => s.currentUser);
   const [pending, setPending] = useState<JobCard[]>([]);
-  const [accepted, setAccepted] = useState<JobCard[]>([]);
+  const [assigned, setAssigned] = useState<JobCard[]>([]);
+  const [inProgress, setInProgress] = useState<JobCard[]>([]);
   const [completed, setCompleted] = useState<JobCard[]>([]);
   const [loading, setLoading] = useState(true);
   // Kept in the URL so accepting a job (or coming back from one) lands on
   // the right tab.
   const [searchParams, setSearchParams] = useSearchParams();
-  const stageParam = searchParams.get('stage') as StageKey | null;
+  const rawStage = searchParams.get('stage');
+  // 'accepted' was the old combined tab — older links land on Assigned.
+  const stageParam = (rawStage === 'accepted' ? 'assigned' : rawStage) as StageKey | null;
   const activeStage: StageKey = stageParam && stageParam in STAGE_CONFIG ? stageParam : 'pending';
   const setActiveStage = (stage: StageKey) => setSearchParams({ stage }, { replace: true });
-  // Installers see only the jobs they've accepted; managers oversee
-  // everyone's.
+  // Installers see unclaimed Incoming jobs plus only their own jobs in the
+  // other stages; managers oversee everyone's.
   const isManager = isGarageManager(currentUser?.role);
 
   const meta = GARAGE_SERVICE_MAP[service as GarageService];
@@ -98,27 +119,41 @@ export default function GarageInstallerJobs() {
     ])
       .then(async ([p, a, c]) => {
         const [pCards, aCards, cCards] = await Promise.all([buildCards(p), buildCards(a), buildCards(c)]);
+        const mine = (c: JobCard) => isManager || c.job.acceptedBy === currentUser?.id;
+        // A completed job is the installer's if they completed it, or if they
+        // accepted it — covers older jobs (no completed_by) and jobs a manager
+        // pressed Complete on for them. Other installers' jobs stay hidden.
+        const mineCompleted = (c: JobCard) => isManager
+          || (!!currentUser && (c.job.completedBy === currentUser.id || c.job.acceptedBy === currentUser.id));
         setPending(pCards);
-        setAccepted(isManager ? aCards : aCards.filter((c) => c.job.acceptedBy === currentUser?.id));
-        setCompleted(cCards);
+        setAssigned(aCards.filter((c) => mine(c) && !hasStarted(c)));
+        setInProgress(aCards.filter((c) => mine(c) && hasStarted(c)));
+        setCompleted(cCards.filter(mineCompleted));
       })
       .finally(() => setLoading(false));
   };
 
   useEffect(load, [service, currentUser?.id]);
 
-  const stageJobs: Record<StageKey, JobCard[]> = { pending, accepted, completed };
+  const stageJobs: Record<StageKey, JobCard[]> = { pending, assigned, in_progress: inProgress, completed };
   const activeJobs = stageJobs[activeStage];
 
-  const stageLabel = (stage: StageKey) =>
-    stage === 'accepted' ? (isManager ? 'Assigned' : 'My Jobs') : STAGE_CONFIG[stage].label;
+  const stageLabel = (stage: StageKey) => STAGE_CONFIG[stage].label;
+  // Ticks every minute so Upcoming / Due Now / Overdue / Running Late and
+  // the "time since" figures stay current on an open screen.
+  const now = useNow();
 
   const renderCard = ({ job, invoice, vehicle, customer, tintOrder }: JobCard, action: { label: string; icon: typeof CheckCircle2; onClick: () => void }) => {
     const meta = GARAGE_SERVICE_MAP[invoice.service];
+    // Derived on the fly — never stored, never a status.
+    const timing = getJobTiming(invoice, job, now);
+    const urgent = timing.indicators.includes('overdue') || timing.indicators.includes('running_late');
     return (
       <div
         key={job.id}
-        className="relative overflow-hidden rounded-2xl p-6 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card"
+        className={`relative overflow-hidden rounded-2xl p-6 bg-white/[0.04] backdrop-blur-xl border shadow-card ${
+          urgent ? 'border-red-500/35' : 'border-gold-400/15'
+        }`}
       >
         <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
           <div className="flex items-center gap-3">
@@ -126,7 +161,10 @@ export default function GarageInstallerJobs() {
               <meta.icon size={18} strokeWidth={1.5} />
             </div>
             <div>
-              <p className="text-white font-semibold text-sm">{invoice.invoiceNumber}</p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-white font-semibold text-sm">{invoice.invoiceNumber}</p>
+                <JobPriorityBadges timing={timing} />
+              </div>
               <p className="text-white/40 text-xs">{meta.label}</p>
             </div>
           </div>
@@ -153,20 +191,9 @@ export default function GarageInstallerJobs() {
               {tintOrder.fullSeries && ` · ${TINT_SERIES_LABEL[tintOrder.fullSeries]}`}
             </div>
           )}
-          {!job.completedAt && invoice.appointmentAt && (
-            <div className="flex items-center gap-2.5 text-white/70 sm:col-span-2">
-              <CalendarClock size={14} className="text-white/30 shrink-0" />
-              Appointment {new Date(invoice.appointmentAt).toLocaleString('en-MY', { dateStyle: 'medium', timeStyle: 'short' })}
-            </div>
-          )}
-          {job.status === 'accepted' && (
-            <div className="flex items-center gap-2.5 text-white/70 sm:col-span-2">
-              <Timer size={14} className="text-white/30 shrink-0" />
-              {job.startedAt
-                ? <span className="text-blue-400">In progress · started {new Date(job.startedAt).toLocaleString('en-MY', { dateStyle: 'medium', timeStyle: 'short' })}</span>
-                : invoice.workStatus === 'in_progress'
-                  ? <span className="text-blue-400">In progress</span>
-                  : <span className="text-violet-300">Assigned · not started yet</span>}
+          {job.status === 'accepted' && invoice.workStatus !== 'in_progress' && !job.startedAt && (
+            <div className="flex items-center gap-2.5 text-violet-300 sm:col-span-2">
+              <Timer size={14} className="text-white/30 shrink-0" /> Assigned · not started yet
             </div>
           )}
           {job.completedAt ? (
@@ -174,10 +201,9 @@ export default function GarageInstallerJobs() {
               <Clock3 size={14} className="text-white/30 shrink-0" />
               Completed {new Date(job.completedAt).toLocaleString('en-MY', { dateStyle: 'medium', timeStyle: 'short' })}
             </div>
-          ) : job.estimatedCompleteAt && (
-            <div className="flex items-center gap-2.5 text-white/70 sm:col-span-2">
-              <Clock3 size={14} className="text-white/30 shrink-0" />
-              Est. complete {new Date(job.estimatedCompleteAt).toLocaleString('en-MY', { dateStyle: 'medium', timeStyle: 'short' })}
+          ) : (
+            <div className="sm:col-span-2 pt-1">
+              <JobTimingRows timing={timing} />
             </div>
           )}
         </div>
@@ -192,25 +218,34 @@ export default function GarageInstallerJobs() {
     );
   };
 
-  const STAGE_ORDER: StageKey[] = ['pending', 'accepted', 'completed'];
 
   // Every card opens the job page — incoming jobs are reviewed there before
-  // accepting.
-  const stageAction = (stage: StageKey, card: JobCard): { label: string; icon: typeof CheckCircle2; onClick: () => void } => {
-    const open = () => navigate(`/garage/installer/job/${card.job.id}`);
-    if (stage === 'pending') return { label: 'View & Accept', icon: CheckCircle2, onClick: open };
-    if (stage === 'accepted') {
-      const started = !!card.job.startedAt || card.invoice.workStatus === 'in_progress';
-      return { label: started ? 'Continue Job' : 'View & Start', icon: ArrowRight, onClick: open };
-    }
-    return { label: 'View', icon: Eye, onClick: open };
+  // accepting, assigned ones started there.
+  const STAGE_ACTION: Record<StageKey, { label: string; icon: typeof CheckCircle2 }> = {
+    pending: { label: 'View & Accept', icon: CheckCircle2 },
+    assigned: { label: 'View & Start', icon: ArrowRight },
+    in_progress: { label: 'Continue Job', icon: ArrowRight },
+    completed: { label: 'View', icon: Eye },
   };
+  const stageAction = (stage: StageKey, card: JobCard) => ({
+    ...STAGE_ACTION[stage],
+    ...(stage === 'pending' && isManager ? { label: 'View & Assign' } : {}),
+    onClick: () => navigate(`/garage/installer/job/${card.job.id}`),
+  });
 
-  const EMPTY_TEXT: Record<StageKey, string> = {
-    pending: 'No jobs waiting right now',
-    accepted: isManager ? 'No jobs assigned right now' : "You haven't accepted any jobs yet",
-    completed: 'Nothing completed yet',
-  };
+  const EMPTY_TEXT: Record<StageKey, string> = isManager
+    ? {
+        pending: 'No jobs waiting for an installer',
+        assigned: 'No assigned jobs waiting to start',
+        in_progress: 'No jobs in progress',
+        completed: 'No completed jobs yet',
+      }
+    : {
+        pending: 'No jobs waiting right now',
+        assigned: "You've no accepted jobs waiting to start",
+        in_progress: "You've no jobs in progress",
+        completed: "You haven't completed any jobs yet",
+      };
 
   return (
     <GarageShell title={`${meta?.label ?? 'Service'} Work Flow`} showBack backTo="/garage/installer">

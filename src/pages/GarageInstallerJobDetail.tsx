@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import GarageShell, { isGarageManager } from '../components/GarageShell';
 import GarageAcceptJobModal from '../components/GarageAcceptJobModal';
+import GarageAssignJobModal from '../components/GarageAssignJobModal';
 import GarageInstallationPhotos from '../components/GarageInstallationPhotos';
 import Modal from '../components/Modal';
 import { useStore } from '../store';
@@ -13,13 +14,15 @@ import { getInstallerJob, completeInstallerJob, startInstallerJob } from '../lib
 import { getGarageInvoice, uploadInstallationPhoto } from '../lib/garageInvoices';
 import { getGarageVehicle, getGarageCustomer } from '../lib/garageCustomers';
 import {
-  getTintOrder, ensureTintWorkOrderItems, updateTintWorkOrderItem, setTintWorkOrderItemStatus, listFilmStock, adjustFilmStock,
+  getTintOrder, ensureTintWorkOrderItems, setTintWorkOrderItemStatus, setTintWorkOrderItemSqft,
+  setTintWorkOrderItemInstaller, setTintWorkOrderItemRemark,
+  listFilmStock,
 } from '../lib/garageTint';
 import { GLASS_LABEL, TINT_SERIES, VEHICLE_SIZES } from '../utils/tintPricing';
 import { GARAGE_SERVICE_MAP } from '../utils/garageServices';
 import type {
   GarageInstallerJob, GarageInvoice, GarageVehicle, GarageCustomer, GarageTintOrder,
-  GarageTintWorkOrderItem, GarageFilmStock, TintPositionSelection, TintSeries,
+  GarageTintWorkOrderItem, GarageFilmStock, TintPositionSelection,
 } from '../types';
 
 const TINT_SERIES_LABEL = Object.fromEntries(TINT_SERIES.map((s) => [s.key, s.label]));
@@ -121,6 +124,7 @@ export default function GarageInstallerJobDetail() {
   const [photoRefresh, setPhotoRefresh] = useState(0);
   const [error, setError] = useState('');
   const [acceptOpen, setAcceptOpen] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
   // Set when someone else accepted this job while it was open here.
   const [takenNotice, setTakenNotice] = useState('');
 
@@ -160,7 +164,7 @@ export default function GarageInstallerJobDetail() {
   // Accepted splits in two: assigned (not started) and in progress. Jobs
   // accepted before Start Installation existed were already underway, so
   // their work order was backfilled to in_progress without a start time.
-  const isInProgress = job?.status === 'accepted' && (!!job.startedAt || invoice?.workStatus === 'in_progress');
+  const isInProgress = job?.status === 'accepted' && invoice?.workStatus === 'in_progress';
   const isAssigned = job?.status === 'accepted' && !isInProgress;
   const canStart = isAssigned && (job?.acceptedBy === currentUser?.id || isGarageManager(currentUser?.role));
   const [starting, setStarting] = useState(false);
@@ -170,8 +174,10 @@ export default function GarageInstallerJobDetail() {
 
   const handleAccepted = () => {
     setAcceptOpen(false);
-    // Out of Incoming, into this installer's My Jobs.
-    navigate(`/garage/installer/${job?.service ?? ''}?stage=accepted`, { replace: true });
+    setAssignOpen(false);
+    // Out of Incoming, into Assigned (the installer's own list, or the
+    // manager's view of everyone's).
+    navigate(`/garage/installer/${job?.service ?? ''}?stage=assigned`, { replace: true });
   };
 
   const handleAlreadyAccepted = async () => {
@@ -207,12 +213,6 @@ export default function GarageInstallerJobDetail() {
   // this again on complete).
   const allGlassConfirmed = allSelections.length > 0
     && allSelections.every((sel) => itemFor(sel)?.status === 'installed');
-
-  // Film is drawn from whatever actually went on — the installed series once
-  // installers can confirm it, the requested one until then.
-  const itemSeries = (item: GarageTintWorkOrderItem): TintSeries | undefined =>
-    item.installedSeries ?? item.requestedSeries
-      ?? allSelections.find((s) => s.position === item.glassPosition)?.series;
 
   const handleStart = async () => {
     if (!job) return;
@@ -258,23 +258,26 @@ export default function GarageInstallerJobDetail() {
     saveItem(item, () => setTintWorkOrderItemStatus(item.id, 'pending', currentUser?.id ?? ''));
 
   const handleRemarkChange = (item: GarageTintWorkOrderItem, remark: string) =>
-    saveItem(item, () => updateTintWorkOrderItem(item.id, { remark: remark || null }));
+    saveItem(item, () => setTintWorkOrderItemRemark(item.id, remark, currentUser?.id ?? ''));
 
   const installedCount = orderItems.filter((i) => i.status === 'installed').length;
 
-  const handleInstallerChange = async (item: GarageTintWorkOrderItem, installerId: string) => {
-    const updated = await updateTintWorkOrderItem(item.id, { installerId: installerId || null });
-    setItems((prev) => prev.map((i) => (i.id === item.id ? updated : i)));
-  };
+  const handleInstallerChange = (item: GarageTintWorkOrderItem, installerId: string) =>
+    saveItem(item, () => setTintWorkOrderItemInstaller(item.id, installerId || null, currentUser?.id ?? ''));
 
+  // One call: the glass's sqft and the film stock change together or not
+  // at all (see setTintWorkOrderItemSqft). If it's refused — e.g. not
+  // enough film left — the input snaps back to the saved value.
+  const [sqftResetTick, setSqftResetTick] = useState(0);
   const handleSqftChange = async (item: GarageTintWorkOrderItem, sqft: number) => {
-    const series = itemSeries(item);
-    const delta = sqft - (item.sqft ?? 0);
-    const updated = await updateTintWorkOrderItem(item.id, { sqft });
-    setItems((prev) => prev.map((i) => (i.id === item.id ? updated : i)));
-    if (series && delta !== 0) {
-      const nextStock = await adjustFilmStock(series, delta);
-      setFilmStock((prev) => prev.map((f) => (f.series === series ? nextStock : f)));
+    setError('');
+    try {
+      const { item: updated, stock } = await setTintWorkOrderItemSqft(item.id, sqft, currentUser?.id ?? '');
+      setItems((prev) => prev.map((i) => (i.id === item.id ? updated : i)));
+      if (stock) setFilmStock((prev) => prev.map((f) => (f.series === stock.series ? stock : f)));
+    } catch (err) {
+      setError((err as Error)?.message ?? 'Could not save the film usage — please try again');
+      setSqftResetTick((t) => t + 1);
     }
   };
 
@@ -282,6 +285,9 @@ export default function GarageInstallerJobDetail() {
 
   // Only the installer on the job (or a manager) can work/complete it.
   const canWork = job?.acceptedBy === currentUser?.id || isGarageManager(currentUser?.role);
+  // Glass controls are live only for them, and only while work is underway;
+  // everyone else sees the same page read-only.
+  const canEditGlass = canWork && !isCompleted;
 
   const openComplete = () => {
     setConfirmInstalled(false);
@@ -375,7 +381,9 @@ export default function GarageInstallerJobDetail() {
             {!isPending && job?.acceptedAt && (
               <span className="flex items-center gap-1.5 sm:col-span-2">
                 <Wrench size={13} className="shrink-0" />
-                Accepted by {acceptedByUser?.name ?? '—'} · {formatWhen(job.acceptedAt)}
+                {job.assignedBy
+                  ? <>Assigned to {acceptedByUser?.name ?? '—'} by {allUsers.find((u) => u.id === job.assignedBy)?.name ?? 'a manager'} · {formatWhen(job.acceptedAt)}</>
+                  : <>Accepted by {acceptedByUser?.name ?? '—'} · {formatWhen(job.acceptedAt)}</>}
               </span>
             )}
             {(isInProgress || isCompleted) && (
@@ -426,14 +434,21 @@ export default function GarageInstallerJobDetail() {
               })}
             </div>
 
-            {isPending && (
+            {isPending && (isGarageManager(currentUser?.role) ? (
+              <button
+                onClick={() => setAssignOpen(true)}
+                className="w-full flex items-center justify-center gap-2 btn-gold py-3.5 rounded-xl text-sm font-semibold"
+              >
+                <UserCheck size={16} /> Assign Installer
+              </button>
+            ) : (
               <button
                 onClick={() => setAcceptOpen(true)}
                 className="w-full flex items-center justify-center gap-2 btn-gold py-3.5 rounded-xl text-sm font-semibold"
               >
                 <CheckCircle2 size={16} /> Accept Job
               </button>
-            )}
+            ))}
 
             {isAssigned && (
               canStart ? (
@@ -473,6 +488,11 @@ export default function GarageInstallerJobDetail() {
             <h2 className="font-display text-base text-white font-semibold tracking-wide">Tinted Glass Checklist</h2>
             <span className="text-xs text-white/50">{installedCount} of {orderItems.length} done</span>
           </div>
+          {!canWork && !isCompleted && (
+            <p className="text-white/40 text-xs">
+              Read-only — this job belongs to {acceptedByUser?.name ?? 'another installer'}.
+            </p>
+          )}
           {/* One card per individual glass — left and right always separate. */}
           {allSelections.map((sel) => {
             const item = itemFor(sel);
@@ -519,7 +539,7 @@ export default function GarageInstallerJobDetail() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-[1.2fr_120px] gap-2.5 mb-2.5">
                   <select
-                    disabled={isCompleted}
+                    disabled={!canEditGlass}
                     value={item.installerId ?? ''}
                     onChange={(e) => handleInstallerChange(item, e.target.value)}
                     className="w-full bg-white/[0.04] border border-white/10 focus:border-gold-400/50 rounded-lg
@@ -531,19 +551,20 @@ export default function GarageInstallerJobDetail() {
                     ))}
                   </select>
                   <SqftCell
+                    key={`${item.id}-${sqftResetTick}`}
                     value={item.sqft}
-                    disabled={isCompleted}
+                    disabled={!canEditGlass}
                     onCommit={(v) => handleSqftChange(item, v)}
                   />
                 </div>
 
                 <RemarkCell
                   value={item.remark}
-                  disabled={isCompleted}
+                  disabled={!canEditGlass}
                   onCommit={(v) => handleRemarkChange(item, v)}
                 />
 
-                {!isCompleted && (
+                {canEditGlass && (
                   <div className="flex justify-end mt-3">
                     {done ? (
                       <button
@@ -716,6 +737,14 @@ export default function GarageInstallerJobDetail() {
         onClose={() => setAcceptOpen(false)}
         onAccepted={handleAccepted}
         onAlreadyAccepted={handleAlreadyAccepted}
+      />
+
+      <GarageAssignJobModal
+        job={assignOpen ? job : null}
+        invoiceNumber={invoice?.invoiceNumber}
+        onClose={() => setAssignOpen(false)}
+        onAssigned={handleAccepted}
+        onAlreadyAccepted={() => { setAssignOpen(false); handleAlreadyAccepted(); }}
       />
     </GarageShell>
   );

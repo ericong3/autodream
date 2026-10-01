@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, ArrowLeftRight, LogOut } from 'lucide-react';
 import { useStore } from '../store';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
+import { isGarageManager, isGarageSalesRole } from '../utils/garageRoles';
 
 export interface GarageTab {
   label: string;
@@ -29,15 +30,14 @@ const MANAGER_TABS: GarageTab[] = [
   { label: 'Tint Pricing', path: '/garage/tint-pricing' },
 ];
 
-export function isGarageManager(role?: string) {
-  return role === 'director' || role === 'shareholder' || role === 'garage_head';
-}
+export { isGarageManager };
 
-// Installers only have their Work Flow pages, so they get no tab strip.
+// Tabs follow the same role rules as the route guards (utils/garageRoles).
+// Workshop roles only have their Work Flow pages, so they get no tab strip.
 function garageTabsFor(role?: string): GarageTab[] | null {
   if (isGarageManager(role)) return MANAGER_TABS;
-  if (role === 'garage_installer') return null;
-  return SALESMAN_TABS;
+  if (isGarageSalesRole(role)) return SALESMAN_TABS;
+  return null;
 }
 
 // Shared chrome for every Garage page — cinematic background + a light

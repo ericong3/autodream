@@ -3,6 +3,8 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ClipboardList, Car, User, UserCheck, ChevronRight, LayoutGrid, List } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import GarageWorkOrderBoard from '../components/GarageWorkOrderBoard';
+import { JobPriorityBadges, useNow } from '../components/GarageJobPriority';
+import { getJobTiming } from '../utils/garageJobPriority';
 import { useWorkOrderActivityUpdates } from '../hooks/useWorkOrderActivityUpdates';
 import { useStore } from '../store';
 import { listInvoicesByService } from '../lib/garageInvoices';
@@ -42,6 +44,8 @@ export default function GarageServiceWorkOrders() {
   const view: 'board' | 'list' = hasBoard && searchParams.get('view') !== 'list' ? 'board' : 'list';
   const setView = (v: 'board' | 'list') => setSearchParams({ view: v }, { replace: true });
   const nameOf = (id?: string) => (id ? allUsers.find((u) => u.id === id)?.name : undefined);
+  // Upcoming / Due Now / Overdue / Running Late — derived, refreshed each minute.
+  const now = useNow();
 
   const meta = GARAGE_SERVICE_MAP[service as GarageService];
 
@@ -56,7 +60,7 @@ export default function GarageServiceWorkOrders() {
             getGarageCustomer(invoice.customerId),
             invoice.service === 'tinted' ? getInstallerJobForInvoice(invoice.id) : Promise.resolve(null),
           ]);
-          return { invoice, vehicle, customer, job, stage: getWorkOrderStage(invoice, job) };
+          return { invoice, vehicle, customer, job, stage: getWorkOrderStage(invoice) };
         }));
         built.sort((a, b) => WORK_ORDER_STAGE_ORDER[a.stage] - WORK_ORDER_STAGE_ORDER[b.stage]);
         setRows(built);
@@ -136,7 +140,7 @@ export default function GarageServiceWorkOrders() {
           </div>
         ) : (
           <div className="space-y-3">
-            {visible.map(({ invoice, vehicle, customer, stage }) => {
+            {visible.map(({ invoice, vehicle, customer, job, stage }) => {
               const rowMeta = GARAGE_SERVICE_MAP[invoice.service];
               const creator = allUsers.find((u) => u.id === invoice.createdBy);
               return (
@@ -156,6 +160,7 @@ export default function GarageServiceWorkOrders() {
                       <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${WORK_ORDER_STAGE_BADGE[stage]}`}>
                         {WORK_ORDER_STAGE_LABEL[stage]}
                       </span>
+                      <JobPriorityBadges timing={getJobTiming(invoice, job, now)} />
                     </div>
                     <div className="flex items-center gap-3 mt-1 text-white/40 text-xs flex-wrap">
                       {vehicle && (

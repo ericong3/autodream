@@ -81,7 +81,7 @@ export default function GarageMyWorkOrders() {
             getGarageCustomer(invoice.customerId),
             invoice.service === 'tinted' ? getInstallerJobForInvoice(invoice.id) : Promise.resolve(null),
           ]);
-          return { invoice, vehicle, customer, job, stage: getWorkOrderStage(invoice, job) };
+          return { invoice, vehicle, customer, job, stage: getWorkOrderStage(invoice) };
         }));
         built.sort((a, b) => WORK_ORDER_STAGE_ORDER[a.stage] - WORK_ORDER_STAGE_ORDER[b.stage]);
         setRows(built);

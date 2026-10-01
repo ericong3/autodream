@@ -57,6 +57,7 @@ const EVENT_LABEL: Record<GarageWorkOrderEventType, string> = {
   WORK_ORDER_CREATED: 'Work order created',
   SENT_TO_INSTALLER: 'Sent to installer queue',
   INSTALLER_ACCEPTED: 'Installer accepted',
+  INSTALLER_ASSIGNED: 'Installer assigned',
   INSTALLATION_STARTED: 'Installation started',
   GLASS_ITEM_COMPLETED: 'Glass completed',
   GLASS_ITEM_REOPENED: 'Glass reopened',
@@ -75,11 +76,16 @@ const ROLE_LABEL: Record<string, string> = {
   director: 'Director', shareholder: 'Shareholder',
 };
 
-function eventDetail(a: GarageWorkOrderActivity): string | undefined {
+function eventDetail(a: GarageWorkOrderActivity, nameOf: (userId?: string) => string | undefined): string | undefined {
   const m = a.metadata ?? {};
   switch (a.eventType) {
     case 'INSTALLER_ACCEPTED':
       return m.estimated_complete_at ? `Est. finish ${formatTime(m.estimated_complete_at)}` : undefined;
+    case 'INSTALLER_ASSIGNED':
+      return [
+        `To ${nameOf(m.installer_id) ?? 'an installer'}`,
+        m.estimated_complete_at && `est. finish ${formatTime(m.estimated_complete_at)}`,
+      ].filter(Boolean).join(' · ');
     case 'GLASS_ITEM_COMPLETED':
     case 'GLASS_ITEM_REOPENED': {
       const glass = GLASS_LABEL[m.glass_position] ?? m.glass_position;
@@ -109,7 +115,7 @@ export function activityToEvents(
       label: EVENT_LABEL[a.eventType] ?? a.eventType,
       at: a.createdAt,
       by: name ? (role ? `${name} (${role})` : name) : undefined,
-      detail: eventDetail(a),
+      detail: eventDetail(a, nameOf),
     };
   });
 }
@@ -131,7 +137,7 @@ export function buildWorkOrderPipeline(
   activity: GarageWorkOrderActivity[],
   nameOf: (userId?: string) => string | undefined,
 ): { stages: PipelineStage[]; events: ActivityEvent[]; stage: WorkOrderStage; currentKey: PipelineStageKey } {
-  const stage = getWorkOrderStage(invoice, job);
+  const stage = getWorkOrderStage(invoice);
   const currentKey = CURRENT_STAGE[stage];
   const started = !!job?.startedAt || (job?.status === 'accepted' && invoice.workStatus === 'in_progress');
   const installDone = job?.status === 'completed';
@@ -174,7 +180,9 @@ export function buildWorkOrderPipeline(
       by: nameOf(job?.acceptedBy),
       facts: job?.acceptedAt
         ? [
-            { label: 'Accepted', at: job.acceptedAt, by: nameOf(job.acceptedBy) },
+            job.assignedBy
+              ? { label: `Assigned to ${nameOf(job.acceptedBy) ?? 'installer'}`, at: job.acceptedAt, by: nameOf(job.assignedBy) }
+              : { label: 'Accepted', at: job.acceptedAt, by: nameOf(job.acceptedBy) },
             ...(job.estimatedCompleteAt ? [{ label: 'Estimated finish', at: job.estimatedCompleteAt }] : []),
           ]
         : [],
