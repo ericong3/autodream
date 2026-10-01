@@ -94,12 +94,12 @@ export default function Dashboard() {
   // ── Own Capital ──────────────────────────────────────────
   // What's actually tied up as the director's own money right now.
   // Unsold own cars: the full purchase price hasn't come back at all yet.
-  // Delivered own cars still awaiting disbursement: the purchase-price
-  // portion of the deal is already spoken for by the sale itself — only the
-  // net profit on top is still outstanding, so that's what counts here.
-  // Once disbursement lands (moneyReceived), the car drops out entirely —
-  // the capital has cycled back. Incoming-consignment cars (car.consignment)
-  // were never the dealership's own money, so they're excluded outright.
+  // Delivered own cars still awaiting disbursement: NO money has landed
+  // yet either, so both the purchase price and the net profit on top are
+  // still outstanding. Once disbursement lands (moneyReceived), the car
+  // drops out entirely — the capital has cycled back. Incoming-consignment
+  // cars (car.consignment) were never the dealership's own money, so
+  // they're excluded outright.
   const capitalUnsoldCars = useMemo(
     () => cars
       .filter(c => !c.consignment && c.status !== 'delivered')
@@ -111,10 +111,11 @@ export default function Dashboard() {
   const capitalPendingDisbursement = useMemo(
     () => soldCarData
       .filter(d => !d.car.consignment && !d.car.moneyReceived)
-      .sort((a, b) => b.netCarProfit - a.netCarProfit),
+      .map(d => ({ ...d, capitalAtStake: d.car.purchasePrice + d.netCarProfit }))
+      .sort((a, b) => b.capitalAtStake - a.capitalAtStake),
     [soldCarData]
   );
-  const capitalPendingTotal = capitalPendingDisbursement.reduce((s, d) => s + d.netCarProfit, 0);
+  const capitalPendingTotal = capitalPendingDisbursement.reduce((s, d) => s + d.capitalAtStake, 0);
 
   const totalOwnCapital = capitalUnsoldTotal + capitalPendingTotal;
   const animatedOwnCapital = useAnimatedRM(totalOwnCapital, 1400, 400);
@@ -249,11 +250,11 @@ export default function Dashboard() {
               ))}
             </div>
           </div>
-          {/* Sold but not yet disbursed — net profit only */}
+          {/* Sold but not yet disbursed — purchase price + net profit, since no money has landed yet */}
           <div className="p-5">
             <div className="flex items-center justify-between mb-3">
               <div>
-                <p className="text-white/70 text-sm font-semibold">Sold, Not Disbursed — Net Profit</p>
+                <p className="text-white/70 text-sm font-semibold">Sold, Not Disbursed — Purchase + Profit</p>
                 <p className="text-white/35 text-xs mt-0.5">{capitalPendingDisbursement.length} car{capitalPendingDisbursement.length !== 1 ? 's' : ''}</p>
               </div>
               <span className="text-white text-sm font-bold">{formatRM(capitalPendingTotal)}</span>
@@ -264,7 +265,7 @@ export default function Dashboard() {
               ) : capitalPendingDisbursement.map(d => (
                 <div key={d.car.id} className="flex justify-between items-center gap-3 py-1.5 text-xs border-b border-obsidian-400/20 last:border-0">
                   <span className="text-white/60 truncate">{d.car.year} {d.car.make} {d.car.model}{d.car.carPlate ? ` · ${d.car.carPlate}` : ''}</span>
-                  <span className={`font-medium shrink-0 tabular-nums ${d.netCarProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatRM(d.netCarProfit)}</span>
+                  <span className={`font-medium shrink-0 tabular-nums ${d.capitalAtStake >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatRM(d.capitalAtStake)}</span>
                 </div>
               ))}
             </div>
