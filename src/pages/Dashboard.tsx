@@ -136,10 +136,10 @@ export default function Dashboard() {
   // ── Consignment Profit ───────────────────────────────────
   // AutoDream's own margin on consigned (dealer-owned) cars — not "our
   // capital" since we never paid for these, but it's real profit that
-  // hasn't landed yet, so it's tracked the same shape as Own Capital:
-  // unsold consignment cars use the asking price as a projection (no
-  // deal locked in yet), sold-not-disbursed cars use the confirmed deal
-  // price. Our margin = deal price minus what we owe the consignor
+  // hasn't landed yet. Scoped to deals already locked in (sold, or
+  // pending delivery) — not speculative unsold stock, since there's no
+  // deal price to project from until a customer actually commits. Our
+  // margin = deal price minus what we owe the consignor
   // (calcConsignmentPayoutAmount, same helper the Receivable/Delivered
   // flows use) minus repairs/misc/commission — netCarProfit's shape, with
   // the consignor payout standing in for purchase price since we never
@@ -163,29 +163,25 @@ export default function Dashboard() {
     return { car, dealPrice, dealerPayout, netProfit };
   };
 
-  const consignmentUnsoldCars = useMemo(
+  const consignmentPendingDisbursement = useMemo(
     () => cars
-      .filter(c => !!c.consignment && c.status !== 'delivered' && c.status !== 'deal_pending')
+      .filter(c => !!c.consignment && c.status === 'delivered' && !c.moneyReceived)
       .map(calcConsignmentProfit)
       .sort((a, b) => b.netProfit - a.netProfit),
     [cars, repairs, customers]
   );
-  const consignmentUnsoldTotal = consignmentUnsoldCars.reduce((s, d) => s + d.netProfit, 0);
-
-  const consignmentCommittedCars = useMemo(
-    () => cars.filter(c => !!c.consignment && (c.status === 'delivered' || c.status === 'deal_pending')),
-    [cars]
-  );
-  const consignmentPendingDisbursement = useMemo(
-    () => consignmentCommittedCars
-      .filter(c => !c.moneyReceived)
-      .map(calcConsignmentProfit)
-      .sort((a, b) => b.netProfit - a.netProfit),
-    [consignmentCommittedCars, repairs, customers]
-  );
   const consignmentPendingTotal = consignmentPendingDisbursement.reduce((s, d) => s + d.netProfit, 0);
 
-  const totalConsignmentProfit = consignmentUnsoldTotal + consignmentPendingTotal;
+  const consignmentPendingDelivery = useMemo(
+    () => cars
+      .filter(c => !!c.consignment && c.status === 'deal_pending')
+      .map(calcConsignmentProfit)
+      .sort((a, b) => b.netProfit - a.netProfit),
+    [cars, repairs, customers]
+  );
+  const consignmentPendingDeliveryTotal = consignmentPendingDelivery.reduce((s, d) => s + d.netProfit, 0);
+
+  const totalConsignmentProfit = consignmentPendingTotal + consignmentPendingDeliveryTotal;
   const animatedConsignmentProfit = useAnimatedRM(totalConsignmentProfit, 1400, 500);
 
   const totalOwnCapital = capitalUnsoldTotal + capitalPendingTotal;
@@ -352,7 +348,7 @@ export default function Dashboard() {
             <div className="w-[3px] h-5 rounded-full bg-gold-gradient" />
             <div>
               <h3 className="text-white font-semibold text-base">Consignment Profit</h3>
-              <p className="text-white/40 text-xs mt-0.5">Your margin on dealer-owned cars — projected until sold, confirmed once sold</p>
+              <p className="text-white/40 text-xs mt-0.5">Your margin on dealer-owned cars — sold or pending delivery, not yet disbursed</p>
             </div>
           </div>
           <div className="flex items-center gap-2.5">
@@ -361,31 +357,11 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-obsidian-400/40">
-          {/* Unsold consignment cars — projected margin at asking price */}
-          <div className="p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <p className="text-white/70 text-sm font-semibold">Unsold — Projected Profit</p>
-                <p className="text-white/35 text-xs mt-0.5">{consignmentUnsoldCars.length} car{consignmentUnsoldCars.length !== 1 ? 's' : ''}</p>
-              </div>
-              <span className="text-white text-sm font-bold">{formatRM(consignmentUnsoldTotal)}</span>
-            </div>
-            <div className="space-y-0.5 max-h-72 overflow-y-auto pr-1">
-              {consignmentUnsoldCars.length === 0 ? (
-                <p className="text-white/30 text-xs py-3">No unsold consignment stock</p>
-              ) : consignmentUnsoldCars.map(d => (
-                <div key={d.car.id} className="flex justify-between items-center gap-3 py-1.5 text-xs border-b border-obsidian-400/20 last:border-0">
-                  <span className="text-white/60 truncate">{d.car.year} {d.car.make} {d.car.model}{d.car.carPlate ? ` · ${d.car.carPlate}` : ''}</span>
-                  <span className={`font-medium shrink-0 tabular-nums ${d.netProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatRM(d.netProfit)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
           {/* Sold consignment cars, not yet disbursed — confirmed margin */}
           <div className="p-5">
             <div className="flex items-center justify-between mb-3">
               <div>
-                <p className="text-white/70 text-sm font-semibold">Sold, Not Disbursed — Net Profit</p>
+                <p className="text-white/70 text-sm font-semibold">Sold, Pending Disbursement</p>
                 <p className="text-white/35 text-xs mt-0.5">{consignmentPendingDisbursement.length} car{consignmentPendingDisbursement.length !== 1 ? 's' : ''}</p>
               </div>
               <span className="text-white text-sm font-bold">{formatRM(consignmentPendingTotal)}</span>
@@ -394,6 +370,26 @@ export default function Dashboard() {
               {consignmentPendingDisbursement.length === 0 ? (
                 <p className="text-white/30 text-xs py-3">Nothing awaiting disbursement</p>
               ) : consignmentPendingDisbursement.map(d => (
+                <div key={d.car.id} className="flex justify-between items-center gap-3 py-1.5 text-xs border-b border-obsidian-400/20 last:border-0">
+                  <span className="text-white/60 truncate">{d.car.year} {d.car.make} {d.car.model}{d.car.carPlate ? ` · ${d.car.carPlate}` : ''}</span>
+                  <span className={`font-medium shrink-0 tabular-nums ${d.netProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatRM(d.netProfit)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Consignment cars with a confirmed deal, awaiting physical delivery */}
+          <div className="p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <p className="text-white/70 text-sm font-semibold">Pending Delivery</p>
+                <p className="text-white/35 text-xs mt-0.5">{consignmentPendingDelivery.length} car{consignmentPendingDelivery.length !== 1 ? 's' : ''}</p>
+              </div>
+              <span className="text-white text-sm font-bold">{formatRM(consignmentPendingDeliveryTotal)}</span>
+            </div>
+            <div className="space-y-0.5 max-h-72 overflow-y-auto pr-1">
+              {consignmentPendingDelivery.length === 0 ? (
+                <p className="text-white/30 text-xs py-3">Nothing pending delivery</p>
+              ) : consignmentPendingDelivery.map(d => (
                 <div key={d.car.id} className="flex justify-between items-center gap-3 py-1.5 text-xs border-b border-obsidian-400/20 last:border-0">
                   <span className="text-white/60 truncate">{d.car.year} {d.car.make} {d.car.model}{d.car.carPlate ? ` · ${d.car.carPlate}` : ''}</span>
                   <span className={`font-medium shrink-0 tabular-nums ${d.netProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatRM(d.netProfit)}</span>
