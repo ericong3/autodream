@@ -270,10 +270,14 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const [showConsignment, setShowConsignment] = useState(false);
   const [generatingConsignDoc, setGeneratingConsignDoc] = useState<'settlement' | 'summary' | null>(null);
   const carMovements = useStore((s) => s.carMovements);
-  const [outgoingConsignModal, setOutgoingConsignModal] = useState<{ dealer: string; terms: 'fixed_amount' | 'profit_split'; fixedAmount: number; splitPercent: number } | null>(null);
+  // Consign Out is a one-step action now — a dealer always takes the car
+  // for an agreed fixed amount, never a profit split (the business doesn't
+  // use that arrangement for outgoing consignment), so saving this modal
+  // marks the car sold/delivered immediately instead of waiting on a
+  // separate "dealer actually sold it" confirmation later.
+  const [outgoingConsignModal, setOutgoingConsignModal] = useState<{ dealer: string; fixedAmount: number; soldDate: string } | null>(null);
   const [outgoingConsignSaving, setOutgoingConsignSaving] = useState(false);
   const [outgoingConsignError, setOutgoingConsignError] = useState<string | null>(null);
-  const [consignSoldModal, setConsignSoldModal] = useState<{ salePrice: number; ourAmount: number; soldDate: string } | null>(null);
 
   // ── Final Deal — derived data (needed by edit handler) ──
   const dealCustomer = car ? customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder)) : undefined;
@@ -927,22 +931,17 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               Misc Cost
             </button>
           )}
-          {isDirector && (
+          {isDirector && (!car.outgoingConsignment || car.status !== 'delivered') && (
             <button
               onClick={() => setOutgoingConsignModal({
                 dealer: car.outgoingConsignment?.dealer ?? '',
-                terms: car.outgoingConsignment?.terms ?? 'fixed_amount',
                 fixedAmount: car.outgoingConsignment?.fixedAmount ?? 0,
-                splitPercent: car.outgoingConsignment?.splitPercent ?? 50,
+                soldDate: new Date().toISOString().slice(0, 10),
               })}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors border ${
-                car.outgoingConsignment
-                  ? 'bg-orange-500/15 border-orange-500/40 text-orange-400 hover:bg-orange-500/25'
-                  : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-300 hover:text-white hover:border-orange-500/40'
-              }`}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors border bg-obsidian-700/60 border-obsidian-400/60 text-gray-300 hover:text-white hover:border-orange-500/40"
             >
               <Building2 size={15} />
-              {car.outgoingConsignment ? 'Consign Out ✓' : 'Consign Out'}
+              {car.outgoingConsignment ? 'Finish Consign Out' : 'Consign Out'}
             </button>
           )}
           {isDirector && (
@@ -1104,24 +1103,13 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               >
                 <Building2 size={11} /> CONSIGN OUT {showConsignment ? '▲' : '▼'}
               </button>
-              {car.status !== 'delivered' && isDirector && (
-                <button
-                  onClick={() => {
-                    const oc = car.outgoingConsignment!;
-                    setConsignSoldModal({
-                      salePrice: 0,
-                      ourAmount: oc.terms === 'fixed_amount' ? (oc.fixedAmount ?? 0) : 0,
-                      soldDate: new Date().toISOString().slice(0, 10),
-                    });
-                  }}
-                  className="flex items-center gap-1.5 bg-green-500 hover:bg-green-400 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors"
-                >
-                  <CheckCircle size={11} /> Mark Sold by Dealer
-                </button>
-              )}
-              {car.status === 'delivered' && (
+              {car.status === 'delivered' ? (
                 <span className="flex items-center gap-1 text-green-400 text-xs font-semibold">
-                  <CheckCircle size={11} /> Sold via consignment
+                  <CheckCircle size={11} /> Sold via consignment — waiting to collect from dealer
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-amber-400 text-xs font-semibold">
+                  Not finished yet — click "Finish Consign Out" above
                 </span>
               )}
             </div>
@@ -1132,27 +1120,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   <p className="text-white font-medium mt-0.5">{car.outgoingConsignment.dealer || '—'}</p>
                 </div>
                 <div>
-                  <p className="text-gray-500 text-xs">Terms</p>
-                  <p className="text-white mt-0.5">{car.outgoingConsignment.terms === 'fixed_amount' ? 'Fixed Amount' : 'Profit Split'}</p>
+                  <p className="text-gray-500 text-xs">Amount We Receive</p>
+                  <p className="text-orange-400 font-semibold mt-0.5">{formatRM(car.outgoingConsignment.fixedAmount ?? 0)}</p>
                 </div>
-                {car.outgoingConsignment.terms === 'fixed_amount' && (
-                  <div>
-                    <p className="text-gray-500 text-xs">Agreed Amount</p>
-                    <p className="text-orange-400 font-semibold mt-0.5">{formatRM(car.outgoingConsignment.fixedAmount ?? 0)}</p>
-                  </div>
-                )}
-                {car.outgoingConsignment.terms === 'profit_split' && (
-                  <>
-                    <div>
-                      <p className="text-gray-500 text-xs">Our Split</p>
-                      <p className="text-green-400 font-semibold mt-0.5">{car.outgoingConsignment.splitPercent ?? 50}%</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-500 text-xs">Dealer's Split</p>
-                      <p className="text-white mt-0.5">{100 - (car.outgoingConsignment.splitPercent ?? 50)}%</p>
-                    </div>
-                  </>
-                )}
               </div>
             )}
           </div>
@@ -3216,124 +3186,6 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
         </div>
       </Modal>
 
-      {/* ── Mark Sold by Dealer Modal ── */}
-      {consignSoldModal && car.outgoingConsignment && createPortal(
-        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="bg-[#0F0E0C] border border-green-500/30 rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-5">
-            <div>
-              <h2 className="text-white font-bold text-base">Mark Sold by Dealer</h2>
-              <p className="text-gray-500 text-xs mt-0.5">
-                Confirm that <span className="text-white">{car.outgoingConsignment.dealer}</span> has sold this car
-              </p>
-            </div>
-
-            <div className="space-y-4">
-              {car.outgoingConsignment.terms === 'fixed_amount' && (
-                <div>
-                  <label className="block text-gray-300 text-xs font-medium mb-1.5">
-                    Amount We Receive Back (RM)
-                  </label>
-                  <input
-                    type="number"
-                    className="w-full bg-obsidian-700/60 border border-obsidian-400/60 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-green-500/60"
-                    value={consignSoldModal.ourAmount}
-                    onChange={(e) => setConsignSoldModal({ ...consignSoldModal, ourAmount: Number(e.target.value) })}
-                  />
-                  <p className="text-gray-500 text-xs mt-1">
-                    Agreed amount was {formatRM(car.outgoingConsignment.fixedAmount ?? 0)}
-                  </p>
-                </div>
-              )}
-
-              {car.outgoingConsignment.terms === 'profit_split' && (() => {
-                const splitPct = car.outgoingConsignment.splitPercent ?? 50;
-                const ourAmt = Math.round(consignSoldModal.salePrice * (splitPct / 100));
-                return (
-                  <>
-                    <div>
-                      <label className="block text-gray-300 text-xs font-medium mb-1.5">
-                        Actual Sale Price by Dealer (RM)
-                      </label>
-                      <input
-                        type="number"
-                        className="w-full bg-obsidian-700/60 border border-obsidian-400/60 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-green-500/60"
-                        value={consignSoldModal.salePrice}
-                        onChange={(e) => setConsignSoldModal({
-                          ...consignSoldModal,
-                          salePrice: Number(e.target.value),
-                          ourAmount: Math.round(Number(e.target.value) * (splitPct / 100)),
-                        })}
-                      />
-                    </div>
-                    {consignSoldModal.salePrice > 0 && (
-                      <div className="bg-green-500/10 border border-green-500/20 rounded-lg px-4 py-3 space-y-1">
-                        <div className="flex justify-between text-xs">
-                          <span className="text-gray-400">Our {splitPct}%</span>
-                          <span className="text-green-400 font-semibold">{formatRM(ourAmt)}</span>
-                        </div>
-                        <div className="flex justify-between text-xs">
-                          <span className="text-gray-400">Dealer's {100 - splitPct}%</span>
-                          <span className="text-white">{formatRM(consignSoldModal.salePrice - ourAmt)}</span>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
-
-            <div>
-              <label className="block text-gray-300 text-xs font-medium mb-1.5">Date Sold</label>
-              <input
-                type="date"
-                className="w-full bg-obsidian-700/60 border border-obsidian-400/60 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-green-500/60"
-                value={consignSoldModal.soldDate}
-                max={new Date().toISOString().slice(0, 10)}
-                onChange={(e) => setConsignSoldModal({ ...consignSoldModal, soldDate: e.target.value })}
-              />
-            </div>
-
-            <div className="flex gap-3 pt-1">
-              <button
-                onClick={() => setConsignSoldModal(null)}
-                className="flex-1 px-4 py-2.5 rounded-lg border border-obsidian-400/60 text-gray-400 text-sm hover:border-gray-500 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={async () => {
-                  const oc = car.outgoingConsignment!;
-                  const finalAmount = oc.terms === 'fixed_amount'
-                    ? consignSoldModal.ourAmount
-                    : consignSoldModal.ourAmount;
-                  await updateCar(car.id, {
-                    status: 'delivered',
-                    deliveryCollected: true,
-                    finalDeal: {
-                      submittedBy: currentUser?.name ?? '',
-                      submittedAt: new Date(consignSoldModal.soldDate + 'T12:00:00').toISOString(),
-                      dealPrice: finalAmount,
-                      bank: `Consignment — ${oc.dealer}`,
-                      approvalStatus: 'approved',
-                    },
-                  });
-                  await generateDeliveryPayments({ car, payments, users, externalSalesmen, dealers, customers, addPayment });
-                  setConsignSoldModal(null);
-                }}
-                disabled={
-                  car.outgoingConsignment.terms === 'profit_split'
-                    ? consignSoldModal.salePrice <= 0
-                    : consignSoldModal.ourAmount <= 0
-                }
-                className="flex-1 px-4 py-2.5 rounded-lg bg-green-500 hover:bg-green-400 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
-              >
-                Confirm Sold
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )}
 
       {/* ── Outgoing Consignment Modal ── */}
       {outgoingConsignModal && createPortal(
@@ -3341,7 +3193,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           <div className="bg-[#0F0E0C] border border-orange-500/30 rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-5">
             <div>
               <h2 className="text-white font-bold text-base">Consign Out</h2>
-              <p className="text-gray-500 text-xs mt-0.5">Our car — assign a dealer to sell it on our behalf</p>
+              <p className="text-gray-500 text-xs mt-0.5">This hands the car to a dealer for an agreed amount — it marks the car Delivered right away, and you'll collect the money from the dealer afterward.</p>
             </div>
 
             <div className="space-y-4">
@@ -3363,53 +3215,25 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               </div>
 
               <div>
-                <label className="block text-gray-300 text-xs font-medium mb-1.5">Terms</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setOutgoingConsignModal({ ...outgoingConsignModal, terms: 'fixed_amount' })}
-                    className={`px-3 py-2.5 rounded-lg border text-sm transition-colors text-left ${outgoingConsignModal.terms === 'fixed_amount' ? 'bg-orange-500/15 border-orange-500/50 text-orange-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400'}`}
-                  >
-                    <p className="font-medium text-xs">Fixed Amount</p>
-                    <p className="text-[10px] opacity-60 mt-0.5">We take back a set price</p>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setOutgoingConsignModal({ ...outgoingConsignModal, terms: 'profit_split' })}
-                    className={`px-3 py-2.5 rounded-lg border text-sm transition-colors text-left ${outgoingConsignModal.terms === 'profit_split' ? 'bg-orange-500/15 border-orange-500/50 text-orange-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400'}`}
-                  >
-                    <p className="font-medium text-xs">Profit Split</p>
-                    <p className="text-[10px] opacity-60 mt-0.5">Split profit after expenses</p>
-                  </button>
-                </div>
+                <label className="block text-gray-300 text-xs font-medium mb-1.5">Amount We Receive (RM)</label>
+                <input
+                  type="number"
+                  className="w-full bg-obsidian-700/60 border border-obsidian-400/60 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-orange-500/60"
+                  value={outgoingConsignModal.fixedAmount}
+                  onChange={(e) => setOutgoingConsignModal({ ...outgoingConsignModal, fixedAmount: Number(e.target.value) })}
+                />
               </div>
 
-              {outgoingConsignModal.terms === 'fixed_amount' && (
-                <div>
-                  <label className="block text-gray-300 text-xs font-medium mb-1.5">We Take Back (RM)</label>
-                  <input
-                    type="number"
-                    className="w-full bg-obsidian-700/60 border border-obsidian-400/60 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-orange-500/60"
-                    value={outgoingConsignModal.fixedAmount}
-                    onChange={(e) => setOutgoingConsignModal({ ...outgoingConsignModal, fixedAmount: Number(e.target.value) })}
-                  />
-                </div>
-              )}
-
-              {outgoingConsignModal.terms === 'profit_split' && (
-                <div>
-                  <label className="block text-gray-300 text-xs font-medium mb-1.5">Our Split (%)</label>
-                  <input
-                    type="number"
-                    className="w-full bg-obsidian-700/60 border border-obsidian-400/60 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-orange-500/60"
-                    value={outgoingConsignModal.splitPercent}
-                    min={1}
-                    max={99}
-                    onChange={(e) => setOutgoingConsignModal({ ...outgoingConsignModal, splitPercent: Number(e.target.value) })}
-                  />
-                  <p className="text-gray-500 text-xs mt-1">Dealer gets {100 - outgoingConsignModal.splitPercent}%</p>
-                </div>
-              )}
+              <div>
+                <label className="block text-gray-300 text-xs font-medium mb-1.5">Date</label>
+                <input
+                  type="date"
+                  className="w-full bg-obsidian-700/60 border border-obsidian-400/60 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-orange-500/60"
+                  value={outgoingConsignModal.soldDate}
+                  max={new Date().toISOString().slice(0, 10)}
+                  onChange={(e) => setOutgoingConsignModal({ ...outgoingConsignModal, soldDate: e.target.value })}
+                />
+              </div>
             </div>
 
             {outgoingConsignError && (
@@ -3422,41 +3246,33 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               >
                 Cancel
               </button>
-              {car.outgoingConsignment && (
-                <button
-                  onClick={async () => {
-                    setOutgoingConsignSaving(true);
-                    setOutgoingConsignError(null);
-                    try {
-                      await updateCar(car.id, { outgoingConsignment: null as any, status: 'available' });
-                      setOutgoingConsignModal(null);
-                    } catch (e: any) {
-                      setOutgoingConsignError(e?.message ?? 'Failed to remove');
-                    } finally {
-                      setOutgoingConsignSaving(false);
-                    }
-                  }}
-                  className="px-4 py-2.5 rounded-lg border border-red-500/40 text-red-400 text-sm hover:bg-red-500/10 transition-colors"
-                >
-                  Remove
-                </button>
-              )}
               <button
-                disabled={!outgoingConsignModal.dealer || outgoingConsignSaving}
+                disabled={!outgoingConsignModal.dealer || outgoingConsignModal.fixedAmount <= 0 || outgoingConsignSaving}
                 onClick={async () => {
-                  if (!outgoingConsignModal.dealer) return;
+                  if (!outgoingConsignModal.dealer || outgoingConsignModal.fixedAmount <= 0) return;
                   setOutgoingConsignSaving(true);
                   setOutgoingConsignError(null);
                   try {
-                    await updateCar(car.id, {
-                      outgoingConsignment: {
-                        dealer: outgoingConsignModal.dealer,
-                        terms: outgoingConsignModal.terms,
-                        fixedAmount: outgoingConsignModal.terms === 'fixed_amount' ? outgoingConsignModal.fixedAmount : undefined,
-                        splitPercent: outgoingConsignModal.terms === 'profit_split' ? outgoingConsignModal.splitPercent : undefined,
+                    const updatedCar: Car = {
+                      ...car,
+                      outgoingConsignment: { dealer: outgoingConsignModal.dealer, terms: 'fixed_amount', fixedAmount: outgoingConsignModal.fixedAmount },
+                      status: 'delivered',
+                      deliveryCollected: true,
+                      finalDeal: {
+                        submittedBy: currentUser?.name ?? '',
+                        submittedAt: new Date(outgoingConsignModal.soldDate + 'T12:00:00').toISOString(),
+                        dealPrice: outgoingConsignModal.fixedAmount,
+                        bank: `Consignment — ${outgoingConsignModal.dealer}`,
+                        approvalStatus: 'approved',
                       },
-                      status: 'reserved',
+                    };
+                    await updateCar(car.id, {
+                      outgoingConsignment: updatedCar.outgoingConsignment,
+                      status: updatedCar.status,
+                      deliveryCollected: updatedCar.deliveryCollected,
+                      finalDeal: updatedCar.finalDeal,
                     });
+                    await generateDeliveryPayments({ car: updatedCar, payments, users, externalSalesmen, dealers, customers, addPayment });
                     setOutgoingConsignModal(null);
                     setOutgoingConsignError(null);
                   } catch (e: any) {
