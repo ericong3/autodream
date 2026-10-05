@@ -150,9 +150,14 @@ export function computeYtdForPayslip(payslips: Payslip[], userId: string, uptoPa
 
 export const COMPANY_INFO = {
   name: 'AutoDream',
+  legalName: 'Autodream Sdn Bhd',
   tagline: 'PREMIUM USED CARS',
-  address: 'Green Heights Royal Richmond, 93250 Kuching, Sarawak.',
+  address: 'Land District, Lot 74, Lorong Central Timur 3, Section 61, 93450 Kuching, Sarawak.',
   phone: '014-399 6235',
   website: 'www.autodream.com.my',
   social: 'autodream.kch',
+  ssmNumber: '1656183-K',
+  bankName: 'Public Bank',
+  bankAccountNumber: '3248354428',
+  bankAccountHolder: 'Autodream Sdn Bhd',
 };

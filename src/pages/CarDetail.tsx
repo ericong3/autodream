@@ -68,6 +68,7 @@ import { buildCarSaleEntry, buildPayableRecognizedEntry, buildCarCostRecognizedE
 import { getCaseCompletion } from '../utils/caseCompletion';
 import { buildDealReceiptPdf, uploadDealReceipt } from '../utils/generateDealReceipt';
 import { buildConsignmentSettlementPdf, buildConsignmentSummaryPdf, ConsignmentSettlementInput } from '../utils/generateConsignmentSettlement';
+import { buildDealerInvoicePdf, DealerInvoiceInput } from '../utils/generateDealerInvoice';
 import { buildTradeInCar } from '../utils/tradeIn';
 import { toast } from '../utils/toast';
 
@@ -278,6 +279,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const [outgoingConsignModal, setOutgoingConsignModal] = useState<{ dealer: string; fixedAmount: number; soldDate: string } | null>(null);
   const [outgoingConsignSaving, setOutgoingConsignSaving] = useState(false);
   const [outgoingConsignError, setOutgoingConsignError] = useState<string | null>(null);
+  const [generatingDealerInvoice, setGeneratingDealerInvoice] = useState(false);
 
   // ── Final Deal — derived data (needed by edit handler) ──
   const dealCustomer = car ? customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder)) : undefined;
@@ -1114,15 +1116,54 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               )}
             </div>
             {showConsignment && (
-              <div className="px-5 py-4 bg-orange-500/5 border-b border-orange-500/20 grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-2 text-sm">
-                <div>
-                  <p className="text-gray-500 text-xs">Dealer</p>
-                  <p className="text-white font-medium mt-0.5">{car.outgoingConsignment.dealer || '—'}</p>
+              <div className="px-5 py-4 bg-orange-500/5 border-b border-orange-500/20 space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-2 text-sm">
+                  <div>
+                    <p className="text-gray-500 text-xs">Dealer</p>
+                    <p className="text-white font-medium mt-0.5">{car.outgoingConsignment.dealer || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 text-xs">Amount We Receive</p>
+                    <p className="text-orange-400 font-semibold mt-0.5">{formatRM(car.outgoingConsignment.fixedAmount ?? 0)}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-gray-500 text-xs">Amount We Receive</p>
-                  <p className="text-orange-400 font-semibold mt-0.5">{formatRM(car.outgoingConsignment.fixedAmount ?? 0)}</p>
-                </div>
+                {car.status === 'delivered' && (
+                  <button
+                    type="button"
+                    disabled={generatingDealerInvoice}
+                    onClick={async () => {
+                      setGeneratingDealerInvoice(true);
+                      try {
+                        const oc = car.outgoingConsignment!;
+                        const dealerRecord = dealers.find(d => d.name.toLowerCase() === oc.dealer.toLowerCase());
+                        const input: DealerInvoiceInput = {
+                          dealerName: oc.dealer,
+                          dealerPhone: dealerRecord?.phone,
+                          carLabel: `${car.year} ${car.make} ${car.model}${car.variant ? ' ' + car.variant : ''}`,
+                          carPlate: car.carPlate,
+                          amount: oc.fixedAmount ?? 0,
+                          soldDate: car.finalDeal?.submittedAt ? new Date(car.finalDeal.submittedAt) : new Date(),
+                          generatedAt: new Date(),
+                        };
+                        const bytes = await buildDealerInvoicePdf(input);
+                        const blob = new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `${car.carPlate ?? car.id}-invoice-${oc.dealer}.pdf`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      } catch (err: any) {
+                        toast.error(err?.message ?? 'Failed to generate invoice');
+                      } finally {
+                        setGeneratingDealerInvoice(false);
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500/15 hover:bg-orange-500/25 border border-orange-500/30 text-orange-300 text-xs font-medium transition-colors disabled:opacity-50"
+                  >
+                    <Receipt size={12} /> {generatingDealerInvoice ? 'Generating…' : 'Invoice to Dealer'}
+                  </button>
+                )}
               </div>
             )}
           </div>
