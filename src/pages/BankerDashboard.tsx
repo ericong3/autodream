@@ -47,8 +47,13 @@ export default function BankerDashboard() {
   const bankerOpenCaseId = useStore(s => s.bankerOpenCaseId);
   const setBankerOpenCaseId = useStore(s => s.setBankerOpenCaseId);
 
-  // Resolve my cases: support old format (bankerId = User.id) and new format (bankerId = Banker.id linked via userId)
-  const myBankerProfile = bankers.find(b => b.userId === currentUser.id);
+  // Resolve my cases: support old format (bankerId = User.id) and new format (bankerId = Banker.id linked via userId).
+  // One login can have more than one Banker profile (e.g. the same person handles
+  // submissions to two different banks) — match all of them, not just the first.
+  const myBankerIds = useMemo(
+    () => bankers.filter(b => b.userId === currentUser.id).map(b => b.id),
+    [bankers, currentUser.id]
+  );
 
 
   const VALID_FILTERS = ['new', 'submitted', 'approved', 'rejected', 'appeal', 'cancelled'] as const;
@@ -68,9 +73,9 @@ export default function BankerDashboard() {
 
   const myCases = useMemo(() =>
     loanCases
-      .filter(c => c.bankerId === currentUser.id || (myBankerProfile && c.bankerId === myBankerProfile.id))
+      .filter(c => c.bankerId === currentUser.id || myBankerIds.includes(c.bankerId))
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
-    [loanCases, currentUser.id, myBankerProfile]
+    [loanCases, currentUser.id, myBankerIds]
   );
 
   const filteredCases = useMemo(() => myCases.filter(c => {

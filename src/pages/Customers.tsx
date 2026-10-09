@@ -292,6 +292,7 @@ export default function Customers() {
   const [loanSubmitCustomer, setLoanSubmitCustomer] = useState<Customer | null>(null);
   const [loanSubmitInitial, setLoanSubmitInitial] = useState<{ carId?: string; amount?: number; banks?: string[] }>({});
   const [selectedLoanCaseId, setSelectedLoanCaseId] = useState<string | null>(null);
+  const [docsCaseId, setDocsCaseId] = useState<string | null>(null);
   const [showAddGuarantor, setShowAddGuarantor] = useState(false);
   const [guarantorText, setGuarantorText] = useState('');
   const [guarantorUploading, setGuarantorUploading] = useState(false);
@@ -322,6 +323,7 @@ export default function Customers() {
     setApplicantText('');
     setShowEditAdditional(false);
     setAdditionalText('');
+    setDocsCaseId(null);
   }, [detailLead?.id]);
 
   // Open customer detail from URL param (e.g. navigated from LoanCases "Confirm Deal")
@@ -2439,10 +2441,16 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
 
                 {/* Loan Documents */}
                 {(() => {
-                  const primaryCase = loanCases
+                  // A customer can have one case per bank (LM, Toyota Capital, etc).
+                  // Each bank only ever sees documents tagged with ITS OWN case id, so
+                  // defaulting to a single "primary" case here silently hid documents
+                  // from every other bank the case was submitted to. Let the salesman
+                  // pick which bank's case they're attaching/viewing documents for.
+                  const docCases = loanCases
                     .filter(c => c.customerId === detailLead.id)
-                    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
-                  if (!primaryCase) return null;
+                    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+                  if (!docCases.length) return null;
+                  const primaryCase = docCases.find(c => c.id === docsCaseId) ?? docCases[0];
                   const applicantDocs = loanCaseDocuments.filter(d => d.caseId === primaryCase.id && d.type === 'applicant');
                   const guarantorDocs = loanCaseDocuments.filter(d => d.caseId === primaryCase.id && d.type === 'guarantor');
                   const additionalDocs = loanCaseDocuments.filter(d => d.caseId === primaryCase.id && d.type === 'additional');
@@ -2483,6 +2491,23 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
 
                   return (
                     <div className="space-y-3">
+                      {docCases.length > 1 && (
+                        <div className="flex items-center gap-1.5 flex-wrap px-1">
+                          {docCases.map(c => (
+                            <button
+                              key={c.id}
+                              onClick={() => setDocsCaseId(c.id)}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-medium touch-manipulation transition-colors ${
+                                c.id === primaryCase.id
+                                  ? 'bg-gold-500/20 border border-gold-500/40 text-gold-300'
+                                  : 'bg-obsidian-700/60 border border-obsidian-400/50 text-gray-400'
+                              }`}
+                            >
+                              {c.bank}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       {/* Applicant — blue */}
                       <section className="rounded-2xl border border-blue-500/40 overflow-hidden">
                         <div className="flex items-center gap-2 px-4 py-3 bg-blue-500/10 border-b border-blue-500/20">
