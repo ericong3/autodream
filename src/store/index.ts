@@ -54,6 +54,30 @@ async function runBatched<T>(thunks: (() => PromiseLike<T>)[], concurrency: numb
   return results;
 }
 
+// PostgREST caps an unbounded `select` at its configured max rows (1000 on this project)
+// and returns exactly that many with no error and no signal more rows exist. Once a table
+// crosses the cap, rows past it are silently dropped from every fetch — e.g. a document
+// upload that writes to the DB fine but never appears in the app because the array it
+// would've landed in was already full. Every full-table load needs paging past that limit.
+// `.order('id', ...)` is appended as a stable tie-breaker so page boundaries are
+// deterministic even when a query already orders by a non-unique column (date, created_at).
+const PAGE_SIZE = 1000;
+async function fetchAllRows<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>
+): Promise<{ data: T[] | null; error: any }> {
+  let all: T[] = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await page(from, from + PAGE_SIZE - 1);
+    if (error) return { data: all.length ? all : null, error };
+    if (!data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return { data: all, error: null };
+}
+
 interface StoreState {
   currentUser: User | null;
   users: User[];
@@ -1286,13 +1310,13 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       try {
         const [users, cars, repairs, customers, externalSalesmenResult, bankersResult, loanCasesResult] =
           await runBatched([
-            () => supabase.from('users').select('*'),
-            () => supabase.from('cars').select('*').neq('status', 'delivered'),
-            () => supabase.from('repairs').select('*'),
-            () => supabase.from('customers').select('*'),
-            () => supabase.from('external_salesmen').select('*'),
-            () => supabase.from('bankers').select('*'),
-            () => supabase.from('loan_cases').select('*').not('status', 'in', '(rejected,cancelled,withdrawn)'),
+            () => fetchAllRows((from, to) => supabase.from('users').select('*').order('id').range(from, to)),
+            () => fetchAllRows((from, to) => supabase.from('cars').select('*').neq('status', 'delivered').order('id').range(from, to)),
+            () => fetchAllRows((from, to) => supabase.from('repairs').select('*').order('id').range(from, to)),
+            () => fetchAllRows((from, to) => supabase.from('customers').select('*').order('id').range(from, to)),
+            () => fetchAllRows((from, to) => supabase.from('external_salesmen').select('*').order('id').range(from, to)),
+            () => fetchAllRows((from, to) => supabase.from('bankers').select('*').order('id').range(from, to)),
+            () => fetchAllRows((from, to) => supabase.from('loan_cases').select('*').not('status', 'in', '(rejected,cancelled,withdrawn)').order('id').range(from, to)),
           ], 4);
 
         allCars = (cars.data ?? []).map(rowToCar);
@@ -1391,28 +1415,28 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     // silently blackhole delivered cars / quotations / instructions / payments / etc. for the
     // rest of the session — `loaded` is already true from phase 1, so nothing else retries this.
     const runPhase2 = (isRetry = false): Promise<void> => runBatched([
-      () => supabase.from('cars').select('*').eq('status', 'delivered'),
-      () => supabase.from('loan_cases').select('*').in('status', ['rejected', 'cancelled', 'withdrawn']),
-      () => supabase.from('quotations').select('*'),
-      () => supabase.from('instructions').select('*'),
-      () => supabase.from('test_drives').select('*'),
-      () => supabase.from('personal_reminders').select('*'),
-      () => supabase.from('dealers').select('*'),
-      () => supabase.from('workshops').select('*'),
-      () => supabase.from('suppliers').select('*'),
-      () => supabase.from('merchants').select('*'),
-      () => supabase.from('claim_categories').select('*'),
-      () => supabase.from('ledger_accounts').select('*'),
-      () => supabase.from('journal_entries').select('*').order('date', { ascending: false }),
-      () => supabase.from('loan_case_documents').select('*'),
-      () => supabase.from('loan_case_activity').select('*'),
-      () => supabase.from('payments').select('*').order('created_at', { ascending: false }),
-      () => supabase.from('investor_transactions').select('*').order('created_at', { ascending: true }),
-      () => supabase.from('shipments').select('*').order('eta', { ascending: true }),
-      () => supabase.from('car_movements').select('*').order('created_at', { ascending: false }),
-      () => supabase.from('payslips').select('*').order('created_at', { ascending: false }),
-      () => supabase.from('bank_statement_uploads').select('*').order('uploaded_at', { ascending: false }),
-      () => supabase.from('bank_transactions').select('*').order('created_at', { ascending: false }),
+      () => fetchAllRows((from, to) => supabase.from('cars').select('*').eq('status', 'delivered').order('id').range(from, to)),
+      () => fetchAllRows((from, to) => supabase.from('loan_cases').select('*').in('status', ['rejected', 'cancelled', 'withdrawn']).order('id').range(from, to)),
+      () => fetchAllRows((from, to) => supabase.from('quotations').select('*').order('id').range(from, to)),
+      () => fetchAllRows((from, to) => supabase.from('instructions').select('*').order('id').range(from, to)),
+      () => fetchAllRows((from, to) => supabase.from('test_drives').select('*').order('id').range(from, to)),
+      () => fetchAllRows((from, to) => supabase.from('personal_reminders').select('*').order('id').range(from, to)),
+      () => fetchAllRows((from, to) => supabase.from('dealers').select('*').order('id').range(from, to)),
+      () => fetchAllRows((from, to) => supabase.from('workshops').select('*').order('id').range(from, to)),
+      () => fetchAllRows((from, to) => supabase.from('suppliers').select('*').order('id').range(from, to)),
+      () => fetchAllRows((from, to) => supabase.from('merchants').select('*').order('id').range(from, to)),
+      () => fetchAllRows((from, to) => supabase.from('claim_categories').select('*').order('id').range(from, to)),
+      () => fetchAllRows((from, to) => supabase.from('ledger_accounts').select('*').order('id').range(from, to)),
+      () => fetchAllRows((from, to) => supabase.from('journal_entries').select('*').order('date', { ascending: false }).order('id').range(from, to)),
+      () => fetchAllRows((from, to) => supabase.from('loan_case_documents').select('*').order('id').range(from, to)),
+      () => fetchAllRows((from, to) => supabase.from('loan_case_activity').select('*').order('id').range(from, to)),
+      () => fetchAllRows((from, to) => supabase.from('payments').select('*').order('created_at', { ascending: false }).order('id').range(from, to)),
+      () => fetchAllRows((from, to) => supabase.from('investor_transactions').select('*').order('created_at', { ascending: true }).order('id').range(from, to)),
+      () => fetchAllRows((from, to) => supabase.from('shipments').select('*').order('eta', { ascending: true }).order('id').range(from, to)),
+      () => fetchAllRows((from, to) => supabase.from('car_movements').select('*').order('created_at', { ascending: false }).order('id').range(from, to)),
+      () => fetchAllRows((from, to) => supabase.from('payslips').select('*').order('created_at', { ascending: false }).order('id').range(from, to)),
+      () => fetchAllRows((from, to) => supabase.from('bank_statement_uploads').select('*').order('uploaded_at', { ascending: false }).order('id').range(from, to)),
+      () => fetchAllRows((from, to) => supabase.from('bank_transactions').select('*').order('created_at', { ascending: false }).order('id').range(from, to)),
     ], 5).then(async ([deliveredCarsResult, closedCasesResult, quotations, instructions, testDrives, reminders, dealers, workshops, suppliers, merchants, claimCategories, ledgerAccounts, journalEntries, loanCaseDocsResult, loanCaseActivitiesResult, paymentsResult, investorTxnsResult, shipmentsResult, carMovementsResult, payslipsResult, bankUploadsResult, bankTxnsResult]) => {
       const allQuotations  = (quotations.data ?? []).map(rowToQuotation);
       const allTestDrives  = (testDrives.data ?? []).map(rowToTestDrive);
