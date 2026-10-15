@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { thumbUrl } from '../utils/photoUrl';
 import {
   Users, Plus, ChevronDown, ChevronUp, Car as CarIcon,
@@ -9,11 +9,23 @@ import {
 import { useStore } from '../store';
 import { formatRM, generateId } from '../utils/format';
 import { User, Car, InvestorTransaction } from '../types';
+import { calcCarNetProfit, calcCarNetProfitBreakdown, calcConsignmentPayoutAmount } from '../utils/generatePayments';
+import { CarDetailContent } from './CarDetail';
 
 const STATUS_LABEL: Record<Car['status'], string> = {
   coming_soon: 'Coming Soon', in_workshop: 'In Workshop', ready: 'Ready',
   photo_complete: 'Photo Done', submitted: 'Submitted', deal_pending: 'Deal Pending',
   sold: 'Sold', available: 'Available', reserved: 'Reserved', delivered: 'Delivered',
+};
+
+type OwedStage = 'deal_pending' | 'awaiting_disbursement' | 'awaiting_transfer';
+type BreakdownLine = { label: string; value: number; subtotal?: boolean; muted?: boolean };
+type OwedItem = { car: Car; stage: OwedStage; amount: number; lines: BreakdownLine[] };
+
+const OWED_STAGE_LABEL: Record<OwedStage, string> = {
+  deal_pending: 'Deal pending',
+  awaiting_disbursement: 'Awaiting disbursement',
+  awaiting_transfer: 'Disbursed, not transferred',
 };
 
 const emptyInvestorForm = {
@@ -25,6 +37,7 @@ export default function Investors() {
   const cars = useStore((s) => s.cars);
   const repairs = useStore((s) => s.repairs);
   const customers = useStore((s) => s.customers);
+  const payments = useStore((s) => s.payments);
   const addUser = useStore((s) => s.addUser);
   const updateUser = useStore((s) => s.updateUser);
   const deleteUser = useStore((s) => s.deleteUser);
@@ -38,6 +51,28 @@ export default function Investors() {
   const [consignView, setConsignView] = useState<'all' | 'by_dealer'>('all');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [expandedDealer, setExpandedDealer] = useState<string | null>(null);
+  const [owedStageOpen, setOwedStageOpen] = useState<OwedStage | null>(null);
+  const [owedDealersOpen, setOwedDealersOpen] = useState<Set<string>>(new Set());
+  const [owedCarsOpen, setOwedCarsOpen] = useState<Set<string>>(new Set());
+  const [owedMissingOpen, setOwedMissingOpen] = useState(false);
+  // Car opened from the Owed to Dealers summary — shown in place of this page
+  // (not a route change) so Back returns here with expansions and scroll intact.
+  const [detailCarId, setDetailCarId] = useState<string | null>(null);
+  const savedScroll = useRef(0);
+  const scrollEl = () => document.querySelector('main');
+  const openCarDetail = (carId: string) => {
+    savedScroll.current = scrollEl()?.scrollTop ?? 0;
+    setDetailCarId(carId);
+    scrollEl()?.scrollTo(0, 0);
+  };
+  useEffect(() => {
+    if (!detailCarId) requestAnimationFrame(() => scrollEl()?.scrollTo(0, savedScroll.current));
+  }, [detailCarId]);
+  const toggleInSet = (set: Set<string>, key: string) => {
+    const next = new Set(set);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  };
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState(emptyInvestorForm);
   const [showPass, setShowPass] = useState(false);
@@ -75,6 +110,77 @@ export default function Investors() {
     const commission = (car.outgoingConsignment || car.isStaffSale) ? 0 : (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
     const netProfit = profitBeforeComm - commission;
     return { car, repairCost, miscCost, additionalTotal, commission, dealPrice, netProfit, myShare: netProfit * split, split, customer };
+  };
+
+  // Consign-in takeback per car: what the dealer gets back vs what we keep,
+  // on net profit. Until a deal is locked in there's no final deal price yet,
+  // so it's an estimate at asking price and flagged as such.
+  const renderConsignTakeback = (car: Car) => {
+    const c = car.consignment!;
+    const hasDeal = !!car.finalDeal || customers.some((cu) => cu.interestedCarId === car.id && (cu.cashWorkOrder || cu.loanWorkOrder));
+    const netProfit = calcCarNetProfit(car, customers, repairs);
+    const dealerTakes = calcConsignmentPayoutAmount(car, customers, repairs);
+    const dealerShare = c.terms === 'profit_split' ? Math.max(0, netProfit) * ((c.splitPercent ?? 0) / 100) : 0;
+    const weKeep = netProfit - dealerShare;
+    const est = hasDeal ? '' : '≈ ';
+    return (
+      <>
+        {c.terms === 'profit_split' && (
+          <span>Split — Dealer <span className="text-white">{c.splitPercent ?? 50}%</span> / Us <span className="text-green-400">{100 - (c.splitPercent ?? 50)}%</span> of net</span>
+        )}
+        <span>Dealer takes back: <span className="text-blue-400 font-medium">{est}{formatRM(dealerTakes)}</span></span>
+        <span>We keep: <span className={`font-medium ${weKeep >= 0 ? 'text-green-400' : 'text-red-400'}`}>{est}{formatRM(weKeep)}</span></span>
+        {!hasDeal && <span className="text-gray-600 italic">est. at asking {formatRM(car.sellingPrice)}</span>}
+      </>
+    );
+  };
+
+  // One car in the Owed to Dealers summary — tap to see how its amount was derived.
+  // `sub` picks what the second line shows: the dealer (in stage lists) or the
+  // stage (in dealer lists), whichever the surrounding list doesn't already say.
+  const renderOwedCar = (item: OwedItem, sub: 'dealer' | 'stage') => {
+    const { car, stage, amount, lines } = item;
+    // Keyed by list + car so the same car can be open in the stage list and
+    // the dealer list independently.
+    const key = `${sub}:${car.id}`;
+    const open = owedCarsOpen.has(key);
+    return (
+      <div key={car.id} className="px-3 py-2 text-sm">
+        <button type="button" onClick={() => setOwedCarsOpen(toggleInSet(owedCarsOpen, key))} className="w-full flex items-center justify-between gap-3 text-left">
+          <div className="min-w-0">
+            <p className="text-white truncate">
+              {car.year} {car.make} {car.model}
+              {car.carPlate && <span className="ml-2 text-[10px] font-mono text-gold-300">{car.carPlate}</span>}
+            </p>
+            <p className="text-blue-400/80 text-xs">
+              {sub === 'dealer' ? (car.consignment!.dealer || 'Unknown Dealer') : OWED_STAGE_LABEL[stage]}
+              <span className="text-gray-600"> · {car.consignment!.terms === 'fixed_amount' ? 'Fixed amount' : `${car.consignment!.splitPercent ?? 0}% net split`}</span>
+            </p>
+          </div>
+          <span className="flex items-center gap-1.5 flex-shrink-0">
+            <span className="text-blue-400 font-medium">{formatRM(amount)}</span>
+            {open ? <ChevronUp size={13} className="text-gray-500" /> : <ChevronDown size={13} className="text-gray-500" />}
+          </span>
+        </button>
+        {open && (
+          <div className="mt-2 bg-obsidian-900/60 rounded-md px-3 py-2 space-y-0.5 text-xs">
+            {lines.map((l, i) => (
+              <div key={i} className={`flex justify-between gap-3 ${l.subtotal ? 'border-t border-obsidian-400/40 pt-1 mt-1 mb-1 font-semibold text-white' : l.muted ? 'text-gray-600' : 'text-gray-400'}`}>
+                <span>{l.label}</span>
+                <span className={l.value < 0 ? 'text-red-400/80' : ''}>{formatRM(l.value)}</span>
+              </div>
+            ))}
+            <div className="flex justify-between gap-3 border-t border-blue-500/30 pt-1 mt-1 font-semibold text-blue-400">
+              <span>Owed to dealer</span>
+              <span>{formatRM(amount)}</span>
+            </div>
+            <button type="button" onClick={() => openCarDetail(car.id)} className="mt-1.5 text-gold-400 hover:text-gold-300 hover:underline">
+              Open car details →
+            </button>
+          </div>
+        )}
+      </div>
+    );
   };
 
   const investorStats = useMemo(() => {
@@ -200,6 +306,92 @@ export default function Investors() {
   const consignInCars  = useMemo(() => cars.filter(c => c.consignment),        [cars]);
   const consignOutCars = useMemo(() => cars.filter(c => c.outgoingConsignment), [cars]);
 
+  // Money still owed to consignors, by stage. Once a consignment_payout
+  // record exists its pending amount is what's owed (transferred ones are
+  // done); before that it's the calculated takeback. Unsold stock is left
+  // out — nothing is owed until a deal is locked in.
+  const owedToDealers = useMemo(() => {
+    const stages: Record<OwedStage, OwedItem[]> = { deal_pending: [], awaiting_disbursement: [], awaiting_transfer: [] };
+    const missing: { car: Car; stage: OwedStage; reason: string }[] = [];
+    for (const car of consignInCars) {
+      const stage: OwedStage | null = car.status === 'deal_pending' ? 'deal_pending'
+        : car.status === 'delivered' ? (car.moneyReceived ? 'awaiting_transfer' : 'awaiting_disbursement')
+        : null;
+      if (!stage) continue;
+      const c = car.consignment!;
+      const settled = car.settlementAmount ?? 0;
+      const lines: BreakdownLine[] = [];
+      const payouts = payments.filter(p => p.type === 'consignment_payout' && p.carId === car.id);
+      let amount: number;
+      if (payouts.length > 0) {
+        const pending = payouts.filter(p => p.status === 'pending');
+        const pendingTotal = pending.reduce((s, p) => s + p.amount, 0);
+        const transferred = payouts.filter(p => p.status === 'transferred').reduce((s, p) => s + p.amount, 0);
+        if (transferred > 0) {
+          // Some cars picked up duplicate pending payouts after already being
+          // paid (old "Pay dealer" double-click bug), so pending records can't
+          // be trusted once a transfer exists — owed is what the terms say the
+          // dealer gets, minus what's already gone out.
+          const expected = calcConsignmentPayoutAmount(car, customers, repairs) || Math.max(...pending.map(p => p.amount), 0);
+          amount = Math.max(0, expected - transferred);
+          if (amount <= 0) continue; // fully paid
+          lines.push({ label: 'Dealer takeback per terms', value: expected });
+          lines.push({ label: '− Already transferred', value: -transferred });
+        } else {
+          // Payout raised but not paid yet — what's owed is the pending record
+          amount = pendingTotal;
+          if (amount <= 0) continue;
+          pending.forEach((p) => lines.push({ label: 'Pending payout record', value: p.amount }));
+        }
+      } else {
+        amount = calcConsignmentPayoutAmount(car, customers, repairs);
+        if (amount <= 0) {
+          missing.push({
+            car, stage,
+            reason: c.terms === 'fixed_amount' ? 'Fixed amount / purchase price not entered'
+              : !c.splitPercent ? 'Split % not entered' : 'Purchase price not entered',
+          });
+          continue;
+        }
+        if (c.terms === 'fixed_amount') {
+          lines.push({ label: 'Agreed fixed amount', value: c.fixedAmount ?? 0 });
+          if (settled > 0) lines.push({ label: '− Loan settlement paid to bank', value: -settled });
+        } else {
+          const b = calcCarNetProfitBreakdown(car, customers, repairs);
+          const pct = c.splitPercent ?? 0;
+          lines.push({ label: b.hasDeal ? 'Deal price' : 'Asking price (no deal yet — estimate)', value: b.dealPrice });
+          if (b.addOnRevenue) lines.push({ label: '+ Customer add-ons', value: b.addOnRevenue });
+          lines.push({ label: '− Purchase price', value: -car.purchasePrice });
+          if (b.repairCost) lines.push({ label: '− Repairs (done)', value: -b.repairCost });
+          if (b.miscCost) lines.push({ label: '− Misc costs', value: -b.miscCost });
+          if (b.disbursementCharges) lines.push({ label: '− Disbursement charges', value: -b.disbursementCharges });
+          if (b.commission) lines.push({ label: '− Salesman commission', value: -b.commission });
+          if (b.intakeCommission) lines.push({ label: '− Intake bonus', value: -b.intakeCommission });
+          if (b.sourceCommission) lines.push({ label: '− Source commission', value: -b.sourceCommission });
+          lines.push({ label: 'Net profit', value: b.netProfit, subtotal: true });
+          lines.push({ label: 'Purchase price returned', value: car.purchasePrice });
+          if (settled > 0) lines.push({ label: '− Loan settlement paid to bank', value: -settled });
+          lines.push({ label: `+ Dealer's ${pct}% of net profit`, value: Math.max(0, b.netProfit) * (pct / 100) });
+        }
+      }
+      stages[stage].push({ car, stage, amount, lines });
+    }
+    const all = [...stages.deal_pending, ...stages.awaiting_disbursement, ...stages.awaiting_transfer];
+    const byDealer: Record<string, OwedItem[]> = {};
+    for (const item of all) {
+      const d = item.car.consignment!.dealer || 'Unknown Dealer';
+      (byDealer[d] ??= []).push(item);
+    }
+    return {
+      stages,
+      missing,
+      total: all.reduce((s, x) => s + x.amount, 0),
+      dealers: Object.entries(byDealer)
+        .map(([dealer, items]) => ({ dealer, items, amount: items.reduce((s, x) => s + x.amount, 0) }))
+        .sort((a, b) => b.amount - a.amount),
+    };
+  }, [consignInCars, payments, customers, repairs]);
+
   // Group all consignment cars by dealer name into unified dealer profiles
   const dealerProfiles = useMemo(() => {
     const map: Record<string, { in: Car[]; out: Car[] }> = {};
@@ -223,6 +415,17 @@ export default function Investors() {
       doneOut:   cOut.filter(c => c.status === 'delivered').length,
     }));
   }, [consignInCars, consignOutCars]);
+
+  if (detailCarId) {
+    return (
+      <CarDetailContent
+        id={detailCarId}
+        onBack={() => setDetailCarId(null)}
+        backLabel="Back to Consignment"
+        breadcrumbLabel="Consignment"
+      />
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -772,6 +975,105 @@ export default function Investors() {
       {activeTab === 'consignment' && (
         <div className="space-y-4">
 
+          {/* Owed to dealers summary */}
+          <div className="bg-card-gradient border border-blue-500/20 rounded-xl p-4 sm:p-5">
+            <div className="flex items-baseline justify-between gap-3 flex-wrap">
+              <p className="text-blue-400 text-xs font-semibold uppercase tracking-widest flex items-center gap-1.5">
+                <Wallet size={12} /> Owed to Dealers
+              </p>
+              <p className="text-white text-xl font-bold">{formatRM(owedToDealers.total)}</p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3">
+              {([
+                { key: 'deal_pending', label: 'Deal pending', hint: 'Not delivered yet' },
+                { key: 'awaiting_disbursement', label: 'Delivered', hint: 'Awaiting disbursement' },
+                { key: 'awaiting_transfer', label: 'Disbursed', hint: 'Not yet transferred to dealer' },
+              ] as const).map(({ key, label, hint }) => {
+                const items = owedToDealers.stages[key];
+                const open = owedStageOpen === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setOwedStageOpen(open ? null : key)}
+                    className={`text-left rounded-lg p-3 border transition-colors ${open ? 'bg-blue-500/15 border-blue-500/40' : 'bg-obsidian-800/60 border-obsidian-400/40 hover:border-blue-500/30'}`}
+                  >
+                    <p className="text-white text-sm font-medium">{label}</p>
+                    <p className="text-gray-500 text-[11px]">{hint}</p>
+                    <p className="text-blue-400 font-semibold mt-1.5">{formatRM(items.reduce((s, x) => s + x.amount, 0))}</p>
+                    <p className="text-gray-600 text-[11px]">{items.length} car{items.length !== 1 ? 's' : ''}</p>
+                  </button>
+                );
+              })}
+            </div>
+
+            {owedStageOpen && (
+              <div className="mt-3 bg-obsidian-800/60 border border-obsidian-400/40 rounded-lg divide-y divide-obsidian-400/30">
+                {owedToDealers.stages[owedStageOpen].length === 0 ? (
+                  <p className="text-gray-500 text-xs px-3 py-3">No cars in this stage</p>
+                ) : owedToDealers.stages[owedStageOpen].map((item) => renderOwedCar(item, 'dealer'))}
+              </div>
+            )}
+
+            {owedToDealers.dealers.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-obsidian-400/30 space-y-1">
+                <p className="text-gray-600 text-[10px] uppercase tracking-wide mb-1">By dealer — tap to see cars</p>
+                {owedToDealers.dealers.map(({ dealer, items, amount }) => {
+                  const open = owedDealersOpen.has(dealer);
+                  return (
+                    <div key={dealer}>
+                      <button
+                        type="button"
+                        onClick={() => setOwedDealersOpen(toggleInSet(owedDealersOpen, dealer))}
+                        className="w-full flex items-center justify-between gap-3 text-sm py-1 hover:text-white"
+                      >
+                        <span className="text-gray-300 flex items-center gap-1.5">
+                          {open ? <ChevronUp size={13} className="text-gray-500" /> : <ChevronDown size={13} className="text-gray-500" />}
+                          {dealer} <span className="text-gray-600 text-xs">· {items.length} car{items.length !== 1 ? 's' : ''}</span>
+                        </span>
+                        <span className="text-white font-medium">{formatRM(amount)}</span>
+                      </button>
+                      {open && (
+                        <div className="ml-5 mt-1 mb-2 bg-obsidian-800/60 border border-obsidian-400/40 rounded-lg divide-y divide-obsidian-400/30">
+                          {items.map((item) => renderOwedCar(item, 'stage'))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {owedToDealers.missing.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-obsidian-400/30">
+                <button
+                  type="button"
+                  onClick={() => setOwedMissingOpen(!owedMissingOpen)}
+                  className="flex items-center gap-1.5 text-amber-400 text-xs font-medium hover:text-amber-300"
+                >
+                  {owedMissingOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                  {owedToDealers.missing.length} car{owedToDealers.missing.length !== 1 ? 's' : ''} not counted — missing details
+                </button>
+                {owedMissingOpen && (
+                  <div className="mt-1.5 ml-5 space-y-0.5">
+                    {owedToDealers.missing.map(({ car, stage, reason }) => (
+                      <button
+                        key={car.id}
+                        type="button"
+                        onClick={() => openCarDetail(car.id)}
+                        className="block w-full text-left text-xs text-gray-500 rounded px-1.5 py-1 -mx-1.5 hover:bg-obsidian-700/50"
+                      >
+                        <span className="text-gray-300">{car.year} {car.make} {car.model}{car.carPlate ? ` (${car.carPlate})` : ''}</span>
+                        <span className="text-gray-600"> · {car.consignment!.dealer || 'Unknown Dealer'} · {OWED_STAGE_LABEL[stage]}</span>
+                        <span className="text-amber-400/80"> — {reason}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* View toggle */}
           <div className="flex gap-1 bg-obsidian-800/60 border border-obsidian-400/40 rounded-xl p-1 w-fit">
             {(['all', 'by_dealer'] as const).map((v) => (
@@ -824,10 +1126,7 @@ export default function Investors() {
                             </div>
                             <div className="flex gap-3 text-xs text-gray-500 mt-0.5 flex-wrap">
                               <span className="text-blue-400/80">{c.dealer || 'Unknown Dealer'}</span>
-                              {c.terms === 'fixed_amount'
-                                ? <span>Dealer takes back: <span className="text-blue-400 font-medium">{formatRM(c.fixedAmount ?? 0)}</span></span>
-                                : <span>Split — Dealer <span className="text-white">{c.splitPercent ?? 50}%</span> / Us <span className="text-green-400">{100 - (c.splitPercent ?? 50)}%</span></span>
-                              }
+                              {renderConsignTakeback(car)}
                               {isDelivered && car.finalDeal?.dealPrice && (
                                 <span>Sold at: <span className="text-emerald-400 font-medium">{formatRM(car.finalDeal.dealPrice)}</span></span>
                               )}
@@ -954,7 +1253,6 @@ export default function Investors() {
                         </p>
                         <div className="bg-obsidian-800/60 border border-blue-500/20 rounded-xl divide-y divide-obsidian-400/30">
                           {cIn.map((car) => {
-                            const c = car.consignment!;
                             const isDelivered = car.status === 'delivered';
                             return (
                               <div key={car.id} className="flex items-center gap-3 px-4 py-3">
@@ -970,10 +1268,7 @@ export default function Investors() {
                                     </span>
                                   </div>
                                   <div className="flex gap-3 text-xs text-gray-500 mt-0.5 flex-wrap">
-                                    {c.terms === 'fixed_amount'
-                                      ? <span>Dealer takes back: <span className="text-blue-400 font-medium">{formatRM(c.fixedAmount ?? 0)}</span></span>
-                                      : <span>Split — Dealer <span className="text-white">{c.splitPercent ?? 50}%</span> / Us <span className="text-green-400">{100 - (c.splitPercent ?? 50)}%</span></span>
-                                    }
+                                    {renderConsignTakeback(car)}
                                     {isDelivered && car.finalDeal?.dealPrice && (
                                       <span>Sold at: <span className="text-emerald-400 font-medium">{formatRM(car.finalDeal.dealPrice)}</span></span>
                                     )}

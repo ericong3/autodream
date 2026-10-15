@@ -37,19 +37,53 @@ export function calcDealPrice(car: Car, customers: Customer[]): number {
   return ((wo?.sellingPrice ?? car.sellingPrice) - (wo?.discount ?? 0)) || car.sellingPrice;
 }
 
+// Net profit on a car — same formula as CarDetail's Deal Financials (and so
+// the Consignment Settlement receipt). Deal price is the work order's price
+// net of discount once a deal exists, otherwise the finalDeal price, else the
+// asking price — so for unsold stock this is an estimate at asking price.
+export function calcCarNetProfit(car: Car, customers: Customer[], repairs: RepairJob[]): number {
+  return calcCarNetProfitBreakdown(car, customers, repairs).netProfit;
+}
+
+// The line items behind calcCarNetProfit, for showing how it was derived.
+export function calcCarNetProfitBreakdown(car: Car, customers: Customer[], repairs: RepairJob[]) {
+  const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
+  const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
+  const dealPrice = wo && wo.sellingPrice > 0
+    ? (wo.sellingPrice - (wo.discount ?? 0))
+    : (car.finalDeal?.dealPrice || car.sellingPrice);
+  const addOnRevenue = (wo?.insurance ?? 0) + (wo?.bankProduct ?? 0) + (wo?.additionalItems ?? []).reduce((s, i) => s + i.amount, 0);
+  const repairCost = repairs
+    .filter(r => r.carId === car.id && r.status === 'done')
+    .reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
+  const miscCost = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
+  const disbursementCharges = (car.disbursementCharges ?? []).reduce((s, c) => s + c.amount, 0);
+  const profitBeforeComm = dealPrice + addOnRevenue - car.purchasePrice - repairCost - miscCost - disbursementCharges;
+  const commission = (car.outgoingConsignment || car.isStaffSale || car.waiveCommission) ? 0
+    : (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
+  const intakeCommission = car.intakeCommission ?? 0;
+  const sourceCommission = car.sourceCommission ?? 0;
+  const netProfit = car.isStaffSale ? 0 : profitBeforeComm - commission - intakeCommission - sourceCommission;
+  return {
+    hasDeal: !!wo || !!car.finalDeal,
+    dealPrice, addOnRevenue, repairCost, miscCost, disbursementCharges,
+    commission, intakeCommission, sourceCommission, netProfit,
+  };
+}
+
 // What we owe the consignor for an incoming-consignment car — 0 when the
 // terms can't be computed yet (e.g. "fixed_amount" but purchasePrice was
 // never entered, so consignment.fixedAmount is still 0/unset).
-export function calcConsignmentPayoutAmount(car: Car, dealPrice: number): number {
+export function calcConsignmentPayoutAmount(car: Car, customers: Customer[], repairs: RepairJob[]): number {
   const c = car.consignment;
   if (!c) return 0;
   if (c.terms === 'fixed_amount' && c.fixedAmount) return Math.max(0, c.fixedAmount - (car.settlementAmount ?? 0));
-  // Profit split still returns the consignor their purchase price back —
-  // the split percentage only applies to the profit on top of that, not
-  // the whole sale price.
+  // Profit split returns the consignor their purchase price plus their share
+  // of NET profit (after repairs, misc, disbursement charges, commissions) —
+  // never gross. A loss means they just get their purchase price back.
   if (c.terms === 'profit_split' && c.splitPercent) {
-    const profit = dealPrice - car.purchasePrice;
-    return Math.max(0, (car.purchasePrice - (car.settlementAmount ?? 0)) + profit * (c.splitPercent / 100));
+    const share = Math.max(0, calcCarNetProfit(car, customers, repairs)) * (c.splitPercent / 100);
+    return Math.max(0, (car.purchasePrice - (car.settlementAmount ?? 0)) + share);
   }
   return 0;
 }
@@ -107,9 +141,10 @@ export async function generateDeliveryPayments(opts: {
   externalSalesmen: ExternalSalesman[];
   dealers: Dealer[];
   customers: Customer[];
+  repairs: RepairJob[];
   addPayment: AddPayment;
 }) {
-  const { car, payments, users, externalSalesmen, dealers, customers, addPayment } = opts;
+  const { car, payments, users, externalSalesmen, dealers, customers, repairs, addPayment } = opts;
   const now = new Date().toISOString();
   const label = `${car.make} ${car.model}${car.carPlate ? ` (${car.carPlate})` : ''}`;
 
@@ -174,7 +209,7 @@ export async function generateDeliveryPayments(opts: {
   // Consignment payout (incoming consignment — we owe consignor)
   if (car.consignment && !exists(payments, 'consignment_payout', { carId: car.id })) {
     const c = car.consignment;
-    const amount = calcConsignmentPayoutAmount(car, dealPrice);
+    const amount = calcConsignmentPayoutAmount(car, customers, repairs);
     if (amount > 0) {
       const dealer = dealers.find(d => d.name.toLowerCase() === c.dealer.toLowerCase());
       await addPayment({
@@ -446,7 +481,7 @@ export function collectMissingPayments(data: {
     // Consignment payout (incoming — we owe dealer)
     if (car.consignment && !alreadyExists('consignment_payout', { carId: car.id })) {
       const c = car.consignment;
-      const amount = calcConsignmentPayoutAmount(car, dealPrice);
+      const amount = calcConsignmentPayoutAmount(car, customers, repairs);
       if (amount > 0) {
         const dealer = dealers.find(d => d.name.toLowerCase() === c.dealer.toLowerCase());
         result.push({

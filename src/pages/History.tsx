@@ -46,7 +46,7 @@ import { Car, Payment } from '../types';
 import { formatRM as _formatRM } from '../utils/format';
 import Modal from '../components/Modal';
 import { useStore } from '../store';
-import { getDeliveryDate, calcDealPrice, calcConsignmentPayoutAmount } from '../utils/generatePayments';
+import { getDeliveryDate, calcConsignmentPayoutAmount } from '../utils/generatePayments';
 import { recordDisbursement } from '../utils/recordDisbursement';
 import { getCaseCompletion } from '../utils/caseCompletion';
 import { formatRM, formatMileage, shortName, generateId } from '../utils/format';
@@ -760,7 +760,7 @@ export default function History() {
                     // No payment on record yet — figure out whether it's just
                     // never been generated (amount is computable) or the terms
                     // are genuinely missing data (purchase price never entered).
-                    const amount = calcConsignmentPayoutAmount(car, calcDealPrice(car, customers));
+                    const amount = calcConsignmentPayoutAmount(car, customers, repairs);
                     if (amount > 0) return (
                       <button
                         onClick={async (e) => {
@@ -900,7 +900,7 @@ export default function History() {
                         <HeartHandshake size={9} /> Pay {payout.recipientName}: RM {payout.amount.toLocaleString()}
                       </button>
                     );
-                    const amount = calcConsignmentPayoutAmount(car, calcDealPrice(car, customers));
+                    const amount = calcConsignmentPayoutAmount(car, customers, repairs);
                     if (amount > 0) return (
                       <button
                         onClick={async (e) => {
@@ -1182,7 +1182,7 @@ export default function History() {
                     const updatedConsignment = { ...car.consignment!, fixedAmount: price };
                     await updateCar(car.id, { purchasePrice: price, consignment: updatedConsignment });
                     const updatedCar = { ...car, purchasePrice: price, consignment: updatedConsignment };
-                    const amount = calcConsignmentPayoutAmount(updatedCar, calcDealPrice(updatedCar, customers));
+                    const amount = calcConsignmentPayoutAmount(updatedCar, customers, repairs);
                     setFixPriceCarId(null);
                     setFixPriceSaving(false);
                     if (amount > 0) {

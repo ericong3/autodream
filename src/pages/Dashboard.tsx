@@ -154,7 +154,7 @@ export default function Dashboard() {
     const dealPrice = wo
       ? wo.sellingPrice - (wo.discount ?? 0)
       : car.finalDeal?.dealPrice ?? car.sellingPrice;
-    const dealerPayout = calcConsignmentPayoutAmount(car, dealPrice);
+    const dealerPayout = calcConsignmentPayoutAmount(car, customers, repairs);
     const profitBeforeComm = dealPrice - dealerPayout - repairCost - miscCost;
     const commission = (car.isStaffSale || car.waiveCommission) ? 0 : 1000;
     const intakeComm = car.intakeCommission ?? 0;

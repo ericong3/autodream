@@ -62,7 +62,7 @@ import { Car, RepairJob, ChecklistItem, DEFAULT_CHECKLIST_LABELS, WorkOrderItem 
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, formatMileage, generateId, shortName } from '../utils/format';
-import { generateDeliveryPayments, generateMiscCostPayment, generatePanelChargePayment, calcConsignmentPayoutAmount, calcDealPrice } from '../utils/generatePayments';
+import { generateDeliveryPayments, generateMiscCostPayment, generatePanelChargePayment, calcConsignmentPayoutAmount } from '../utils/generatePayments';
 import { completeRepairJob } from '../utils/completeRepair';
 import { buildCarSaleEntry, buildPayableRecognizedEntry, buildCarCostRecognizedEntry, buildSettlementRecognizedEntry, buildTradeInAcquiredEntry, LEDGER_ACCOUNTS } from '../utils/generateJournalEntries';
 import { getCaseCompletion } from '../utils/caseCompletion';
@@ -166,7 +166,9 @@ function SortableThumb({ id, dragEnabled, children }: { id: string; dragEnabled:
   );
 }
 
-export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', initialTab }: { id: string; onBack: () => void; backLabel?: string; initialTab?: 'repairs' | 'loans' | 'final_deal' }) {
+// breadcrumbLabel: when set (car opened as an overlay from another page), the
+// breadcrumb shows it and returns via onBack instead of navigating to Inventory.
+export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', initialTab, breadcrumbLabel }: { id: string; onBack: () => void; backLabel?: string; initialTab?: 'repairs' | 'loans' | 'final_deal'; breadcrumbLabel?: string }) {
   const navigate = useNavigate();
   const location = useLocation();
   const fromHistory = (location.state as any)?.from === 'history';
@@ -605,7 +607,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       const pendingPayout = payments.find(p => p.type === 'consignment_payout' && p.carId === car.id && p.status === 'pending');
       if (pendingPayout) {
         const updatedCar: Car = { ...car, ...editForm, consignment: savedConsignment };
-        const amount = calcConsignmentPayoutAmount(updatedCar, calcDealPrice(updatedCar, customers));
+        const amount = calcConsignmentPayoutAmount(updatedCar, customers, repairs);
         if (amount !== pendingPayout.amount) {
           await updatePayment(pendingPayout.id, { amount });
         }
@@ -754,7 +756,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       deliveryPhoto,
       deliveryCollected: true,
     });
-    await generateDeliveryPayments({ car, payments, users, externalSalesmen, dealers, customers, addPayment });
+    await generateDeliveryPayments({ car, payments, users, externalSalesmen, dealers, customers, repairs, addPayment });
 
     // Auto-generate the customer's delivery receipt — full deal breakdown,
     // same format as the manual Collection Receipt. Fires once, right when
@@ -895,9 +897,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       <nav className="flex items-center gap-1.5 text-xs text-gray-500 mb-4">
         <span
           className="hover:text-gold-400 cursor-pointer transition-colors"
-          onClick={() => navigate(fromHistory ? '/history' : inventoryBackUrl, fromTab ? { state: { inventoryTab: fromTab } } : undefined)}
+          onClick={() => breadcrumbLabel ? onBack() : navigate(fromHistory ? '/history' : inventoryBackUrl, fromTab ? { state: { inventoryTab: fromTab } } : undefined)}
         >
-          {fromHistory ? 'Delivered' : 'Inventory'}
+          {breadcrumbLabel ?? (fromHistory ? 'Delivered' : 'Inventory')}
         </span>
         <ChevronRight size={12} className="text-gray-600" />
         <span className="text-gray-300 truncate max-w-[200px]">
@@ -3313,7 +3315,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                       deliveryCollected: updatedCar.deliveryCollected,
                       finalDeal: updatedCar.finalDeal,
                     });
-                    await generateDeliveryPayments({ car: updatedCar, payments, users, externalSalesmen, dealers, customers, addPayment });
+                    await generateDeliveryPayments({ car: updatedCar, payments, users, externalSalesmen, dealers, customers, repairs, addPayment });
                     setOutgoingConsignModal(null);
                     setOutgoingConsignError(null);
                   } catch (e: any) {
