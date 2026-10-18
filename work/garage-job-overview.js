@@ -1,0 +1,20 @@
+/* Read-only navigation guidance. Existing reducers remain the authority for every action. */
+(function(root){
+ function overview(BL,s,actor){
+ const role=BL.USERS[actor]?.role,status=BL.projectStatus(s),pieces=Object.values(s.pieces||{}),mine=s.alerts.filter(a=>!a.done&&a.to===actor),checks=BL.handoverChecks(s),zones=s.zones.map(z=>({id:z.id,name:z.name,status:BL.zoneStatus(s,z.id),cutting:BL.gate(s,z.id,'cutting'),install:BL.gate(s,z.id,'install')}));
+ const sizeChecks=BL.allPanels(s).filter(x=>x.panel.measured!==true).length;
+ let next={tab:'Activity',title:'Review updates',detail:'Open the latest activity for this job.'};
+ const pendingCash=(s.cash||[]).filter(c=>c.status!=='with_salesman');
+ if(status==='cancel_review'&&role==='director')next={tab:'Issues',title:'Review cancellation request',detail:'A cancellation decision is waiting. New work is paused.'};
+ else if(status==='cancelled'||status==='completed')next={tab:pendingCash.length&&actor===s.project.salesman?'Handover':'Activity',title:pendingCash.length&&actor===s.project.salesman?'Review cash handoff':status==='completed'?'Job completed':'Job cancelled',detail:pendingCash.length&&actor===s.project.salesman?'Cash custody still needs acknowledgment. This does not verify payment.':'Review the recorded activity.'};
+ else if(status==='cancel_review')next={tab:'Issues',title:'Cancellation under review',detail:'Open the review details. New work is paused.'};
+ else if(!s.agreement)next=actor===s.project.salesman?{tab:sizeChecks?'Quote':'Agreement',title:sizeChecks?'Check window measurements':'Review agreement',detail:sizeChecks?sizeChecks+' panes are not marked checked. Review them before preparing the agreement.':'Check the site pin, payment schedule and customer acceptance.'}:{tab:'Quote',title:'Quotation in preparation',detail:'Sales is preparing the scope. Review the current draft.'};
+ else if(role==='director'&&(s.amendments.some(a=>a.status==='pending')||s.losses.some(l=>l.headNote&&!l.decision)))next={tab:'Issues',title:'Review decisions waiting',detail:'Review pending amendments and loss decisions.'};
+ else if(role==='finance'||role==='director')next={tab:'Payments',title:s.milestones.some(m=>!m.verified)?'Review payments':'Payments verified',detail:'Check proof and recorded receipts. A receipt alone does not open work.'};
+ else if(role==='head')next=pieces.some(p=>p.issue)||s.amendments.some(a=>a.status==='pending')?{tab:'Issues',title:'Review window issues',detail:'Check affected glass and pending amendments.'}:pieces.some(p=>!p.cut)?{tab:'Cutting',title:'Review cutting plan',detail:'Check each zone’s payment gate before sourcing and cutting.'}:{tab:'Install',title:'Review installation',detail:'Check the team, dispatched bundles and completed zones.'};
+ else if(role==='installer')next=!s.team.members.includes(actor)?{tab:'Install',title:'Waiting for team assignment',detail:'The Garage Head must assign you before installation.'}:pieces.some(p=>!p.cut)&&zones.some(z=>z.cutting.open)?{tab:'Cutting',title:'Review assigned cutting work',detail:'Open the plan and check source reservations before cutting.'}:{tab:'Install',title:'Review installation work',detail:'Check in and review available glass. Payment and dispatch gates still apply.'};
+ else if(actor===s.project.salesman)next=pendingCash.length?{tab:'Handover',title:'Review cash handoff',detail:'Acknowledge counted cash separately from Finance payment verification.'}:checks.every(c=>c.ok)?{tab:'Handover',title:'Prepare handover',detail:'Review evidence and customer acceptance.'}:{tab:s.milestones.some(m=>m.dueAt&&!m.verified)?'Payments':'Install',title:'Review job progress',detail:'Follow up on due payments and unfinished zones.'};
+ return{status,next,zones,mine,checks,sizeChecks,panes:BL.allPanels(s).length,installed:pieces.filter(p=>BL.pieceStatus(p)==='installed').length,cut:pieces.filter(p=>p.cut).length,pieceCount:pieces.length};
+ }
+ root.GarageOverview={build:overview};
+})(typeof globalThis!=='undefined'?globalThis:this);

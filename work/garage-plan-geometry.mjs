@@ -1,0 +1,3 @@
+export function planRooms(state,floor){let i=0;return state.rooms.filter(r=>r.floorId===floor).map(r=>{const index=i++;return {...r,x:Number.isFinite(r.sketchX)?r.sketchX:(index%2)*280,z:Number.isFinite(r.sketchZ)?r.sketchZ:Math.floor(index/2)*240};});}
+export function resizeRoom(room,dx,dz,mode){return {w:Math.max(96,Math.round((room.w+(mode.includes('e')?dx:0))/6)*6),d:Math.max(96,Math.round((room.d+(mode.includes('s')?dz:0))/6)*6)};}
+export function nearestWall(room,x,z){const wall=Object.entries({N:Math.abs(z-room.z),S:Math.abs(z-room.z-room.d),W:Math.abs(x-room.x),E:Math.abs(x-room.x-room.w)}).sort((a,b)=>a[1]-b[1])[0][0];return {wall,pos:Math.max(.08,Math.min(.92,['N','S'].includes(wall)?(x-room.x)/room.w:(z-room.z)/room.d))};}
