@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { FilePlus, ClipboardList } from 'lucide-react';
+import { FilePlus, ClipboardList, Building2 } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 
 export default function GarageSalesTools() {
@@ -8,6 +8,13 @@ export default function GarageSalesTools() {
   return (
     <GarageShell title="AutoDream Garage" nav>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <button
+          onClick={() => navigate('/garage/building')}
+          className="group relative flex items-center gap-4 overflow-hidden rounded-2xl border border-gold-400/15 bg-white/[0.04] p-6 text-left shadow-card backdrop-blur-xl transition-colors hover:border-gold-400/50 hover:bg-white/[0.06]"
+        >
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gold-400/10 text-gold-400"><Building2 size={22} strokeWidth={1.5} /></div>
+          <div className="min-w-0 flex-1"><h3 className="font-display font-semibold tracking-wide text-white">Building Tint</h3><p className="mt-0.5 text-xs text-white/40">Rooms, windows and measurements</p></div>
+        </button>
         <button
           onClick={() => navigate('/garage/work-order/new')}
           className="group relative overflow-hidden text-left rounded-2xl p-6 flex items-center gap-4

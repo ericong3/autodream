@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, lazy, Suspense } from 'react';
 import {
   HashRouter,
   Routes,
@@ -62,6 +62,9 @@ import GarageServiceWorkOrders from './pages/GarageServiceWorkOrders';
 import GarageNoAccess from './pages/GarageNoAccess';
 import { roleHome, landingPath, garageHome } from './utils/landingPath';
 import { isGarageManager, canUseGarageSales, canUseGarageWorkshop } from './utils/garageRoles';
+
+const GarageBuildingProjects = lazy(() => import('./pages/GarageBuildingProjects'));
+const GarageBuildingProject = lazy(() => import('./pages/GarageBuildingProject'));
 
 // Layout wrapper for regular users — mounts once, stays mounted across navigation
 function AuthedLayout() {
@@ -219,6 +222,9 @@ export default function App() {
         <Route path="/garage/no-access" element={<RequireGarage><GarageNoAccess /></RequireGarage>} />
         <Route path="/garage/dashboard" element={<RequireGarageSales><GarageDashboard /></RequireGarageSales>} />
         <Route path="/garage/sales-tools" element={<RequireGarageSales><GarageSalesTools /></RequireGarageSales>} />
+        <Route path="/garage/building" element={<RequireGarageSales><Suspense fallback={<div className="p-10 text-white/60">Loading building tint…</div>}><GarageBuildingProjects /></Suspense></RequireGarageSales>} />
+        <Route path="/garage/building/new" element={<RequireGarageSales><Suspense fallback={<div className="p-10 text-white/60">Loading building tint…</div>}><GarageBuildingProject /></Suspense></RequireGarageSales>} />
+        <Route path="/garage/building/:projectId" element={<RequireGarageSales><Suspense fallback={<div className="p-10 text-white/60">Loading building tint…</div>}><GarageBuildingProject /></Suspense></RequireGarageSales>} />
         <Route path="/garage/my-work-orders" element={<RequireGarageSales><GarageMyWorkOrders /></RequireGarageSales>} />
         <Route path="/garage/calendar" element={<RequireGarageSales><GarageCalendar /></RequireGarageSales>} />
         <Route path="/garage/work-order/new" element={<RequireGarageSales><GarageWorkOrderStart /></RequireGarageSales>} />
