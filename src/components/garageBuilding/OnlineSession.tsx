@@ -3,6 +3,7 @@
 // Local mode never renders any of this.
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { CloudOff, KeyRound } from 'lucide-react';
+import './building.css';
 import { useStore } from '../../store';
 import { activateOnline, BuildingStorageError, buildingStorageMode, getOnlineSession, signInOnline, signOutOnline, type OnlineSession } from '../../lib/garageBuildingProjects';
 
