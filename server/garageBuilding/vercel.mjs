@@ -2,7 +2,7 @@
 import bcrypt from 'bcryptjs';
 import { LIMITS } from './core.mjs';
 
-const REPO_METHODS = ['findUserByUsername', 'findUserById', 'createSession', 'findSession', 'touchSession', 'deleteSession', 'deleteExpiredSessions', 'throttleHit', 'throttleClear', 'rpc'];
+const REPO_METHODS = ['findUserByUsername', 'findUserById', 'createSession', 'findSession', 'touchSession', 'deleteSession', 'deleteExpiredSessions', 'throttleHit', 'throttleClear', 'canActivateStaff', 'activateStaff', 'rpc'];
 
 // Default production dependencies. The Supabase client is imported lazily
 // so a misconfigured deployment answers 503 instead of crashing on load.

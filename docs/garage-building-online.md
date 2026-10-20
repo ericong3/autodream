@@ -1,6 +1,6 @@
 # Garage building online saving
 
-Database migrations applied to AutoDream on 19 October 2026 with user approval. All four new tables have RLS enabled and anonymous SELECT/UPDATE denied. Production Vercel variables are configured. **Deployment and staff account provisioning still require verification; do not claim shared saving is ready until the live test passes.**
+Project/session migrations applied on 19 October 2026; activation migration applied on 20 October 2026, with user approval. The new Garage tables have RLS enabled and browser access denied. Production Vercel variables are configured and initial release `cdeb317` deployed successfully. Six approved Garage sales/management profiles have been provisioned; `test` is excluded. **Staff must still activate their passwords, and live saving must be verified before calling the workflow ready.**
 
 ## Identity and permissions
 
@@ -22,7 +22,7 @@ Sales staff can access their own building projects. Garage heads, directors and 
 ## Deployment checklist
 
 1. Review the two prepared migrations: `20261020000000_garage_building_projects.sql` then `20261020010000_garage_building_online_sessions.sql`. They create Garage-only objects; they do not change used-car tables or existing users. Apply them transactionally after approval, inspect the resulting grants and confirm anonymous access is denied.
-2. An administrator provisions private Garage staff accounts. See `supabase/garage-building-provision.example.sql`. The user must enter and submit the new password themselves. Never commit actual passwords or hashes, and never print secret keys.
+2. Apply `20261020020000_garage_building_activation.sql`. An administrator provisions explicitly approved Garage staff profiles with discarded-random bcrypt placeholders, never legacy hashes or known temporary passwords. Issue a single-use code using `garage_building_issue_invite(staff_id)` as database administrator. It expires in 72 hours; reissuing replaces the old code. The server cannot issue codes. Give each person only their own code. They choose their password in the app under **First time? Set Garage password**; never enter passwords in the SQL editor. The test account is excluded.
 3. Configure the Vercel project with server-only variables:
    - `GARAGE_BUILDING_ONLINE=1`
    - `SUPABASE_URL=https://ayvbagxashasdqgwncbf.supabase.co`
@@ -39,3 +39,5 @@ Rollback: turn the online feature off and redeploy; keep the private tables and 
 ## Tests and remaining verification
 
 `npm test` exercises the model, local/online storage and injected server handlers without live credentials. `npm run build` validates the web app/PWA. API entry points also parse under Node. These tests do not replace deployment routing, actual PostgreSQL execution, grant checks or the two-PC save test. No shared payments, installation workflow or pricing is introduced.
+
+Claude reviewed the activation migration and session races on 20 October 2026. Its findings led to an administrator-only issuing helper, a hard 72-hour code lifetime, a cheap precheck before bcrypt, case-insensitive username uniqueness and trimmed code input. The atomic consume remains the authority after the precheck.

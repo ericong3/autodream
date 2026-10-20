@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import bcrypt from 'bcryptjs';
-import { handleSession, handleProjects, readConfig, COOKIE_NAME, LIMITS } from '../server/garageBuilding/core.mjs';
+import { handleActivation, handleSession, handleProjects, readConfig, COOKIE_NAME, LIMITS } from '../server/garageBuilding/core.mjs';
 import { vercelHandler } from '../server/garageBuilding/vercel.mjs';
 
 const ORIGIN = 'https://garage.example';
@@ -364,4 +364,25 @@ test('online identity authority is private and never inherited from legacy users
   assert.match(sql,/alter table garage_building_staff enable row level security/i);
   assert.match(sql,/revoke all on garage_building_staff from public, anon, authenticated/i);
   assert.match(sql,/from garage_building_staff where id = p_actor_id and enabled/i);
+});
+
+test('first-time activation hashes passwords and needs an atomic matching unused code', async () => {
+  const w=world(), code='a'.repeat(64); let used=false, seen;
+  w.deps.repo().canActivateStaff=async(hash,username)=>!used && hash===sha(code) && username==='sam';
+  w.deps.repo().activateStaff=async(hash,username,passwordHash)=>{
+    seen={hash,username,passwordHash};
+    if(used || hash!==sha(code) || username!=='sam') return false;
+    used=true;return true;
+  };
+  const activate=(body,headers={})=>handleActivation(req({method:'POST',body,headers}),w.deps);
+  assert.equal((await activate({username:'other',code,password:'new-private-password'})).status,401);
+  assert.equal((await activate({username:'sam',code,password:'new-private-password'})).status,200);
+  assert.equal(seen.hash,sha(code));
+  assert.notEqual(seen.passwordHash,'new-private-password');
+  assert.ok(await bcrypt.compare('new-private-password',seen.passwordHash));
+  assert.equal((await activate({username:'sam',code,password:'second-password'})).status,401);
+  assert.equal((await activate({username:'sam',code,password:'short'})).status,400);
+  assert.equal((await activate({username:'sam',code,password:'中'.repeat(30)})).status,400);
+  assert.equal((await activate({username:'sam',code,password:'long-enough-password'},{origin:'https://evil.example'})).status,403);
+  const entry=await import('../api/garage-building/activate.mjs');assert.equal(typeof entry.default,'function');
 });

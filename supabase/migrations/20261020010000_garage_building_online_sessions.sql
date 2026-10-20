@@ -1,6 +1,6 @@
 -- Garage building online saving — server session + sign-in throttle storage.
 --
--- PREPARED, NOT APPLIED. Apply only together with
+-- Applied to AutoDream on 19 October 2026 with user approval, together with
 -- 20261020000000_garage_building_projects.sql and the server deployment in
 -- docs/garage-building-online.md.
 --

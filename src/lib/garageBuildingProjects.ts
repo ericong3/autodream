@@ -209,6 +209,11 @@ export function createBuildingStorage(deps: BuildingStorageDeps = {}) {
       if (mode !== 'online') return;
       await request('/session', 'DELETE');
     },
+    async activate(username: string, code: string, password: string): Promise<void> {
+      if (mode !== 'online') throw new BuildingStorageError('SETUP', 'Online saving is not enabled.');
+      const data = await request('/activate', 'POST', { username, code, password });
+      if (data.activated !== true) throw new BuildingStorageError('CLOUD', 'Password setup could not be confirmed. Try signing in or ask your manager.');
+    },
   };
 }
 
@@ -230,3 +235,4 @@ export function saveBuildingProject(project: BuildingProject, user: BuildingActo
 export function getOnlineSession(): Promise<OnlineSession | null> { return defaultStorage.session(); }
 export function signInOnline(username: string, password: string): Promise<OnlineSession> { return defaultStorage.signIn(username, password); }
 export function signOutOnline(): Promise<void> { return defaultStorage.signOut(); }
+export function activateOnline(username: string, code: string, password: string): Promise<void> { return defaultStorage.activate(username, code, password); }

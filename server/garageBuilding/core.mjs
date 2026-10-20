@@ -286,6 +286,34 @@ export async function handleSession(req, deps) {
   });
 }
 
+// First-time setup requires an administrator-issued, single-use code.
+// No authority is inherited from the legacy app account or client role.
+export async function handleActivation(req, deps) {
+  return respond(req, deps, ['POST'], async (ctx, res) => {
+    const body = readJson(req, LIMITS.maxLoginBodyBytes);
+    onlyKeys(body, ['username', 'code', 'password']);
+    const { username, password } = body;
+    const code = typeof body.code === 'string' ? body.code.trim().toLowerCase() : '';
+    if (typeof username !== 'string' || !username || username.length > LIMITS.maxUsername
+        || typeof password !== 'string' || password.length < 10 || Buffer.byteLength(password) > 72
+        || !/^[a-f0-9]{64}$/.test(code)) {
+      throw new ApiError(400, 'INVALID', 'Enter your setup code and a password of at least 10 characters (at most 72 bytes).');
+    }
+    const limit = await db(ctx.repo.throttleHit(`aip:${hmac(ctx.config.secret, clientIp(req))}`, 30, LIMITS.throttleWindowSeconds));
+    if (!limit.allowed) {
+      res.headers['Retry-After'] = String(limit.retryAfter);
+      throw new ApiError(429, 'RATE_LIMITED', 'Too many setup attempts. Wait and try again.', { retryAfter: limit.retryAfter });
+    }
+    // Reject junk codes cheaply before spending bcrypt CPU. The atomic
+    // activation function below remains the authoritative one-use check.
+    if (!(await db(ctx.repo.canActivateStaff(sha256(code), username)))) throw authError('The setup code is invalid, expired or already used for this account. Ask your manager for a new code.');
+    const passwordHash = await ctx.bcrypt.hash(password, 12);
+    const activated = await db(ctx.repo.activateStaff(sha256(code), username, passwordHash));
+    if (!activated) throw authError('The setup code is invalid, expired or already used for this account. Ask your manager for a new code.');
+    return { status: 200, body: { activated: true } };
+  });
+}
+
 function rowToProject(row) {
   if (!row || typeof row.document !== 'object' || !Number.isInteger(row.revision)) {
     throw new ApiError(502, 'CLOUD', 'Garage online storage returned an unexpected project.');

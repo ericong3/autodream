@@ -3,6 +3,7 @@
 // Tables/functions come from the prepared migrations
 // 20261020000000_garage_building_projects.sql and
 // 20261020010000_garage_building_online_sessions.sql.
+// First-time setup also uses 20261020020000_garage_building_activation.sql.
 import { createClient } from '@supabase/supabase-js';
 
 const USER_COLUMNS = 'id, name, username, password, role, business_access, enabled';
@@ -59,6 +60,14 @@ export function supabaseRepo(config) {
     },
     async throttleClear(key) {
       check(await sb.rpc('garage_building_auth_throttle_clear', { p_key: key }));
+    },
+    async activateStaff(tokenHash, username, passwordHash) {
+      return check(await sb.rpc('garage_building_activate_staff', {
+        p_token_hash: tokenHash, p_username: username, p_password_hash: passwordHash,
+      })) === true;
+    },
+    async canActivateStaff(tokenHash, username) {
+      return check(await sb.rpc('garage_building_check_invite', {p_token_hash:tokenHash,p_username:username})) === true;
     },
     rpc(fn, args) {
       return sb.rpc(fn, args);

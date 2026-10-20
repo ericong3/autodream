@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { CloudOff, KeyRound } from 'lucide-react';
 import { useStore } from '../../store';
-import { BuildingStorageError, buildingStorageMode, getOnlineSession, signInOnline, signOutOnline, type OnlineSession } from '../../lib/garageBuildingProjects';
+import { activateOnline, BuildingStorageError, buildingStorageMode, getOnlineSession, signInOnline, signOutOnline, type OnlineSession } from '../../lib/garageBuildingProjects';
 
 export type OnlineStatus = 'local' | 'checking' | 'signedIn' | 'signedOut' | 'error';
 const MISMATCH = 'Online saving on this browser belonged to another staff account and has been signed out. Sign in as yourself.';
@@ -91,24 +91,35 @@ interface SignInProps {
 
 export function OnlineSignIn({ username, notice, onSignIn, onCancel, overlay }: SignInProps) {
   const [password, setPassword] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const [setup, setSetup] = useState(false), [code, setCode] = useState(''), [confirmPassword, setConfirmPassword] = useState(''), [success, setSuccess] = useState('');
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (busy || !password) return;
     setBusy(true); setError('');
-    try { await onSignIn(password); }
+    try {
+      if (setup) {
+        if (password !== confirmPassword) throw new Error('The passwords do not match.');
+        await activateOnline(username, code, password);
+        setSetup(false); setCode(''); setConfirmPassword(''); setSuccess('Password set. Sign in to continue.');
+      } else await onSignIn(password);
+    }
     catch (err) {
       const wait = err instanceof BuildingStorageError && err.retryAfter ? ` (about ${Math.ceil(err.retryAfter / 60)} min)` : '';
       setError((err instanceof Error ? err.message : 'Sign-in failed.') + wait);
     } finally { setPassword(''); setBusy(false); }
   }
   const form = <form onSubmit={submit} className="garage-building w-full max-w-sm space-y-4 rounded-2xl border border-white/10 bg-[#0d0e0c] p-6 text-white" aria-labelledby="gb-online-title">
-    <div className="flex items-center gap-3"><KeyRound size={20} className="text-gold-400" /><h3 id="gb-online-title" className="text-lg font-semibold">Garage online saving</h3></div>
-    <p className="text-sm text-white/60">Enter your Garage online password to open shared building projects on this PC.</p>
+    <div className="flex items-center gap-3"><KeyRound size={20} className="text-gold-400" /><h3 id="gb-online-title" className="text-lg font-semibold">{setup ? 'Set Garage password' : 'Garage online saving'}</h3></div>
+    <p className="text-sm text-white/60">{setup ? 'Use the setup code from your manager. Choose a new password of at least 10 characters.' : 'Enter your Garage online password to open shared building projects on this PC.'}</p>
     {notice && <p role="status" className="text-sm text-gold-200">{notice}</p>}
+    {success && <p role="status" className="text-sm text-green-300">{success}</p>}
     <label className="gb-label">Username<input className="gb-input" value={username} readOnly autoComplete="username" /></label>
-    <label className="gb-label">Password<input className="gb-input" type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" autoFocus maxLength={256} required /></label>
+    {setup && <label className="gb-label">Setup code<input className="gb-input" value={code} onChange={e => setCode(e.target.value.trim())} autoComplete="off" maxLength={128} required /></label>}
+    <label className="gb-label">{setup ? 'New Garage password' : 'Password'}<input className="gb-input" type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete={setup ? 'new-password' : 'current-password'} autoFocus minLength={setup ? 10 : undefined} maxLength={setup ? 72 : 256} required /></label>
+    {setup && <label className="gb-label">Confirm password<input className="gb-input" type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} autoComplete="new-password" maxLength={72} required /></label>}
     {error && <p role="alert" className="text-sm text-red-200">{error}</p>}
-    <div className="flex gap-2"><button type="submit" disabled={busy || !password} className="gb-primary flex-1">{busy ? 'Checking…' : 'Sign in'}</button>{onCancel && <button type="button" disabled={busy} onClick={onCancel} className="gb-secondary">Not now</button>}</div>
+    <div className="flex gap-2"><button type="submit" disabled={busy || !password} className="gb-primary flex-1">{busy ? 'Checking…' : setup ? 'Set password' : 'Sign in'}</button>{onCancel && <button type="button" disabled={busy} onClick={onCancel} className="gb-secondary">Not now</button>}</div>
+    <button type="button" disabled={busy} className="text-sm text-gold-300 underline" onClick={() => {setSetup(!setup);setPassword('');setConfirmPassword('');setCode('');setError('');setSuccess('');}}>{setup ? 'Back to sign in' : 'First time? Set Garage password'}</button>
   </form>;
   if (!overlay) return <div className="flex justify-center py-8">{form}</div>;
   return <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">{form}</div>;

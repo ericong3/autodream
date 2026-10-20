@@ -1,9 +1,9 @@
 -- Garage building tint projects — measured scope + immutable quote versions.
 --
--- PREPARED, NOT APPLIED. The app keeps building projects in local storage
--- unless VITE_GARAGE_BUILDING_STORAGE=supabase is set. Do not apply or
--- enable until the auth review below is done (see
--- docs/garage-building-integration.md).
+-- Applied to AutoDream on 19 October 2026 with user approval.
+-- Shared access uses the private server bridge and private staff accounts;
+-- VITE_GARAGE_BUILDING_STORAGE=online selects that deployed path.
+-- See docs/garage-building-online.md for setup and verification status.
 --
 -- New, building-only table. Nothing here alters users, garage_invoices or
 -- any car/invoice table. No pricing: invoices, payments and installation
