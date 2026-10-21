@@ -85,7 +85,7 @@ function safeEqual(a, b) {
 }
 // Binds a session to the exact credentials it was issued for: a password
 // or username change invalidates every outstanding session for that user.
-const fingerprint = (secret, user) => hmac(secret, `fp:${user.id}\n${user.username}\n${user.password}`);
+const fingerprint = (secret, user) => hmac(secret, `fp:${user.id}\n${user.username}\n${user.password}\n${user.session_version ?? 0}`);
 
 let dummyHash = null;
 async function verifyPassword(bcrypt, plain, stored) {
@@ -101,7 +101,10 @@ async function verifyPassword(bcrypt, plain, stored) {
   return false;
 }
 
-const canUseBuilding = u => !!u && u.enabled === true && (u.business_access === 'garage' || u.business_access === 'both') && BUILDING_ROLES.has(u.role);
+const canUseBuilding = u => !!u && u.enabled === true && u.registration_status !== 'pending' && (u.business_access === 'garage' || u.business_access === 'both') && BUILDING_ROLES.has(u.role);
+const APP_ROLES = new Set(['director','shareholder','salesperson','mechanic','admin','investor','banker','garage_salesman','garage_head','garage_installer','garage_detailer','garage_spray']);
+const canUseApp = u => !!u && u.enabled === true && u.registration_status !== 'pending' && APP_ROLES.has(u.role) && ['used_car','garage','both'].includes(u.business_access) && (!['director','shareholder'].includes(u.role) || u.business_access === 'both');
+const canUseGarage = u => !!u && u.enabled === true && u.registration_status !== 'pending' && ['garage','both'].includes(u.business_access) && ['garage_salesman','garage_head','director','shareholder','garage_installer','garage_detailer','garage_spray'].includes(u.role);
 const publicUser = u => ({ id: u.id, name: u.name ?? u.username, username: u.username, role: u.role, businessAccess: u.business_access });
 
 // ── HTTP helpers ─────────────────────────────────────────────────────────
@@ -198,7 +201,7 @@ async function db(promise) {
 
 // Verifies the cookie, the session row, and the *current* account on every
 // request. Returns the actor or throws (deleting the session when it's dead).
-export async function authenticate(req, ctx, res) {
+export async function authenticate(req, ctx, res, allow = canUseBuilding) {
   const token = parseCookies(header(req, 'cookie'))[COOKIE_NAME];
   if (!token || !TOKEN_RE.test(token)) throw authError();
   const tokenHash = sha256(token);
@@ -219,7 +222,11 @@ export async function authenticate(req, ctx, res) {
   if (!safeEqual(fingerprint(ctx.config.secret, user), session.fingerprint)) {
     await kill(authError('Your account details changed. Sign in again.'));
   }
-  if (!canUseBuilding(user)) await kill(new ApiError(403, 'FORBIDDEN', 'This account cannot use building projects.'));
+  if (!allow(user)) {
+    const denied = new ApiError(403, 'FORBIDDEN', 'This account cannot access this Garage feature.');
+    if (!canUseApp(user)) await kill(denied);
+    throw denied;
+  }
   if (now - lastSeen >= LIMITS.touchEverySeconds * 1000) {
     await db(ctx.repo.touchSession(tokenHash, new Date(now).toISOString()));
   }
@@ -227,7 +234,7 @@ export async function authenticate(req, ctx, res) {
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────────
-async function login(req, ctx, res) {
+async function login(req, ctx, res, allow = canUseBuilding) {
   const body = readJson(req, LIMITS.maxLoginBodyBytes);
   onlyKeys(body, ['username', 'password']);
   const { username, password } = body;
@@ -253,7 +260,10 @@ async function login(req, ctx, res) {
   if (!(await verifyPassword(ctx.bcrypt, password, user?.password))) {
     throw authError('Username or password is incorrect.');
   }
-  if (!canUseBuilding(user)) throw new ApiError(403, 'FORBIDDEN', 'This account cannot use building projects.');
+  if (!allow(user)) {
+    if (allow === canUseGarage || allow === canUseApp) throw authError('Username or password is incorrect.');
+    throw new ApiError(403, 'FORBIDDEN', 'This account cannot use building projects.');
+  }
 
   const token = ctx.random(32).toString('base64url');
   const now = ctx.now();
@@ -286,9 +296,39 @@ export async function handleSession(req, deps) {
   });
 }
 
+// General Garage login uses the same hardened cookie; project authorization stays separate.
+export async function handleGarageSession(req, deps) {
+  return respond(req, deps, ['GET','POST','DELETE'], async (ctx,res) => {
+    if(req.method==='POST') return login(req,ctx,res,canUseGarage);
+    if(req.method==='DELETE') {
+      const token=parseCookies(header(req,'cookie'))[COOKIE_NAME];
+      if(token&&TOKEN_RE.test(token)) await db(ctx.repo.deleteSession(sha256(token)));
+      res.cookies.push(clearCookie());
+      return {status:200,body:{signedOut:true}};
+    }
+    const {user,session}=await authenticate(req,ctx,res,canUseGarage);
+    return {status:200,body:{user:publicUser(user),expiresAt:session.expiresAt}};
+  });
+}
+
+// Shared AutoDream login. Only the private account determines role/business access.
+export async function handleAppSession(req, deps) {
+  return respond(req,deps,['GET','POST','DELETE'],async(ctx,res)=>{
+    if(req.method==='POST')return login(req,ctx,res,canUseApp);
+    if(req.method==='DELETE'){
+      const token=parseCookies(header(req,'cookie'))[COOKIE_NAME];
+      if(token&&TOKEN_RE.test(token))await db(ctx.repo.deleteSession(sha256(token)));
+      res.cookies.push(clearCookie());return {status:200,body:{signedOut:true}};
+    }
+    const {user,session}=await authenticate(req,ctx,res,canUseApp);
+    return {status:200,body:{user:publicUser(user),expiresAt:session.expiresAt}};
+  });
+}
+
 // First-time setup requires an administrator-issued, single-use code.
 // No authority is inherited from the legacy app account or client role.
 export async function handleActivation(req, deps) {
+  if(deps.env?.AUTH_INVITES_ENABLED==='1') return respond(req,deps,['POST'],async()=>{throw new ApiError(410,'INVALID','Use the registration link from your director.');});
   return respond(req, deps, ['POST'], async (ctx, res) => {
     const body = readJson(req, LIMITS.maxLoginBodyBytes);
     onlyKeys(body, ['username', 'code', 'password']);
@@ -393,3 +433,5 @@ async function respond(req, deps, methods, run) {
   if (res.cookies.length) res.headers['Set-Cookie'] = res.cookies;
   return { status: out.status, headers: res.headers, body: JSON.stringify(out.body) };
 }
+
+export { respond, readJson, onlyKeys, clientIp, canUseApp };

@@ -1,3 +1,5 @@
+import StaffAccessLink from '../components/StaffAccessLink';
+import { secureGarageLoginEnabled } from '../lib/garageSession';
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Edit, Trash2, Users, AlertCircle, Shield, UserCheck, Wrench, Phone, Mail, AtSign, Car, TrendingUp, Target, Award, X, KeyRound, CreditCard, Save, Settings, Copy, Check } from 'lucide-react';
@@ -448,7 +450,7 @@ export default function TeamMembers() {
     return 1500;
   };
 
-  const isShareHolder = currentUser?.role === 'shareholder';
+  const isShareHolder = currentUser?.role !== 'director' || secureGarageLoginEnabled();
 
   const [showModal, setShowModal] = useState(false);
   const [editTarget, setEditTarget] = useState<User | null>(null);
@@ -580,7 +582,7 @@ export default function TeamMembers() {
   const mechanicCount = teamUsers.filter((u) => u.role === 'mechanic').length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6"><StaffAccessLink />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">

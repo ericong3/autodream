@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { CloudOff, KeyRound } from 'lucide-react';
 import './building.css';
+import { secureGarageLoginEnabled } from '../../lib/garageSession';
 import { useStore } from '../../store';
 import { activateOnline, BuildingStorageError, buildingStorageMode, getOnlineSession, signInOnline, signOutOnline, type OnlineSession } from '../../lib/garageBuildingProjects';
 
@@ -14,7 +15,7 @@ const MISMATCH = 'Online saving on this browser belonged to another staff accoun
 // session too, so the next person on a shared PC can't use it.
 let watching = false;
 function watchAppLogout() {
-  if (watching || buildingStorageMode() !== 'online') return;
+  if (watching || secureGarageLoginEnabled() || buildingStorageMode() !== 'online') return;
   watching = true;
   useStore.subscribe((state, prev) => {
     if (prev.currentUser && state.currentUser?.id !== prev.currentUser.id) signOutOnline().catch(() => undefined);
@@ -128,6 +129,7 @@ export function OnlineSignIn({ username, notice, onSignIn, onCancel, overlay }: 
 
 export function OnlineStatusLine({ status, session, onSignOut, onSignIn }: { status: OnlineStatus; session: OnlineSession | null; onSignOut: () => void; onSignIn: () => void }) {
   if (status === 'local') return null;
+  if (secureGarageLoginEnabled()) return <p className="text-xs text-white/50">{status === 'signedIn' ? 'Shared online saving' : 'Checking shared saving. If unavailable, return to Home and sign in again.'}</p>;
   if (status === 'signedIn' && session) return <p className="text-xs text-white/50">Shared online saving · {session.user.name} · <button type="button" className="text-gold-300 underline" onClick={onSignOut}>Sign out of online saving</button></p>;
   if (status === 'checking') return <p className="text-xs text-white/40">Checking online saving…</p>;
   return <p className="flex items-center gap-1 text-xs text-gold-200/80"><CloudOff size={12} />Online saving needs sign-in · <button type="button" className="text-gold-300 underline" onClick={onSignIn}>Sign in</button></p>;

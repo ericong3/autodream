@@ -59,7 +59,7 @@ export default function GarageShell({
   // only lead to the (now redirecting) hub.
   const backVisible = showBack && !tabs;
 
-  const handleLogout = () => { logout(); navigate('/login'); };
+  const handleLogout = async () => { try { await logout(); navigate('/login'); } catch { window.alert('Could not sign out. Check your connection and try again.'); } };
 
   return (
     <div className="min-h-screen relative bg-obsidian-950">

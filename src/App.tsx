@@ -9,6 +9,10 @@ import { useStore } from './store';
 import Layout from './components/Layout';
 import ToastContainer from './components/Toast';
 import Login from './pages/Login';
+import AccountRegistration from './pages/AccountRegistration';
+import StaffAccountAccess from './pages/StaffAccountAccess';
+import GarageSessionGate from './components/GarageSessionGate';
+import { secureGarageLoginEnabled } from './lib/garageSession';
 import Dashboard from './pages/Dashboard';
 import Inventory from './pages/Inventory';
 import CarDetail from './pages/CarDetail';
@@ -78,6 +82,10 @@ function AuthedLayout() {
 
 // Garage pages — only for accounts with access to garage
 function RequireGarage({ children }: { children: React.ReactNode }) {
+  if (secureGarageLoginEnabled()) return <LegacyRequireGarage>{children}</LegacyRequireGarage>;
+  return <LegacyRequireGarage>{children}</LegacyRequireGarage>;
+}
+function LegacyRequireGarage({ children }: { children: React.ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
   if (!currentUser) return <Navigate to="/login" replace />;
   if (currentUser.businessAccess === 'used_car') return <Navigate to={roleHome(currentUser.role)} replace />;
@@ -88,6 +96,10 @@ function RequireGarage({ children }: { children: React.ReactNode }) {
 // get past them (hiding a tab isn't enough). Anyone without the role is
 // sent to their own Garage landing page. Rules live in utils/garageRoles.
 function RequireGarageRole({ allow, children }: { allow: (role: string) => boolean; children: React.ReactNode }) {
+  if (secureGarageLoginEnabled()) return <LegacyRequireGarageRole allow={allow}>{children}</LegacyRequireGarageRole>;
+  return <LegacyRequireGarageRole allow={allow}>{children}</LegacyRequireGarageRole>;
+}
+function LegacyRequireGarageRole({ allow, children }: { allow: (role: string) => boolean; children: React.ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
   if (!currentUser) return <Navigate to="/login" replace />;
   if (currentUser.businessAccess === 'used_car') return <Navigate to={roleHome(currentUser.role)} replace />;
@@ -204,14 +216,17 @@ export default function App() {
   return (
     <HashRouter>
       <ToastContainer />
-      <Routes>
+      <GarageSessionGate><Routes>
         {/* Car Movement — login-required but standalone (no Layout) */}
         <Route path="/movement" element={<CarMovement />} />
 
         {/* Public */}
+        <Route path="/account/:mode" element={<AccountRegistration />} />
+        <Route path="/staff-access" element={<StaffAccountAccess />} />
+        <Route path="/garage/login" element={<Navigate to="/login" replace />} />
         <Route
           path="/login"
-          element={currentUser ? <Navigate to={landingPath(currentUser)} replace /> : <Login />}
+          element={secureGarageLoginEnabled() ? <Login /> : currentUser ? <Navigate to={landingPath(currentUser)} replace /> : <Login />}
         />
         <Route
           path="/"
@@ -284,7 +299,7 @@ export default function App() {
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      </Routes></GarageSessionGate>
     </HashRouter>
   );
 }

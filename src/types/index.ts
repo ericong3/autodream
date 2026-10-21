@@ -301,6 +301,7 @@ export interface GarageFilmStock {
 }
 
 export interface User {
+  authSource?: 'server';
   id: string;
   name: string;
   username: string;

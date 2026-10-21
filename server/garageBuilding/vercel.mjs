@@ -1,5 +1,6 @@
 // Adapts Vercel's Node (req, res) to the injectable core handlers.
 import bcrypt from 'bcryptjs';
+import { waitUntil } from '@vercel/functions';
 import { LIMITS } from './core.mjs';
 
 const REPO_METHODS = ['findUserByUsername', 'findUserById', 'createSession', 'findSession', 'touchSession', 'deleteSession', 'deleteExpiredSessions', 'throttleHit', 'throttleClear', 'canActivateStaff', 'activateStaff', 'rpc'];
@@ -11,6 +12,7 @@ export function productionDeps() {
   return {
     env: process.env,
     bcrypt,
+    defer(job) { waitUntil(Promise.resolve().then(job)); },
     repo(config) {
       if (!repo) {
         const ready = import('./supabaseRepo.mjs').then(m => m.supabaseRepo(config));

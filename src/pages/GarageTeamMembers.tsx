@@ -1,3 +1,5 @@
+import StaffAccessLink from '../components/StaffAccessLink';
+import { secureGarageLoginEnabled } from '../lib/garageSession';
 import { useState } from 'react';
 import {
   Plus, Edit, Trash2, Users, AlertCircle, Shield, TrendingUp,
@@ -68,7 +70,7 @@ export default function GarageTeamMembers() {
   const updateUser = useStore((s) => s.updateUser);
   const deleteUser = useStore((s) => s.deleteUser);
 
-  const isShareholder = currentUser?.role === 'shareholder';
+  const isShareholder = currentUser?.role !== 'director' || secureGarageLoginEnabled();
 
   const [showModal, setShowModal] = useState(false);
   const [editTarget, setEditTarget] = useState<User | null>(null);
@@ -170,7 +172,7 @@ export default function GarageTeamMembers() {
 
   return (
     <GarageShell title="Garage — Team Members" nav>
-      <div className="space-y-6">
+      <div className="space-y-6"><StaffAccessLink />
         <div className="flex items-center justify-between flex-wrap gap-3">
           <p className="text-white/40 text-sm">{garageUsers.length} member{garageUsers.length === 1 ? '' : 's'}</p>
           {!isShareholder && (

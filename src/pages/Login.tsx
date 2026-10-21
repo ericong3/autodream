@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useStore } from '../store';
 import { landingPath } from '../utils/landingPath';
+import { garageAppUser, garageSessionRequest, secureGarageLoginEnabled } from '../lib/garageSession';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -21,6 +22,19 @@ export default function Login() {
     if (!username.trim()) { setError('Username is required'); return; }
     if (!password) { setError('Password is required'); return; }
     setLoading(true);
+    if (secureGarageLoginEnabled()) {
+      try {
+        await useStore.getState().logout();
+        const identity = await garageSessionRequest('POST', { username: username.trim(), password });
+        if (!identity) throw new Error('Could not sign in.');
+        const user = garageAppUser(identity);
+        useStore.setState({ currentUser: user });
+        setPassword('');
+        navigate(landingPath(user), { replace: true });
+      } catch (e) { setError(e instanceof Error ? e.message : 'Could not sign in.'); }
+      finally { setLoading(false); }
+      return;
+    }
     await new Promise((r) => setTimeout(r, 400));
     const success = await login(username.trim(), password);
     setLoading(false);
@@ -108,6 +122,8 @@ export default function Login() {
               </div>
             </div>
 
+            {secureGarageLoginEnabled() && <button type="button" className="text-gold-400 text-sm mb-5" onClick={() => navigate('/account/resend')}>Resend verification email</button>}
+            {secureGarageLoginEnabled() && <button type="button" className="text-white/50 text-sm mb-5 ml-4" onClick={() => navigate('/account/forgot')}>Forgot password?</button>}
             {/* Error */}
             {error && (
               <div className="flex items-center gap-2.5 bg-red-500/[0.08] border border-red-500/20

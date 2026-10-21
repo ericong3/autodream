@@ -144,7 +144,7 @@ export default function Layout() {
     return false;
   }).length;
 
-  const handleLogout = () => { logout(); navigate('/login'); };
+  const handleLogout = async () => { try { await logout(); navigate('/login'); } catch { window.alert('Could not sign out. Check your connection and try again.'); } };
 
   const { status: pushStatus, requestPermission } = usePushNotifications();
   const loadAll = useStore((s) => s.loadAll);

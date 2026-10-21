@@ -6,7 +6,6 @@
 // First-time setup also uses 20261020020000_garage_building_activation.sql.
 import { createClient } from '@supabase/supabase-js';
 
-const USER_COLUMNS = 'id, name, username, password, role, business_access, enabled';
 const SESSION_COLUMNS = 'user_id, credential_fingerprint, expires_at, last_seen_at';
 
 let cached = null;
@@ -28,11 +27,11 @@ export function supabaseRepo(config) {
     async findUserByUsername(username) {
       // Same exact-match lookup as the app login. Duplicate usernames are
       // treated as "no such user" rather than guessing which one.
-      const rows = check(await sb.from('garage_building_staff').select(USER_COLUMNS).eq('username', username).limit(2));
+      const rows = check(await sb.from('garage_building_staff').select('*').eq('username', username).limit(2));
       return rows?.length === 1 ? rows[0] : null;
     },
     async findUserById(id) {
-      return check(await sb.from('garage_building_staff').select(USER_COLUMNS).eq('id', id).maybeSingle());
+      return check(await sb.from('garage_building_staff').select('*').eq('id', id).maybeSingle());
     },
     async createSession(s) {
       check(await sb.from('garage_building_sessions').insert({

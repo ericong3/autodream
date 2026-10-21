@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import bcrypt from 'bcryptjs';
-import { handleActivation, handleSession, handleProjects, readConfig, COOKIE_NAME, LIMITS } from '../server/garageBuilding/core.mjs';
+import { handleActivation, handleSession, handleAppSession, handleGarageSession, handleProjects, readConfig, COOKIE_NAME, LIMITS } from '../server/garageBuilding/core.mjs';
 import { vercelHandler } from '../server/garageBuilding/vercel.mjs';
 
 const ORIGIN = 'https://garage.example';
@@ -205,8 +205,8 @@ test('password change, username change, deletion or lost access revoke existing 
     mutate(w.state);
     const out = await handleProjects(req({ url: '/api/garage-building/projects', cookie: token }), w.deps);
     assert.equal(out.status, status, name);
-    assert.equal(w.state.sessions.size, 0, `${name}: session deleted`);
-    assert.ok([].concat(out.headers['Set-Cookie']).some(c => c.includes('Max-Age=0')), `${name}: cookie cleared`);
+    assert.equal(w.state.sessions.size, ['role changed to installer','garage access removed'].includes(name) ? 1 : 0, `${name}: only revoke lost Garage access`);
+    if(!['role changed to installer','garage access removed'].includes(name)) assert.ok([].concat(out.headers['Set-Cookie']).some(c => c.includes('Max-Age=0')), `${name}: cookie cleared`);
     assert.equal(w.state.rpcCalls.length, 0, `${name}: no rpc`);
   }
 });
@@ -385,4 +385,52 @@ test('first-time activation hashes passwords and needs an atomic matching unused
   assert.equal((await activate({username:'sam',code,password:'中'.repeat(30)})).status,400);
   assert.equal((await activate({username:'sam',code,password:'long-enough-password'},{origin:'https://evil.example'})).status,403);
   const entry=await import('../api/garage-building/activate.mjs');assert.equal(typeof entry.default,'function');
+});
+
+
+test('single Garage login supports workshop staff without granting building access', async () => {
+  const w=world();
+  const out=parse(await handleGarageSession(req({method:'POST',body:{username:'ira',password:'ira-pass'}}),w.deps));
+  assert.equal(out.status,200);
+  const token=cookieFrom(out);
+  const session=parse(await handleGarageSession(req({cookie:token,headers:{'x-garage-user':undefined}}),w.deps));
+  assert.equal(session.status,200);assert.equal(session.json.user.role,'garage_installer');
+  const projects=parse(await handleProjects(req({url:'/api/garage-building/projects',cookie:token,headers:{'x-garage-user':'i1'}}),w.deps));
+  assert.equal(projects.status,403);assert.equal(w.state.rpcCalls.length,0);
+});
+test('Garage login rejects legacy passwords, disabled staff and used-car-only accounts', async () => {
+  for(const [username,password] of [['lee','legacy-plain'],['cara','cara-pass']]){
+    const w=world();const out=parse(await handleGarageSession(req({method:'POST',body:{username,password}}),w.deps));
+    assert.ok([401,403].includes(out.status));assert.equal(cookieFrom(out),undefined);
+  }
+  const w=world();w.state.users.get('u1').enabled=false;
+  const out=parse(await handleGarageSession(req({method:'POST',body:{username:'sam',password:'right-pass'}}),w.deps));
+  assert.equal(out.status,401);
+});
+test('one Garage session also opens building saving for eligible sales staff', async () => {
+  const w=world();const out=parse(await handleGarageSession(req({method:'POST',body:{username:'sam',password:'right-pass'}}),w.deps));
+  const token=cookieFrom(out);assert.equal(out.status,200);
+  assert.equal(parse(await handleProjects(req({cookie:token,url:'/api/garage-building/projects'}),w.deps)).status,200);
+  assert.equal(parse(await handleGarageSession(req({method:'DELETE',cookie:token}),w.deps)).status,200);
+  assert.equal(parse(await handleGarageSession(req({cookie:token}),w.deps)).status,401);
+});
+
+
+test('shared AutoDream login returns authoritative business access for all three scopes',async()=>{
+ for(const access of ['used_car','garage','both']){
+  const w=world({users:[{id:'a1',name:'Account',username:'account',password:bcrypt.hashSync('new-password',4),role:access==='both'?'director':access==='garage'?'garage_salesman':'salesperson',business_access:access}]});
+  const out=parse(await handleAppSession(req({method:'POST',body:{username:'account',password:'new-password'}}),w.deps));
+  assert.equal(out.status,200);assert.equal(out.json.user.businessAccess,access);
+  const token=cookieFrom(out);
+  if(access==='used_car'){
+   assert.equal(parse(await handleProjects(req({cookie:token,url:'/api/garage-building/projects',headers:{'x-garage-user':'a1'}}),w.deps)).status,403);
+   assert.equal(parse(await handleAppSession(req({cookie:token}),w.deps)).status,200,'feature denial must not sign out shared account');
+  }
+ }
+});
+test('directors and shareholders must have both-business enrollment',async()=>{
+ for(const role of ['director','shareholder']){
+  const w=world({users:[{id:'d1',name:'Director',username:'director',password:bcrypt.hashSync('new-password',4),role,business_access:'garage'}]});
+  assert.equal(parse(await handleAppSession(req({method:'POST',body:{username:'director',password:'new-password'}}),w.deps)).status,401);
+ }
 });

@@ -1,3 +1,5 @@
+import { garageSessionRequest, secureGarageLoginEnabled } from '../lib/garageSession';
+import { mergeLegacyIdentity } from '../utils/garageIdentity';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
@@ -115,7 +117,7 @@ interface StoreState {
 
   // Auth
   login: (username: string, password: string) => Promise<boolean>;
-  logout: () => void;
+  logout: () => Promise<void>;
 
   // Cars
   addCar: (car: Car) => Promise<void>;
@@ -1629,7 +1631,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
             ) as Partial<User>;
             return {
               users: s.users.map((u) => u.id === updated.id ? { ...u, ...definedFields } : u),
-              currentUser: s.currentUser?.id === updated.id ? { ...s.currentUser, ...definedFields } : s.currentUser,
+              currentUser: mergeLegacyIdentity(s.currentUser, updated.id, definedFields),
             };
           });
         } else if (payload.eventType === 'DELETE') {
@@ -1886,7 +1888,9 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   // Also wipes the cached data (not just the session), since it's now persisted to
   // localStorage for instant reload — a shared device must not show the next person
   // who opens the browser this user's cars/customers/payments before they even log in.
-  logout: () => set({
+  logout: async () => {
+    if (secureGarageLoginEnabled()) await garageSessionRequest('DELETE');
+    set({
     currentUser: null,
     users: [], cars: [], repairs: [], quotations: [], instructions: [], customers: [],
     testDrives: [], personalReminders: [], dealers: [], workshops: [], suppliers: [],
@@ -1896,7 +1900,8 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     payslips: [], notifications: [], kanbanColumns: [],
     bankStatementUploads: [], bankTransactions: [],
     loaded: false, phase2Loaded: false, lastFetched: null,
-  }),
+  });
+  },
 
   // Cars
   addCar: async (car) => {
@@ -2169,6 +2174,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
 
   // Users
   addUser: async (user) => {
+    if (secureGarageLoginEnabled()) throw new Error('Use the director invitation flow to create accounts.');
     const stored = { ...user, password: await hashPassword(user.password) };
     set((s) => ({ users: [...s.users, stored] }));
     const { error } = await supabase.from('users').insert(userToRow(stored));
@@ -2178,14 +2184,16 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     }
   },
   updateUser: async (id, user) => {
+    if (secureGarageLoginEnabled() && ['role','businessAccess','password','username','authSource'].some(k => k in user)) throw new Error('Manage account permissions in Staff access. Passwords are reset by email.');
     const patch = user.password ? { ...user, password: await hashPassword(user.password) } : user;
     set((s) => ({
       users: s.users.map((u) => (u.id === id ? { ...u, ...patch } : u)),
-      currentUser: s.currentUser?.id === id ? { ...s.currentUser, ...patch } : s.currentUser,
+      currentUser: mergeLegacyIdentity(s.currentUser, id, patch),
     }));
     await supabase.from('users').update(userToRow(patch)).eq('id', id);
   },
   deleteUser: async (id) => {
+    if (secureGarageLoginEnabled()) throw new Error('Disable the account in Staff access instead.');
     set((s) => ({ users: s.users.filter((u) => u.id !== id) }));
     await supabase.from('users').delete().eq('id', id);
   },
