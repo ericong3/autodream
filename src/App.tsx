@@ -10,6 +10,7 @@ import Layout from './components/Layout';
 import ToastContainer from './components/Toast';
 import Login from './pages/Login';
 import AccountRegistration from './pages/AccountRegistration';
+import AccountSignInCheck from './pages/AccountSignInCheck';
 import StaffAccountAccess from './pages/StaffAccountAccess';
 import GarageSessionGate from './components/GarageSessionGate';
 import { secureGarageLoginEnabled } from './lib/garageSession';
@@ -221,6 +222,7 @@ export default function App() {
         <Route path="/movement" element={<CarMovement />} />
 
         {/* Public */}
+        <Route path="/account/check" element={<AccountSignInCheck />} />
         <Route path="/account/:mode" element={<AccountRegistration />} />
         <Route path="/staff-access" element={<StaffAccountAccess />} />
         <Route path="/garage/login" element={<Navigate to="/login" replace />} />
