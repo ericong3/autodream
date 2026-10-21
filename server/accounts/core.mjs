@@ -16,7 +16,7 @@ export function accountConfig(env, origins, {mail=true}={}) {
   return {origin,user,password:secret};
 }
 async function rate(ctx,key,limit,window=900) {
-  const r=await ctx.repo.throttleHit(sha('account:'+key),limit,window);
+  const r=await ctx.repo.throttleHit('account:'+sha(key),limit,window);
   if(!r.allowed)throw new ApiError(429,'RATE_LIMITED','Too many attempts. Please try again later.');
 }
 async function action(ctx,name,actor,data) {

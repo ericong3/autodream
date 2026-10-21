@@ -5,6 +5,8 @@ import {readFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {resolve} from 'node:path';
 import bcrypt from 'bcryptjs';
+import {createHash} from 'node:crypto';
+import {handleAccounts} from '../server/accounts/core.mjs';
 const root=process.argv[2];if(!root)throw new Error('Supply a temporary PGlite package directory.');
 const {PGlite}=await import(pathToFileURL(resolve(root,'dist/index.js')));
 const {pgcrypto}=await import(pathToFileURL(resolve(root,'dist/contrib/pgcrypto.js')));
@@ -16,6 +18,15 @@ const hash=bcrypt.hashSync('test-password-only',4);
 await db.query("insert into users(id,name,username,password,role,business_access)values('d1','Director','director',$1,'director','both'),('s1','Shareholder','shareholder',$1,'shareholder','both')",[hash]);
 await db.query("insert into garage_building_staff(id,name,username,password,role,business_access)select id,name,username,password,role,business_access from users");
 const action=async(a,actor,data)=> (await db.query('select public.autodream_account_action($1,$2,$3::jsonb) result',[a,actor,JSON.stringify(data)])).rows[0].result;
+// Exercise the HTTP-to-Postgres boundary, including the real throttle key contract.
+const inspectToken='9'.repeat(64),origin='https://app.example';
+await action('invite','d1',{id:'http-inspect',tokenHash:createHash('sha256').update(inspectToken).digest('hex'),role:'admin',businessAccess:'used_car'});
+const inspectResponse=await handleAccounts({method:'POST',url:'/api/auth/accounts',headers:{origin,'content-type':'application/json','x-garage-building':'1','sec-fetch-site':'same-origin'},body:JSON.stringify({action:'inspect',token:inspectToken}),socketAddress:'203.0.113.4'},{env:{GARAGE_BUILDING_ONLINE:'1',SUPABASE_URL:'https://example.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'test-key-not-real-1234567890',GARAGE_SESSION_SECRET:'test-session-secret-not-real-1234567890',GARAGE_ALLOWED_ORIGINS:origin,AUTH_PUBLIC_ORIGIN:origin,AUTH_INVITES_ENABLED:'1'},bcrypt,repo:()=>({
+ throttleHit:async(key,limit,windowSeconds)=>{const row=(await db.query('select * from public.garage_building_auth_throttle_hit($1,$2,$3)',[key,limit,windowSeconds])).rows[0];return {allowed:row.allowed,retryAfter:row.retry_after};},
+ rpc:async(_fn,args)=>({data:await action(args.p_action,args.p_actor,args.p_data),error:null})
+})});
+assert.equal(inspectResponse.status,200,inspectResponse.body);
+assert.equal(JSON.parse(inspectResponse.body).role,'admin');
 let seq=0;
 async function invitation(role='admin',businessAccess='used_car'){const id='invite'+(++seq),tokenHash=String(seq).padStart(64,'a');await action('invite','d1',{id,tokenHash,role,businessAccess});return {id,tokenHash};}
 const registration=(inv,id,emailTokenHash='b'.repeat(64))=>({tokenHash:inv.tokenHash,emailTokenHash,staffId:id,name:'Example Staff',username:id,email:id+'@example.com',phone:'example',passwordHash:hash});
