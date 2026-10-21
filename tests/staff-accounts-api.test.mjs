@@ -29,6 +29,17 @@ test('registration refuses client-assigned role and never stores plaintext passw
 test('forgotten password responses do not reveal missing accounts or rate limits',async()=>{
  const w=world();const first=await handleAccounts(request({action:'forgot',email:'missing@example.com'}),w.deps);for(let i=0;i<5;i++){const out=await handleAccounts(request({action:'forgot',email:'missing@example.com'}),w.deps);assert.equal(out.status,first.status);assert.equal(out.body,first.body);}assert.equal(w.messages.length,0);
 });
+
+test('setup and reset accept six-character passwords and reject shorter ones',async()=>{
+ for(const password of ['short','short6']){
+  const registration=world();
+  const registered=await handleAccounts(request({action:'register',token:'a'.repeat(64),name:'Staff',username:'staff',phone:'0123456789',email:'staff@example.com',password}),registration.deps);
+  assert.equal(registered.status,password.length===6?201:400);
+  const reset=world();
+  const changed=await handleAccounts(request({action:'reset',token:'b'.repeat(64),password}),reset.deps);
+  assert.equal(changed.status,password.length===6?200:400);
+ }
+});
 test('email is not sent and account operations fail closed without email configuration',async()=>{
  const w=world();w.deps.env={...ENV,AUTH_GMAIL_APP_PASSWORD:''};assert.equal((await handleAccounts(request({action:'register',token:'a'.repeat(64)}),w.deps)).status,503);assert.equal(w.calls.length,0);assert.equal(w.messages.length,0);
  assert.throws(()=>accountConfig({...ENV,VITE_MAIL_SECRET:ENV.AUTH_GMAIL_APP_PASSWORD},[ORIGIN]));

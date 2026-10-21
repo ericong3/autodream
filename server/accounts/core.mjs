@@ -6,7 +6,7 @@ const ROLES=['director','shareholder','salesperson','mechanic','admin','investor
 const GENERIC={message:'If the account is eligible, an email will arrive shortly.'};
 const text=(v,max)=>typeof v==='string'&&v.trim().length>0&&v.trim().length<=max;
 const email=v=>typeof v==='string'&&v.length<=254&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-const password=v=>typeof v==='string'&&v.length>=10&&Buffer.byteLength(v)<=72;
+const password=v=>typeof v==='string'&&v.length>=6&&Buffer.byteLength(v)<=72;
 export function accountConfig(env, origins, {mail=true}={}) {
   let origin;
   try { const u=new URL(env.AUTH_PUBLIC_ORIGIN); if(u.protocol==='https:'&&origins.includes(u.origin)&&u.pathname==='/'&&!u.search&&!u.hash)origin=u.origin; }catch{}
@@ -79,7 +79,7 @@ export async function handleAccounts(req,deps) {
       await rate(ctx,'invite:'+sha(b.token),10);
       const info=await action(ctx,'invite_info',null,{tokenHash:sha(b.token)});
       if(b.action==='inspect')return {status:200,body:info};
-      if(!text(b.name,100)||!email(b.email)||!text(b.username,100)||!text(b.phone,30)||!password(b.password))throw new ApiError(400,'INVALID','Enter your details and a password of at least 10 characters (at most 72 bytes).');
+      if(!text(b.name,100)||!email(b.email)||!text(b.username,100)||!text(b.phone,30)||!password(b.password))throw new ApiError(400,'INVALID','Enter your details and a password of at least 6 characters (at most 72 bytes).');
       const emailToken=ctx.random(32).toString('hex');
       const recipient=await action(ctx,'register',null,{tokenHash:sha(b.token),emailTokenHash:sha(emailToken),staffId:ctx.random(16).toString('hex'),name:b.name.trim(),email:b.email.trim().toLowerCase(),username:b.username.trim(),phone:b.phone.trim(),passwordHash:await ctx.bcrypt.hash(b.password,12)});
       try{await mail(recipient,'verify',emailToken);}catch{throw new ApiError(503,'MAIL','Your registration is saved, but the email could not be sent. Use Resend verification to try again.');}
@@ -101,7 +101,7 @@ export async function handleAccounts(req,deps) {
     }
     if(['verify','reset'].includes(b.action)){
       onlyKeys(b,b.action==='verify'?['action','token']:['action','token','password']);
-      if(!TOKEN.test(b.token??'')||(b.action==='reset'&&!password(b.password)))throw new ApiError(400,'INVALID','Use a valid link and a password of at least 10 characters (at most 72 bytes).');
+      if(!TOKEN.test(b.token??'')||(b.action==='reset'&&!password(b.password)))throw new ApiError(400,'INVALID','Use a valid link and a password of at least 6 characters (at most 72 bytes).');
       await action(ctx,'check_email_token',null,{tokenHash:sha(b.token),purpose:b.action});
       await action(ctx,b.action,null,{tokenHash:sha(b.token),...(b.action==='reset'?{passwordHash:await ctx.bcrypt.hash(b.password,12)}:{})});
       return {status:200,body:{message:b.action==='verify'?'Email verified. You can sign in.':'Password changed. Sign in with your new password.'}};
