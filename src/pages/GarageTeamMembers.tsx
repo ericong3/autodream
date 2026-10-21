@@ -1,5 +1,5 @@
 import StaffAccessLink from '../components/StaffAccessLink';
-import { secureGarageLoginEnabled } from '../lib/garageSession';
+
 import { useState } from 'react';
 import {
   Plus, Edit, Trash2, Users, AlertCircle, Shield, TrendingUp,
@@ -70,7 +70,7 @@ export default function GarageTeamMembers() {
   const updateUser = useStore((s) => s.updateUser);
   const deleteUser = useStore((s) => s.deleteUser);
 
-  const isShareholder = currentUser?.role !== 'director' || secureGarageLoginEnabled();
+  const legacyAccountEditingEnabled = false; // Account changes use director-verified Staff setup.
 
   const [showModal, setShowModal] = useState(false);
   const [editTarget, setEditTarget] = useState<User | null>(null);
@@ -175,7 +175,7 @@ export default function GarageTeamMembers() {
       <div className="space-y-6"><StaffAccessLink />
         <div className="flex items-center justify-between flex-wrap gap-3">
           <p className="text-white/40 text-sm">{garageUsers.length} member{garageUsers.length === 1 ? '' : 's'}</p>
-          {!isShareholder && (
+          {legacyAccountEditingEnabled && (
             <button
               onClick={() => { setEditTarget(null); setForm(emptyForm); setErrors({}); setShowModal(true); }}
               className="flex items-center gap-2 btn-gold px-4 py-2.5 rounded-lg text-sm"
@@ -212,7 +212,7 @@ export default function GarageTeamMembers() {
                         <p className="text-white/40 text-xs">@{member.username}</p>
                       </div>
                     </div>
-                    {!isShareholder && (
+                    {legacyAccountEditingEnabled && (
                       <div className="flex gap-1">
                         <button onClick={() => openEdit(member)} className="p-1.5 text-white/40 hover:text-gold-400 hover:bg-white/5 rounded-lg transition-colors" title="Edit member">
                           <Edit size={14} />

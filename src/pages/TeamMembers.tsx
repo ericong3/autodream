@@ -1,5 +1,5 @@
 import StaffAccessLink from '../components/StaffAccessLink';
-import { secureGarageLoginEnabled } from '../lib/garageSession';
+
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Edit, Trash2, Users, AlertCircle, Shield, UserCheck, Wrench, Phone, Mail, AtSign, Car, TrendingUp, Target, Award, X, KeyRound, CreditCard, Save, Settings, Copy, Check } from 'lucide-react';
@@ -450,7 +450,7 @@ export default function TeamMembers() {
     return 1500;
   };
 
-  const isShareHolder = currentUser?.role !== 'director' || secureGarageLoginEnabled();
+  const legacyAccountEditingEnabled = false; // Account changes use director-verified Staff setup.
 
   const [showModal, setShowModal] = useState(false);
   const [editTarget, setEditTarget] = useState<User | null>(null);
@@ -622,7 +622,7 @@ export default function TeamMembers() {
           </div>
         </div>
 
-        {!isShareHolder && (
+        {legacyAccountEditingEnabled && (
           <button
             onClick={() => {
               setEditTarget(null);
@@ -680,7 +680,7 @@ export default function TeamMembers() {
                       <p className="text-gray-500 text-xs">{member.position || `@${member.username}`}</p>
                     </div>
                   </div>
-                  {!isShareHolder && (
+                  {legacyAccountEditingEnabled && (
                     <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => openEdit(member)}

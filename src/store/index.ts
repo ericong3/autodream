@@ -1889,7 +1889,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   // localStorage for instant reload — a shared device must not show the next person
   // who opens the browser this user's cars/customers/payments before they even log in.
   logout: async () => {
-    if (secureGarageLoginEnabled()) await garageSessionRequest('DELETE');
+    if (secureGarageLoginEnabled() || import.meta.env.VITE_GARAGE_BUILDING_STORAGE === 'online') await garageSessionRequest('DELETE');
     set({
     currentUser: null,
     users: [], cars: [], repairs: [], quotations: [], instructions: [], customers: [],
