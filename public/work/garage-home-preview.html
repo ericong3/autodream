@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AutoDream Garage · Home preview</title>
+  <link rel="stylesheet" href="./garage-home-preview.css">
+</head>
+<body>
+  <!-- Home layout study: original showroom, Cinzel brand, Outfit interface.
+       Palette: black #000, glass #0a0906, white #f5f2ea, muted #b4aea0, gold #d4a017.
+       [ AutoDream Garage     Home / Sales / Jobs / Manage       profile ]
+       [ Home                                                New sale ]
+       [ Today | My orders                                    Search ]
+       [ One chronological work list; details appear only on request. ]
+       No KPI tiles or repeated dashboard sections. All data stays in memory. -->
+  <div class="preview-strip"><span>Demo only <span class="separator">/</span> Sample data · Changes reset on refresh</span><label>Theme <select id="theme"><option value="dark">Black</option><option value="light">White</option></select></label><button id="reset-demo">Reset preview</button></div>
+  <header class="app-header"><div class="brand">AutoDream <span>Garage</span></div><nav aria-label="Garage"><button aria-current="page">Home</button><button data-section="Sales">Sales</button><button data-section="Jobs">Jobs</button><button data-section="Manage">Manage</button></nav><span class="avatar" aria-label="Sample staff account">AD</span></header>
+  <main>
+    <div class="page-heading"><div><h1>Home</h1><p>Thursday, 22 October</p></div><button class="primary" id="new-sale"><span aria-hidden="true">＋</span> New sale</button></div>
+    <section class="work-surface" aria-label="My work">
+      <div class="work-toolbar"><div role="tablist" aria-label="My work"><button role="tab" aria-selected="true" id="today-tab" data-view="today">Today <span id="today-count"></span></button><button role="tab" aria-selected="false" id="orders-tab" data-view="orders">My orders <span id="orders-count"></span></button></div><label class="search"><svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><input id="search" type="search" aria-label="Search customer or car" placeholder="Search customer or car"></label></div>
+      <div class="list-heading"><h2 id="list-title">Today’s work</h2><div class="list-actions"><button class="text-button" id="enquiries">Enquiries</button><button class="text-button" id="new-lead">＋ Lead</button></div></div>
+      <div id="work-list" role="tabpanel" aria-labelledby="today-tab"></div>
+      <div class="list-footer"><span id="list-summary"></span><span>Only your work</span></div>
+    </section>
+    <p class="preview-note">Try opening an item, searching, or switching to My orders. This preview changes no live records.</p>
+  </main>
+  <dialog id="details"><div class="dialog-top"><span id="dialog-category"></span><button id="close-dialog" aria-label="Close details">✕</button></div><div id="dialog-content"></div></dialog>
+  <div id="toast" role="status" hidden></div>
+  <script src="./garage-home-preview.js"></script>
+  <script src="./garage-enquiry-preview.js"></script>
+</body>
+</html>
+

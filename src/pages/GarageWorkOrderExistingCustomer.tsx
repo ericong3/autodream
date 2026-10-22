@@ -13,19 +13,22 @@ export default function GarageWorkOrderExistingCustomer() {
   const [error, setError] = useState('');
   const [searched, setSearched] = useState(false);
 
-  // Live search as the salesman types — no need to key in the full IC or
-  // hit a button, just enough to narrow down to the right customer.
+  // Ignore stale responses when staff change their search quickly.
   useEffect(() => {
     const q = query.trim();
-    if (q.length < 2) { setResults([]); setSearched(false); return; }
+    let active = true;
+    if (q.length < 2) { setResults([]); setSearched(false); setSearching(false); setError(''); return; }
+    setResults([]);
+    setError('');
+    setSearched(false);
     setSearching(true);
     const timer = setTimeout(() => {
       searchGarageCustomers(q)
-        .then((r) => { setResults(r); setSearched(true); setError(''); })
-        .catch((err) => setError(err?.message ?? 'Something went wrong — please try again'))
-        .finally(() => setSearching(false));
+        .then((r) => { if (active) { setResults(r); setSearched(true); setError(''); } })
+        .catch((err) => { if (active) setError(err?.message ?? 'Something went wrong — please try again'); })
+        .finally(() => { if (active) setSearching(false); });
     }, 300);
-    return () => clearTimeout(timer);
+    return () => { active = false; clearTimeout(timer); };
   }, [query]);
 
   return (
@@ -38,7 +41,7 @@ export default function GarageWorkOrderExistingCustomer() {
             bg-gradient-to-b from-white/[0.10] to-transparent blur-md opacity-40" />
 
           <h2 className="font-display text-xl text-white font-semibold tracking-wide mb-1">Find Customer</h2>
-          <p className="text-white/40 text-sm mb-8">Search by name or IC number</p>
+          <p className="text-white/40 text-sm mb-8">Search by name, phone or IC number</p>
 
           <div className="relative mb-2">
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30" />
@@ -47,7 +50,8 @@ export default function GarageWorkOrderExistingCustomer() {
                 rounded-xl pl-10 pr-3.5 py-3 text-sm focus:outline-none focus:border-gold-400/50 transition-colors"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Type a name or IC number…"
+              aria-label="Search customers"
+              placeholder="Name, phone or IC number…"
               autoFocus
             />
           </div>

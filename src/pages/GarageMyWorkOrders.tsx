@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ClipboardList, Car, User, ChevronRight, Clock3 } from 'lucide-react';
+import { ClipboardList, Car, User, ChevronRight, Clock3, Plus } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
+import GarageTodayAppointments from '../components/GarageTodayAppointments';
 import { useStore } from '../store';
 import { listInvoicesCreatedBy } from '../lib/garageInvoices';
 import { getInstallerJobForInvoice } from '../lib/garageInstallerJobs';
@@ -32,9 +33,9 @@ interface Row {
 type PipelineTab = 'installer' | 'delivery' | 'warranty' | 'closed';
 
 const PIPELINE_TABS: { key: PipelineTab; label: string; stages: WorkOrderStage[] }[] = [
-  { key: 'installer', label: 'With Installers', stages: ['waiting_for_installer', 'installer_assigned', 'in_progress', 'pending_approval'] },
-  { key: 'delivery', label: 'Ready for Delivery', stages: ['payment_due', 'ready_for_delivery'] },
-  { key: 'warranty', label: 'Register Warranty', stages: ['ready_for_warranty'] },
+  { key: 'installer', label: 'Ongoing', stages: ['waiting_for_installer', 'installer_assigned', 'in_progress', 'pending_approval'] },
+  { key: 'delivery', label: 'Handover', stages: ['payment_due', 'ready_for_delivery'] },
+  { key: 'warranty', label: 'Warranty', stages: ['ready_for_warranty'] },
   { key: 'closed', label: 'Closed', stages: ['closed'] },
 ];
 
@@ -66,13 +67,20 @@ export default function GarageMyWorkOrders() {
   const allUsers = useStore((s) => s.users);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const requestId = useRef(0);
+  const [loadedOwner, setLoadedOwner] = useState<string>();
   // Kept in the URL so coming back from an invoice lands on the same tab.
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab') as PipelineTab | null;
   const activeTab: PipelineTab = PIPELINE_TABS.some((t) => t.key === tabParam) ? tabParam! : 'installer';
 
-  const load = () => {
+  const load = (retry = false) => {
     if (!currentUser) return;
+    if (retry) setLoading(true);
+    const request = ++requestId.current;
+    const owner = currentUser.id;
+    setError('');
     listInvoicesCreatedBy(currentUser.id)
       .then(async (invoices) => {
         const built = await Promise.all(invoices.map(async (invoice): Promise<Row> => {
@@ -84,12 +92,15 @@ export default function GarageMyWorkOrders() {
           return { invoice, vehicle, customer, job, stage: getWorkOrderStage(invoice) };
         }));
         built.sort((a, b) => WORK_ORDER_STAGE_ORDER[a.stage] - WORK_ORDER_STAGE_ORDER[b.stage]);
+        if (request !== requestId.current) return;
         setRows(built);
+        setLoadedOwner(owner);
       })
-      .finally(() => setLoading(false));
+      .catch(() => { if (request === requestId.current) setError('Could not load your orders. Please try again.'); })
+      .finally(() => { if (request === requestId.current) setLoading(false); });
   };
 
-  useEffect(load, [currentUser?.id]);
+  useEffect(() => { setLoading(true); setRows([]); load(); return () => { requestId.current++; }; }, [currentUser?.id]);
   // Any step on any of these orders (installer or salesman) shows up here
   // right away.
   useInstallerJobUpdates(load);
@@ -98,17 +109,18 @@ export default function GarageMyWorkOrders() {
 
   const rowsFor = (tab: PipelineTab) => {
     const stages = PIPELINE_TABS.find((t) => t.key === tab)!.stages;
-    return rows.filter((r) => stages.includes(r.stage));
+    return loadedOwner === currentUser?.id ? rows.filter((r) => stages.includes(r.stage)) : [];
   };
   const visible = rowsFor(activeTab);
   const activeLabel = PIPELINE_TABS.find((t) => t.key === activeTab)!.label;
 
   return (
     <GarageShell title="AutoDream Garage" nav>
-      <div className="max-w-2xl mx-auto">
+      <div className="max-w-4xl mx-auto">
+        <div className="flex items-center justify-between gap-4 mb-8"><div><h1 className="text-2xl font-semibold text-white">Home</h1><p className="text-white/50 text-sm mt-2">Your orders and next steps, in one place.</p></div><button onClick={() => navigate('/garage/sales-tools')} className="btn-gold rounded-xl px-4 py-2.5 text-sm flex items-center gap-2"><Plus size={16} /> New sale</button></div>
         <div className="flex items-center gap-2.5 mb-5">
           <ClipboardList size={18} className="text-gold-400" />
-          <h2 className="font-display text-lg text-white font-semibold tracking-wide">My Pipeline</h2>
+          <h2 className="font-display text-lg text-white font-semibold tracking-wide">My work</h2>
         </div>
 
         <div className="flex gap-1.5 mb-6 overflow-x-auto pb-1">
@@ -122,12 +134,13 @@ export default function GarageMyWorkOrders() {
                   : 'bg-white/[0.03] border-white/10 text-white/50 hover:text-white/80 hover:border-white/20'
               }`}
             >
-              {t.label} ({loading ? '–' : rowsFor(t.key).length})
+              {t.label} ({loading || (error && loadedOwner !== currentUser?.id) ? '–' : rowsFor(t.key).length})
             </button>
           ))}
         </div>
 
-        {loading ? (
+        {error && loadedOwner === currentUser?.id && <p role="alert" className="text-amber-300 text-sm mb-4">Could not refresh. Showing the last loaded orders. <button onClick={() => load(true)}>Try again</button></p>}
+        {error && loadedOwner !== currentUser?.id ? <div role="alert" className="text-red-300 py-8"><p>{error}</p><button className="text-gold-400 mt-3" onClick={() => load(true)}>Try again</button></div> : loading ? (
           <p className="text-white/40 text-sm text-center py-20">Loading…</p>
         ) : visible.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
@@ -193,6 +206,7 @@ export default function GarageMyWorkOrders() {
             })}
           </div>
         )}
+        <GarageTodayAppointments />
       </div>
     </GarageShell>
   );

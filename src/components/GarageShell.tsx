@@ -4,41 +4,16 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, ArrowLeftRight, LogOut } from 'lucide-react';
 import { useStore } from '../store';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
-import { isGarageManager, isGarageSalesRole } from '../utils/garageRoles';
+import { isGarageManager } from '../utils/garageRoles';
+import { garageNavigation, garageSection, garageSecondaryNavigation } from '../utils/garageNavigation';
+import './garage-layout.css';
 
 export interface GarageTab {
   label: string;
   path: string;
 }
 
-const SALESMAN_TABS: GarageTab[] = [
-  { label: 'Dashboard', path: '/garage/dashboard' },
-  { label: 'Sales Tools', path: '/garage/sales-tools' },
-  { label: 'My Pipeline', path: '/garage/my-work-orders' },
-  { label: 'Calendar', path: '/garage/calendar' },
-];
-
-// Management gets every Garage module in the top bar — it replaces the old
-// card hub at /garage as the main control room.
-const MANAGER_TABS: GarageTab[] = [
-  { label: 'Dashboard', path: '/garage/dashboard' },
-  { label: 'Sales Tools', path: '/garage/sales-tools' },
-  { label: 'Team Members', path: '/garage/team' },
-  { label: 'Calendar', path: '/garage/calendar' },
-  { label: 'Work Flow', path: '/garage/installer' },
-  { label: 'Work Order Tracking', path: '/garage/work-order-tracking' },
-  { label: 'Tint Pricing', path: '/garage/tint-pricing' },
-];
-
 export { isGarageManager };
-
-// Tabs follow the same role rules as the route guards (utils/garageRoles).
-// Workshop roles only have their Work Flow pages, so they get no tab strip.
-function garageTabsFor(role?: string): GarageTab[] | null {
-  if (isGarageManager(role)) return MANAGER_TABS;
-  if (isGarageSalesRole(role)) return SALESMAN_TABS;
-  return null;
-}
 
 // Shared chrome for every Garage page — cinematic background + a light
 // header (back / switch-business / logout), plus the role-specific tab
@@ -52,17 +27,20 @@ export default function GarageShell({
   const navigate = useNavigate();
   const location = useLocation();
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const [logoutError,setLogoutError] = useState('');
   useBodyScrollLock(confirmLogout);
 
-  const tabs = nav ? garageTabsFor(currentUser?.role) : null;
+  const tabs = garageNavigation(currentUser?.role);
+  const section = garageSection(location.pathname);
+  const secondary = garageSecondaryNavigation(currentUser?.role, section);
   // The tab strip is the way around, so a back arrow on a tabbed page would
   // only lead to the (now redirecting) hub.
-  const backVisible = showBack && !tabs;
+  const backVisible = showBack && !nav;
 
-  const handleLogout = async () => { try { await logout(); navigate('/login'); } catch { window.alert('Could not sign out. Check your connection and try again.'); } };
+  const handleLogout = async () => { try { await logout(); navigate('/login'); } catch { setLogoutError('Could not sign out. Check the connection and try again.'); } };
 
   return (
-    <div className="min-h-screen relative bg-obsidian-950">
+    <div className="garage-layout min-h-screen relative bg-obsidian-950">
       {/* Garage showroom background */}
       <div
         className="fixed inset-0 bg-cover bg-center"
@@ -79,13 +57,14 @@ export default function GarageShell({
           <div className="flex items-center gap-3">
             {backVisible && (
               <button
+                aria-label="Go back"
                 onClick={() => onBack ? onBack() : navigate(backTo)}
                 className="p-2 -ml-2 rounded-lg text-white/60 hover:text-gold-400 hover:bg-white/5 transition-colors"
               >
                 <ArrowLeft size={18} />
               </button>
             )}
-            <h1 className="font-display text-white text-base sm:text-lg font-semibold tracking-wide">{title}</h1>
+            <div><span className="font-display text-white font-semibold tracking-wide">AutoDream <span className="text-gold-400 font-normal ml-2">Garage</span></span>{backVisible && <h1 className="font-display text-white/60 text-sm mt-1">{title}</h1>}</div>
           </div>
 
           <div className="flex items-center gap-2">
@@ -110,13 +89,14 @@ export default function GarageShell({
           </div>
         </header>
 
-        {tabs && (
-          <nav className="flex items-center gap-2 px-5 sm:px-8 py-3 border-b border-white/[0.06] backdrop-blur-sm overflow-x-auto">
+        {tabs.length > 0 && (
+          <nav aria-label="Garage navigation" className="garage-primary-nav flex items-center gap-2 px-5 sm:px-8 py-3 border-b border-white/[0.06] backdrop-blur-sm overflow-x-auto">
             {tabs.map((t) => {
-              const active = location.pathname === t.path;
+              const active = section === t.label;
               return (
                 <button
                   key={t.path}
+                  aria-current={active ? 'page' : undefined}
                   onClick={() => navigate(t.path)}
                   className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap border transition-colors ${
                     active
@@ -131,7 +111,8 @@ export default function GarageShell({
           </nav>
         )}
 
-        <main className="flex-1 px-5 sm:px-8 py-8 max-w-5xl w-full mx-auto">
+        {secondary.length > 0 && <nav aria-label={section + ' sections'} className="garage-secondary-nav">{secondary.map(t => <button key={t.path} aria-current={location.pathname === t.path || location.pathname.startsWith(t.path + '/') ? 'page' : undefined} onClick={() => navigate(t.path)}>{t.label}</button>)}</nav>}
+        <main className="flex-1 px-5 sm:px-8 py-8 max-w-6xl w-full mx-auto">
           {children}
         </main>
       </div>
@@ -163,7 +144,7 @@ export default function GarageShell({
             </p>
           </div>
 
-          <div className="relative z-10 w-full max-w-sm mx-auto px-6 space-y-3">
+          <div className="relative z-10 w-full max-w-sm mx-auto px-6 space-y-3">{logoutError && <p role="alert" className="text-red-300 text-sm">{logoutError}</p>}
             <button
               onClick={handleLogout}
               className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 text-white rounded-xl py-3.5 text-sm font-semibold transition-colors"

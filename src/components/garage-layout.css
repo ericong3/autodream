@@ -1,0 +1,6 @@
+.garage-layout .garage-primary-nav{position:sticky;top:0;z-index:30;background:rgba(0,0,0,.35);backdrop-filter:blur(20px)}
+.garage-secondary-nav{display:flex;gap:20px;padding:0 32px;border-bottom:1px solid #ffffff12;overflow:auto}
+.garage-secondary-nav button{white-space:nowrap;padding:15px 0;color:#a3a5a6;font-size:13px;border-bottom:2px solid transparent}
+.garage-secondary-nav button[aria-current=page]{color:#d9b777;border-color:#d9b777}
+.garage-layout button:focus-visible,.garage-layout a:focus-visible{outline:2px solid #d9b777;outline-offset:3px}
+@media(max-width:640px){.garage-secondary-nav{padding:0 20px}.garage-primary-nav>button{flex:1;padding-left:10px;padding-right:10px}}

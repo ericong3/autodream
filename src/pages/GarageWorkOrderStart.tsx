@@ -3,14 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { UserPlus, UserSearch } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 
-// First step of Create Work Order — decide whether this job is for a brand
-// new customer or one already in the system. Both options lead to stub
-// pages for now; the actual profile/search flow gets built next.
+// Customer-first sales entry. Both paths open the same customer profile.
 export default function GarageWorkOrderStart() {
   const navigate = useNavigate();
 
   return (
-    <GarageShell title="New Work Order" showBack backTo="/garage/sales-tools">
+    <GarageShell title="Sales" nav>
       <div className="text-center mb-10">
         <p className="text-white/40 text-sm tracking-wide">Is this for a new or existing customer?</p>
       </div>
@@ -29,6 +27,7 @@ export default function GarageWorkOrderStart() {
           onClick={() => navigate('/garage/work-order/existing-customer')}
         />
       </div>
+      <div className="max-w-3xl mx-auto mt-8 pt-5 border-t border-white/10"><button className="text-sm text-gold-400" onClick={() => navigate('/garage/building')}>Existing building tint projects</button></div>
     </GarageShell>
   );
 }

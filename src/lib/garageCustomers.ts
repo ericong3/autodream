@@ -42,17 +42,26 @@ export async function findGarageCustomerByIc(icNumber: string): Promise<GarageCu
   return data ? rowToCustomer(data) : null;
 }
 
-// Live/partial search as the salesman types — matches on name or any part of
-// the IC number, so they don't have to key in the full 12 digits to find
-// someone. `%` and `,` are stripped since they're meaningful to the
-// ilike/or-filter syntax, not customer data.
+// Shared customer lookup. Only plain letters, numbers and spaces enter the
+// PostgREST filter expression; phone variants cover common Malaysian formats.
 export async function searchGarageCustomers(query: string): Promise<GarageCustomer[]> {
-  const q = query.trim().replace(/[%,]/g, '');
+  const q = query.normalize('NFKC').replace(/[^\p{L}\p{N} +\-]/gu, '').trim().slice(0, 100);
   if (!q) return [];
+  const digits = q.replace(/\D/g, '');
+  const numeric = /^[\d +()-]+$/.test(q);
+  const terms = [`name.ilike.%${q}%`, `ic_number.ilike.%${q}%`];
+  if (numeric && digits.length >= 3) {
+    const local = digits.startsWith('60') ? '0' + digits.slice(2) : digits;
+    const national = local.startsWith('0') ? '60' + local.slice(1) : local;
+    for (const number of new Set([digits, local, national])) {
+      // Wildcards between digits match stored spaces, brackets and hyphens.
+      terms.push(`phone.ilike.%${number.split('').join('%')}%`);
+    }
+  }
   const { data, error } = await supabase
     .from('garage_customers')
     .select('*')
-    .or(`name.ilike.%${q}%,ic_number.ilike.%${q}%`)
+    .or(terms.join(','))
     .order('name')
     .limit(10);
   if (error) throw error;
