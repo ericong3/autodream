@@ -200,7 +200,6 @@ export default function Login() {
                 </button>
 
               </form>
-              <button type="button" className="block mx-auto text-white/50 hover:text-white/80 text-xs mt-5" onClick={() => navigate('/account/resend')}>Resend verification email</button>
             </div>
 
             <p className="text-white/45 text-[10px] text-center mt-8 tracking-[0.25em] uppercase font-sans">
