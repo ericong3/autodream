@@ -1,6 +1,3 @@
 import GarageShell from '../components/GarageShell';
-import StaffAccountAccess from './StaffAccountAccess';
-
-export default function GarageTeamMembers(){
- return <GarageShell title="Team Members" nav><StaffAccountAccess embedded/></GarageShell>;
-}
+import SharedTeamMembers from './SharedTeamMembers';
+export default function GarageTeamMembers(){return <GarageShell title="Team Members" nav><SharedTeamMembers/></GarageShell>;}

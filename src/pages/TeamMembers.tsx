@@ -1,5 +1,2 @@
-import StaffAccountAccess from './StaffAccountAccess';
-
-export default function TeamMembers(){
- return <StaffAccountAccess embedded/>;
-}
+import SharedTeamMembers from './SharedTeamMembers';
+export default function TeamMembers(){return <SharedTeamMembers/>;}
