@@ -1,4 +1,5 @@
 import StaffAccessLink from '../components/StaffAccessLink';
+import StaffAccountAccess from './StaffAccountAccess';
 
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -580,6 +581,8 @@ export default function TeamMembers() {
   const directorCount = teamUsers.filter((u) => u.role === 'director').length;
   const salespersonCount = teamUsers.filter((u) => u.role === 'salesperson').length;
   const mechanicCount = teamUsers.filter((u) => u.role === 'mechanic').length;
+
+  if(currentUser?.role==='director')return <StaffAccountAccess embedded/>;
 
   return (
     <div className="space-y-6"><StaffAccessLink />

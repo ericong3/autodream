@@ -1,4 +1,5 @@
 import StaffAccessLink from '../components/StaffAccessLink';
+import StaffAccountAccess from './StaffAccountAccess';
 
 import { useState } from 'react';
 import {
@@ -169,6 +170,8 @@ export default function GarageTeamMembers() {
     setPwSaving(false);
     setPwTarget(null);
   };
+
+  if(currentUser?.role==='director')return <GarageShell title="Team Members" nav><StaffAccountAccess embedded/></GarageShell>;
 
   return (
     <GarageShell title="Garage — Team Members" nav>
