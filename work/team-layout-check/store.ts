@@ -1,0 +1,1 @@
+export const useStore=(select:any)=>select({currentUser:{id:'sample-director',name:'Sample Director',username:'sample',role:new URLSearchParams(location.search).get('role')==='admin'?'admin':'director',businessAccess:'both'},payslips:[],payments:[],cars:[]});
