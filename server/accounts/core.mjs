@@ -19,8 +19,8 @@ async function rate(ctx,key,limit,window=900) {
   const r=await ctx.repo.throttleHit('account:'+sha(key),limit,window);
   if(!r.allowed)throw new ApiError(429,'RATE_LIMITED','Too many attempts. Please try again later.');
 }
-async function action(ctx,name,actor,data) {
-  const out=await ctx.repo.rpc('autodream_account_action',{p_action:name,p_actor:actor,p_data:data});
+async function action(ctx,name,actor,data,fn='autodream_account_action') {
+  const out=await ctx.repo.rpc(fn,{p_action:name,p_actor:actor,p_data:data});
   if(out.error){
     const m=out.error.message||'';
     if(m.includes('NOT_DIRECTOR'))throw new ApiError(403,'FORBIDDEN','Only directors can manage staff access.');
@@ -55,17 +55,19 @@ export async function handleAccounts(req,deps) {
     if(req.method==='GET') {
       const {user}=await authenticate(req,ctx,res,canUseApp);
       if(user.role!=='director')throw new ApiError(403,'FORBIDDEN','Only directors can manage staff access.');
-      return {status:200,body:await action(ctx,'list',user.id,{})};
+      const directory=await action(ctx,'list',user.id,{});
+      const existing=await action(ctx,'list',user.id,{},'autodream_existing_staff_action');
+      return {status:200,body:{...directory,accounts:[...directory.accounts,...existing.accounts]}};
     }
-    if(['invite','revoke','update'].includes(b.action)){
+    if(['invite','connect','revoke','update'].includes(b.action)){
       const {user}=await authenticate(req,ctx,{cookies:[]},canUseApp);
       if(user.role!=='director')throw new ApiError(403,'FORBIDDEN','Only directors can manage staff access.');
       await rate(ctx,'director:'+user.id,30);
-      if(b.action==='invite'){
+      if(b.action==='invite'||b.action==='connect'){
         onlyKeys(b,['action','role','businessAccess','targetId']);
-        if(b.targetId?!text(b.targetId,64):!access(b.role,b.businessAccess))throw new ApiError(400,'INVALID','Choose a valid role and business access.');
+        if(b.action==='connect'?(!text(b.targetId,64)||!access(b.role,b.businessAccess)):(b.targetId?!text(b.targetId,64):!access(b.role,b.businessAccess)))throw new ApiError(400,'INVALID','Choose a valid role and business access.');
         const token=ctx.random(32).toString('hex');
-        const result=await action(ctx,'invite',user.id,{id:ctx.random(16).toString('hex'),tokenHash:sha(token),role:b.role,businessAccess:b.businessAccess,targetId:b.targetId});
+        const result=await action(ctx,b.action==='connect'?'connect':'invite',user.id,{id:ctx.random(16).toString('hex'),tokenHash:sha(token),role:b.role,businessAccess:b.businessAccess,targetId:b.targetId},b.action==='connect'?'autodream_existing_staff_action':'autodream_account_action');
         return {status:201,body:{...result,link:`${config.origin}/#/account/register?token=${token}`}};
       }
       if(b.action==='revoke'){onlyKeys(b,['action','id']);if(!text(b.id,64))throw new ApiError(400,'INVALID','Choose an invitation.');}

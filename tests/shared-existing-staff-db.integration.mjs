@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {pathToFileURL} from 'node:url';
+import {resolve} from 'node:path';
+const root=process.argv[2];
+const {PGlite}=await import(pathToFileURL(resolve(root,'dist/index.js')));
+const {pgcrypto}=await import(pathToFileURL(resolve(root,'dist/contrib/pgcrypto.js')));
+const db=new PGlite({extensions:{pgcrypto}});
+await db.exec(`create role anon;create role authenticated;create role service_role;create schema extensions;create extension pgcrypto with schema extensions;
+create table users(id text primary key,name text not null,username text unique not null,password text not null,role text not null,business_access text,phone text,monthly_target integer,cars_in_month integer);`);
+for(const file of ['20261020000000_garage_building_projects.sql','20261020010000_garage_building_online_sessions.sql','20261020020000_garage_building_activation.sql','20261021000000_garage_login_roles.sql','20261021010000_autodream_staff_invitations.sql','20261024000000_shared_existing_staff.sql'])await db.exec(readFileSync(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));
+await db.exec(`insert into users(id,name,username,password,role,business_access) values ('d','Director','director','original','director','both'),('u','Used Car Staff','original-user','legacy-password','salesperson','used_car'),('g','Garage Staff','garage-user','legacy-g','garage_salesman','garage');
+insert into garage_building_staff(id,name,username,password,role,business_access,email_verified_at)values('d','Director','director',extensions.crypt('fixture',extensions.gen_salt('bf')),'director','both',now());`);
+const call=async(action,actor,data={})=>(await db.query('select public.autodream_existing_staff_action($1,$2,$3::jsonb) r',[action,actor,JSON.stringify(data)])).rows[0].r;
+const candidates=await call('list','d');assert.equal(candidates.accounts.length,2);assert.ok(candidates.accounts.every(a=>a.existingOnly&&!('password' in a)));assert.equal((await db.query('select count(*) n from garage_building_staff')).rows[0].n,1);
+await assert.rejects(()=>call('list','u'),/NOT_DIRECTOR/);
+await assert.rejects(()=>call('connect','d',{targetId:'u',role:'director',businessAccess:'used_car'}),/INVALID_ACCESS/);
+const inv=await call('connect','d',{targetId:'u',role:'admin',businessAccess:'used_car',id:'new-invite',tokenHash:'a'.repeat(64)});assert.equal(inv.role,'admin');
+const staff=(await db.query("select * from garage_building_staff where id='u'")).rows[0];assert.equal(staff.username,'original-user');assert.equal(staff.registration_status,'pending');assert.equal(staff.email_verified_at,null);assert.notEqual(staff.password,'legacy-password');assert.equal((await db.query("select password from users where id='u'")).rows[0].password,'legacy-password');
+await assert.rejects(()=>call('connect','d',{targetId:'u',role:'director',businessAccess:'both',id:'dup',tokenHash:'b'.repeat(64)}),/INVALID_ACCOUNT/);
+assert.equal((await call('list','d')).accounts.length,1);
+const oldAction=async(action,data)=>(await db.query('select public.autodream_account_action($1,null,$2::jsonb) r',[action,JSON.stringify(data)])).rows[0].r;
+const newHash=(await db.query("select extensions.crypt('staff-own-password',extensions.gen_salt('bf')) h")).rows[0].h;
+await oldAction('register',{tokenHash:'a'.repeat(64),emailTokenHash:'c'.repeat(64),staffId:'ignored-new-id',name:'Confirmed Staff',username:'original-user',email:'sample@example.com',phone:'0120000000',passwordHash:newHash});
+assert.equal((await db.query("select role from users where id='u'")).rows[0].role,'salesperson');
+await oldAction('verify',{tokenHash:'c'.repeat(64)});
+const verified=(await db.query("select *,extensions.crypt('staff-own-password',password)=password password_matches from garage_building_staff where id='u'")).rows[0];assert.equal(verified.registration_status,'active');assert.ok(verified.email_verified_at);assert.ok(verified.password_matches);assert.equal(verified.username,'original-user');
+const compatibility=(await db.query("select * from users where id='u'")).rows[0];assert.equal(compatibility.role,'admin');assert.equal(compatibility.password,'legacy-password');assert.equal(compatibility.username,'original-user');
+await assert.rejects(()=>oldAction('verify',{tokenHash:'c'.repeat(64)}),/INVALID_LINK/);
+await db.exec("update garage_building_staff set email_verified_at=null where id='d'");assert.equal((await call('list','d')).accounts.length,1,'legacy director retains setup access');
+for(const role of ['anon','authenticated']){await db.exec('set role '+role);await assert.rejects(()=>call('list','d'),/permission denied/);await db.exec('reset role');}
+console.log('Existing staff: director checks, safe directory, same ID/username, pending verification, legacy password unchanged, duplicate prevention and browser role denial passed.');await db.close();
+

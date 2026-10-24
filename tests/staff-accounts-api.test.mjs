@@ -59,3 +59,10 @@ test('password recovery does not await SMTP for an existing account',async()=>{
  assert.equal(out.status,200);assert.equal(w.messages.length,0);assert.equal(tasks.length,1);
  await tasks[0]();assert.equal(w.messages.length,1);
 });
+
+test('connecting existing staff requires director confirmation of role and access',async()=>{
+ const w=world(),cookie=await signIn(w);
+ for(const data of [{action:'connect',targetId:'old-id'},{action:'connect',targetId:'old-id',role:'director',businessAccess:'used_car'},{action:'connect',targetId:'old-id',role:'salesperson',businessAccess:'used_car',password:'forbidden'}])assert.equal((await handleAccounts(request(data,cookie),w.deps)).status,400);
+ const out=await handleAccounts(request({action:'connect',targetId:'old-id',role:'salesperson',businessAccess:'used_car'},cookie),w.deps);assert.equal(out.status,201);assert.equal(w.calls.at(-1).p_action,'connect');assert.equal(w.calls.at(-1).p_actor,'d1');assert.equal(w.calls.at(-1).p_data.targetId,'old-id');assert.equal(w.messages.length,0);
+ const other=world('shareholder'),otherCookie=await signIn(other);assert.equal((await handleAccounts(request({action:'connect',targetId:'old-id',role:'salesperson',businessAccess:'used_car'},otherCookie),other.deps)).status,403);
+});
