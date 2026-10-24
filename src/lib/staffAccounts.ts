@@ -1,4 +1,4 @@
-export interface StaffAccount { id:string;name:string;username:string;email:string|null;verified:boolean;role:string;businessAccess:string;enabled:boolean;status:string;existingOnly?:boolean }
+export interface StaffAccount { id:string;name:string;username:string;email:string|null;verified:boolean;role:string;businessAccess:string;enabled:boolean;status:string;existingOnly?:boolean;employmentStatus?:'current'|'former';lastWorkingDate?:string|null }
 export interface StaffInvitation { id:string;role:string;businessAccess:string;expiresAt:string;used:boolean;revoked:boolean }
 export async function accountRequest(data?:Record<string,unknown>):Promise<Record<string,unknown>> {
  const res=await fetch('/api/auth/accounts',{method:data?'POST':'GET',credentials:'same-origin',cache:'no-store',headers:{'X-Garage-Building':'1',...(data?{'Content-Type':'application/json'}:{})},body:data?JSON.stringify(data):undefined});

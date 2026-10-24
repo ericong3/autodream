@@ -334,6 +334,7 @@ export interface User {
   // profile-card display text while these are formal HR record fields.
   employeeId?: string;
   department?: string;
+  employmentStatus?: 'current'|'former';
   joiningDate?: string; // 'YYYY-MM-DD'
   capitalAmount?: number; // investor total capital in RM
   banks?: string[];       // for banker role — which banks they handle

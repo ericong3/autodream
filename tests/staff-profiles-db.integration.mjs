@@ -1,0 +1,35 @@
+process.on('uncaughtException',e=>{console.error(e.message,e.where||'',e.position,e.internalPosition,e.internalQuery||'');process.exit(1)});
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {pathToFileURL} from 'node:url';
+import {resolve} from 'node:path';
+const root=process.argv[2];
+const {PGlite}=await import(pathToFileURL(resolve(root,'dist/index.js')));
+const {pgcrypto}=await import(pathToFileURL(resolve(root,'dist/contrib/pgcrypto.js')));
+const db=new PGlite({extensions:{pgcrypto}});
+await db.exec(`create role anon;create role authenticated;create role service_role;create schema extensions;create extension pgcrypto with schema extensions;
+create table users(id text primary key,name text not null,username text unique not null,password text not null,role text not null,business_access text,phone text,monthly_target integer,cars_in_month integer);`);
+for(const file of ['20261020000000_garage_building_projects.sql','20261020010000_garage_building_online_sessions.sql','20261020020000_garage_building_activation.sql','20261021000000_garage_login_roles.sql','20261021010000_autodream_staff_invitations.sql','20261024000000_shared_existing_staff.sql','20261024010000_staff_profiles.sql'])await db.exec(readFileSync(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));
+
+await db.exec(`insert into users(id,name,username,password,role,business_access) values ('d','Director','director','legacy','director','both'),('a','Admin','admin','legacy','admin','used_car'),('u','Staff','staff','legacy','salesperson','used_car'),('s','Shareholder','shareholder','legacy','shareholder','both');
+insert into garage_building_staff(id,name,username,password,role,business_access,email_verified_at) select id,name,username,extensions.crypt('fixture',extensions.gen_salt('bf')),role,business_access,now() from users;`);
+const call=async(action,actor,data={})=>(await db.query('select public.autodream_staff_profile_action($1,$2,$3::jsonb) r',[action,actor,JSON.stringify(data)])).rows[0].r;
+assert.equal((await call('directory','a')).accounts.length,4);
+for(const actor of ['s','u'])await assert.rejects(()=>call('get',actor,{id:'u'}),/PROFILE_FORBIDDEN/);
+let profile=await call('get','d',{id:'u'});assert.equal(profile.revision,0);
+profile=await call('save','a',{id:'u',revision:0,data:{joiningDate:'2020-01-15',bankName:'Sample Bank',bankAccountNumber:'12345678',bankAccountHolder:'Sample Staff'}});assert.equal(profile.revision,1);assert.equal(profile.data.bankAccountNumber,'12345678');assert.equal(profile.history[0].actor_name,'Admin');assert.ok(profile.history[0].snapshot.changedFields.includes('bankAccountNumber'));assert.equal(profile.history[0].snapshot.bankAfter,'5678');assert.ok(!JSON.stringify(profile.history).includes('12345678'));
+assert.ok(!(JSON.stringify(await call('directory','a'))).includes('12345678'),'directory never contains bank data');
+await assert.rejects(()=>call('save','a',{id:'u',revision:0,data:{notes:'stale'}}),/PROFILE_CONFLICT/);
+await assert.rejects(()=>call('leave','a',{id:'u',revision:1,lastWorkingDate:'2025-01-01'}),/PROFILE_FORBIDDEN/);
+await assert.rejects(()=>call('leave','d',{id:'d',revision:0,lastWorkingDate:'2025-01-01'}),/LAST_DIRECTOR/);
+profile=await call('leave','d',{id:'u',revision:1,lastWorkingDate:'2025-01-01'});assert.equal(profile.employmentStatus,'former');assert.equal(profile.lastWorkingDate,'2025-01-01');assert.equal(profile.data.bankAccountNumber,'12345678');
+assert.equal((await db.query("select enabled from garage_building_staff where id='u'")).rows[0].enabled,false);
+assert.equal((await db.query("select staff_employment_status,password from users where id='u'")).rows[0].staff_employment_status,'former');
+await assert.rejects(()=>db.exec("delete from users where id='u'"),/foreign key/);
+await assert.rejects(()=>db.exec("update garage_building_staff set enabled=true where id='u'"),/INVALID_FORMER_STAFF/);
+profile=await call('restore','d',{id:'u',revision:profile.revision});assert.equal(profile.employmentStatus,'current');assert.equal((await db.query("select enabled from garage_building_staff where id='u'")).rows[0].enabled,false);
+await db.exec("alter table users add column joining_date text;alter table users add column bank_account_number text;insert into users(id,name,username,password,role,business_access,joining_date,bank_account_number)values('v','Legacy Staff','legacy-staff','legacy','salesperson','used_car','15/01/2024','invalid/account')");
+const old=await call('get','a',{id:'v'});assert.equal(old.data.joiningDate,'');assert.equal(old.data.bankAccountNumber,'');await call('save','a',{id:'v',revision:0,data:{notes:'Unrelated edit still works'}});
+await assert.rejects(()=>call('save','a',{id:'v',revision:1}),/PROFILE_INVALID/);
+for(const role of ['anon','authenticated']){await db.exec('set role '+role);await assert.rejects(()=>call('get','d',{id:'u'}),/permission denied/);await db.exec('reset role');}
+console.log('Staff profiles: role/privacy, bank saving, revision conflicts, current/former lifecycle, last director, retained IDs/bank details, deletion restriction and disabled rehire tests passed.');await db.close();

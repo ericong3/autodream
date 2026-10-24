@@ -852,6 +852,7 @@ function rowToUser(r: any): User {
     employeeId: r.employee_id ?? undefined,
     department: r.department ?? undefined,
     joiningDate: r.joining_date ?? undefined,
+    employmentStatus: r.staff_employment_status ?? 'current',
     capitalAmount: r.capital_amount ?? undefined,
     banks: r.banks ?? [],
     avatar: r.avatar ?? undefined,
@@ -1857,7 +1858,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       .select('*')
       .eq('username', username)
       .single();
-    if (data && await verifyPassword(password, data.password)) {
+    if (data && data.staff_employment_status !== 'former' && await verifyPassword(password, data.password)) {
       const user = rowToUser(data);
       set({ currentUser: user });
       // Load unread notifications for this user
@@ -2194,8 +2195,10 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   },
   deleteUser: async (id) => {
     if (secureGarageLoginEnabled()) throw new Error('Disable the account in Staff access instead.');
-    set((s) => ({ users: s.users.filter((u) => u.id !== id) }));
-    await supabase.from('users').delete().eq('id', id);
+    const previousUsers=get().users;
+    const {error}=await supabase.from('users').delete().eq('id',id);
+    if(error){set({users:previousUsers});throw new Error('Staff with history cannot be deleted. Use Former staff to keep their records.');}
+    set((s)=>({users:s.users.filter(u=>u.id!==id)}));
   },
 
   // Customers

@@ -1,0 +1,8 @@
+export {serviceLength} from '../../src/lib/staffProfiles';export type {StaffProfileData} from '../../src/lib/staffProfiles';
+const records:Record<string,any>={};const names:Record<string,string>={d:'Sample Director',s:'Sample Shareholder',u:'Sample Used Car Staff',g:'Sample Garage Staff'};
+const account=(id:string)=>({id,name:names[id],username:id,role:id==='d'?'director':id==='s'?'shareholder':id==='u'?'salesperson':'garage_salesman',businessAccess:id==='u'?'used_car':id==='g'?'garage':'both',verified:id==='d'||id==='g',enabled:true,existingOnly:id==='u'});
+export async function staffProfileRequest(input:any){
+ if(input.action==='directory')return {accounts:Object.keys(names).map(id=>({...account(id),employmentStatus:records[id]?.employmentStatus||'current',lastWorkingDate:records[id]?.lastWorkingDate||null}))};
+ const id=input.id;records[id]??={identity:account(id),data:{joiningDate:'2022-03-15',phone:'0100000000',bankName:'Sample Bank',bankAccountNumber:'12345678',bankAccountHolder:names[id],position:'Team member',employeeId:'DEMO-'+id,emergencyName:'Sample emergency contact',emergencyPhone:'0100000001',skills:'Tint and coating',notes:''},revision:0,employmentStatus:'current',lastWorkingDate:null,verified:true,history:[]};
+ const p=records[id];if(input.action==='save'){p.data=input.data;p.revision++;}if(input.action==='leave'){p.employmentStatus='former';p.lastWorkingDate=input.lastWorkingDate;p.revision++;}if(input.action==='restore'){p.employmentStatus='current';p.lastWorkingDate=null;p.revision++;}if(['save','leave','restore'].includes(input.action))p.history.unshift({action:input.action==='save'?'details_updated':input.action,recorded_at:new Date().toISOString(),snapshot:{revision:p.revision}});return structuredClone(p);
+}

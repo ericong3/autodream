@@ -163,6 +163,8 @@ function RequireDirector({ children }: { children: React.ReactNode }) {
 }
 
 
+function RequireTeamManagement({children}:{children:React.ReactNode}){const user=useStore(s=>s.currentUser);if(!user)return <Navigate to="/login" replace/>;if(!['director','shareholder','admin'].includes(user.role))return <Navigate to={roleHome(user.role)} replace/>;return <>{children}</>;}
+
 function RequireSalesOrDirector({ children }: { children: React.ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
   if (!currentUser) return <Navigate to="/login" replace />;
@@ -282,7 +284,7 @@ export default function App() {
           <Route path="/loan-cases" element={<RequireSalesOrDirector><LoanCases /></RequireSalesOrDirector>} />
           <Route path="/finance" element={<RequireDirector><Finance /></RequireDirector>} />
           <Route path="/payroll" element={<RequireDirector><Payroll /></RequireDirector>} />
-          <Route path="/team" element={<RequireDirector><TeamMembers /></RequireDirector>} />
+          <Route path="/team" element={<RequireTeamManagement><TeamMembers /></RequireTeamManagement>} />
           <Route path="/data" element={<RequireDataAccess><Data /></RequireDataAccess>} />
           <Route path="/investors" element={<RequireDirector><Investors /></RequireDirector>} />
           <Route path="/dashboard" element={<RequireDirector><Dashboard /></RequireDirector>} />

@@ -1,0 +1,21 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import bcrypt from 'bcryptjs';
+import {handleAccounts,accountConfig} from '../server/accounts/core.mjs';
+import {handleAppSession,COOKIE_NAME} from '../server/garageBuilding/core.mjs';
+const ORIGIN='https://app.example';
+const ENV={GARAGE_BUILDING_ONLINE:'1',SUPABASE_URL:'https://example.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'test-key-not-real-1234567890',GARAGE_SESSION_SECRET:'test-session-secret-not-real-1234567890',GARAGE_ALLOWED_ORIGINS:ORIGIN,AUTH_PUBLIC_ORIGIN:ORIGIN,AUTH_INVITES_ENABLED:'1',AUTH_GMAIL_USER:'sender@example.com',AUTH_GMAIL_APP_PASSWORD:'not-a-real-app-password'};
+const sha=s=>createHash('sha256').update(s).digest('hex');
+function request(body,cookie,method='POST'){return {method,url:'/api/auth/accounts',headers:{origin:ORIGIN,'x-garage-building':'1','content-type':'application/json','sec-fetch-site':'same-origin',...(cookie?{cookie:`${COOKIE_NAME}=${cookie}`}:{})},body:JSON.stringify(body),socketAddress:'203.0.113.4'};}
+function world(role='director'){
+ const users=new Map([['d1',{id:'d1',username:'director',name:'Director',role,business_access:role==='director'||role==='shareholder'?'both':'garage',enabled:true,password:bcrypt.hashSync('private-password',4)}]]),sessions=new Map(),calls=[],messages=[],limits=new Map();let seed=0;
+ const deps={env:ENV,bcrypt,now:()=>Date.parse('2026-10-20T10:00:00Z'),randomBytes:n=>Buffer.alloc(n,++seed),sendMail:async(...args)=>messages.push(args),repo:()=>({findUserByUsername:async n=>[...users.values()].find(u=>u.username===n),findUserById:async id=>users.get(id),createSession:async s=>sessions.set(sha(s.tokenHash),s),findSession:async token=>[...sessions.values()].find(s=>s.tokenHash===token),deleteSession:async token=>{for(const[k,s]of sessions)if(s.tokenHash===token)sessions.delete(k);},deleteExpiredSessions:async()=>{},touchSession:async()=>{},throttleClear:async()=>{},throttleHit:async(key,limit)=>{limits.set(key,(limits.get(key)||0)+1);return {allowed:limits.get(key)<=limit,retryAfter:900};},rpc:async(name,args)=>{calls.push(args);if(args.p_action==='invite_info')return {data:{role:'admin',businessAccess:'used_car'},error:null};if(args.p_action==='invite')return {data:{id:args.p_data.id,role:args.p_data.role,businessAccess:args.p_data.businessAccess},error:null};if(args.p_action==='register')return {data:{name:args.p_data.name,email:args.p_data.email},error:null};return {data:null,error:null};}})};
+ return {deps,users,sessions,calls,messages};
+}
+async function signIn(w){const out=await handleAppSession(request({username:'director',password:'private-password'}),w.deps);assert.equal(out.status,200);return [].concat(out.headers['Set-Cookie']).find(c=>c.startsWith(COOKIE_NAME+'=')&&!c.includes('Max-Age=0')).split(';')[0].slice(COOKIE_NAME.length+1);}
+
+import{handleStaffProfiles}from'../server/staffProfiles/core.mjs';
+test('staff profile API requires a session and restricts sensitive reads',async()=>{const w=world();assert.equal((await handleStaffProfiles(request({action:'get',id:'u'}),w.deps)).status,401);for(const role of ['shareholder','garage_head','salesperson']){const actor=world(role),cookie=await signIn(actor);assert.equal((await handleStaffProfiles(request({action:'get',id:'u'},cookie),actor.deps)).status,403);assert.equal(actor.calls.length,0);}});
+test('admin can edit profiles but cannot end or restore employment',async()=>{const w=world('admin'),cookie=await signIn(w);assert.equal((await handleStaffProfiles(request({action:'save',id:'u',revision:0,data:{joiningDate:'2020-01-01'}},cookie),w.deps)).status,200);assert.equal(w.calls[0].p_actor,'d1');for(const action of ['leave','restore'])assert.equal((await handleStaffProfiles(request({action,id:'u',revision:0,lastWorkingDate:'2025-01-01'},cookie),w.deps)).status,403);});
+test('profile requests reject forged actors, malformed dates and missing revisions',async()=>{const w=world(),cookie=await signIn(w);for(const data of [{action:'get',id:'u',actor:'director'},{action:'save',id:'u',data:{}},{action:'leave',id:'u',revision:0,lastWorkingDate:'today'},{action:'save',id:'u',revision:0,data:{joiningDate:'today'}}])assert.equal((await handleStaffProfiles(request(data,cookie),w.deps)).status,400);assert.equal(w.calls.length,0);});

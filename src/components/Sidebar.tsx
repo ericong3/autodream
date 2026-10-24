@@ -92,6 +92,7 @@ const bankerItems: NavItem[] = [
 ];
 
 const adminItems: NavItem[] = [
+  { to:'/team',icon:UsersRound,label:'Team Members' },
   { to: '/admin-dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/inventory',       icon: Car,             label: 'Inventory' },
   { to: '/workshop',        icon: Wrench,          label: 'Workshop'  },
