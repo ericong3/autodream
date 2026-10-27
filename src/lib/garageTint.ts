@@ -1,9 +1,10 @@
+import {validGlassLayout} from '../utils/vehicleGlass';
+import {installationMutation} from './garageInstallationReview';
 import { supabase } from './supabase';
 import type {
   TintSeries, TintPriceGroup, GarageVehicleSize, TintPackageType,
   TintPositionSelection, GarageTintOrder, GarageTintWorkOrderItem, GarageFilmStock,
 } from '../types';
-import { generateId } from '../utils/format';
 import { normalizeTintSelections } from '../utils/tintPricing';
 
 // Full Package price grid — keyed "series|size" for cheap client-side lookup.
@@ -44,6 +45,7 @@ export async function setPositionPrice(
 function rowToTintOrder(r: any): GarageTintOrder {
   return {
     invoiceId: r.invoice_id,
+    vehicleLayout:validGlassLayout(r.vehicle_layout)?r.vehicle_layout:undefined,
     packageType: r.package_type,
     fullSeries: r.full_series ?? undefined,
     // Stored as-is; orders from before the left/right split are expanded
@@ -135,19 +137,7 @@ export function isRequiredGlass(item: GarageTintWorkOrderItem): boolean {
 export async function ensureTintWorkOrderItems(
   invoiceId: string, selections: TintPositionSelection[],
 ): Promise<GarageTintWorkOrderItem[]> {
-  if (selections.length > 0) {
-    const rows = selections.map((sel) => ({
-      id: generateId(),
-      invoice_id: invoiceId,
-      position: sel.position,
-      requested_series: sel.series,
-      requested_vlt: sel.vlt,
-    }));
-    const { error } = await supabase
-      .from('garage_tint_installation_pieces')
-      .upsert(rows, { onConflict: 'invoice_id,position', ignoreDuplicates: true });
-    if (error) throw error;
-  }
+  void selections; // Items are seeded by trusted sale confirmation; browser cannot create work pieces.
   return listTintWorkOrderItems(invoiceId);
 }
 
@@ -163,25 +153,11 @@ export class GlassAlreadyTakenError extends Error {
   constructor(public takenBy?: string) { super('Someone else has just taken this glass'); }
 }
 
-function glassWorkError(error: { message?: string }): Error {
-  const msg = error.message ?? '';
-  const taken = msg.match(/GLASS_ALREADY_TAKEN ?(\S*)/);
-  if (taken) return new GlassAlreadyTakenError(taken[1] || undefined);
-  if (msg.includes('NOT_YOUR_GLASS')) return new Error('Only the installer who took this glass (or a Garage Head / Director / Shareholder) can change it');
-  if (msg.includes('NOT_IN_PROGRESS') || msg.includes('NOT_OPEN_FOR_INSTALLATION')) {
-    return new Error('Glass can only be changed while the installation is in progress — refresh to see the latest');
-  }
-  if (msg.includes('GLASS_NOT_TAKEN')) return new Error('Take this glass first');
-  if (msg.includes('GLASS_HAS_FILM_LOGGED')) return new Error('Clear the sqft logged on this glass before releasing it');
-  if (msg.includes('NOT_A_MANAGER')) return new Error('Only a Garage Head, Director or Shareholder can do that');
-  if (msg.includes('NOT_AN_INSTALLER')) return new Error('Only installers can take glass — management assigns it instead');
-  return error as Error;
-}
-
 async function glassStep(fn: string, args: Record<string, unknown>): Promise<GarageTintWorkOrderItem> {
-  const { data, error } = await supabase.rpc(fn, args);
-  if (error) throw glassWorkError(error);
-  return rowToItem(data);
+  const action=fn==='claim_garage_glass_item'?'claim':fn==='release_garage_glass_item'?'release':fn==='set_garage_glass_item_status'?(args.p_status==='installed'?'complete':'reopen'):fn==='set_garage_glass_item_remark'?'remark':null;
+  if(!action)throw new Error('Installers claim their own pieces. Correction work stays with the original installer.');
+  const response=await installationMutation(action,{itemId:String(args.p_item_id)},fn==='set_garage_glass_item_remark'?{value:args.p_remark}:{});
+  return rowToItem(response.result);
 }
 
 // An installer takes an available glass. Race-safe in the database: if two
@@ -234,26 +210,9 @@ export async function listFilmStock(): Promise<GarageFilmStock[]> {
 export async function setTintWorkOrderItemSqft(
   itemId: string, sqft: number, actorId: string,
 ): Promise<{ item: GarageTintWorkOrderItem; stock: GarageFilmStock | null }> {
-  const { data, error } = await supabase.rpc('set_garage_glass_item_sqft', {
-    p_item_id: itemId, p_sqft: sqft, p_actor_id: actorId,
-  });
-  if (error) {
-    const msg = error.message ?? '';
-    const short = msg.match(/INSUFFICIENT_FILM_STOCK (\w+) has ([\d.]+)/);
-    if (short) {
-      throw new Error(`Not enough ${short[1]} film in stock (${Number(short[2])} sqft left) — ask a manager to update Film Stock`);
-    }
-    if (msg.includes('NOT_YOUR_GLASS') || msg.includes('GLASS_NOT_TAKEN') || msg.includes('NOT_IN_PROGRESS')) throw glassWorkError(error);
-    if (msg.includes('INVALID_SQFT')) throw new Error('Enter a sqft of 0 or more');
-    if (msg.includes('NO_FILM_STOCK') || msg.includes('NO_SERIES_FOR_GLASS')) {
-      throw new Error('No film stock is set up for this glass\'s series — ask a manager');
-    }
-    throw error;
-  }
-  return {
-    item: rowToItem(data.item),
-    stock: data.stock ? rowToFilmStock(data.stock) : null,
-  };
+  void actorId;
+  const {result:data}=await installationMutation('sqft',{itemId},{value:sqft});
+  return {item:rowToItem(data.item),stock:data.stock?rowToFilmStock(data.stock):null};
 }
 
 export async function setFilmStockConfig(

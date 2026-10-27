@@ -1,3 +1,7 @@
+import {tintQuoteTotal} from '../utils/tintQuoteTotal';
+import GarageGlassSetup from '../components/GarageGlassSetup';
+import {defaultGlassLayout,vehicleGlassPositions,type VehicleGlassSelection,type VehicleGlassLayout} from '../utils/vehicleGlass';
+import {glassName} from '../components/GarageRenderedGlassMap';
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Car, Layers, AlertCircle } from 'lucide-react';
@@ -5,7 +9,7 @@ import GarageShell from '../components/GarageShell';
 import { getGarageVehicle } from '../lib/garageCustomers';
 import { getFullPrices, getPositionPrices } from '../lib/garageTint';
 import {
-  TINT_SERIES, EXTRA_GLASS_OPTIONS, VLT_OPTIONS, glassLayoutFor, glassZone, glassPrice,
+  TINT_SERIES, EXTRA_GLASS_OPTIONS, VLT_OPTIONS, glassZone, glassPrice,
 } from '../utils/tintPricing';
 import { formatRM } from '../utils/format';
 import type {
@@ -34,6 +38,8 @@ const isGlass = (s: TintPositionSelection) => glassZone(s.position) !== undefine
 // same shape this page originally sent to Summary.
 interface IncomingOrder {
   confirmationId?: string;
+  vehicleLayout?:VehicleGlassLayout;
+  agreedBase?:number;
   packageType: TintPackageType;
   fullSeries?: TintSeries;
   selections: TintPositionSelection[];
@@ -91,6 +97,9 @@ export default function GarageTintPackage() {
   const incoming = location.state as IncomingOrder | undefined;
   const [initialFullVlt] = useState(() => detectFullVlt(incoming?.packageType === 'full' ? incoming.selections : undefined));
 
+  const [glassConfig,setGlassConfig]=useState<VehicleGlassSelection>(()=>{const base=incoming?.vehicleLayout??defaultGlassLayout;return {...base,included:incoming?.vehicleLayout?incoming.selections.map(s=>s.position):vehicleGlassPositions(base)};});
+  const [agreedBase,setAgreedBase]=useState(incoming?.agreedBase!==undefined?String(incoming.agreedBase):'');
+  const [roofPrices,setRoofPrices]=useState<Record<string,string>>(()=>Object.fromEntries((incoming?.selections??[]).filter(s=>s.position.includes('roof')).map(s=>[s.position,String(s.price)])));
   const [vehicle, setVehicle] = useState<GarageVehicle | null>(null);
   const [fullPrices, setFullPrices] = useState<Record<string, number>>({});
   const [positionPrices, setPositionPrices] = useState<Record<string, number>>({});
@@ -137,7 +146,11 @@ export default function GarageTintPackage() {
   }, [vehicleId]);
 
   const size = vehicle?.size ?? 'standard';
-  const layout = glassLayoutFor(size);
+  const layout=vehicleGlassPositions(glassConfig).filter(p=>glassConfig.included.includes(p)).map(p=>({key:p as GlassPosition,label:glassName(glassConfig.body,p),zone:(p.startsWith('front_')&&!p.includes('roof')?'front':'rear') as 'front'|'rear'}));
+  const agreedVehicle=glassConfig.body==='van'||glassConfig.body==='bus';
+  const roofGlass=layout.filter(p=>p.key.includes('roof'));
+  const roofTotal=roofGlass.reduce((sum,p)=>sum+(Number(roofPrices[p.key])||0),0);
+  const selectedPrice=(position:GlassPosition,series:TintSeries)=>position.includes('roof')?Number(roofPrices[position])||0:agreedVehicle?0:glassPrice(position,series,positionPrices);
   const frontGlass = layout.filter((g) => g.zone === 'front');
   const rearGlass = layout.filter((g) => g.zone === 'rear');
   const availableExtras = EXTRA_GLASS_OPTIONS.filter((ex) => !ex.xlargeOnly || size === 'xlarge');
@@ -166,7 +179,7 @@ export default function GarageTintPackage() {
   const mixTotal = layout.reduce((sum, g) => {
     const sel = mixChoice(g.key);
     if (!sel.series) return sum;
-    return sum + glassPrice(g.key, sel.series, positionPrices);
+    return sum + selectedPrice(g.key,sel.series);
   }, 0);
   // Extras only ever add cost in Mix & Match — Full Package's price never
   // changes regardless of what's toggled on.
@@ -177,17 +190,20 @@ export default function GarageTintPackage() {
         return sum + glassPrice(ex.key, state.series, positionPrices);
       }, 0)
     : 0;
-  const subtotal = (packageType === 'full' ? fullPrice : mixTotal) + extrasTotal;
-  const finalTotal = Math.max(0, subtotal - discount);
+  const finalTotal=tintQuoteTotal({agreedBase:agreedVehicle?Number(agreedBase)||0:undefined,packageType,fullPrice,mixTotal,roofTotal,extrasTotal,discount});
 
   // Nothing is persisted here — this just validates and hands the built
   // order off to the Summary page (via router state), which is where the
   // invoice/tint order/installer job actually get created on Confirm.
   const handleContinue = () => {
+    if(!Number.isFinite(discount)||discount<0){setError('Enter a valid discount');return;}
+    if(!layout.length){setError('Choose at least one glass piece');return;}
+    if(agreedVehicle&&(agreedBase.trim()===''||!Number.isFinite(Number(agreedBase))||Number(agreedBase)<0)){setError('Enter the agreed job price');return;}
+    if(roofGlass.some(p=>roofPrices[p.key]===undefined||roofPrices[p.key].trim()===''||!Number.isFinite(Number(roofPrices[p.key]))||Number(roofPrices[p.key])<0)){setError('Enter the agreed add-on price for each roof section');return;}
     if (packageType === 'full') {
       if (!fullSeries) { setError('Choose a series for the Full Package'); return; }
       if (vltGroupMode === 'whole' && !wholeVlt) { setError('Choose a VLT for the whole car'); return; }
-      if (vltGroupMode === 'front_rear' && (!frontVlt || !rearVlt)) { setError('Choose a VLT for both the front and rear groups'); return; }
+      if (vltGroupMode === 'front_rear' && ((frontGlass.length>0&&!frontVlt)||(rearGlass.length>0&&!rearVlt))) { setError('Choose a VLT for both the front and rear groups'); return; }
       if (vltGroupMode === 'individual' && layout.some((g) => !fullVlt[g.key])) { setError('Choose a VLT for every window'); return; }
       if (availableExtras.some((ex) => extras[ex.key].included && !extras[ex.key].vlt)) { setError('Choose a VLT for every selected extra'); return; }
     } else {
@@ -200,10 +216,10 @@ export default function GarageTintPackage() {
     setError('');
     // One entry per individual glass on the car, in both modes.
     const selections: TintPositionSelection[] = packageType === 'full'
-      ? layout.map((g) => ({ position: g.key, series: fullSeries as TintSeries, vlt: effectiveFullVlt(g.key), price: 0 }))
+      ? layout.map((g) => ({ position: g.key, series: fullSeries as TintSeries, vlt: effectiveFullVlt(g.key), price:g.key.includes('roof')?Number(roofPrices[g.key]):0 }))
       : layout.map((g) => {
           const series = mixChoice(g.key).series as TintSeries;
-          return { position: g.key, series, vlt: mixChoice(g.key).vlt, price: glassPrice(g.key, series, positionPrices) };
+          return { position: g.key, series, vlt: mixChoice(g.key).vlt, price:selectedPrice(g.key,series) };
         });
     const extraSelections: TintPositionSelection[] = availableExtras
       .filter((ex) => extras[ex.key].included)
@@ -216,6 +232,8 @@ export default function GarageTintPackage() {
     navigate(`/garage/work-order/customer/${id}/vehicle/${vehicleId}/service/tinted/summary`, {
       state: {
         confirmationId: incoming?.confirmationId,
+        vehicleLayout:{body:glassConfig.body,roof:glassConfig.roof,sideRows:glassConfig.sideRows},
+        agreedBase:agreedVehicle?Number(agreedBase):undefined,
         packageType,
         fullSeries: packageType === 'full' ? (fullSeries as TintSeries) : undefined,
         selections,
@@ -245,6 +263,8 @@ export default function GarageTintPackage() {
           )}
         </div>
 
+        <GarageGlassSetup value={glassConfig} onApply={value=>{setGlassConfig(value);setError('');}}/>
+        {(agreedVehicle||roofGlass.length>0)&&<section className="mb-6 rounded-2xl border border-gold-400/25 bg-black/30 p-5 space-y-4" aria-label="Agreed pricing">{agreedVehicle&&<label className="block text-white/80 text-sm">Agreed job price (excluding roof add-ons)<input type="number" min="0" step="0.01" inputMode="decimal" value={agreedBase} onChange={e=>setAgreedBase(e.target.value)} placeholder="RM" className="block w-full mt-2 bg-black border border-white/20 rounded-xl p-3 text-white"/><span className="block mt-2 text-xs text-white/50">Enter the agreed amount after measuring and discussing the job.</span></label>}{roofGlass.map(p=><label key={p.key} className="block text-white/80 text-sm">{p.label} add-on price<input type="number" min="0" step="0.01" inputMode="decimal" value={roofPrices[p.key]??''} onChange={e=>setRoofPrices({...roofPrices,[p.key]:e.target.value})} placeholder="RM" className="block w-full mt-2 bg-black border border-white/20 rounded-xl p-3 text-white"/></label>)}</section>}
         {/* Package type toggle */}
         <div className="grid grid-cols-2 gap-3 mb-6 max-w-sm">
           {(['full', 'mix'] as TintPackageType[]).map((t) => (
@@ -519,14 +539,14 @@ export default function GarageTintPackage() {
             <div className="space-y-2.5 text-sm mb-4">
               {packageType === 'full' ? (
                 <div className="flex justify-between text-white/50">
-                  <span>Full Package Price</span>
-                  <span className="text-white">{formatRM(fullPrice)}</span>
+                  <span>{agreedVehicle?'Agreed job price':'Full Package Price'}</span>
+                  <span className="text-white">{formatRM(agreedVehicle?Number(agreedBase)||0:fullPrice)}</span>
                 </div>
               ) : (
                 <>
                   <div className="flex justify-between text-white/50">
-                    <span>Mix &amp; Match Total</span>
-                    <span className="text-white">{formatRM(mixTotal)}</span>
+                    <span>{agreedVehicle?'Agreed job price':'Mix & Match Total'}</span>
+                    <span className="text-white">{formatRM(agreedVehicle?Number(agreedBase)||0:mixTotal)}</span>
                   </div>
                   {extrasTotal > 0 && (
                     <div className="flex justify-between text-white/50">
@@ -538,6 +558,7 @@ export default function GarageTintPackage() {
               )}
             </div>
 
+            {roofTotal>0&&(packageType==='full'||agreedVehicle)&&<p className="flex justify-between text-sm text-white/70 mb-4"><span>Roof add-ons</span><span>{formatRM(roofTotal)}</span></p>}
             {showDiscount ? (
               <div className="flex items-center justify-between gap-3 py-3 border-t border-white/10">
                 <label className="text-white/50 text-sm">Discount</label>

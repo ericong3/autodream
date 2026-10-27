@@ -65,7 +65,7 @@ export type GlassPosition =
   | 'front_left_window' | 'front_right_window'
   | 'rear_left_window' | 'rear_right_window'
   | 'rear_left_panel_window' | 'rear_right_panel_window'
-  | 'rear_windscreen';
+  | 'rear_windscreen' | 'front_roof_glass' | 'rear_roof_glass' | 'panoramic_roof_glass' | `side_${'left'|'right'}_${number}`;
 // Key into the Mix & Match price grid (garage_tint_position_prices). Prices
 // are per individual window, so each GlassPosition bills at its group's
 // rate — e.g. all 4 door windows bill at the 'door_window' rate each.
@@ -92,6 +92,7 @@ export interface TintPositionSelection {
 // itself, so Coating/PPF/Spray can each get their own detail shape later
 // without this one growing unrelated columns.
 export interface GarageTintOrder {
+  vehicleLayout?: import('../utils/vehicleGlass').VehicleGlassLayout;
   invoiceId: string;
   packageType: TintPackageType;
   // Full Package: one series for the whole car (every selections[].series is
@@ -117,6 +118,8 @@ export type GarageWorkStatus =
   | 'in_progress'
   | 'pending_approval' // installers submitted; awaiting the Garage Head
   | 'installation_completed' // passed through only, never displayed
+  | 'sales_inspection'
+  | 'head_correction_review'
   | 'payment_due'
   | 'ready_for_delivery'
   | 'ready_for_warranty'

@@ -1,0 +1,1 @@
+export const createInstallerJob=async()=>{if(new URL(window.location.href).searchParams.get('fail')==='installer')throw new Error('Simulated installer save failure');};

@@ -15,7 +15,7 @@ import { GLASS_LABEL, TINT_SERIES } from './tintPricing';
 // Tinted installation is team work (per-glass installers), so there's no
 // single "installer accepts the car" step: Created → Installation →
 // Approval (Garage Head) → Payment → Delivery → Warranty → Closed.
-export type PipelineStageKey = 'created' | 'installation' | 'approval' | 'payment' | 'delivery' | 'warranty' | 'closed';
+export type PipelineStageKey = 'created' | 'installation' | 'approval' | 'inspection' | 'payment' | 'delivery' | 'warranty' | 'closed';
 export type PipelineStageState = 'done' | 'current' | 'upcoming';
 
 export interface PipelineFact {
@@ -43,6 +43,7 @@ const RESPONSIBLE: Record<PipelineStageKey, string> = {
   created: 'Salesman',
   installation: 'Installers',
   approval: 'Garage Head',
+  inspection:'Salesman',
   payment: 'Salesman',
   delivery: 'Salesman',
   warranty: 'Salesman',
@@ -147,6 +148,8 @@ const CURRENT_STAGE: Record<WorkOrderStage, PipelineStageKey> = {
   installer_assigned: 'installation',
   in_progress: 'installation',
   pending_approval: 'approval',
+  sales_inspection:'inspection',
+  head_correction_review:'approval',
   payment_due: 'payment',
   ready_for_delivery: 'delivery',
   ready_for_warranty: 'warranty',
@@ -177,7 +180,8 @@ export function buildWorkOrderPipeline(
   const done: Record<PipelineStageKey, boolean> = {
     created: true,
     installation: installDone || submitted,
-    approval: installDone,
+    approval: installDone && stage!=='head_correction_review',
+    inspection:['payment_due','ready_for_delivery','ready_for_warranty','closed'].includes(stage),
     payment: paid,
     delivery: !!invoice.deliveredAt,
     warranty: !!invoice.warrantyRegisteredAt,
@@ -234,12 +238,15 @@ export function buildWorkOrderPipeline(
         ...(job?.returnedAt ? [{ label: 'Last returned', at: job.returnedAt, by: nameOf(job.returnedBy) }] : []),
         ...(job?.approvedAt ? [{ label: 'Approved', at: job.approvedAt, by: nameOf(job.approvedBy) }] : []),
         ...(!job?.approvedAt && job?.completedAt ? [{ label: 'Completed', at: job.completedAt, by: nameOf(job.completedBy ?? job.acceptedBy) }] : []),
-        ...(job?.finalInspectionAt ? [{ label: 'Final inspection confirmed', at: job.finalInspectionAt }] : []),
+        ...(job?.finalInspectionAt ? [{ label: 'Garage Head inspection confirmed', at: job.finalInspectionAt }] : []),
       ],
       note: installDone
         ? job?.remark ? `Remarks: ${job.remark}` : 'Installation approved after final inspection.'
         : submitted ? 'Waiting for the Garage Head to inspect and approve.'
         : 'The Garage Head approves once every glass is installed and submitted.',
+    },
+    {
+      key:'inspection',label:'Salesman Check',state:stateOf('inspection'),headline:stage==='sales_inspection'?'Final inspection needed':done.inspection?'Inspection passed':'Salesman Check',facts:[],note:'The owning salesman checks the finished work. Problems return to Garage Head.',
     },
     {
       key: 'payment',

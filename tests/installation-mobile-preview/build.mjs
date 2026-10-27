@@ -1,0 +1,2 @@
+import {build} from 'vite';import react from '@vitejs/plugin-react';import{resolve}from'node:path';
+await build({configFile:false,root:resolve('tests/installation-mobile-preview'),base:'/installation/',publicDir:false,plugins:[react()],resolve:{alias:[{find:/^\.\.\/store$/,replacement:resolve('tests/installation-ui/store.ts')},{find:/^\.\.\/lib\/garageInstallationReview$/,replacement:resolve('tests/installation-mobile-preview/adapter.ts')}]},build:{outDir:resolve('outputs/installation-mobile-public'),emptyOutDir:true}});

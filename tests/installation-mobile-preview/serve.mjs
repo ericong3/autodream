@@ -1,0 +1,1 @@
+import{createServer}from'vite';import{resolve}from'node:path';const s=await createServer({configFile:false,root:resolve('outputs/installation-mobile-public'),base:'/installation/',server:{host:'127.0.0.1',port:5193,strictPort:true}});await s.listen();console.log('Car diagram preview http://127.0.0.1:5193/installation/');

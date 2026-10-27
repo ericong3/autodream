@@ -1,3 +1,4 @@
+import {installationMutation} from './garageInstallationReview';
 import { supabase } from './supabase';
 import type { GarageInstallerJob, GarageService } from '../types';
 import { generateId } from '../utils/format';
@@ -65,26 +66,10 @@ export async function getInstallerJobForInvoice(invoiceId: string): Promise<Gara
   return data ? rowToJob(data) : null;
 }
 
-const INSTALLATION_ERRORS: Record<string, string> = {
-  NOT_AN_INSTALLER: 'Only installers (or a Garage Head / Director / Shareholder) can start installation',
-  NOT_A_MANAGER: 'Only a Garage Head, Director or Shareholder can do that',
-  NOT_OPEN_FOR_INSTALLATION: 'This car isn\'t open for installation any more — refresh and try again',
-  NOT_IN_PROGRESS: 'The installation isn\'t in progress — refresh and try again',
-  NOT_ON_THIS_JOB: 'Only an installer who worked on this car (or management) can submit it',
-  GLASS_NOT_ALL_CONFIRMED: 'Every glass must be installed before submitting',
-  NOT_PENDING_APPROVAL: 'This installation isn\'t waiting for approval — refresh and try again',
-  FINAL_INSPECTION_REQUIRED: 'Confirm the final inspection first',
-  RETURN_REASON_REQUIRED: 'Give a reason for returning it',
-  INSTALLATION_FINISHED: 'The installation is already approved',
-};
-
 async function installationStep(fn: string, args: Record<string, unknown>): Promise<GarageInstallerJob> {
-  const { data, error } = await supabase.rpc(fn, args);
-  if (error) {
-    const known = Object.keys(INSTALLATION_ERRORS).find((code) => error.message?.includes(code));
-    throw known ? new Error(INSTALLATION_ERRORS[known]) : error;
-  }
-  return rowToJob(data);
+  const actions:Record<string,string>={start_garage_installer_job:'start',submit_garage_installation:'confirm',approve_garage_installation:'head_approve',return_garage_installation:'head_return',set_garage_installation_eta:'eta'};
+  const response=await installationMutation(actions[fn],{jobId:String(args.p_job_id)}, {...(fn==='approve_garage_installation'?{value:true}:{}),...(fn==='set_garage_installation_eta'?{value:args.p_eta}:{}),...(fn==='return_garage_installation'?{reason:args.p_reason,itemIds:args.p_item_ids}: {})});
+  return rowToJob(response.job);
 }
 
 // Start the car (any installer or management). Claiming a glass also
@@ -99,8 +84,8 @@ export function submitInstallation(jobId: string, actorId: string): Promise<Gara
   return installationStep('submit_garage_installation', { p_job_id: jobId, p_actor_id: actorId });
 }
 
-// Garage Head / Director / Shareholder approves after final inspection:
-// paid → ready for delivery, unpaid → payment due. Locks the installation.
+// Only Garage Head approves workshop quality; salesman checks separately.
+// Both inspections and payment are required before delivery.
 export function approveInstallation(
   jobId: string, actorId: string, finalInspectionDone: boolean, remark?: string,
 ): Promise<GarageInstallerJob> {

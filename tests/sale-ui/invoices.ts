@@ -1,0 +1,1 @@
+export const uploadInvoiceReceipt=async(id:string)=>{const r=await fetch('/api/test-sales',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'receipt',id})});if(!r.ok)throw new Error('Simulated receipt upload failure. Sale remains saved.');};

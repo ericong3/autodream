@@ -35,7 +35,7 @@ type PipelineTab = 'installer' | 'delivery' | 'warranty' | 'closed';
 
 const PIPELINE_TABS: { key: PipelineTab; label: string; stages: WorkOrderStage[] }[] = [
   { key: 'installer', label: 'Ongoing', stages: ['waiting_for_installer', 'installer_assigned', 'in_progress', 'pending_approval'] },
-  { key: 'delivery', label: 'Handover', stages: ['payment_due', 'ready_for_delivery'] },
+  { key: 'delivery', label: 'Handover', stages: ['sales_inspection','head_correction_review','payment_due', 'ready_for_delivery'] },
   { key: 'warranty', label: 'Warranty', stages: ['ready_for_warranty'] },
   { key: 'closed', label: 'Closed', stages: ['closed'] },
 ];

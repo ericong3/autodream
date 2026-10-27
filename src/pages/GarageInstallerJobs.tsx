@@ -60,6 +60,7 @@ const STAGE_CONFIG: Record<StageKey, { label: string; node: string; nodeActive: 
 // installer_assigned (one installer had claimed the car) counts as In
 // Progress.
 function stageOf(job: GarageInstallerJob, invoice: GarageInvoice): StageKey | null {
+  if (invoice.workStatus==='head_correction_review') return 'approval';
   if (job.status === 'completed') return 'completed';
   switch (invoice.workStatus) {
     case 'waiting_for_installer': return 'waiting';

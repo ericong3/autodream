@@ -1,3 +1,5 @@
+import GarageJobGlassMap from '../components/GarageJobGlassMap';
+import GarageInstallationReview from '../components/GarageInstallationReview';
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
@@ -50,6 +52,7 @@ export default function GarageInvoiceDetail() {
   const currentUser = useStore((s) => s.currentUser);
   const allUsers = useStore((s) => s.users);
 
+  const [inspectionReady,setInspectionReady]=useState(false);
   const [invoice, setInvoice] = useState<GarageInvoice | null>(null);
   const [vehicle, setVehicle] = useState<GarageVehicle | null>(null);
   const [customer, setCustomer] = useState<GarageCustomer | null>(null);
@@ -252,7 +255,7 @@ export default function GarageInvoiceDetail() {
 
   // The one action that moves this work order forward from where it is —
   // the pipeline itself is read-only.
-  const mainAction: { label: string; icon: typeof CheckCircle2; onClick: () => void } | null = isInstaller ? null
+  const mainAction: { label: string; icon: typeof CheckCircle2; onClick: () => void } | null = isInstaller || (invoice.service==='tinted' && !inspectionReady) ? null
     : stage === 'payment_due' ? { label: 'Collect Payment', icon: Banknote, onClick: openCollectPayment }
     : stage === 'ready_for_delivery' ? { label: 'Complete Delivery', icon: Car, onClick: () => { setActionError(''); setConfirmStep('deliver'); } }
     : stage === 'ready_for_warranty' ? { label: 'Register Warranty', icon: Award, onClick: () => { setActionError(''); setConfirmStep('warranty'); } }
@@ -262,6 +265,8 @@ export default function GarageInvoiceDetail() {
     installer_assigned: 'Waiting for installers to start',
     in_progress: 'Installation in progress',
     pending_approval: 'Installation awaiting Garage Head approval',
+    sales_inspection:'Waiting for salesman inspection',
+    head_correction_review:'Garage Head is arranging corrections',
     payment_due: 'Waiting for payment',
     ready_for_delivery: 'Ready for delivery',
     ready_for_warranty: 'Waiting for warranty registration',
@@ -271,6 +276,8 @@ export default function GarageInvoiceDetail() {
   return (
     <GarageShell title={invoice.invoiceNumber} showBack backTo={backTo}>
       <div className="max-w-5xl mx-auto space-y-5">
+        {invoice.service==='tinted'&&tintOrder&&<GarageJobGlassMap items={glassItems} layout={tintOrder.vehicleLayout} userId={currentUser?.id} workStatus={invoice.workStatus}/>}
+        {invoice.service==='tinted' && <GarageInstallationReview invoiceId={invoice.id} ownerId={invoice.createdBy} items={glassItems} onChange={refreshProgress} onReady={setInspectionReady}/> }
         {/* Header — which job this is, and the one action that moves it on */}
         <div className="relative overflow-hidden rounded-[24px] p-6 sm:p-7
           bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
@@ -388,7 +395,7 @@ export default function GarageInvoiceDetail() {
                   {[...tintOrder.selections, ...tintOrder.extras].map((sel) => (
                     <div key={sel.position} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
                       <span className="text-white/75">{GLASS_LABEL[sel.position] ?? sel.position}</span>
-                      <span className="text-white font-semibold">{TINT_SERIES_LABEL[sel.series]} {sel.vlt.replace('%', '')}</span>
+                      <span className="text-white font-semibold">{TINT_SERIES_LABEL[sel.series]} {sel.vlt.replace('%', '')}{sel.position.includes('roof')?' · Add-on '+formatRM(sel.price):''}</span>
                     </div>
                   ))}
                 </div>

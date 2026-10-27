@@ -22,7 +22,9 @@ const TINT_SERIES_LABEL = Object.fromEntries(TINT_SERIES.map((s) => [s.key, s.la
 // Built by GarageTintPackage and handed over via router state — nothing is
 // persisted until the Payment page's final Confirm is pressed.
 export interface PendingTintOrder {
+  vehicleLayout?: import('../utils/vehicleGlass').VehicleGlassLayout;
   confirmationId?: string;
+  agreedBase?:number;
   packageType: TintPackageType;
   fullSeries?: TintSeries;
   selections: TintPositionSelection[];
@@ -156,11 +158,12 @@ export default function GarageWorkOrderSummary() {
                 {pending.packageType === 'full' && pending.fullSeries && (
                   <p className="text-white text-sm mb-3">{TINT_SERIES_LABEL[pending.fullSeries]} — same series for every window</p>
                 )}
+                {pending.agreedBase!==undefined&&<p className="text-white/70 text-sm mb-3">Agreed job price: {formatRM(pending.agreedBase)} (roof add-ons extra)</p>}
                 <div className="space-y-1.5">
                   {pending.selections.map((sel) => (
                     <div key={sel.position} className="flex items-center justify-between text-sm">
                       <span className="text-white/60">{GLASS_LABEL[sel.position]}</span>
-                      <span className="text-white">{TINT_SERIES_LABEL[sel.series]} · {sel.vlt}</span>
+                      <span className="text-white">{TINT_SERIES_LABEL[sel.series]} · {sel.vlt}{sel.position.includes('roof')?' · Add-on '+formatRM(sel.price):''}</span>
                     </div>
                   ))}
                 </div>
@@ -171,7 +174,7 @@ export default function GarageWorkOrderSummary() {
                     {pending.extras.map((sel) => (
                       <div key={sel.position} className="flex items-center justify-between text-sm">
                         <span className="text-white/60">{GLASS_LABEL[sel.position]}</span>
-                        <span className="text-white">{TINT_SERIES_LABEL[sel.series]} · {sel.vlt}</span>
+                        <span className="text-white">{TINT_SERIES_LABEL[sel.series]} · {sel.vlt}{sel.position.includes('roof')?' · Add-on '+formatRM(sel.price):''}</span>
                       </div>
                     ))}
                   </div>

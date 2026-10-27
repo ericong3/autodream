@@ -8,6 +8,7 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
+          'garage-glass': ['./src/components/GarageRenderedGlassMap.tsx','./src/components/GarageGlassSetup.tsx','./src/components/GarageJobGlassMap.tsx'],
           'vendor-react':    ['react', 'react-dom', 'react-router-dom'],
           'vendor-supabase': ['@supabase/supabase-js'],
           'vendor-dnd':      ['@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/utilities'],

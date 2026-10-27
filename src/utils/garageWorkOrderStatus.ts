@@ -9,7 +9,9 @@ export const WORK_ORDER_STAGE_LABEL: Record<WorkOrderStage, string> = {
   waiting_for_installer: 'Waiting for Installer',
   installer_assigned: 'Installer Assigned', // legacy only
   in_progress: 'In Progress',
-  pending_approval: 'Pending Approval',
+  pending_approval: 'Garage Head Inspection',
+  sales_inspection:'Salesman Inspection',
+  head_correction_review:'Garage Head: Correction Review',
   payment_due: 'Payment Due Before Delivery',
   ready_for_delivery: 'Ready for Delivery',
   ready_for_warranty: 'Delivered — Register Warranty',
@@ -21,6 +23,8 @@ export const WORK_ORDER_STAGE_BADGE: Record<WorkOrderStage, string> = {
   installer_assigned: 'bg-violet-500/15 border-violet-500/30 text-violet-300',
   in_progress: 'bg-blue-500/15 border-blue-500/30 text-blue-400',
   pending_approval: 'bg-indigo-500/15 border-indigo-400/40 text-indigo-300',
+  sales_inspection:'bg-gold-500/15 border-gold-400/40 text-gold-400',
+  head_correction_review:'bg-orange-500/15 border-orange-500/30 text-orange-400',
   payment_due: 'bg-orange-500/15 border-orange-500/30 text-orange-400',
   ready_for_delivery: 'bg-gold-500/15 border-gold-400/40 text-gold-400',
   ready_for_warranty: 'bg-gold-500/15 border-gold-400/40 text-gold-400',
@@ -32,8 +36,10 @@ export const WORK_ORDER_STAGE_BADGE: Record<WorkOrderStage, string> = {
 export const WORK_ORDER_NEXT_ACTION: Record<WorkOrderStage, string> = {
   waiting_for_installer: 'Installers to take glass and start the car',
   installer_assigned: 'Installers to start the car',
-  in_progress: 'Installers to finish every glass and submit for approval',
+  in_progress: 'Each installer to finish and confirm their own work',
   pending_approval: 'Garage Head to review and approve the installation',
+  sales_inspection:'Salesman to check the finished work',
+  head_correction_review:'Garage Head to return affected pieces to the original installers',
   payment_due: 'Salesman to collect payment',
   ready_for_delivery: 'Salesman to hand the car back to the customer',
   ready_for_warranty: 'Salesman to register the e-warranty',
@@ -42,7 +48,7 @@ export const WORK_ORDER_NEXT_ACTION: Record<WorkOrderStage, string> = {
 
 // List ordering — whatever needs someone's action leads.
 export const WORK_ORDER_STAGE_ORDER: Record<WorkOrderStage, number> = {
-  pending_approval: 0, payment_due: 1, ready_for_delivery: 2, in_progress: 3, installer_assigned: 4,
+  sales_inspection:0,head_correction_review:0,pending_approval: 0, payment_due: 1, ready_for_delivery: 2, in_progress: 3, installer_assigned: 4,
   waiting_for_installer: 5, ready_for_warranty: 6, closed: 7,
 };
 

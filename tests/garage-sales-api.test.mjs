@@ -1,0 +1,23 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import bcrypt from 'bcryptjs';
+import {handleSales} from '../server/sales/core.mjs';
+import {handleAppSession,COOKIE_NAME} from '../server/garageBuilding/core.mjs';
+const origin='https://app.example';
+function fixture(role='garage_salesman',access='garage'){
+ const user={id:'sales-a',username:'staff',name:'Sample',password:bcrypt.hashSync('test-password',4),role,business_access:access,enabled:true,registration_status:'active'};
+ const sessions=new Map(),calls=[];
+ const repo={findUserByUsername:async()=>user,findUserById:async()=>user,createSession:async s=>sessions.set(s.tokenHash,s),findSession:async h=>sessions.get(h),touchSession:async()=>{},deleteSession:async h=>sessions.delete(h),deleteExpiredSessions:async()=>{},throttleHit:async()=>({allowed:true}),throttleClear:async()=>{},rpc:async(fn,args)=>{calls.push({fn,args});return {data:{enquiries:[]}};}};
+ const deps={env:{GARAGE_ENQUIRIES_ONLINE:'1',GARAGE_BUILDING_ONLINE:'1',SUPABASE_URL:'https://example.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'not-real-service-key-123456789',GARAGE_SESSION_SECRET:'not-real-session-secret-123456789012345',GARAGE_ALLOWED_ORIGINS:origin},bcrypt,repo:()=>repo};
+ const req=(body,cookie,method='POST')=>({method,url:'/api/garage/sales',headers:{origin,'x-garage-building':'1','content-type':'application/json',...(cookie?{cookie}:{})},body:body===undefined?undefined:JSON.stringify(body)});
+ const login=async()=>{const r=await handleAppSession(req({username:'staff',password:'test-password'}),deps);assert.equal(r.status,200);return [].concat(r.headers['Set-Cookie']).find(c=>c.startsWith(COOKIE_NAME+'=')&&!c.includes('Max-Age=0')).split(';')[0];};
+ return {user,repo,deps,calls,req,login};
+}
+test('sale confirmation requires a verified private session',async()=>{const w=fixture();assert.equal((await handleSales(w.req({action:'status',requestId:'sample-recovery-0001'}),w.deps)).status,401);assert.equal(w.calls.length,0);});
+test('sale recovery identity is server derived',async()=>{const w=fixture(),cookie=await w.login();assert.equal((await handleSales(w.req({action:'status',requestId:'sample-recovery-0001'},cookie),w.deps)).status,200);assert.equal(w.calls[0].fn,'garage_sale_confirmation');assert.equal(w.calls[0].args.p_actor,'sales-a');assert.equal((await handleSales(w.req({action:'status',requestId:'sample-recovery-0001',actorId:'other'},cookie),w.deps)).status,400);});
+test('used car staff and installers cannot confirm Garage sales',async()=>{for(const [role,access] of [['salesperson','used_car'],['garage_installer','garage']]){const w=fixture(role,access),cookie=await w.login();assert.equal((await handleSales(w.req({action:'status',requestId:'sample-recovery-0001'},cookie),w.deps)).status,403);}});
+test('malformed recovery keys and missing sale objects fail before RPC',async()=>{const w=fixture(),cookie=await w.login();for(const data of [{action:'status',requestId:'short'},{action:'confirm',requestId:'sample-recovery-0001'},{action:'confirm',requestId:'sample-recovery-0001',sale:{owner:'forged'}}])assert.equal((await handleSales(w.req(data,cookie),w.deps)).status,400);assert.equal(w.calls.length,0);});
+test('changed payload and uncertain result errors are safe',async()=>{for(const [message,code,status] of [['REQUEST_CHANGED','P0001',409],['REVISION_CONFLICT','P0001',409],['NOT_ALLOWED','P0001',403],['private details','XX000',503],['private details','42P01',503]]){const w=fixture(),cookie=await w.login();w.repo.rpc=async()=>({error:{message,code}});const r=await handleSales(w.req({action:'status',requestId:'sample-recovery-0001'},cookie),w.deps);assert.equal(r.status,status);assert.ok(!r.body.includes('private details'));}});
+test('cross-origin sale confirmation is refused',async()=>{const w=fixture(),cookie=await w.login(),req=w.req({action:'status',requestId:'sample-recovery-0001'},cookie);req.headers.origin='https://evil.example';assert.equal((await handleSales(req,w.deps)).status,403);});
+
+test('vehicle layout and agreed pricing pass through authenticated sale API intact',async()=>{const w=fixture(),cookie=await w.login();const pending={vehicleLayout:{body:'van',roof:'split',sideRows:4},agreedBase:1600,packageType:'full',fullSeries:'eco',selections:[{position:'front_roof_glass',series:'eco',vlt:'35%',price:75}],extras:[],discount:0,finalTotal:1675};const sale={customerId:'customer',vehicleId:'vehicle',paymentStatus:'pending',remark:'',pending,addons:[],booking:{mode:'none'},receiptExpected:false};const r=await handleSales(w.req({action:'confirm',requestId:'layout-through-api-0001',sale},cookie),w.deps);assert.equal(r.status,200);assert.deepEqual(w.calls[0].args.p_sale.pending,pending);});

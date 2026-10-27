@@ -1,3 +1,4 @@
+import {installationMutation} from './garageInstallationReview';
 import { supabase } from './supabase';
 import type {
   GarageInvoice, GarageInvoiceClaim, GarageInvoiceAddon, GarageService, GarageClaimType,
@@ -139,22 +140,10 @@ export async function discardGarageInvoice(invoiceId: string): Promise<void> {
 // step is still outstanding (so a double tap / second device can't
 // overwrite who did it), refuses installers, updates the work order and
 // writes its activity-history entry in one atomic step.
-const SALESMAN_STEP_ERRORS: Record<string, string> = {
-  WORK_ORDER_CLOSED: 'This work order is closed',
-  CANNOT_TAKE_PAYMENT: 'Payment can only be collected before the car is delivered',
-  NOT_ALLOWED_FOR_INSTALLER: 'Installers can\'t collect payment, deliver or close a work order',
-  ALREADY_PAID: 'This work order has already been paid',
-  NOT_READY_FOR_DELIVERY: 'Not ready for delivery — installation must be completed and payment collected',
-  NOT_READY_FOR_WARRANTY: 'Deliver the car before registering the warranty',
-};
-
 async function salesmanStep(fn: string, args: Record<string, unknown>): Promise<GarageInvoice> {
-  const { data, error } = await supabase.rpc(fn, args);
-  if (error) {
-    const known = Object.keys(SALESMAN_STEP_ERRORS).find((code) => error.message?.includes(code));
-    throw known ? new Error(SALESMAN_STEP_ERRORS[known]) : error;
-  }
-  return rowToInvoice(data);
+  const action=fn==='mark_garage_work_order_paid'?'pay':fn==='deliver_garage_work_order'?'deliver':'warranty';
+  const {result}=await installationMutation(action,{invoiceId:String(args.p_invoice_id)},action==='pay'?{value:args.p_method}:{});
+  return rowToInvoice(result);
 }
 
 // Collect Payment — for Pay Later orders. Records the method (none was
@@ -196,14 +185,8 @@ export async function uploadInvoiceReceipt(invoiceId: string, file: File, recove
   const { error: uploadError } = await supabase.storage.from('garage-invoice-receipts').upload(path, file);
   // The identical upload can already exist if its successful reply was lost.
   if (uploadError && !(recoveryKey && ((uploadError as {status?:number}).status===409 || String((uploadError as {statusCode?:string}).statusCode)==='409'))) throw uploadError;
-  const { data, error } = await supabase
-    .from('garage_invoices')
-    .update({ receipt_path: path, receipt_name: file.name })
-    .eq('id', invoiceId)
-    .select()
-    .single();
-  if (error) throw error;
-  return rowToInvoice(data);
+  const {result}=await installationMutation('receipt',{invoiceId},{value:{path,name:file.name}});
+  return rowToInvoice(result);
 }
 
 // Optional installation photos, taken when the installer completes the job.

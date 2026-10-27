@@ -22,7 +22,7 @@ export interface GlassPositionDef {
   zone: 'front' | 'rear';
 }
 
-const GLASS_DEFS: Record<GlassPosition, GlassPositionDef> = {
+const GLASS_DEFS: Partial<Record<GlassPosition, GlassPositionDef>> = {
   front_windscreen:        { key: 'front_windscreen',        label: 'Front Windscreen',        priceGroup: 'front_windscreen',  zone: 'front' },
   front_left_window:       { key: 'front_left_window',       label: 'Front Left Window',       priceGroup: 'door_window',       zone: 'front' },
   front_right_window:      { key: 'front_right_window',      label: 'Front Right Window',      priceGroup: 'door_window',       zone: 'front' },
@@ -33,7 +33,7 @@ const GLASS_DEFS: Record<GlassPosition, GlassPositionDef> = {
   rear_windscreen:         { key: 'rear_windscreen',         label: 'Rear Windscreen',         priceGroup: 'rear_windscreen',   zone: 'rear' },
 };
 
-const STANDARD_GLASS_LAYOUT: GlassPositionDef[] = [
+const STANDARD_GLASS_LAYOUT = [
   GLASS_DEFS.front_windscreen,
   GLASS_DEFS.front_left_window,
   GLASS_DEFS.front_right_window,
@@ -42,7 +42,7 @@ const STANDARD_GLASS_LAYOUT: GlassPositionDef[] = [
   GLASS_DEFS.rear_left_panel_window,
   GLASS_DEFS.rear_right_panel_window,
   GLASS_DEFS.rear_windscreen,
-];
+].filter((p):p is GlassPositionDef=>!!p);
 
 // Glass layout per vehicle size. Every size shares the standard 8-piece
 // layout for now — a Large SUV / X-Large MPV layout (e.g. a third row of
@@ -59,7 +59,7 @@ export function glassLayoutFor(size: GarageVehicleSize): GlassPositionDef[] {
 }
 
 export function glassZone(position: TintGlassKey): 'front' | 'rear' | undefined {
-  return GLASS_DEFS[position as GlassPosition]?.zone;
+  return GLASS_DEFS[position as GlassPosition]?.zone??(position.includes('roof')||/^side_(left|right)_([1-9]|10)$/.test(position)?'rear':undefined);
 }
 
 // The Mix & Match price grid's rows — one per-window rate each, edited on
@@ -81,8 +81,10 @@ export const EXTRA_GLASS_OPTIONS: { key: ExtraGlassKey; label: string; xlargeOnl
 // Display label for any glass key, including the pre-split grouped keys
 // still sitting on old installation-piece rows.
 export const GLASS_LABEL: Record<string, string> = {
-  ...Object.fromEntries(Object.values(GLASS_DEFS).map((d) => [d.key, d.label])),
+  ...Object.fromEntries(Object.values(GLASS_DEFS).filter((d):d is GlassPositionDef=>!!d).map((d) => [d.key, d.label])),
   ...Object.fromEntries(EXTRA_GLASS_OPTIONS.map((e) => [e.key, e.label])),
+  front_roof_glass:'Front roof glass',rear_roof_glass:'Rear roof glass',panoramic_roof_glass:'Panoramic roof glass',
+  ...Object.fromEntries(Array.from({length:10},(_,i)=>[['side_left_'+(i+1),'Left side window '+(i+1)],['side_right_'+(i+1),'Right side window '+(i+1)]]).flat()),
   door_window: 'Door Windows',
   rear_panel_window: 'Rear Panel Windows',
 };
@@ -94,7 +96,7 @@ export function glassPrice(position: TintGlassKey, series: TintSeries, positionP
   if (position === 'small_window') return 0;
   const group: TintPriceGroup = position === 'extra_rear_2pc'
     ? 'rear_panel_window'
-    : GLASS_DEFS[position].priceGroup;
+    : GLASS_DEFS[position]?.priceGroup ?? 'door_window';
   return positionPrices[`${group}|${series}`] ?? 0;
 }
 

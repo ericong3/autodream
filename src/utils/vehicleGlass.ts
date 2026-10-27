@@ -1,0 +1,9 @@
+export type VehicleGlassBody='sedan'|'coupe'|'mpv'|'suv'|'van'|'bus';
+export type VehicleRoof='none'|'single'|'split'|'panoramic';
+export type VehicleGlassLayout={body:VehicleGlassBody;roof:VehicleRoof;sideRows:number};
+export type VehicleGlassSelection=VehicleGlassLayout&{included:string[]};
+export const defaultGlassLayout:VehicleGlassLayout={body:'sedan',roof:'none',sideRows:0};
+export const bodyNames:Record<VehicleGlassBody,string>={sedan:'Sedan',coupe:'Two-door coupe',mpv:'MPV',suv:'SUV',van:'Van',bus:'Bus'};
+export function vehicleGlassPositions(config:VehicleGlassLayout):string[]{const {body,roof,sideRows}=config;const core=body==='bus'||body==='van'?['front_windscreen','front_left_window','front_right_window',...Array.from({length:sideRows},(_,i)=>['side_left_'+(i+1),'side_right_'+(i+1)]).flat(),'rear_windscreen']:body==='coupe'?['front_windscreen','front_left_window','front_right_window','rear_left_panel_window','rear_right_panel_window','rear_windscreen']:['front_windscreen','front_left_window','front_right_window','rear_left_window','rear_right_window','rear_left_panel_window','rear_right_panel_window','rear_windscreen'];return [...core,...(body==='bus'||roof==='none'?[]:roof==='split'?['front_roof_glass','rear_roof_glass']:roof==='single'?['front_roof_glass']:['panoramic_roof_glass'])];}
+export function validGlassLayout(value:unknown):value is VehicleGlassLayout{if(!value||typeof value!=='object')return false;const c=value as VehicleGlassLayout;return Object.prototype.hasOwnProperty.call(bodyNames,c.body)&&['none','single','split','panoramic'].includes(c.roof)&&Number.isInteger(c.sideRows)&&(c.body==='bus'?c.roof==='none'&&c.sideRows>=1&&c.sideRows<=10:c.body==='van'?c.sideRows>=0&&c.sideRows<=6:c.sideRows===0);}
+export function vehicleArtwork(body:VehicleGlassBody){return '/garage-vehicles/'+(body==='sedan'||body==='coupe'?'vehicle-pair':body)+'.png';}

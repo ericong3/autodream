@@ -1,3 +1,4 @@
+import GarageWorkshopNotices from './GarageWorkshopNotices';
 import { useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -113,6 +114,7 @@ export default function GarageShell({
 
         {secondary.length > 0 && <nav aria-label={section + ' sections'} className="garage-secondary-nav">{secondary.map(t => <button key={t.path} aria-current={location.pathname === t.path || location.pathname.startsWith(t.path + '/') ? 'page' : undefined} onClick={() => navigate(t.path)}>{t.label}</button>)}</nav>}
         <main className="flex-1 px-5 sm:px-8 py-8 max-w-6xl w-full mx-auto">
+          <GarageWorkshopNotices/>
           {children}
         </main>
       </div>

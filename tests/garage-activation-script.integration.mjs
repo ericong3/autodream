@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';import {readFileSync}from'node:fs';import{installationFixture}from'./installation-fixture.mjs';
+const db=await installationFixture(process.argv[2]);
+await db.exec(`alter table garage_invoices add column receipt_path text,add column receipt_name text;create table garage_building_staff(id text primary key,enabled boolean,registration_status text,role text,business_access text);insert into garage_building_staff select id,true,'active',role,'garage' from users;grant usage on schema public to anon,authenticated,service_role;grant select,insert,update,delete on all tables in schema public to anon,authenticated;grant usage,select on all sequences in schema public to anon,authenticated;`);
+await db.exec(readFileSync(new URL('../supabase/migrations/20261025040000_garage_atomic_confirmation.sql',import.meta.url),'utf8'));
+const sql=readFileSync(new URL('../outputs/garage-activation.sql',import.meta.url),'utf8');
+await db.exec(sql);
+assert.equal((await db.query(`select to_regclass('public.garage_installation_reviews') is not null as ready`)).rows[0].ready,true);
+assert.equal((await db.query(`select count(*)::int n from information_schema.columns where table_schema='public' and table_name='garage_tint_orders' and column_name='vehicle_layout'`)).rows[0].n,1);
+assert.equal((await db.query(`select has_function_privilege('anon','public.garage_installation_workflow(text,text,jsonb)','execute') as permitted`)).rows[0].permitted,false);
+assert.equal((await db.query(`select has_table_privilege('anon','public.garage_tint_orders','update') as permitted`)).rows[0].permitted,false);
+await assert.rejects(()=>db.exec(sql),/already exists or is partly installed/);await db.exec('rollback');
+assert.equal((await db.query(`select cardinality(garage_vehicle_glass_positions('{"body":"bus","roof":"none","sideRows":10}')) n`)).rows[0].n,24);
+await db.close();console.log('PASS: exact phone activation script installs both migrations atomically, refuses a second run, and closes legacy browser write/approval access.');

@@ -1,24 +1,25 @@
+import GarageJobGlassMap from '../components/GarageJobGlassMap';
+import {isGarageWorkshopRole} from '../utils/garageRoles';
+import GarageInstallationReview from '../components/GarageInstallationReview';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  Car, User, Layers, AlertTriangle, CheckCircle2, Droplets, CalendarClock, UserCheck, MessageSquare,
-  Play, Timer, Circle, Camera, Upload, X, Hand, Undo2, ShieldCheck, RotateCcw, Send, Flag, Users, Wrench,
+  Car, User, AlertTriangle, CheckCircle2, Droplets, CalendarClock, UserCheck, MessageSquare,
+  Play, Timer, Circle, Hand, Undo2, RotateCcw, Flag, Users, Wrench,
 } from 'lucide-react';
 import GarageShell, { isGarageManager } from '../components/GarageShell';
 import GarageInstallationPhotos from '../components/GarageInstallationPhotos';
-import Modal from '../components/Modal';
 import { useStore } from '../store';
 import {
-  getInstallerJob, startInstallerJob, submitInstallation, approveInstallation, returnInstallation, setInstallationEta,
+  getInstallerJob, startInstallerJob, setInstallationEta,
 } from '../lib/garageInstallerJobs';
 import { getGarageInvoice, uploadInstallationPhoto } from '../lib/garageInvoices';
 import { getGarageVehicle, getGarageCustomer } from '../lib/garageCustomers';
 import {
   getTintOrder, ensureTintWorkOrderItems, setTintWorkOrderItemStatus, setTintWorkOrderItemSqft,
-  setTintWorkOrderItemRemark, claimTintWorkOrderItem, releaseTintWorkOrderItem, assignTintWorkOrderItem,
+  setTintWorkOrderItemRemark, claimTintWorkOrderItem, releaseTintWorkOrderItem,
   GlassAlreadyTakenError, listFilmStock,
 } from '../lib/garageTint';
-import { isGarageWorkshopRole } from '../utils/garageRoles';
 import { useWorkOrderActivityUpdates } from '../hooks/useWorkOrderActivityUpdates';
 import { GLASS_LABEL, TINT_SERIES, VEHICLE_SIZES } from '../utils/tintPricing';
 import type {
@@ -109,12 +110,6 @@ export default function GarageInstallerJobDetail() {
   const navigate = useNavigate();
   const allUsers = useStore((s) => s.users);
   const currentUser = useStore((s) => s.currentUser);
-  const installers = useMemo(
-    () => allUsers
-      .filter((u) => isGarageWorkshopRole(u.role) && (u.businessAccess === 'garage' || u.businessAccess === 'both'))
-      .sort((a, b) => a.name.localeCompare(b.name)),
-    [allUsers],
-  );
   const nameOf = (id?: string) => (id ? allUsers.find((u) => u.id === id)?.name : undefined);
 
   const [job, setJob] = useState<GarageInstallerJob | null>(null);
@@ -131,17 +126,8 @@ export default function GarageInstallerJobDetail() {
   const [sqftResetTick, setSqftResetTick] = useState(0);
 
   // Submit / review dialogs
-  const [submitOpen, setSubmitOpen] = useState(false);
-  const [photos, setPhotos] = useState<File[]>([]);
-  const [photoWarning, setPhotoWarning] = useState('');
+  const [photoWarning] = useState('');
   const [photoRefresh, setPhotoRefresh] = useState(0);
-  const [approveOpen, setApproveOpen] = useState(false);
-  const [inspectionDone, setInspectionDone] = useState(false);
-  const [approveRemark, setApproveRemark] = useState('');
-  const [returnOpen, setReturnOpen] = useState(false);
-  const [returnReason, setReturnReason] = useState('');
-  const [returnItems, setReturnItems] = useState<string[]>([]);
-  const [dialogError, setDialogError] = useState('');
   const [etaEditing, setEtaEditing] = useState(false);
   const [etaValue, setEtaValue] = useState('');
 
@@ -194,9 +180,7 @@ export default function GarageInstallerJobDetail() {
   const itemFor = (sel: TintPositionSelection) => items.find((i) => i.glassPosition === sel.position);
   const orderItems = allSelections.map(itemFor).filter((i): i is GarageTintWorkOrderItem => !!i);
   const installedCount = orderItems.filter((i) => i.status === 'installed').length;
-  const allInstalled = orderItems.length > 0 && installedCount === orderItems.length;
-  const workedOnCar = orderItems.some((i) => i.installerId === me);
-  const canSubmit = isInProgress && allInstalled && (workedOnCar || isManager);
+
   const teamNames = [...new Set(orderItems.map((i) => i.installerId).filter((x): x is string => !!x))]
     .map((id) => nameOf(id) ?? 'Installer');
   const totalUsage = orderItems.reduce((sum, i) => sum + (i.sqft ?? 0), 0);
@@ -217,6 +201,7 @@ export default function GarageInstallerJobDetail() {
     setBusy(key);
     try {
       await fn();
+      load(true);
     } catch (err) {
       if (err instanceof GlassAlreadyTakenError) {
         setNotice(`${nameOf(err.takenBy) ?? 'Another installer'} has just taken this glass.`);
@@ -242,8 +227,6 @@ export default function GarageInstallerJobDetail() {
     run(item.id, async () => { replaceItem(await claimTintWorkOrderItem(item.id, me ?? '')); await refreshCar(); });
   const handleRelease = (item: GarageTintWorkOrderItem) =>
     run(item.id, async () => { replaceItem(await releaseTintWorkOrderItem(item.id, me ?? '')); });
-  const handleAssign = (item: GarageTintWorkOrderItem, installerId: string) =>
-    run(item.id, async () => { replaceItem(await assignTintWorkOrderItem(item.id, installerId || null, me ?? '')); await refreshCar(); });
   const handleConfirm = (item: GarageTintWorkOrderItem) =>
     run(item.id, async () => { replaceItem(await setTintWorkOrderItemStatus(item.id, 'installed', me ?? '')); });
   const handleReopen = (item: GarageTintWorkOrderItem) =>
@@ -270,68 +253,6 @@ export default function GarageInstallerJobDetail() {
     setEtaEditing(false);
   });
 
-  const handlePhotoPick = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const picked = Array.from(e.target.files ?? []).filter((f) => f.type.startsWith('image/'));
-    e.target.value = '';
-    setPhotos((prev) => [...prev, ...picked]);
-  };
-
-  const handleSubmit = async () => {
-    if (!job || !invoice) return;
-    setDialogError('');
-    setBusy('submit');
-    try {
-      const updated = await submitInstallation(job.id, me ?? '');
-      setJob(updated);
-      // Photos are optional — a failed upload mustn't undo the submission.
-      if (photos.length > 0) {
-        const results = await Promise.allSettled(photos.map((f) => uploadInstallationPhoto(invoice.id, f)));
-        const failed = results.filter((r) => r.status === 'rejected').length;
-        if (failed > 0) setPhotoWarning(`Submitted, but ${failed} of ${photos.length} photo(s) failed to upload.`);
-      }
-      setSubmitOpen(false);
-      setPhotos([]);
-      setPhotoRefresh((n) => n + 1);
-      await refreshCar();
-    } catch (err) {
-      setDialogError((err as Error)?.message ?? 'Could not submit — please try again');
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const handleApprove = async () => {
-    if (!job) return;
-    if (!inspectionDone) { setDialogError('Confirm the final inspection first'); return; }
-    setDialogError('');
-    setBusy('approve');
-    try {
-      setJob(await approveInstallation(job.id, me ?? '', true, approveRemark));
-      setApproveOpen(false);
-      await refreshCar();
-    } catch (err) {
-      setDialogError((err as Error)?.message ?? 'Could not approve — please try again');
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const handleReturn = async () => {
-    if (!job) return;
-    if (!returnReason.trim()) { setDialogError('Give a reason for returning it'); return; }
-    setDialogError('');
-    setBusy('return');
-    try {
-      setJob(await returnInstallation(job.id, me ?? '', returnReason.trim(), returnItems));
-      setReturnOpen(false);
-      load(true);
-    } catch (err) {
-      setDialogError((err as Error)?.message ?? 'Could not return it — please try again');
-    } finally {
-      setBusy(null);
-    }
-  };
-
   if (loading) {
     return (
       <GarageShell title="Car Detail" showBack backTo={pipelinePath}>
@@ -340,14 +261,14 @@ export default function GarageInstallerJobDetail() {
     );
   }
 
-  const badge = isCompleted
-    ? { label: 'Approved', cls: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400' }
+  const badge = ws==='head_correction_review' ? {label:'Head: Correction Review',cls:'bg-orange-500/15 border-orange-400/40 text-orange-300'}
+    : ws==='sales_inspection' ? {label:'Salesman Check',cls:'bg-gold-500/15 border-gold-400/40 text-gold-400'}
+    : isCompleted
+    ? { label: 'Workshop Approved', cls: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400' }
     : isPendingApproval ? { label: 'Pending Approval', cls: 'bg-indigo-500/15 border-indigo-400/40 text-indigo-300' }
     : isInProgress ? { label: 'In Progress', cls: 'bg-blue-500/15 border-blue-500/30 text-blue-400' }
     : { label: 'Waiting for Installers', cls: 'bg-white/[0.03] border-white/10 text-white/60' };
 
-  const selectCls = `w-full bg-white/[0.04] border border-white/10 focus:border-gold-400/50 rounded-lg
-    px-3 py-2 text-white text-sm outline-none transition-colors disabled:opacity-50`;
   const smallBtn = 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-50';
 
   return (
@@ -401,7 +322,7 @@ export default function GarageInstallerJobDetail() {
               ) : (
                 <>
                   {job?.estimatedCompleteAt ? `Est. completion ${formatWhen(job.estimatedCompleteAt)}` : 'No estimated completion'}
-                  {isManager && !isCompleted && (
+                  {currentUser?.role==='garage_head' && !isCompleted && (
                     <button
                       onClick={() => { setEtaValue(toLocalInput(job?.estimatedCompleteAt)); setEtaEditing(true); }}
                       className="ml-1 text-gold-400 text-xs font-medium hover:text-gold-300"
@@ -449,7 +370,7 @@ export default function GarageInstallerJobDetail() {
         )}
 
         {/* Start the car without taking a glass first */}
-        {isWaiting && (isInstaller || isManager) && (
+        {isWaiting && isInstaller && (
           <button
             onClick={handleStartCar}
             disabled={busy === 'start'}
@@ -472,6 +393,8 @@ export default function GarageInstallerJobDetail() {
             <p className="text-indigo-300/80 text-xs">Submitted for approval — the glass is locked unless the Garage Head returns it.</p>
           )}
 
+          <GarageJobGlassMap items={orderItems} layout={tintOrder?.vehicleLayout} userId={me} workStatus={invoice?.workStatus} canWork={glassOpen&&isInstaller} busy={!!busy} onClaim={handleClaim} onComplete={handleConfirm}/>
+          <details className="space-y-3"><summary className="cursor-pointer text-sm text-white/60 py-3">Film usage and glass details</summary>
           {allSelections.map((sel) => {
             const item = itemFor(sel);
             if (!item) return null;
@@ -479,7 +402,7 @@ export default function GarageInstallerJobDetail() {
             const vlt = item.requestedVlt ?? sel.vlt;
             const mine = !!me && item.installerId === me;
             const owner = nameOf(item.installerId);
-            const canWorkThis = isInProgress && (mine || isManager) && item.status !== 'pending';
+            const canWorkThis = isInProgress && mine && item.status !== 'pending';
             const saving = busy === item.id;
             const chip = item.needsCorrection && item.status !== 'installed'
               ? { label: 'Needs correction', cls: 'bg-orange-500/15 border-orange-500/40 text-orange-400' }
@@ -542,21 +465,6 @@ export default function GarageInstallerJobDetail() {
                   </div>
                 )}
 
-                {/* Management: assign / reassign the glass's installer */}
-                {isManager && glassOpen && (
-                  <select
-                    value={item.installerId ?? ''}
-                    disabled={saving}
-                    onChange={(e) => handleAssign(item, e.target.value)}
-                    className={`${selectCls} mb-2.5`}
-                  >
-                    <option value="" className="bg-obsidian-900">{item.installerId ? 'Unassign' : 'Assign to installer…'}</option>
-                    {installers.map((u) => (
-                      <option key={u.id} value={u.id} className="bg-obsidian-900">{u.name}</option>
-                    ))}
-                  </select>
-                )}
-
                 {/* Actions */}
                 {glassOpen && (
                   <div className="flex justify-end gap-2 flex-wrap">
@@ -605,6 +513,7 @@ export default function GarageInstallerJobDetail() {
               </div>
             );
           })}
+          </details>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -631,109 +540,22 @@ export default function GarageInstallerJobDetail() {
 
         {error && <p className="text-red-400 text-xs text-center">{error}</p>}
 
-        {/* ── Submit for approval ── */}
-        {isInProgress && (
-          canSubmit ? (
-            <button
-              onClick={() => { setDialogError(''); setPhotos([]); setSubmitOpen(true); }}
-              className="w-full flex items-center justify-center gap-2 btn-gold py-3.5 rounded-xl text-sm font-semibold"
-            >
-              <Send size={16} /> Submit for Approval
-            </button>
-          ) : (
-            <p className="text-white/40 text-xs text-center">
-              {allInstalled
-                ? 'Every glass is installed — an installer who worked on this car (or management) can submit it for approval.'
-                : `Submit for approval once every glass is installed (${installedCount} of ${orderItems.length}).`}
-            </p>
-          )
-        )}
-
-        {/* ── Pending approval ── */}
-        {isPendingApproval && job && (
-          <div className="relative overflow-hidden rounded-2xl p-6 bg-indigo-500/[0.06] border border-indigo-400/30 shadow-card space-y-4">
-            <div>
-              <h2 className="flex items-center gap-2 font-display text-base text-indigo-300 font-semibold tracking-wide">
-                <ShieldCheck size={16} /> {isManager ? 'Review Installation' : 'Waiting for Garage Head Approval'}
-              </h2>
-              {job.submittedForApprovalAt && (
-                <p className="text-white/50 text-xs mt-1">Submitted by {nameOf(job.submittedBy) ?? '—'} · {formatWhen(job.submittedForApprovalAt)}</p>
-              )}
-            </div>
-
-            {isManager && (
-              <>
-                <div className="overflow-x-auto -mx-2 px-2">
-                  <table className="w-full text-xs min-w-[560px]">
-                    <thead>
-                      <tr className="text-white/40 text-left">
-                        <th className="font-medium pb-2 pr-2">Glass</th>
-                        <th className="font-medium pb-2 px-2">Requested</th>
-                        <th className="font-medium pb-2 px-2">Installed</th>
-                        <th className="font-medium pb-2 px-2">VLT</th>
-                        <th className="font-medium pb-2 px-2 text-right">Sqft</th>
-                        <th className="font-medium pb-2 px-2">Installer</th>
-                        <th className="font-medium pb-2 px-2">Completed</th>
-                        <th className="font-medium pb-2 pl-2">Remark</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/[0.06]">
-                      {orderItems.map((i) => (
-                        <tr key={i.id} className="text-white/80">
-                          <td className="py-2 pr-2 text-white">{GLASS_LABEL[i.glassPosition] ?? i.glassPosition}</td>
-                          <td className="py-2 px-2 text-gold-400">{TINT_SERIES_LABEL[i.requestedSeries ?? ''] ?? i.requestedSeries ?? '—'}</td>
-                          <td className={`py-2 px-2 ${i.installedSeries && i.installedSeries !== i.requestedSeries ? 'text-orange-400' : ''}`}>
-                            {TINT_SERIES_LABEL[i.installedSeries ?? ''] ?? i.installedSeries ?? '—'}
-                          </td>
-                          <td className="py-2 px-2">{i.requestedVlt ?? '—'}</td>
-                          <td className="py-2 px-2 text-right">{i.sqft !== undefined ? i.sqft.toFixed(1) : '—'}</td>
-                          <td className="py-2 px-2">{nameOf(i.installerId) ?? '—'}</td>
-                          <td className="py-2 px-2 whitespace-nowrap">{i.completedAt ? formatWhen(i.completedAt) : '—'}</td>
-                          <td className="py-2 pl-2 text-white/60">{i.remark ?? '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="text-white">
-                        <td className="pt-2 pr-2 font-medium" colSpan={4}>Total film</td>
-                        <td className="pt-2 px-2 text-right font-medium">{totalUsage.toFixed(1)}</td>
-                        <td colSpan={3} />
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-                {invoice && <GarageInstallationPhotos invoiceId={invoice.id} refreshKey={photoRefresh} />}
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    onClick={() => { setDialogError(''); setReturnReason(''); setReturnItems([]); setReturnOpen(true); }}
-                    className="flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold border border-orange-500/40 text-orange-400 hover:bg-orange-500/10 transition-colors"
-                  >
-                    <RotateCcw size={15} /> Return for Correction
-                  </button>
-                  <button
-                    onClick={() => { setDialogError(''); setInspectionDone(false); setApproveRemark(''); setApproveOpen(true); }}
-                    className="flex items-center justify-center gap-2 btn-gold py-3 rounded-xl text-sm font-semibold"
-                  >
-                    <ShieldCheck size={15} /> Approve
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        )}
+        {invoice && <GarageInstallationReview invoiceId={invoice.id} ownerId={invoice.createdBy} items={items} onChange={()=>load(true)} />}
+        {invoice && <GarageInstallationPhotos invoiceId={invoice.id} refreshKey={photoRefresh} />}
+        {isInProgress && isInstaller && <label className="block text-sm text-white/60">Add work photos<input type="file" accept="image/*" multiple onChange={async e=>{const files=Array.from(e.target.files??[]);e.target.value='';try{for(const file of files)await uploadInstallationPhoto(invoice!.id,file);setPhotoRefresh(v=>v+1);}catch{setError('Could not upload photo. Your installation progress is kept.');}}} className="block mt-2 text-xs"/></label>}
 
         {/* ── Approved ── */}
         {isCompleted && job && (
           <div className="relative overflow-hidden rounded-2xl p-6 bg-emerald-500/[0.06] border border-emerald-500/25 shadow-card space-y-3">
             <h2 className="flex items-center gap-2 font-display text-base text-emerald-400 font-semibold tracking-wide">
-              <CheckCircle2 size={16} /> Installation {job.approvedAt ? 'Approved' : 'Completed'}
+              <CheckCircle2 size={16} /> Workshop {job.approvedAt ? 'Approved' : 'Completed'}
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-white/70">
               {job.approvedAt
                 ? <p>Approved by {nameOf(job.approvedBy) ?? '—'} · {formatWhen(job.approvedAt)}</p>
                 : job.completedAt && <p>Completed by {nameOf(job.completedBy ?? job.acceptedBy) ?? '—'} · {formatWhen(job.completedAt)}</p>}
               {job.submittedForApprovalAt && <p>Submitted by {nameOf(job.submittedBy) ?? '—'}</p>}
-              {job.finalInspectionAt && <p className="sm:col-span-2">Final inspection confirmed</p>}
+              {job.finalInspectionAt && <p className="sm:col-span-2">Garage Head inspection confirmed</p>}
               {!job.approvedAt && job.acceptedBy && (
                 <p className="sm:col-span-2 flex items-center gap-1.5 text-white/50"><Wrench size={12} /> Whole car taken by {nameOf(job.acceptedBy)} (before team installation)</p>
               )}
@@ -751,125 +573,6 @@ export default function GarageInstallerJobDetail() {
       </div>
 
       {/* Submit for approval */}
-      <Modal isOpen={submitOpen} onClose={() => busy !== 'submit' && setSubmitOpen(false)} title="Submit for Approval">
-        <div className="space-y-4">
-          <p className="flex items-center gap-2 text-sm text-emerald-400">
-            <CheckCircle2 size={14} /> All {orderItems.length} glass installed by {teamNames.join(', ') || 'the team'}
-          </p>
-          <p className="text-gray-400 text-sm">The Garage Head will inspect and approve it. The glass is locked until then.</p>
-          <div>
-            <p className="text-gray-300 text-xs font-medium mb-1.5">Installation Photos (optional)</p>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {photos.map((f, i) => (
-                <span key={`${f.name}-${i}`} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg border border-white/10 bg-white/[0.03] text-white/70 max-w-[180px]">
-                  <span className="truncate">{f.name}</span>
-                  <button onClick={() => setPhotos((prev) => prev.filter((_, j) => j !== i))} className="text-white/40 hover:text-red-400 shrink-0">
-                    <X size={12} />
-                  </button>
-                </span>
-              ))}
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <label className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium cursor-pointer
-                bg-white/[0.03] border-white/10 text-white/60 hover:text-white/90 hover:border-white/20 transition-colors">
-                <Upload size={14} /> Upload
-                <input type="file" accept="image/*" multiple onChange={handlePhotoPick} className="hidden" />
-              </label>
-              <label className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium cursor-pointer
-                bg-white/[0.03] border-white/10 text-white/60 hover:text-white/90 hover:border-white/20 transition-colors">
-                <Camera size={14} /> Take Photo
-                <input type="file" accept="image/*" capture="environment" onChange={handlePhotoPick} className="hidden" />
-              </label>
-            </div>
-          </div>
-          {dialogError && <p className="text-red-400 text-xs">{dialogError}</p>}
-          <div className="flex gap-3">
-            <button onClick={() => setSubmitOpen(false)} disabled={busy === 'submit'} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
-            <button onClick={handleSubmit} disabled={busy === 'submit'} className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm disabled:opacity-50">
-              {busy === 'submit' ? 'Submitting…' : 'Submit for Approval'}
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Approve */}
-      <Modal isOpen={approveOpen} onClose={() => busy !== 'approve' && setApproveOpen(false)} title="Approve Installation">
-        <div className="space-y-4">
-          <label className="flex items-start gap-2.5 text-sm text-white/80 cursor-pointer">
-            <input type="checkbox" checked={inspectionDone} onChange={(e) => setInspectionDone(e.target.checked)} className="accent-gold-500 mt-0.5" />
-            Final inspection done — every glass checked, no bubbles, peeling or damage
-          </label>
-          <div>
-            <label className="block text-gray-300 text-xs font-medium mb-1.5">Overall remark (optional)</label>
-            <textarea
-              value={approveRemark}
-              onChange={(e) => setApproveRemark(e.target.value)}
-              rows={3}
-              placeholder="Anything the salesman should know…"
-              className="w-full bg-obsidian-700/60 border border-obsidian-400/60 text-white placeholder-gray-600
-                rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500 transition-colors resize-none"
-            />
-          </div>
-          <p className="text-white/40 text-xs">
-            {invoice?.paymentStatus === 'paid' ? 'Paid — the car moves to Ready for Delivery.' : 'Unpaid — the car moves to Payment Due.'}
-          </p>
-          {dialogError && <p className="text-red-400 text-xs">{dialogError}</p>}
-          <div className="flex gap-3">
-            <button onClick={() => setApproveOpen(false)} disabled={busy === 'approve'} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
-            <button onClick={handleApprove} disabled={busy === 'approve' || !inspectionDone} className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm disabled:opacity-50">
-              {busy === 'approve' ? 'Approving…' : 'Approve'}
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Return for correction */}
-      <Modal isOpen={returnOpen} onClose={() => busy !== 'return' && setReturnOpen(false)} title="Return for Correction">
-        <div className="space-y-4">
-          <div>
-            <label className="block text-gray-300 text-xs font-medium mb-1.5">Reason (required)</label>
-            <textarea
-              value={returnReason}
-              onChange={(e) => setReturnReason(e.target.value)}
-              rows={3}
-              placeholder="What needs fixing?"
-              className="w-full bg-obsidian-700/60 border border-obsidian-400/60 text-white placeholder-gray-600
-                rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500 transition-colors resize-none"
-            />
-          </div>
-          <div>
-            <p className="text-gray-300 text-xs font-medium mb-1.5">Glass that needs work (optional)</p>
-            <div className="space-y-1.5 max-h-56 overflow-y-auto">
-              {orderItems.map((i) => (
-                <label key={i.id} className="flex items-center justify-between gap-3 text-sm text-white/80 cursor-pointer">
-                  <span className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={returnItems.includes(i.id)}
-                      onChange={(e) => setReturnItems((prev) => (e.target.checked ? [...prev, i.id] : prev.filter((x) => x !== i.id)))}
-                      className="accent-gold-500"
-                    />
-                    {GLASS_LABEL[i.glassPosition] ?? i.glassPosition}
-                  </span>
-                  <span className="text-white/40 text-xs">{nameOf(i.installerId) ?? '—'}</span>
-                </label>
-              ))}
-            </div>
-            <p className="text-white/30 text-xs mt-1.5 flex items-center gap-1.5"><Layers size={11} /> Ticked glass goes back to its installer, flagged for correction.</p>
-          </div>
-          {dialogError && <p className="text-red-400 text-xs">{dialogError}</p>}
-          <div className="flex gap-3">
-            <button onClick={() => setReturnOpen(false)} disabled={busy === 'return'} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
-            <button
-              onClick={handleReturn}
-              disabled={busy === 'return' || !returnReason.trim()}
-              className="flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold bg-orange-500/90 hover:bg-orange-500 text-white disabled:opacity-50"
-            >
-              {busy === 'return' ? 'Returning…' : 'Return for Correction'}
-            </button>
-          </div>
-        </div>
-      </Modal>
     </GarageShell>
   );
 }
