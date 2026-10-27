@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useStore } from '../store';
 import { landingPath } from '../utils/landingPath';
+import {confirmSharedSignIn} from '../lib/sharedSignIn';
 import { garageAppUser, garageSessionRequest, secureGarageLoginEnabled } from '../lib/garageSession';
 
 export default function Login() {
@@ -11,10 +12,27 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [checkingSession,setCheckingSession]=useState(secureGarageLoginEnabled);
+  const [destination,setDestination]=useState<string|null>(null);
   const login = useStore((s) => s.login);
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as any)?.from;
+  const destinationFor=(user:ReturnType<typeof garageAppUser>)=>typeof from==='string'&&from.startsWith('/')&&!from.startsWith('//')&&!from.includes('\\')?from:landingPath(user);
+
+  useEffect(()=>{
+    if(!secureGarageLoginEnabled())return;
+    let active=true;
+    garageSessionRequest('GET').then(identity=>{
+      if(!active||!identity)return;
+      const user=garageAppUser(identity);
+      if(useStore.getState().currentUser?.id!==user.id)void useStore.getState().logout({revokeSession:false});
+      useStore.setState({currentUser:user});
+      setDestination(destinationFor(user));
+    }).catch(e=>{if(active)setError(e instanceof Error?e.message:'Could not check your sign-in.');})
+      .finally(()=>{if(active)setCheckingSession(false);});
+    return()=>{active=false;};
+  },[]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,13 +42,11 @@ export default function Login() {
     setLoading(true);
     if (secureGarageLoginEnabled()) {
       try {
-        await useStore.getState().logout();
-        const identity = await garageSessionRequest('POST', { username: username.trim(), password });
-        if (!identity) throw new Error('Could not sign in.');
+        const identity = await confirmSharedSignIn(garageSessionRequest,username,password,()=>{void useStore.getState().logout({revokeSession:false});});
         const user = garageAppUser(identity);
         useStore.setState({ currentUser: user });
         setPassword('');
-        navigate(landingPath(user), { replace: true });
+        setDestination(destinationFor(user));
       } catch (e) { setError(e instanceof Error ? e.message : 'Could not sign in.'); }
       finally { setLoading(false); }
       return;
@@ -43,6 +59,9 @@ export default function Login() {
       navigate(from ?? (user ? landingPath(user) : '/login'));
     } else { setError('Invalid username or password'); }
   };
+
+  if(destination)return <Navigate to={destination} replace />;
+  if(checkingSession)return <div className="min-h-screen bg-black text-white/60 flex items-center justify-center">Checking your sign-in…</div>;
 
   return (
     <div className="min-h-screen relative overflow-hidden bg-obsidian-950">

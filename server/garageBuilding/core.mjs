@@ -207,11 +207,12 @@ export async function authenticate(req, ctx, res, allow = canUseBuilding) {
   const tokenHash = sha256(token);
   const kill = async (error) => {
     await db(ctx.repo.deleteSession(tokenHash));
-    res.cookies.push(clearCookie());
+    // A delayed failed read must not erase a newer cookie from a successful login.
+    // Server-side revocation is authoritative; explicit logout clears the cookie.
     throw error;
   };
   const session = await db(ctx.repo.findSession(tokenHash));
-  if (!session) { res.cookies.push(clearCookie()); throw authError(); }
+  if (!session) throw authError();
   const now = ctx.now();
   const lastSeen = Date.parse(session.lastSeenAt);
   if (!(now < Date.parse(session.expiresAt)) || !(now - lastSeen < LIMITS.idleTimeoutSeconds * 1000)) {
@@ -268,16 +269,17 @@ async function login(req, ctx, res, allow = canUseBuilding) {
   const token = ctx.random(32).toString('base64url');
   const now = ctx.now();
   const expiresAt = new Date(now + LIMITS.sessionTtlSeconds * 1000).toISOString();
-  await db(ctx.repo.deleteExpiredSessions(user.id, new Date(now).toISOString()));
-  await db(ctx.repo.createSession({
+  await Promise.all([db(ctx.repo.deleteExpiredSessions(user.id, new Date(now).toISOString())), db(ctx.repo.createSession({
     tokenHash: sha256(token), userId: user.id, fingerprint: fingerprint(ctx.config.secret, user),
     createdAt: new Date(now).toISOString(), lastSeenAt: new Date(now).toISOString(), expiresAt,
-  }));
-  await db(ctx.repo.throttleClear(userKey));
+  }))]);
   // Replace any session this browser already held (e.g. another staff
   // member on a shared PC) so it can't linger.
   const previous = parseCookies(header(req, 'cookie'))[COOKIE_NAME];
-  if (previous && TOKEN_RE.test(previous)) await db(ctx.repo.deleteSession(sha256(previous)));
+  await Promise.all([
+    db(ctx.repo.throttleClear(userKey)),
+    ...(previous && TOKEN_RE.test(previous) ? [db(ctx.repo.deleteSession(sha256(previous)))] : []),
+  ]);
   res.cookies.push(sessionCookie(token, LIMITS.sessionTtlSeconds));
   return { status: 200, body: { user: publicUser(user), expiresAt } };
 }

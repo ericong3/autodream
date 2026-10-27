@@ -1,74 +1,22 @@
-import { supabase } from './supabase';
 import type { GarageAppointment, GarageService } from '../types';
-import { generateId } from '../utils/format';
-
-function rowToAppointment(r: any): GarageAppointment {
-  return {
-    id: r.id,
-    customerId: r.customer_id,
-    vehicleId: r.vehicle_id ?? undefined,
-    service: r.service,
-    title: r.title ?? undefined,
-    notes: r.notes ?? undefined,
-    startsAt: r.starts_at,
-    endsAt: r.ends_at,
-    createdBy: r.created_by ?? undefined,
-    createdAt: r.created_at,
-  };
+export type AppointmentService=GarageService|'building_tint';
+export type AppointmentInput={customerId:string;vehicleId?:string;enquiryId?:string;kind:'visit'|'installation';service:AppointmentService;title?:string;notes?:string;startsAt:string;endsAt:string};
+export const appointmentKindLabel=(kind:string)=>kind==='installation'?'Installation':'Customer visit';
+async function request(data:Record<string,unknown>){
+ const res=await fetch('/api/garage/appointments',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-Garage-Building':'1'},body:JSON.stringify(data)});
+ const result=await res.json().catch(()=>null);
+ if(!res.ok)throw Object.assign(new Error(result?.error?.message||'Appointments are unavailable. Try again.'),{code:result?.error?.code});
+ return result;
 }
-
-// Fetches everything overlapping [rangeStart, rangeEnd) — used to fill
-// whichever view (day/week/month) is currently on screen.
-export async function listAppointmentsInRange(rangeStart: string, rangeEnd: string): Promise<GarageAppointment[]> {
-  const { data, error } = await supabase
-    .from('garage_appointments')
-    .select('*')
-    .lt('starts_at', rangeEnd)
-    .gt('ends_at', rangeStart)
-    .order('starts_at', { ascending: true });
-  if (error) throw error;
-  return (data ?? []).map(rowToAppointment);
+function fromRow(r:any):GarageAppointment{return {id:r.id,customerId:r.customer_id,vehicleId:r.vehicle_id||undefined,enquiryId:r.enquiry_id||undefined,invoiceId:r.invoice_id||undefined,kind:r.appointment_kind,revision:r.revision,service:r.service,title:r.title||undefined,notes:r.notes||undefined,startsAt:r.starts_at,endsAt:r.ends_at,createdBy:r.created_by||undefined,createdAt:r.created_at};}
+export async function listAppointmentsInRange(rangeStart:string,rangeEnd:string):Promise<GarageAppointment[]>{
+ const rows:GarageAppointment[]=[];let page=0,more=true;
+ while(more){const r=await request({action:'list',rangeStart,rangeEnd,page:page++});rows.push(...(r.appointments||[]).map(fromRow));more=!!r.hasMore;}
+ return rows;
 }
+export async function createGarageAppointment(input:AppointmentInput&{requestId:string}):Promise<GarageAppointment>{const r=await request({action:'create',...input});return fromRow(r.saved);}
+export async function updateGarageAppointment(id:string,input:AppointmentInput&{revision:number}):Promise<GarageAppointment>{const r=await request({action:'update',id,...input});return fromRow(r.saved);}
+export async function deleteGarageAppointment(id:string,revision:number):Promise<void>{await request({action:'cancel',id,revision});}
 
-export async function createGarageAppointment(input: {
-  customerId: string; vehicleId?: string; service: GarageService;
-  title?: string; notes?: string; startsAt: string; endsAt: string; createdBy?: string;
-}): Promise<GarageAppointment> {
-  const row = {
-    id: generateId(),
-    customer_id: input.customerId,
-    vehicle_id: input.vehicleId || null,
-    service: input.service,
-    title: input.title || null,
-    notes: input.notes || null,
-    starts_at: input.startsAt,
-    ends_at: input.endsAt,
-    created_by: input.createdBy || null,
-  };
-  const { data, error } = await supabase.from('garage_appointments').insert(row).select().single();
-  if (error) throw error;
-  return rowToAppointment(data);
-}
-
-export async function updateGarageAppointment(id: string, input: {
-  customerId: string; vehicleId?: string; service: GarageService;
-  title?: string; notes?: string; startsAt: string; endsAt: string;
-}): Promise<GarageAppointment> {
-  const row = {
-    customer_id: input.customerId,
-    vehicle_id: input.vehicleId || null,
-    service: input.service,
-    title: input.title || null,
-    notes: input.notes || null,
-    starts_at: input.startsAt,
-    ends_at: input.endsAt,
-  };
-  const { data, error } = await supabase.from('garage_appointments').update(row).eq('id', id).select().single();
-  if (error) throw error;
-  return rowToAppointment(data);
-}
-
-export async function deleteGarageAppointment(id: string): Promise<void> {
-  const { error } = await supabase.from('garage_appointments').delete().eq('id', id);
-  if (error) throw error;
-}
+export async function saleAppointmentOptions(customerId:string,vehicleId:string,service:GarageService):Promise<{appointments:GarageAppointment[];hasMore:boolean}>{const r=await request({action:'sale_options',customerId,vehicleId,service});return {appointments:(r.appointments||[]).map(fromRow),hasMore:!!r.hasMore};}
+export async function confirmSaleAppointment(invoiceId:string,booking:{appointmentId:string;revision:number}|{startsAt:string;endsAt:string}):Promise<GarageAppointment>{const data={action:'confirm_sale',invoiceId,...booking};let result;try{result=await request(data);}catch(error){if((error as {code?:string}).code!=='RETRYABLE')throw error;result=await request(data);}return fromRow(result.saved);}

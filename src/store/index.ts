@@ -117,7 +117,7 @@ interface StoreState {
 
   // Auth
   login: (username: string, password: string) => Promise<boolean>;
-  logout: () => Promise<void>;
+  logout: (options?:{revokeSession?:boolean}) => Promise<void>;
 
   // Cars
   addCar: (car: Car) => Promise<void>;
@@ -1229,6 +1229,9 @@ function payslipToRow(p: Payslip) {
 // Guard: realtime channels are set up only once per session, regardless of how many
 // times loadAll is called (e.g. pull-to-refresh creates duplicate channels otherwise).
 let realtimeSubscribed = false;
+let channelCleanup: Promise<unknown> = Promise.resolve();
+let accountDataGeneration = 0;
+let dataLoadGeneration = 0;
 
 // Car IDs with an updateCar write in flight (optimistic set() already applied locally,
 // DB write not yet confirmed). loadAll's phase 1/2 queries are snapshots that can resolve
@@ -1297,12 +1300,20 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     const TTL = 5 * 60 * 1000; // 5 minutes
     if (!force && loaded && lastFetched && (Date.now() - lastFetched) < TTL) return;
 
+    const actorId=get().currentUser?.id;
+    if(!actorId)return;
+    const accountGeneration=accountDataGeneration,loadGeneration=++dataLoadGeneration;
+    const actorCurrent=()=>get().currentUser?.id===actorId&&accountDataGeneration===accountGeneration;
+    const loadCurrent=()=>actorCurrent()&&dataLoadGeneration===loadGeneration;
+    const setForLoad=(change:Parameters<typeof set>[0])=>{if(loadCurrent())set(change);};
+    const setForActor=(change:Parameters<typeof set>[0])=>{if(actorCurrent())set(change);};
+
     // ── Phase 1: critical tables, filtered to active records only ──
     // Delivered cars and closed loan cases are loaded in phase 2 so this stays
     // fast forever regardless of how much historical data accumulates.
     // Wrapped with the same catch+retry-once pattern as phase 2 below — a rejected
     // query here (network blip right after a refresh, PWA waking from background,
-    // etc.) used to throw out of loadAll entirely, skipping the set() below and
+    // etc.) used to throw out of loadAll entirely, skipping the setForLoad() below and
     // leaving customers/loanCases/cars empty for the rest of the session with no
     // retry, which looks like a full data wipe from the user's side.
     let allCars: Car[] = [];
@@ -1321,6 +1332,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
             () => fetchAllRows((from, to) => supabase.from('loan_cases').select('*').not('status', 'in', '(rejected,cancelled,withdrawn)').order('id').range(from, to)),
           ], 4);
 
+        if(!loadCurrent())return false;
         allCars = (cars.data ?? []).map(rowToCar);
         allCustomers = (customers.data ?? []).map(rowToCustomer);
         allUsers = (users.data ?? []).map(rowToUser);
@@ -1349,7 +1361,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
           });
         }
 
-        set((s) => ({
+        setForLoad((s) => ({
           users:           users.data              ? allUsers                                                            : s.users,
           // Phase 1 only fetches non-delivered cars — merging in just `allCars` would wipe
           // out delivered ones (previously fetched by phase 2, or restored from the local
@@ -1368,6 +1380,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         }));
         return true;
       } catch (err) {
+        if(!loadCurrent())return false;
         console.error('loadAll phase 1 failed:', err);
         if (!isRetry) {
           await new Promise((r) => setTimeout(r, 4000));
@@ -1392,7 +1405,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         .eq('user_id', currentUser.id).eq('is_read', false)
         .order('created_at', { ascending: false }).limit(200)
         .then(({ data: notifs }) => {
-          if (notifs) set({ notifications: notifs.map(rowToNotification) });
+          if (notifs) setForLoad({ notifications: notifs.map(rowToNotification) });
         });
       // Personal Kanban columns are user-scoped at fetch time (not just filtered
       // client-side) — no reason to ship one salesperson's private board layout to
@@ -1401,10 +1414,11 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       // merge with the persisted cache), so a transient failure must not be treated
       // as "empty" — that's how a salesperson's whole board looked wiped on reload.
       const fetchKanban = (isRetry = false): void => {
+        if(!loadCurrent())return;
         supabase.from('kanban_columns').select('*')
           .eq('user_id', currentUser.id).order('sort_order', { ascending: true })
           .then(({ data: cols, error }) => {
-            if (cols) set({ kanbanColumns: cols.map(rowToKanbanColumn) });
+            if (cols) setForLoad({ kanbanColumns: cols.map(rowToKanbanColumn) });
             else if (!isRetry) setTimeout(() => fetchKanban(true), 4000);
             else if (error) console.error('kanban_columns fetch failed, keeping cached board:', error.message);
           });
@@ -1440,12 +1454,13 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       () => fetchAllRows((from, to) => supabase.from('bank_statement_uploads').select('*').order('uploaded_at', { ascending: false }).order('id').range(from, to)),
       () => fetchAllRows((from, to) => supabase.from('bank_transactions').select('*').order('created_at', { ascending: false }).order('id').range(from, to)),
     ], 5).then(async ([deliveredCarsResult, closedCasesResult, quotations, instructions, testDrives, reminders, dealers, workshops, suppliers, merchants, claimCategories, ledgerAccounts, journalEntries, loanCaseDocsResult, loanCaseActivitiesResult, paymentsResult, investorTxnsResult, shipmentsResult, carMovementsResult, payslipsResult, bankUploadsResult, bankTxnsResult]) => {
+      if(!loadCurrent())return;
       const allQuotations  = (quotations.data ?? []).map(rowToQuotation);
       const allTestDrives  = (testDrives.data ?? []).map(rowToTestDrive);
       const deliveredCars  = (deliveredCarsResult.data ?? []).map(rowToCar);
       const closedCases    = (closedCasesResult.data ?? []).map(rowToLoanCase);
 
-      set((s) => ({
+      setForLoad((s) => ({
         // Merge delivered cars into store — deduplicate by id so force-refresh is safe.
         // Guarded by mergePendingCars so a car whose delivery write is still in flight
         // (or just landed) isn't reverted by this fetch's now-stale snapshot.
@@ -1483,7 +1498,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       // Needs phase 1's allCustomers/allUsers, so wait for that here — this only
       // delays the notification side effect, not the phase 2 data landing above.
       const phase1Succeeded = await phase1Promise;
-      if (phase1Succeeded && scheduledNotifAllowed()) {
+      if (loadCurrent() && phase1Succeeded && scheduledNotifAllowed()) {
         const today    = new Date().toDateString();
         const tomorrow = new Date(Date.now() + 86400000).toDateString();
 
@@ -1515,14 +1530,18 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
           .forEach(q => sendPush(dirIds(allUsers), '⏰ Quotation expiring', `${q.contactName} – ${q.make} ${q.model} expires tomorrow`, '/quotations'));
       }
     }).catch((err) => {
+      if(!loadCurrent())return;
       console.error('loadAll phase 2 failed:', err);
       if (!isRetry) setTimeout(() => { runPhase2(true).catch(() => {}); }, 4000);
-      else set({ phase2Loaded: true }); // give up — stop any "still loading" UI from waiting forever
+      else setForLoad({ phase2Loaded: true }); // give up — stop any "still loading" UI from waiting forever
     });
     runPhase2();
 
     const phase1Ok = await phase1Promise;
-    if (!phase1Ok) return;
+    if (!phase1Ok || !loadCurrent()) return;
+
+    await channelCleanup;
+    if(!loadCurrent())return;
 
     // Real-time subscriptions — set up once only; calling loadAll again (e.g. pull-to-refresh)
     // must not create duplicate channels or the server may reset the socket on seeing
@@ -1536,11 +1555,11 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       supabase.channel(`notifs-${persistedUser.id}`)
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${persistedUser.id}` }, (p) => {
           const n = rowToNotification(p.new);
-          set((s) => ({ notifications: [n, ...s.notifications], toastQueue: [...s.toastQueue, n] }));
+          setForActor((s) => ({ notifications: [n, ...s.notifications], toastQueue: [...s.toastQueue, n] }));
         })
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${persistedUser.id}` }, (p) => {
           const updated = rowToNotification(p.new);
-          set((s) => ({ notifications: s.notifications.map(n => n.id === updated.id ? updated : n).filter(n => !n.isRead) }));
+          setForActor((s) => ({ notifications: s.notifications.map(n => n.id === updated.id ? updated : n).filter(n => !n.isRead) }));
         })
         .subscribe();
     }
@@ -1548,13 +1567,13 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     supabase.channel('realtime-cars')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cars' }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          set((s) => ({
+          setForActor((s) => ({
             cars: s.cars.some((c) => c.id === (payload.new as any).id)
               ? s.cars.map((c) => c.id === (payload.new as any).id ? rowToCar(payload.new) : c)
               : [...s.cars, rowToCar(payload.new)],
           }));
         } else if (payload.eventType === 'UPDATE') {
-          set((s) => ({
+          setForActor((s) => ({
             cars: s.cars.map((c) => {
               if (c.id !== (payload.new as any).id) return c;
               const incoming = rowToCar(payload.new);
@@ -1576,7 +1595,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
             }),
           }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ cars: s.cars.filter((c) => c.id !== (payload.old as any)?.id) }));
+          setForActor((s) => ({ cars: s.cars.filter((c) => c.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -1584,15 +1603,15 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     supabase.channel('realtime-customers')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          set((s) => ({
+          setForActor((s) => ({
             customers: s.customers.some((c) => c.id === (payload.new as any).id)
               ? s.customers
               : [...s.customers, rowToCustomer(payload.new)],
           }));
         } else if (payload.eventType === 'UPDATE') {
-          set((s) => ({ customers: s.customers.map((c) => c.id === (payload.new as any).id ? rowToCustomer(payload.new) : c) }));
+          setForActor((s) => ({ customers: s.customers.map((c) => c.id === (payload.new as any).id ? rowToCustomer(payload.new) : c) }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ customers: s.customers.filter((c) => c.id !== (payload.old as any)?.id) }));
+          setForActor((s) => ({ customers: s.customers.filter((c) => c.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -1600,15 +1619,15 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     supabase.channel('realtime-repairs')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'repairs' }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          set((s) => ({
+          setForActor((s) => ({
             repairs: s.repairs.some((r) => r.id === (payload.new as any).id)
               ? s.repairs
               : [...s.repairs, rowToRepair(payload.new)],
           }));
         } else if (payload.eventType === 'UPDATE') {
-          set((s) => ({ repairs: s.repairs.map((r) => r.id === (payload.new as any).id ? rowToRepair(payload.new) : r) }));
+          setForActor((s) => ({ repairs: s.repairs.map((r) => r.id === (payload.new as any).id ? rowToRepair(payload.new) : r) }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ repairs: s.repairs.filter((r) => r.id !== (payload.old as any)?.id) }));
+          setForActor((s) => ({ repairs: s.repairs.filter((r) => r.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -1616,13 +1635,13 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     supabase.channel('realtime-users')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          set((s) => ({
+          setForActor((s) => ({
             users: s.users.some((u) => u.id === (payload.new as any).id)
               ? s.users
               : [...s.users, rowToUser(payload.new)],
           }));
         } else if (payload.eventType === 'UPDATE') {
-          set((s) => {
+          setForActor((s) => {
             const updated = rowToUser(payload.new);
             // Only merge fields that actually exist in the payload (skip undefined so
             // columns not yet in the DB don't wipe optimistic updates).
@@ -1635,7 +1654,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
             };
           });
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ users: s.users.filter((u) => u.id !== (payload.old as any)?.id) }));
+          setForActor((s) => ({ users: s.users.filter((u) => u.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -1644,16 +1663,16 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       .on('postgres_changes', { event: '*', schema: 'public', table: 'workshops' }, (payload) => {
         if (payload.eventType === 'INSERT') {
           const w = rowToWorkshop(payload.new);
-          set((s) => ({
+          setForActor((s) => ({
             workshops: s.workshops.some((x) => x.id === w.id) ? s.workshops : [...s.workshops, w],
           }));
         } else if (payload.eventType === 'UPDATE') {
           const w = rowToWorkshop(payload.new);
-          set((s) => ({
+          setForActor((s) => ({
             workshops: s.workshops.map((x) => x.id === w.id ? w : x),
           }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ workshops: s.workshops.filter((w) => w.id !== (payload.old as any)?.id) }));
+          setForActor((s) => ({ workshops: s.workshops.filter((w) => w.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -1661,17 +1680,17 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     supabase.channel('realtime-merchants')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'merchants' }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          set((s) => ({
+          setForActor((s) => ({
             merchants: s.merchants.some((m) => m.id === (payload.new as any).id)
               ? s.merchants
               : [...s.merchants, payload.new as Merchant],
           }));
         } else if (payload.eventType === 'UPDATE') {
-          set((s) => ({
+          setForActor((s) => ({
             merchants: s.merchants.map((m) => m.id === (payload.new as any).id ? payload.new as Merchant : m),
           }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ merchants: s.merchants.filter((m) => m.id !== (payload.old as any)?.id) }));
+          setForActor((s) => ({ merchants: s.merchants.filter((m) => m.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -1679,15 +1698,15 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     supabase.channel('realtime-quotations')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'quotations' }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          set((s) => ({
+          setForActor((s) => ({
             quotations: s.quotations.some((q) => q.id === (payload.new as any).id)
               ? s.quotations
               : [...s.quotations, rowToQuotation(payload.new)],
           }));
         } else if (payload.eventType === 'UPDATE') {
-          set((s) => ({ quotations: s.quotations.map((q) => q.id === (payload.new as any).id ? rowToQuotation(payload.new) : q) }));
+          setForActor((s) => ({ quotations: s.quotations.map((q) => q.id === (payload.new as any).id ? rowToQuotation(payload.new) : q) }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ quotations: s.quotations.filter((q) => q.id !== (payload.old as any)?.id) }));
+          setForActor((s) => ({ quotations: s.quotations.filter((q) => q.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -1695,15 +1714,15 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     supabase.channel('realtime-instructions')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'instructions' }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          set((s) => ({
+          setForActor((s) => ({
             instructions: s.instructions.some((i) => i.id === (payload.new as any).id)
               ? s.instructions
               : [...s.instructions, rowToInstruction(payload.new)],
           }));
         } else if (payload.eventType === 'UPDATE') {
-          set((s) => ({ instructions: s.instructions.map((i) => i.id === (payload.new as any).id ? rowToInstruction(payload.new) : i) }));
+          setForActor((s) => ({ instructions: s.instructions.map((i) => i.id === (payload.new as any).id ? rowToInstruction(payload.new) : i) }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ instructions: s.instructions.filter((i) => i.id !== (payload.old as any)?.id) }));
+          setForActor((s) => ({ instructions: s.instructions.filter((i) => i.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -1711,15 +1730,15 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     supabase.channel('realtime-test-drives')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'test_drives' }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          set((s) => ({
+          setForActor((s) => ({
             testDrives: s.testDrives.some((t) => t.id === (payload.new as any).id)
               ? s.testDrives
               : [...s.testDrives, rowToTestDrive(payload.new)],
           }));
         } else if (payload.eventType === 'UPDATE') {
-          set((s) => ({ testDrives: s.testDrives.map((t) => t.id === (payload.new as any).id ? rowToTestDrive(payload.new) : t) }));
+          setForActor((s) => ({ testDrives: s.testDrives.map((t) => t.id === (payload.new as any).id ? rowToTestDrive(payload.new) : t) }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ testDrives: s.testDrives.filter((t) => t.id !== (payload.old as any)?.id) }));
+          setForActor((s) => ({ testDrives: s.testDrives.filter((t) => t.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -1727,15 +1746,15 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     supabase.channel('realtime-personal-reminders')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'personal_reminders' }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          set((s) => ({
+          setForActor((s) => ({
             personalReminders: s.personalReminders.some((r) => r.id === (payload.new as any).id)
               ? s.personalReminders
               : [...s.personalReminders, rowToReminder(payload.new)],
           }));
         } else if (payload.eventType === 'UPDATE') {
-          set((s) => ({ personalReminders: s.personalReminders.map((r) => r.id === (payload.new as any).id ? rowToReminder(payload.new) : r) }));
+          setForActor((s) => ({ personalReminders: s.personalReminders.map((r) => r.id === (payload.new as any).id ? rowToReminder(payload.new) : r) }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ personalReminders: s.personalReminders.filter((r) => r.id !== (payload.old as any)?.id) }));
+          setForActor((s) => ({ personalReminders: s.personalReminders.filter((r) => r.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -1743,15 +1762,15 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     supabase.channel('realtime-dealers')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'dealers' }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          set((s) => ({
+          setForActor((s) => ({
             dealers: s.dealers.some((d) => d.id === (payload.new as any).id)
               ? s.dealers
               : [...s.dealers, payload.new as Dealer],
           }));
         } else if (payload.eventType === 'UPDATE') {
-          set((s) => ({ dealers: s.dealers.map((d) => d.id === (payload.new as any).id ? payload.new as Dealer : d) }));
+          setForActor((s) => ({ dealers: s.dealers.map((d) => d.id === (payload.new as any).id ? payload.new as Dealer : d) }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ dealers: s.dealers.filter((d) => d.id !== (payload.old as any)?.id) }));
+          setForActor((s) => ({ dealers: s.dealers.filter((d) => d.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -1759,15 +1778,15 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     supabase.channel('realtime-suppliers')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'suppliers' }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          set((s) => ({
+          setForActor((s) => ({
             suppliers: s.suppliers.some((x) => x.id === (payload.new as any).id)
               ? s.suppliers
               : [...s.suppliers, payload.new as Supplier],
           }));
         } else if (payload.eventType === 'UPDATE') {
-          set((s) => ({ suppliers: s.suppliers.map((x) => x.id === (payload.new as any).id ? payload.new as Supplier : x) }));
+          setForActor((s) => ({ suppliers: s.suppliers.map((x) => x.id === (payload.new as any).id ? payload.new as Supplier : x) }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ suppliers: s.suppliers.filter((x) => x.id !== (payload.old as any)?.id) }));
+          setForActor((s) => ({ suppliers: s.suppliers.filter((x) => x.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -1775,15 +1794,15 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     supabase.channel('realtime-external-salesmen')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'external_salesmen' }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          set((s) => ({
+          setForActor((s) => ({
             externalSalesmen: s.externalSalesmen.some((x) => x.id === (payload.new as any).id)
               ? s.externalSalesmen
               : [...s.externalSalesmen, rowToExternalSalesman(payload.new)],
           }));
         } else if (payload.eventType === 'UPDATE') {
-          set((s) => ({ externalSalesmen: s.externalSalesmen.map((x) => x.id === (payload.new as any).id ? rowToExternalSalesman(payload.new) : x) }));
+          setForActor((s) => ({ externalSalesmen: s.externalSalesmen.map((x) => x.id === (payload.new as any).id ? rowToExternalSalesman(payload.new) : x) }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ externalSalesmen: s.externalSalesmen.filter((x) => x.id !== (payload.old as any)?.id) }));
+          setForActor((s) => ({ externalSalesmen: s.externalSalesmen.filter((x) => x.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -1791,15 +1810,15 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     supabase.channel('realtime-loan-cases')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_cases' }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          set((s) => ({
+          setForActor((s) => ({
             loanCases: s.loanCases.some((c) => c.id === (payload.new as any).id)
               ? s.loanCases
               : [...s.loanCases, rowToLoanCase(payload.new)],
           }));
         } else if (payload.eventType === 'UPDATE') {
-          set((s) => ({ loanCases: s.loanCases.map((c) => c.id === (payload.new as any).id ? rowToLoanCase(payload.new) : c) }));
+          setForActor((s) => ({ loanCases: s.loanCases.map((c) => c.id === (payload.new as any).id ? rowToLoanCase(payload.new) : c) }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ loanCases: s.loanCases.filter((c) => c.id !== (payload.old as any)?.id) }));
+          setForActor((s) => ({ loanCases: s.loanCases.filter((c) => c.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -1807,13 +1826,13 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     supabase.channel('realtime-loan-case-documents')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_case_documents' }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          set((s) => ({
+          setForActor((s) => ({
             loanCaseDocuments: s.loanCaseDocuments.some((d) => d.id === (payload.new as any).id)
               ? s.loanCaseDocuments
               : [...s.loanCaseDocuments, rowToLoanCaseDocument(payload.new)],
           }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({ loanCaseDocuments: s.loanCaseDocuments.filter((d) => d.id !== (payload.old as any)?.id) }));
+          setForActor((s) => ({ loanCaseDocuments: s.loanCaseDocuments.filter((d) => d.id !== (payload.old as any)?.id) }));
         }
       })
       .subscribe();
@@ -1821,7 +1840,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     supabase.channel('realtime-loan-case-activity')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_case_activity' }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          set((s) => ({
+          setForActor((s) => ({
             loanCaseActivities: s.loanCaseActivities.some((a) => a.id === (payload.new as any).id)
               ? s.loanCaseActivities
               : [...s.loanCaseActivities, rowToLoanCaseActivity(payload.new)],
@@ -1833,17 +1852,17 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     supabase.channel('realtime-investor-transactions')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'investor_transactions' }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          set((s) => ({
+          setForActor((s) => ({
             investorTransactions: s.investorTransactions.some((t) => t.id === (payload.new as any).id)
               ? s.investorTransactions
               : [...s.investorTransactions, rowToInvestorTxn(payload.new)],
           }));
         } else if (payload.eventType === 'UPDATE') {
-          set((s) => ({
+          setForActor((s) => ({
             investorTransactions: s.investorTransactions.map((t) => t.id === (payload.new as any).id ? rowToInvestorTxn(payload.new) : t),
           }));
         } else if (payload.eventType === 'DELETE') {
-          set((s) => ({
+          setForActor((s) => ({
             investorTransactions: s.investorTransactions.filter((t) => t.id !== (payload.old as any)?.id),
           }));
         }
@@ -1888,8 +1907,11 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   // Also wipes the cached data (not just the session), since it's now persisted to
   // localStorage for instant reload — a shared device must not show the next person
   // who opens the browser this user's cars/customers/payments before they even log in.
-  logout: async () => {
-    if (secureGarageLoginEnabled() || import.meta.env.VITE_GARAGE_BUILDING_STORAGE === 'online') await garageSessionRequest('DELETE');
+  logout: async (options) => {
+    accountDataGeneration++;
+    dataLoadGeneration++;
+    realtimeSubscribed=false;
+    channelCleanup = Promise.allSettled([channelCleanup, supabase.removeAllChannels()]);
     set({
     currentUser: null,
     users: [], cars: [], repairs: [], quotations: [], instructions: [], customers: [],
@@ -1901,6 +1923,9 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     bankStatementUploads: [], bankTransactions: [],
     loaded: false, phase2Loaded: false, lastFetched: null,
   });
+    const revoke = options?.revokeSession !== false && (secureGarageLoginEnabled() || import.meta.env.VITE_GARAGE_BUILDING_STORAGE === 'online')
+      ? garageSessionRequest('DELETE') : Promise.resolve();
+    await Promise.all([channelCleanup, revoke]);
   },
 
   // Cars

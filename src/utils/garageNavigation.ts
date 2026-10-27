@@ -21,6 +21,6 @@ export function garageSecondaryNavigation(role: string | undefined, section: Gar
   const manager = ['director', 'shareholder', 'garage_head'].includes(role ?? '');
   if (section === 'Jobs') return manager ? [{ label: 'Workshop', path: '/garage/installer' }, { label: 'Calendar', path: '/garage/calendar' }] : [];
   if (section === 'Manage' && manager) return [{ label: 'Team', path: '/garage/team' }, { label: 'Pricing & films', path: '/garage/tint-pricing' }];
-  if (section === 'Home' && manager) return [{ label: 'My work', path: '/garage/dashboard' }, { label: 'Team orders', path: '/garage/work-order-tracking' }];
+  if (section === 'Home' && (manager || role === 'garage_salesman')) return [{ label: 'My work', path: '/garage/dashboard' }, { label: 'Follow-ups', path: '/garage/enquiries' }, ...(manager ? [{ label: 'Team orders', path: '/garage/work-order-tracking' }] : [])];
   return [];
 }

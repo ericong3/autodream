@@ -33,6 +33,7 @@ const isGlass = (s: TintPositionSelection) => glassZone(s.position) !== undefine
 // via router state, so the form can be rehydrated instead of resetting —
 // same shape this page originally sent to Summary.
 interface IncomingOrder {
+  confirmationId?: string;
   packageType: TintPackageType;
   fullSeries?: TintSeries;
   selections: TintPositionSelection[];
@@ -214,6 +215,7 @@ export default function GarageTintPackage() {
       });
     navigate(`/garage/work-order/customer/${id}/vehicle/${vehicleId}/service/tinted/summary`, {
       state: {
+        confirmationId: incoming?.confirmationId,
         packageType,
         fullSeries: packageType === 'full' ? (fullSeries as TintSeries) : undefined,
         selections,

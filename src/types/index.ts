@@ -39,7 +39,11 @@ export interface GarageAppointment {
   id: string;
   customerId: string;
   vehicleId?: string;
-  service: GarageService;
+  service: GarageService | 'building_tint';
+  kind: 'visit' | 'installation';
+  revision: number;
+  enquiryId?: string;
+  invoiceId?: string;
   title?: string;
   notes?: string;
   startsAt: string;

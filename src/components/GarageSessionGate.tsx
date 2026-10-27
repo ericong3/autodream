@@ -25,7 +25,7 @@ function VerifiedGarage({ children, allow }: { children: ReactNode; allow?: (rol
     }
   },[identity,matches]);
   if(error)return <div className="min-h-screen bg-black text-white p-10"><p role="alert">{error}</p><button className="text-gold-400 mt-4" onClick={()=>setAttempt(a=>a+1)}>Try again</button></div>;
-  if(identity===null)return <Navigate to="/login" replace/>;
+  if(identity===null)return <Navigate to="/login" state={{from:location.pathname+location.search}} replace/>;
   if(!matches)return <div className="min-h-screen bg-black text-white/60 p-10">Checking Garage sign-in…</div>;
   if(allow&&!allow(identity.role))return <Navigate to="/garage" replace/>;
   return <>{children}</>;

@@ -190,10 +190,12 @@ export async function listWorkOrderActivity(invoiceId: string): Promise<GarageWo
 // Proof-of-payment upload — photo, camera capture, or PDF. Only the storage
 // path is kept on the invoice row; a signed URL is generated on view since
 // the bucket is private.
-export async function uploadInvoiceReceipt(invoiceId: string, file: File): Promise<GarageInvoice> {
-  const path = `${invoiceId}/${Date.now()}-${file.name}`;
+export async function uploadInvoiceReceipt(invoiceId: string, file: File, recoveryKey?: string): Promise<GarageInvoice> {
+  const digest = recoveryKey ? [...new Uint8Array(await crypto.subtle.digest('SHA-256',await file.arrayBuffer()))].map(value=>value.toString(16).padStart(2,'0')).join('') : '';
+  const path = recoveryKey ? `${invoiceId}/confirmation-${recoveryKey}-${digest}` : `${invoiceId}/${Date.now()}-${file.name}`;
   const { error: uploadError } = await supabase.storage.from('garage-invoice-receipts').upload(path, file);
-  if (uploadError) throw uploadError;
+  // The identical upload can already exist if its successful reply was lost.
+  if (uploadError && !(recoveryKey && ((uploadError as {status?:number}).status===409 || String((uploadError as {statusCode?:string}).statusCode)==='409'))) throw uploadError;
   const { data, error } = await supabase
     .from('garage_invoices')
     .update({ receipt_path: path, receipt_name: file.name })

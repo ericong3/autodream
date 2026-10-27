@@ -1,3 +1,5 @@
+import {secureGarageLoginEnabled} from './garageSession';
+import {enquiryRequest} from './garageEnquiries';
 import { supabase } from './supabase';
 import type { GarageCustomer, GarageVehicle, GarageVehicleSize } from '../types';
 import { generateId } from '../utils/format';
@@ -10,7 +12,7 @@ function rowToCustomer(r: any): GarageCustomer {
   return {
     id: r.id,
     name: r.name,
-    icNumber: r.ic_number,
+    icNumber: r.ic_number ?? '',
     phone: r.phone,
     email: r.email ?? undefined,
     createdAt: r.created_at,
@@ -37,6 +39,7 @@ function rowToVehicle(r: any): GarageVehicle {
 export const UNIQUE_VIOLATION = '23505';
 
 export async function findGarageCustomerByIc(icNumber: string): Promise<GarageCustomer | null> {
+  if(secureGarageLoginEnabled()){const r=await enquiryRequest({action:'customer_ic',icNumber});return r.customer?rowToCustomer(r.customer):null;}
   const { data, error } = await supabase.from('garage_customers').select('*').eq('ic_number', icNumber).maybeSingle();
   if (error) throw error;
   return data ? rowToCustomer(data) : null;
@@ -45,6 +48,7 @@ export async function findGarageCustomerByIc(icNumber: string): Promise<GarageCu
 // Shared customer lookup. Only plain letters, numbers and spaces enter the
 // PostgREST filter expression; phone variants cover common Malaysian formats.
 export async function searchGarageCustomers(query: string): Promise<GarageCustomer[]> {
+  if(secureGarageLoginEnabled()){if(query.trim().length<2)return [];const r=await enquiryRequest({action:'customers',name:query.trim()});return (r.customers||[]).map(c=>rowToCustomer(c));}
   const q = query.normalize('NFKC').replace(/[^\p{L}\p{N} +\-]/gu, '').trim().slice(0, 100);
   if (!q) return [];
   const digits = q.replace(/\D/g, '');
@@ -69,14 +73,16 @@ export async function searchGarageCustomers(query: string): Promise<GarageCustom
 }
 
 export async function getGarageCustomer(id: string): Promise<GarageCustomer | null> {
+  if(secureGarageLoginEnabled()){const r=await enquiryRequest({action:'customer_get',id});return r.customer?rowToCustomer(r.customer):null;}
   const { data, error } = await supabase.from('garage_customers').select('*').eq('id', id).maybeSingle();
   if (error) throw error;
   return data ? rowToCustomer(data) : null;
 }
 
 export async function createGarageCustomer(input: {
-  name: string; icNumber: string; phone: string; email?: string; createdBy?: string;
+  name: string; icNumber: string; phone: string; email?: string; createdBy?: string; separatePerson?: boolean;
 }): Promise<GarageCustomer> {
+  if(secureGarageLoginEnabled()){const r=await enquiryRequest({action:'customer_create',name:input.name,icNumber:input.icNumber,phone:input.phone,email:input.email,separatePerson:input.separatePerson||false});if(!r.customer)throw new Error('Customer could not be saved.');return rowToCustomer(r.customer);}
   const row = {
     id: generateId(),
     name: input.name,

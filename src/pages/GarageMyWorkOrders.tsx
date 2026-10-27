@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ClipboardList, Car, User, ChevronRight, Clock3, Plus } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
+import GarageEnquiryReminders from '../components/GarageEnquiryReminders';
 import GarageTodayAppointments from '../components/GarageTodayAppointments';
 import { useStore } from '../store';
 import { listInvoicesCreatedBy } from '../lib/garageInvoices';
@@ -206,7 +207,7 @@ export default function GarageMyWorkOrders() {
             })}
           </div>
         )}
-        <GarageTodayAppointments />
+        <GarageEnquiryReminders /><GarageTodayAppointments />
       </div>
     </GarageShell>
   );

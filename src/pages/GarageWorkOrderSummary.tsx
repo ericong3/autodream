@@ -6,6 +6,7 @@ import Modal from '../components/Modal';
 import { getGarageVehicle, getGarageCustomer } from '../lib/garageCustomers';
 import { TINT_SERIES, GLASS_LABEL } from '../utils/tintPricing';
 import { GARAGE_SERVICES } from '../utils/garageServices';
+import {saleDraftId} from '../lib/garageSaleConfirmation';
 import { formatRM, generateId } from '../utils/format';
 import type {
   GarageVehicle, GarageCustomer, TintPackageType, TintSeries, TintPositionSelection,
@@ -21,6 +22,7 @@ const TINT_SERIES_LABEL = Object.fromEntries(TINT_SERIES.map((s) => [s.key, s.la
 // Built by GarageTintPackage and handed over via router state — nothing is
 // persisted until the Payment page's final Confirm is pressed.
 export interface PendingTintOrder {
+  confirmationId?: string;
   packageType: TintPackageType;
   fullSeries?: TintSeries;
   selections: TintPositionSelection[];
@@ -43,7 +45,8 @@ export default function GarageWorkOrderSummary() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const pending = location.state as PendingTintOrder | undefined;
+  const incoming=location.state as PendingTintOrder|undefined;
+  const pending=incoming?{...incoming,confirmationId:incoming.confirmationId||saleDraftId(location.key,id!,vehicleId!)}:undefined;
 
   const [vehicle, setVehicle] = useState<GarageVehicle | null>(null);
   const [customer, setCustomer] = useState<GarageCustomer | null>(null);

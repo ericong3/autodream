@@ -4,6 +4,7 @@ import {
   Routes,
   Route,
   Navigate,
+  useLocation,
 } from 'react-router-dom';
 import { useStore } from './store';
 import Layout from './components/Layout';
@@ -45,6 +46,7 @@ import GarageHome from './pages/GarageHome';
 import GarageTeamMembers from './pages/GarageTeamMembers';
 import GarageDashboard from './pages/GarageDashboard';
 import GarageSalesTools from './pages/GarageSalesTools';
+const GarageFollowUps = lazy(() => import('./pages/GarageFollowUps'));
 import GarageWorkOrderStart from './pages/GarageWorkOrderStart';
 import GarageWorkOrderNewCustomer from './pages/GarageWorkOrderNewCustomer';
 import GarageWorkOrderExistingCustomer from './pages/GarageWorkOrderExistingCustomer';
@@ -178,6 +180,14 @@ function RequireDataAccess({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function StartupDataGate({ready,children}:{ready:boolean;children:React.ReactNode}){
+ const {pathname}=useLocation();
+ const publicEntry=pathname==='/login'||pathname==='/garage/login'||/^\/account\/(register|verify|reset|forgot|resend|check)$/.test(pathname);
+ const fastEntry=pathname==='/choose-business'||((pathname==='/garage'||pathname.startsWith('/garage/'))&&pathname!=='/garage/team'&&!pathname.startsWith('/garage/team/'));
+ if(!ready&&!publicEntry&&!fastEntry)return <div className="min-h-screen bg-black text-white/60 flex items-center justify-center">Loading...</div>;
+ return <>{children}</>;
+}
+
 export default function App() {
   const currentUser = useStore((s) => s.currentUser);
   const loadAll = useStore((s) => s.loadAll);
@@ -200,24 +210,19 @@ export default function App() {
   // immediately with empty data until a manual browser refresh remounts
   // App from scratch and this effect fires again for real.
   useEffect(() => {
+    let active=true;
+    if(!currentUser){setFetchDone(true);return;}
     setFetchDone(false);
-    loadAll().finally(() => setFetchDone(true));
+    loadAll().catch(()=>undefined).finally(() => {if(active)setFetchDone(true);});
+    return()=>{active=false;};
   }, [currentUser?.id]);
 
   const ready = hydrated && (storeLoaded || fetchDone);
 
-  if (!ready) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#0a0a0a', color: '#c9a84c', fontFamily: 'sans-serif', fontSize: 18 }}>
-        Loading...
-      </div>
-    );
-  }
-
   return (
     <HashRouter>
       <ToastContainer />
-      <GarageSessionGate><Routes>
+      <GarageSessionGate><StartupDataGate ready={ready}><Routes>
         {/* Car Movement — login-required but standalone (no Layout) */}
         <Route path="/movement" element={<CarMovement />} />
 
@@ -237,6 +242,7 @@ export default function App() {
         <Route path="/choose-business" element={<RequireBoth><ChooseBusiness /></RequireBoth>} />
         <Route path="/garage" element={<RequireGarage><GarageHome /></RequireGarage>} />
         <Route path="/garage/no-access" element={<RequireGarage><GarageNoAccess /></RequireGarage>} />
+        <Route path="/garage/enquiries" element={<RequireGarageSales><Suspense fallback={<div className="p-10 text-white/60">Loading follow-ups...</div>}><GarageFollowUps /></Suspense></RequireGarageSales>} />
         <Route path="/garage/dashboard" element={<RequireGarageSales><GarageDashboard /></RequireGarageSales>} />
         <Route path="/garage/sales-tools" element={<RequireGarageSales><GarageSalesTools /></RequireGarageSales>} />
         <Route path="/garage/building" element={<RequireGarageSales><Suspense fallback={<div className="p-10 text-white/60">Loading building tint…</div>}><GarageBuildingProjects /></Suspense></RequireGarageSales>} />
@@ -301,7 +307,7 @@ export default function App() {
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes></GarageSessionGate>
+      </Routes></StartupDataGate></GarageSessionGate>
     </HashRouter>
   );
 }

@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
+import {Link,useSearchParams} from 'react-router-dom';
+import {enquiryRequest} from '../lib/garageEnquiries';
 import {
   ChevronLeft, ChevronRight, Plus, X, Trash2, User, Clock, Search,
 } from 'lucide-react';
@@ -6,13 +8,14 @@ import GarageShell from '../components/GarageShell';
 import Modal from '../components/Modal';
 import { useStore } from '../store';
 import {
+  appointmentKindLabel,
   listAppointmentsInRange, createGarageAppointment, updateGarageAppointment, deleteGarageAppointment,
 } from '../lib/garageAppointments';
 import {
   searchGarageCustomers, getGarageCustomer, getGarageVehicle, listGarageVehicles,
 } from '../lib/garageCustomers';
 import { GARAGE_SERVICES, GARAGE_SERVICE_COLOR } from '../utils/garageServices';
-import type { GarageAppointment, GarageCustomer, GarageVehicle, GarageService } from '../types';
+import type { GarageAppointment, GarageCustomer, GarageVehicle } from '../types';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTH_LABELS = [
@@ -58,7 +61,13 @@ interface DraftAppointment {
   id?: string;
   customer: GarageCustomer | null;
   vehicleId: string;
-  service: GarageService;
+  service: GarageAppointment['service'];
+  kind: GarageAppointment['kind'];
+  revision?: number;
+  enquiryId?: string;
+  invoiceId?: string;
+  requestId: string;
+  allowedServices?: GarageAppointment['service'][];
   title: string;
   notes: string;
   date: string;
@@ -72,22 +81,26 @@ function blankDraft(date: Date, startHour?: number): DraftAppointment {
   const end = new Date(start);
   end.setHours(end.getHours() + 1);
   return {
-    customer: null, vehicleId: '', service: 'tinted', title: '', notes: '',
+    customer: null, vehicleId: '', service: 'tinted', kind:'visit', requestId:crypto.randomUUID(), title: '', notes: '',
     date: toDateInput(start), startTime: toTimeInput(start), endTime: toTimeInput(end),
   };
 }
 
 export default function GarageCalendar() {
+  const [params,setParams]=useSearchParams();
+  const [loadError,setLoadError]=useState('');
+  const loadGeneration=useRef(0);
+  const openingEnquiry=useRef('');
   const currentUser = useStore((s) => s.currentUser);
   const allUsers = useStore((s) => s.users);
-  const isManager = currentUser?.role === 'director' || currentUser?.role === 'shareholder' || currentUser?.role === 'garage_head';
+  const isManager = currentUser?.role === 'director';
   const garageSalesmen = useMemo(
     () => allUsers.filter((u) => u.businessAccess === 'garage' && u.role === 'garage_salesman'),
     [allUsers],
   );
 
   const [view, setView] = useState<ViewMode>('week');
-  const [cursor, setCursor] = useState(() => new Date());
+  const [cursor,setCursor]=useState(()=>{const date=params.get('date');return date&&/^\d{4}-\d{2}-\d{2}$/.test(date)&&Number.isFinite(Date.parse(date+'T12:00:00'))?new Date(date+'T12:00:00'):new Date();});
   const [appointments, setAppointments] = useState<GarageAppointment[]>([]);
   const [customerCache, setCustomerCache] = useState<Record<string, GarageCustomer>>({});
   const [vehicleCache, setVehicleCache] = useState<Record<string, GarageVehicle>>({});
@@ -110,9 +123,11 @@ export default function GarageCalendar() {
   }, [view, cursor]);
 
   const load = () => {
-    setLoading(true);
+    const generation=++loadGeneration.current;
+    setLoading(true);setLoadError('');
     listAppointmentsInRange(range.start.toISOString(), range.end.toISOString())
       .then(async (appts) => {
+        if(generation!==loadGeneration.current)return;
         setAppointments(appts);
         const customerIds = [...new Set(appts.map((a) => a.customerId))].filter((id) => !customerCache[id]);
         const vehicleIds = [...new Set(appts.map((a) => a.vehicleId).filter((v): v is string => !!v))].filter((id) => !vehicleCache[id]);
@@ -120,6 +135,7 @@ export default function GarageCalendar() {
           Promise.all(customerIds.map((id) => getGarageCustomer(id))),
           Promise.all(vehicleIds.map((id) => getGarageVehicle(id))),
         ]);
+        if(generation!==loadGeneration.current)return;
         setCustomerCache((prev) => {
           const next = { ...prev };
           customers.forEach((c) => { if (c) next[c.id] = c; });
@@ -131,16 +147,17 @@ export default function GarageCalendar() {
           return next;
         });
       })
-      .finally(() => setLoading(false));
+      .catch(()=>{if(generation===loadGeneration.current){setAppointments([]);setLoadError('Could not load appointments. Try again.');}})
+      .finally(() => {if(generation===loadGeneration.current)setLoading(false);});
   };
 
-  useEffect(load, [range.start.getTime(), range.end.getTime()]);
+  useEffect(()=>{setAppointments([]);setCustomerCache({});setVehicleCache({});load();return()=>{loadGeneration.current++;};}, [range.start.getTime(), range.end.getTime(),currentUser?.id]);
 
   useEffect(() => {
     const q = customerQuery.trim();
     if (q.length < 2) { setCustomerResults([]); return; }
-    const timer = setTimeout(() => { searchGarageCustomers(q).then(setCustomerResults); }, 250);
-    return () => clearTimeout(timer);
+    let active=true;const timer=setTimeout(()=>{searchGarageCustomers(q).then(rows=>{if(active)setCustomerResults(rows);}).catch(()=>{if(active)setFormError('Could not search customers. Try again.');});},250);
+    return()=>{active=false;clearTimeout(timer);};
   }, [customerQuery]);
 
   const visibleAppointments = useMemo(() => {
@@ -174,7 +191,7 @@ export default function GarageCalendar() {
     const start = new Date(appt.startsAt);
     const end = new Date(appt.endsAt);
     setDraft({
-      id: appt.id, customer, vehicleId: appt.vehicleId ?? '', service: appt.service,
+      id: appt.id, kind:appt.kind, revision:appt.revision, enquiryId:appt.enquiryId, invoiceId:appt.invoiceId, requestId:crypto.randomUUID(), customer, vehicleId: appt.vehicleId ?? '', service: appt.service,
       title: appt.title ?? '', notes: appt.notes ?? '',
       date: toDateInput(start), startTime: toTimeInput(start), endTime: toTimeInput(end),
     });
@@ -196,6 +213,19 @@ export default function GarageCalendar() {
     setVehicleOptions(vehicles);
   };
 
+  useEffect(()=>{
+    const id=params.get('enquiry');if(!id||openingEnquiry.current===id)return;
+    openingEnquiry.current=id;let active=true;
+    (async()=>{const result=await enquiryRequest({action:'get',id});const enquiry=result.enquiries?.[0];if(!enquiry)throw new Error('Enquiry unavailable.');
+      const customer=await getGarageCustomer(enquiry.customer_id);if(!customer)throw new Error('Customer unavailable.');
+      const vehicles=await listGarageVehicles(customer.id);if(!active)return;
+      const services:Record<string,GarageAppointment['service']>={Tint:'tinted',Coating:'coating',PPF:'ppf',Spray:'spray','Building tint':'building_tint'};
+      setDraft({...blankDraft(new Date()),customer,enquiryId:enquiry.id,service:services[enquiry.services[0]?.name]||'tinted',allowedServices:enquiry.services.map(s=>services[s.name]),notes:enquiry.asset});setVehicleOptions(vehicles);setFormError('');setModalOpen(true);setParams({}, {replace:true});
+    })().catch(e=>{if(active){setLoadError(e.message);openingEnquiry.current='';}});return()=>{active=false;if(openingEnquiry.current===id)openingEnquiry.current='';};
+  },[params.get('enquiry'),currentUser?.id]);
+
+  useEffect(()=>{const id=params.get('open');if(!id||loading)return;const appointment=appointments.find(a=>a.id===id);if(appointment){void openEdit(appointment).then(()=>setParams({}, {replace:true})).catch(()=>setLoadError('Could not open appointment. Try again.'));}else setLoadError('Appointment unavailable. It may have changed or been cancelled.');},[params.get('open'),loading,appointments]);
+
   const handleSave = async () => {
     if (!draft.customer) { setFormError('Search and select a customer'); return; }
     const startsAt = new Date(`${draft.date}T${draft.startTime}`);
@@ -207,18 +237,19 @@ export default function GarageCalendar() {
       const input = {
         customerId: draft.customer.id,
         vehicleId: draft.vehicleId || undefined,
-        service: draft.service,
+        service: draft.service, kind:draft.kind, enquiryId:draft.enquiryId,
         title: draft.title.trim() || undefined,
         notes: draft.notes.trim() || undefined,
         startsAt: startsAt.toISOString(),
         endsAt: endsAt.toISOString(),
       };
       if (draft.id) {
-        await updateGarageAppointment(draft.id, input);
+        await updateGarageAppointment(draft.id, {...input,revision:draft.revision!});
       } else {
-        await createGarageAppointment({ ...input, createdBy: currentUser?.id });
+        await createGarageAppointment({ ...input, requestId:draft.requestId });
       }
       setModalOpen(false);
+      setCursor(startsAt);
       load();
     } catch (err: any) {
       setFormError(err?.message ?? 'Something went wrong — please try again');
@@ -231,10 +262,10 @@ export default function GarageCalendar() {
     if (!draft.id) return;
     setSaving(true);
     try {
-      await deleteGarageAppointment(draft.id);
+      await deleteGarageAppointment(draft.id,draft.revision!);
       setModalOpen(false);
       load();
-    } finally {
+    } catch(err:any) {setFormError(err?.message||'Could not cancel appointment. Try again.');} finally {
       setSaving(false);
     }
   };
@@ -298,7 +329,7 @@ export default function GarageCalendar() {
                   const end = new Date(appt.endsAt);
                   const top = Math.max(0, (start.getHours() + start.getMinutes() / 60 - HOUR_START) * ROW_HEIGHT);
                   const height = Math.max(22, (end.getTime() - start.getTime()) / 3600000 * ROW_HEIGHT);
-                  const color = GARAGE_SERVICE_COLOR[appt.service];
+                  const color = GARAGE_SERVICE_COLOR[appt.service==='building_tint'?'tinted':appt.service];
                   const customer = customerCache[appt.customerId];
                   const widthPct = 100 / totalCols;
                   return (
@@ -309,7 +340,7 @@ export default function GarageCalendar() {
                       style={{ top, height, left: `${col * widthPct}%`, width: `${widthPct}%` }}
                     >
                       <p className={`text-[11px] font-semibold leading-tight truncate ${color.text}`}>
-                        {appt.title || customer?.name || 'Appointment'}
+                        {appointmentKindLabel(appt.kind)} · {appt.title || customer?.name || 'Appointment'}
                       </p>
                       <p className="text-white/50 text-[10px] leading-tight truncate">{formatTime(start)}</p>
                     </button>
@@ -370,9 +401,9 @@ export default function GarageCalendar() {
           <div>
             <p className="text-white/30 text-[10px] font-semibold uppercase tracking-wider mb-2">Services</p>
             <div className="space-y-1.5">
-              {GARAGE_SERVICES.map((s) => (
+              {[...GARAGE_SERVICES,{key:'building_tint' as const,label:'Building tint',icon:GARAGE_SERVICES[0].icon}].map((s) => (
                 <span key={s.key} className="flex items-center gap-1.5 text-white/50 text-[11px]">
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${GARAGE_SERVICE_COLOR[s.key].dot}`} /> {s.label}
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${GARAGE_SERVICE_COLOR[s.key==='building_tint'?'tinted':s.key].dot}`} /> {s.label}
                 </span>
               ))}
             </div>
@@ -453,9 +484,9 @@ export default function GarageCalendar() {
                       <span className={`text-xs ${today ? 'text-gold-400 font-semibold' : 'text-white/60'}`}>{day.getDate()}</span>
                       <div className="mt-1 space-y-0.5">
                         {dayAppts.slice(0, 3).map((a) => (
-                          <div key={a.id} className={`flex items-center gap-1 text-[10px] truncate px-1 py-0.5 rounded ${GARAGE_SERVICE_COLOR[a.service].bg}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${GARAGE_SERVICE_COLOR[a.service].dot}`} />
-                            <span className="text-white/70 truncate">{a.title || customerCache[a.customerId]?.name || 'Appt'}</span>
+                          <div key={a.id} className={`flex items-center gap-1 text-[10px] truncate px-1 py-0.5 rounded ${GARAGE_SERVICE_COLOR[a.service==='building_tint'?'tinted':a.service].bg}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${GARAGE_SERVICE_COLOR[a.service==='building_tint'?'tinted':a.service].dot}`} />
+                            <span className="text-white/70 truncate">{appointmentKindLabel(a.kind)} · {a.title || customerCache[a.customerId]?.name || 'Appointment'}</span>
                           </div>
                         ))}
                         {dayAppts.length > 3 && <p className="text-white/30 text-[10px] pl-1">+{dayAppts.length - 3} more</p>}
@@ -473,18 +504,23 @@ export default function GarageCalendar() {
         </div>
       </div>
 
+      {loadError&&<p role="alert" className="text-red-300 text-sm p-4">{loadError} <button onClick={load}>Try again</button></p>}
       <Modal
         isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title={draft.id ? 'Edit Appointment' : 'New Appointment'}
+        onClose={() => {if(!saving)setModalOpen(false);}}
+        title={draft.id ? 'Edit appointment' : 'New appointment'}
       >
+        <fieldset disabled={saving} className="min-w-0">
+        {draft.invoiceId&&<p className="text-white/60 text-sm mb-4">Linked to a sale. Date changes update the installer’s appointment. Cancelling this appointment keeps the sale.</p>}
+        {draft.enquiryId&&<Link className="block text-gold-400 text-sm mb-4" to={`/garage/follow-ups?open=${draft.enquiryId}`} onClick={e=>{if(saving)e.preventDefault();}}>Back to enquiry</Link>}
+        <label className="block text-gray-300 text-xs font-medium mb-1.5">Appointment type<select aria-label="Appointment type" disabled={saving||!!draft.invoiceId} value={draft.kind} onChange={e=>setDraft(d=>({...d,kind:e.target.value as DraftAppointment['kind']}))} className="block w-full bg-obsidian-700 text-white p-2 rounded-lg mt-2 mb-4"><option value="visit">Customer visit</option><option value="installation">Installation</option></select></label>
         <label className="block text-gray-300 text-xs font-medium mb-1.5">Customer</label>
         {draft.customer ? (
           <div className="flex items-center justify-between gap-2 bg-obsidian-700/60 border border-obsidian-400/60 rounded-lg px-3 py-2 mb-4">
             <span className="flex items-center gap-2 text-white text-sm truncate">
               <User size={14} className="text-white/40 shrink-0" /> {draft.customer.name}
             </span>
-            <button onClick={() => setDraft((d) => ({ ...d, customer: null, vehicleId: '' }))} className="text-white/40 hover:text-red-400 transition-colors shrink-0">
+            <button disabled={!!draft.invoiceId} onClick={() => setDraft((d) => ({ ...d, customer: null, vehicleId: '',enquiryId:undefined }))} className="text-white/40 hover:text-red-400 transition-colors shrink-0">
               <X size={15} />
             </button>
           </div>
@@ -495,7 +531,7 @@ export default function GarageCalendar() {
               type="text"
               value={customerQuery}
               onChange={(e) => setCustomerQuery(e.target.value)}
-              placeholder="Search by name or IC"
+              placeholder="Search by name or phone"
               className="w-full bg-obsidian-700/60 border border-obsidian-400/60 text-white placeholder-gray-600
                 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-gold-500 transition-colors"
             />
@@ -520,6 +556,7 @@ export default function GarageCalendar() {
             <label className="block text-gray-300 text-xs font-medium mb-1.5">Vehicle (optional)</label>
             <select
               value={draft.vehicleId}
+              disabled={!!draft.invoiceId}
               onChange={(e) => setDraft((d) => ({ ...d, vehicleId: e.target.value }))}
               className="w-full bg-obsidian-700/60 border border-obsidian-400/60 text-white rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-gold-500"
             >
@@ -532,12 +569,12 @@ export default function GarageCalendar() {
         )}
 
         <label className="block text-gray-300 text-xs font-medium mb-1.5">Service</label>
-        <div className="grid grid-cols-4 gap-2 mb-4">
-          {GARAGE_SERVICES.map((s) => (
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-4">
+          {[...GARAGE_SERVICES,{key:'building_tint' as const,label:'Building tint',icon:GARAGE_SERVICES[0].icon}].map((s) => (
             <button
               key={s.key}
               type="button"
-              onClick={() => setDraft((d) => ({ ...d, service: s.key }))}
+              disabled={!!draft.invoiceId||!!draft.allowedServices&&!draft.allowedServices.includes(s.key)} onClick={() => setDraft((d) => ({ ...d, service: s.key }))}
               className={`flex flex-col items-center gap-1 py-2.5 rounded-lg border text-[11px] font-medium transition-colors ${
                 draft.service === s.key
                   ? 'bg-gold-500/15 border-gold-400/50 text-gold-400'
@@ -565,6 +602,7 @@ export default function GarageCalendar() {
           type="date"
           value={draft.date}
           onChange={(e) => setDraft((d) => ({ ...d, date: e.target.value }))}
+          onInput={e=>{const value=e.currentTarget.value;setDraft(d=>({...d,date:value}));}}
           className="w-full bg-obsidian-700/60 border border-obsidian-400/60 text-white rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-gold-500"
         />
 
@@ -575,6 +613,7 @@ export default function GarageCalendar() {
               type="time"
               value={draft.startTime}
               onChange={(e) => setDraft((d) => ({ ...d, startTime: e.target.value }))}
+          onInput={e=>{const value=e.currentTarget.value;setDraft(d=>({...d,startTime:value}));}}
               className="w-full bg-obsidian-700/60 border border-obsidian-400/60 text-white rounded-lg px-3 py-2 text-sm outline-none focus:border-gold-500"
             />
           </div>
@@ -584,6 +623,7 @@ export default function GarageCalendar() {
               type="time"
               value={draft.endTime}
               onChange={(e) => setDraft((d) => ({ ...d, endTime: e.target.value }))}
+          onInput={e=>{const value=e.currentTarget.value;setDraft(d=>({...d,endTime:value}));}}
               className="w-full bg-obsidian-700/60 border border-obsidian-400/60 text-white rounded-lg px-3 py-2 text-sm outline-none focus:border-gold-500"
             />
           </div>
@@ -602,19 +642,20 @@ export default function GarageCalendar() {
         <div className="flex gap-3 mt-3">
           {draft.id && (
             <button
-              onClick={handleDelete}
+              onClick={()=>{if(confirm('Cancel this appointment? It will leave the calendar; its history is kept.'))void handleDelete();}}
               disabled={saving}
               className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium
                 border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-60"
             >
-              <Trash2 size={14} />
+              <Trash2 size={14} /> Cancel appointment
             </button>
           )}
-          <button onClick={() => setModalOpen(false)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
+          <button disabled={saving} onClick={() => setModalOpen(false)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
           <button onClick={handleSave} disabled={saving} className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm disabled:opacity-60">
             {saving ? 'Saving…' : draft.id ? 'Save Changes' : 'Create'}
           </button>
         </div>
+        </fieldset>
       </Modal>
     </GarageShell>
   );
