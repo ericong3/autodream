@@ -4,7 +4,7 @@ export async function handleAppointments(req,deps){
  return respond(req,deps,['POST'],async(ctx,res)=>{
   const {user}=await authenticate(req,ctx,res,canUseApp);
   if(!['garage','both'].includes(user.business_access)||!['director','shareholder','garage_head','garage_salesman'].includes(user.role))throw new ApiError(403,'FORBIDDEN','Garage sales access is required.');
-  const rate=await ctx.repo.throttleHit('appointments:'+createHash('sha256').update(user.id).digest('hex'),300,900);
+  const rate=await ctx.repo.throttleHit('appt:'+createHash('sha256').update(user.id).digest('hex'),300,900);
   if(!rate.allowed)throw new ApiError(429,'RATE_LIMITED','Wait a moment before trying again.');
   const data=readJson(req,16000);
   onlyKeys(data,['action','id','revision','requestId','customerId','vehicleId','enquiryId','kind','service','title','notes','startsAt','endsAt','rangeStart','rangeEnd','page','invoiceId','appointmentId']);

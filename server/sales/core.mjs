@@ -4,7 +4,7 @@ export async function handleSales(req,deps){
  return respond(req,deps,['POST'],async(ctx,res)=>{
   const {user}=await authenticate(req,ctx,res,canUseApp);
   if(!['garage','both'].includes(user.business_access)||!['director','shareholder','garage_head','garage_salesman'].includes(user.role))throw new ApiError(403,'FORBIDDEN','Garage sales access is required.');
-  const rate=await ctx.repo.throttleHit('sale-confirm:'+createHash('sha256').update(user.id).digest('hex'),120,900);
+  const rate=await ctx.repo.throttleHit('sale:'+createHash('sha256').update(user.id).digest('hex'),120,900);
   if(!rate.allowed)throw new ApiError(429,'RATE_LIMITED','Wait a moment before trying again.');
   const data=readJson(req,64000);onlyKeys(data,['action','requestId','sale']);
   if(!['confirm','status','abandon'].includes(data.action)||typeof data.requestId!=='string'||!/^[A-Za-z0-9_-]{16,80}$/.test(data.requestId))throw new ApiError(400,'INVALID','Reload this sale before confirming.');

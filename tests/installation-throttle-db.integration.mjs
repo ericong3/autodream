@@ -4,6 +4,8 @@ import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import bcrypt from 'bcryptjs';
 import {handleInstallation} from '../server/installation/core.mjs';
+import {handleSales} from '../server/sales/core.mjs';
+import {handleAppointments} from '../server/appointments/core.mjs';
 import {handleAppSession,COOKIE_NAME} from '../server/garageBuilding/core.mjs';
 const {PGlite}=await import(pathToFileURL(resolve(process.argv[2],'dist/index.js')));
 const db=new PGlite();
@@ -19,8 +21,10 @@ for(const id of ['a','staff.with-punctuation@example.test','x'.repeat(180)]){
  const signed=await handleAppSession(req({username:'sample',password:'sample-password'}),deps);assert.equal(signed.status,200);
  const cookie=[].concat(signed.headers['Set-Cookie']).find(c=>c.startsWith(COOKIE_NAME+'=')&&!c.includes('Max-Age=0')).split(';')[0];
  for(const body of [{action:'notices'},{action:'claim',itemId:'sample-piece',revision:0,requestId:'sample-request-00001'}])assert.equal((await handleInstallation(req(body,cookie),deps)).status,200);
+ assert.equal((await handleSales(req({action:'status',requestId:'sample-recovery-00001'},cookie),deps)).status,200);
+ assert.equal((await handleAppointments(req({action:'list',rangeStart:'2026-10-27T00:00:00Z',rangeEnd:'2026-10-28T00:00:00Z'},cookie),deps)).status,200);
 }
-assert.equal(rpcCalls,6);
+assert.equal(rpcCalls,12);
 assert.equal((await db.query("select count(*)::int n from garage_building_auth_throttle where key like 'install:%' and attempts=2")).rows[0].n,3);
 await assert.rejects(()=>db.query("select * from garage_building_auth_throttle_hit('installation:staff',500,900)"),/INVALID_THROTTLE/);
 await db.close();
