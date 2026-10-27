@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import {ApiError,authenticate,canUseApp,respond,readJson,onlyKeys} from '../garageBuilding/core.mjs';
 const ROLES=['garage_installer','garage_detailer','garage_spray','garage_head','garage_salesman','director','shareholder'];
 const ACTIONS=['snapshot','notices','claim','release','complete','reopen','remark','sqft','start','eta','confirm','head_approve','head_return','sales_approve','sales_return','pay','deliver','warranty','receipt'];
@@ -18,7 +19,7 @@ export async function handleInstallation(req,deps){
   if(data.action==='sqft'&&(typeof data.value!=='number'||!Number.isFinite(data.value)||data.value<0||data.value>10000))throw new ApiError(400,'INVALID','Enter valid film usage.');
   if(data.action==='remark'&&(typeof data.value!=='string'||data.value.length>2000))throw new ApiError(400,'INVALID','Use a shorter remark.');
   if(data.action==='receipt'&&(!data.value||typeof data.value!=='object'||Array.isArray(data.value)||typeof data.value.path!=='string'||typeof data.value.name!=='string'||data.value.path.length>1000||data.value.name.length>255))throw new ApiError(400,'INVALID','Check the receipt file.');
-  const rate=await ctx.repo.throttleHit('installation:'+user.id,500,900);if(!rate.allowed)throw new ApiError(429,'RATE_LIMITED','Wait a moment before trying again.');
+  const rate=await ctx.repo.throttleHit('install:'+createHash('sha256').update(user.id).digest('hex'),500,900);if(!rate.allowed)throw new ApiError(429,'RATE_LIMITED','Wait a moment before trying again.');
   const r=await ctx.repo.rpc('garage_installation_workflow',{p_actor:user.id,p_action:data.action,p_data:data});
   if(r.error){const m=r.error.message||'';
    if(m.includes('NOT_ALLOWED'))throw new ApiError(403,'FORBIDDEN','This action is not available for your account.');

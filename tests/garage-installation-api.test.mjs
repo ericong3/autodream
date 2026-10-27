@@ -14,6 +14,14 @@ function fixture(role='garage_salesman',access='garage'){
  return {user,repo,deps,calls,req,login};
 }
 const payload={action:'confirm',jobId:'test-job',revision:2,requestId:'sample-request-00001'};
+test('notification and installation requests respect the production throttle contract for every staff ID',async()=>{
+ for(const id of ['a','staff.with-punctuation@example.test','x'.repeat(180)]){
+  const w=fixture('garage_head');w.user.id=id;const cookie=await w.login(),keys=[];
+  w.repo.throttleHit=async(key)=>{keys.push(key);if(!/^[a-z]{1,8}:[A-Za-z0-9_-]{16,128}$/.test(key))throw Error('INVALID_THROTTLE');return {allowed:true};};
+  for(const data of [{action:'notices'},payload])assert.equal((await handleInstallation(w.req(data,cookie),w.deps)).status,200);
+  assert.equal(keys.length,2);assert.equal(keys[0],keys[1]);assert.notEqual(keys[0].split(':')[1],id);
+ }
+});
 test('workshop requires a verified session',async()=>{const w=fixture('garage_installer');assert.equal((await handleInstallation(w.req(payload),w.deps)).status,401);assert.equal(w.calls.length,0);});
 test('actor is session-derived; supplied actor is rejected',async()=>{const w=fixture('garage_installer'),cookie=await w.login();assert.equal((await handleInstallation(w.req(payload,cookie),w.deps)).status,200);assert.equal(w.calls[0].args.p_actor,'sales-a');assert.equal((await handleInstallation(w.req({...payload,actorId:'head'},cookie),w.deps)).status,400);});
 test('only Garage Head can approve or return workshop work',async()=>{for(const role of ['director','shareholder','garage_salesman','garage_installer']){const w=fixture(role,['director','shareholder'].includes(role)?'both':'garage'),cookie=await w.login();for(const action of ['head_approve','head_return'])assert.equal((await handleInstallation(w.req({...payload,action,value:true},cookie),w.deps)).status,403);assert.equal(w.calls.length,0);}});

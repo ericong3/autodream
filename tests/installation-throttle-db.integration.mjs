@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {resolve} from 'node:path';
+import {pathToFileURL} from 'node:url';
+import bcrypt from 'bcryptjs';
+import {handleInstallation} from '../server/installation/core.mjs';
+import {handleAppSession,COOKIE_NAME} from '../server/garageBuilding/core.mjs';
+const {PGlite}=await import(pathToFileURL(resolve(process.argv[2],'dist/index.js')));
+const db=new PGlite();
+await db.exec('create role anon;create role authenticated;create role service_role;create table garage_building_staff(id text primary key);');
+await db.exec(readFileSync(new URL('../supabase/migrations/20261020010000_garage_building_online_sessions.sql',import.meta.url),'utf8'));
+const origin='https://app.example',sessions=new Map(),user={id:'a',username:'sample',name:'Sample',password:bcrypt.hashSync('sample-password',4),role:'garage_head',business_access:'garage',enabled:true,registration_status:'active'};
+let rpcCalls=0;
+const repo={findUserByUsername:async()=>user,findUserById:async()=>user,createSession:async s=>sessions.set(s.tokenHash,s),findSession:async h=>sessions.get(h),touchSession:async()=>{},deleteSession:async h=>sessions.delete(h),deleteExpiredSessions:async()=>{},throttleHit:async(key,limit,seconds)=>(await db.query('select * from garage_building_auth_throttle_hit($1,$2,$3)',[key,limit,seconds])).rows[0],throttleClear:async key=>db.query('select garage_building_auth_throttle_clear($1)',[key]),rpc:async()=>{rpcCalls++;return {data:{notices:[]}};}};
+const deps={bcrypt,repo:()=>repo,env:{GARAGE_BUILDING_ONLINE:'1',SUPABASE_URL:'https://example.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'fictional-service-key-1234567890',GARAGE_SESSION_SECRET:'fictional-session-secret-12345678901234567890',GARAGE_ALLOWED_ORIGINS:origin}};
+const req=(body,cookie)=>({method:'POST',headers:{origin,'content-type':'application/json','x-garage-building':'1',...(cookie?{cookie}:{})},body:JSON.stringify(body)});
+for(const id of ['a','staff.with-punctuation@example.test','x'.repeat(180)]){
+ user.id=id;
+ const signed=await handleAppSession(req({username:'sample',password:'sample-password'}),deps);assert.equal(signed.status,200);
+ const cookie=[].concat(signed.headers['Set-Cookie']).find(c=>c.startsWith(COOKIE_NAME+'=')&&!c.includes('Max-Age=0')).split(';')[0];
+ for(const body of [{action:'notices'},{action:'claim',itemId:'sample-piece',revision:0,requestId:'sample-request-00001'}])assert.equal((await handleInstallation(req(body,cookie),deps)).status,200);
+}
+assert.equal(rpcCalls,6);
+assert.equal((await db.query("select count(*)::int n from garage_building_auth_throttle where key like 'install:%' and attempts=2")).rows[0].n,3);
+await assert.rejects(()=>db.query("select * from garage_building_auth_throttle_hit('installation:staff',500,900)"),/INVALID_THROTTLE/);
+await db.close();
+console.log('PASS: actual authenticated installation handler and production throttle SQL accept notices/mutations for short, punctuated and long IDs; original key fails.');
