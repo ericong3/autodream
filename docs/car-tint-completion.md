@@ -46,3 +46,12 @@ Scope boundaries: records track reported customer collections and company verifi
 Final release checks: npm test 137/137; full production build succeeded; disposable database workflow suite passed; exact combined activation transaction rehearsal passed. No production application or database changes were made during this work.
 
 Hosting adjustment during approved rollout: Vercel Hobby refused the first upload because four separate new endpoints raised the total above 12 functions. Consolidated only the new tint endpoints behind /api/garage/tint?operation=..., retaining the original per-operation authenticated handlers, validation and permissions. Function count is now 11. Reviewed database SQL is unchanged. Added a routing/permission regression test; no plan upgrade or existing route removal.
+
+LIVE — approved rollout completed 27 October 2026, approximately 22:37 MYT.
+- Source revision fd55320, deployment dpl_D7yvtfv9Vy2zVcXZjH4TFR7qKNHB, promoted to https://autodream.vercel.app.
+- Exact reviewed activation SHA256 dd4dab605080cc5141cf54d88dfc66ba455ffa4680b8af16f0a99f6e3ed57693 applied successfully as one transaction. Finance, usage, after-sales, private proof bucket, restrictive policies and service-only access verified.
+- Original stock balances preserved: Eco/Lite/Classic/Majestic/Unique 350 sqft each; Royal 343 sqft. Six opening audit entries recorded. No invoices/jobs/payments/reworks created by verification.
+- 138 automated tests and production build pass. Signed-in live payment queue and stock/history load. Workshop notification and session reads return 200; 32 checked requests show no server errors. Unauthenticated finance/stock/claim/proof requests correctly return 401.
+- Latest checked backup remains 26 October 18:23:44 UTC. The prior live source/deployment and activation evidence are preserved.
+- Release/evidence files are saved one directory above this project: car-tint-release-live.json, car-tint-activation-verified.json, car-tint-live-verification.json, car-tint-live-requests.json, car-tint-live-payments.png.
+- This section supersedes earlier local/awaiting-approval checkpoints. Full building workflow is still deferred. No full financial journey was fabricated in production; fictional end-to-end checks ran against disposable PostgreSQL.
