@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { waitUntil } from '@vercel/functions';
 import { LIMITS } from './core.mjs';
 
-const REPO_METHODS = ['findUserByUsername', 'findUserById', 'createSession', 'findSession', 'touchSession', 'deleteSession', 'deleteExpiredSessions', 'throttleHit', 'throttleClear', 'canActivateStaff', 'activateStaff', 'rpc'];
+const REPO_METHODS = ['findUserByUsername', 'findUserById', 'createSession', 'findSession', 'touchSession', 'deleteSession', 'deleteExpiredSessions', 'throttleHit', 'throttleClear', 'canActivateStaff', 'activateStaff', 'rpc','uploadPaymentProof','paymentProofUrl'];
 
 // Default production dependencies. The Supabase client is imported lazily
 // so a misconfigured deployment answers 503 instead of crashing on load.
@@ -43,11 +43,11 @@ async function readBody(req, maxBytes) {
   return { body: Buffer.concat(chunks).toString('utf8') };
 }
 
-export function vercelHandler(core, depsFactory = productionDeps) {
+export function vercelHandler(core, depsFactory = productionDeps, options = {}) {
   let deps = null;
   return async function handler(req, res) {
     deps ??= depsFactory();
-    const read = await readBody(req, LIMITS.maxBodyBytes);
+    const read = await readBody(req, options.maxBodyBytes ?? LIMITS.maxBodyBytes);
     const out = await core({
       method: req.method,
       url: req.url ?? '/',

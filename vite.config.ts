@@ -9,6 +9,7 @@ export default defineConfig({
       output: {
         manualChunks: {
           'garage-glass': ['./src/components/GarageRenderedGlassMap.tsx','./src/components/GarageGlassSetup.tsx','./src/components/GarageJobGlassMap.tsx'],
+          'garage-tint-control': ['./src/components/GarageTintPayments.tsx','./src/components/GarageTintUsage.tsx','./src/lib/garageTintControl.ts'],
           'vendor-react':    ['react', 'react-dom', 'react-router-dom'],
           'vendor-supabase': ['@supabase/supabase-js'],
           'vendor-dnd':      ['@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/utilities'],

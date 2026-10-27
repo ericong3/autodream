@@ -143,6 +143,7 @@ export type GarageWorkOrderEventType =
   | 'INSTALLATION_RETURNED'
   | 'INSTALLATION_COMPLETED' // legacy single-installer completion
   | 'PAYMENT_COLLECTED'
+  | 'PAYMENT_REPORTED' | 'PAYMENT_VERIFIED' | 'PAYMENT_REJECTED' | 'PAYMENT_PROOF_ATTACHED'
   | 'VEHICLE_READY'
   | 'VEHICLE_DELIVERED'
   | 'WARRANTY_REGISTERED'
@@ -286,6 +287,8 @@ export interface GarageTintWorkOrderItem {
   installedSeries?: TintSeries;
   installerId?: string;
   sqft?: number;
+  usageAttempt?: number;
+  replacementCount?: number;
   status: TintItemStatus;
   remark?: string;
   claimedAt?: string;

@@ -16,6 +16,7 @@ export function roleHome(role: string) {
 // management land on the Dashboard. A Garage account with no Garage role
 // gets the no-access page rather than bouncing between guarded routes.
 export function garageHome(role: string) {
+  if(role==='admin')return '/garage/payments';
   if (canUseGarageSales(role)) return '/garage/dashboard';
   if (canUseGarageWorkshop(role)) return '/garage/installer';
   return '/garage/no-access';

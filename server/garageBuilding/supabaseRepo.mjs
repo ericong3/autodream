@@ -52,6 +52,13 @@ export function supabaseRepo(config) {
     async deleteExpiredSessions(userId, nowIso) {
       check(await sb.from('garage_building_sessions').delete().eq('user_id', userId).lt('expires_at', nowIso));
     },
+    async uploadPaymentProof(path,bytes,mime) {
+      const result=await sb.storage.from('garage-payment-proofs').upload(path,bytes,{contentType:mime,upsert:false});
+      if(result.error&&String(result.error.statusCode)!=='409')throw result.error;
+    },
+    async paymentProofUrl(path) {
+      return check(await sb.storage.from('garage-payment-proofs').createSignedUrl(path,60)).signedUrl;
+    },
     async throttleHit(key, limit, windowSeconds) {
       const data = check(await sb.rpc('garage_building_auth_throttle_hit', { p_key: key, p_limit: limit, p_window_seconds: windowSeconds }));
       const row = Array.isArray(data) ? data[0] : data;

@@ -1,4 +1,5 @@
 import GarageJobGlassMap from '../components/GarageJobGlassMap';
+import GarageTintUsage from '../components/GarageTintUsage';
 import {isGarageWorkshopRole} from '../utils/garageRoles';
 import GarageInstallationReview from '../components/GarageInstallationReview';
 import { useEffect, useMemo, useState } from 'react';
@@ -241,9 +242,11 @@ export default function GarageInstallerJobDetail() {
       const { item: updated, stock } = await setTintWorkOrderItemSqft(item.id, sqft, me ?? '');
       replaceItem(updated);
       if (stock) setFilmStock((prev) => prev.map((f) => (f.series === stock.series ? stock : f)));
+      return true;
     } catch (err) {
       setError((err as Error)?.message ?? 'Could not save the film usage — please try again');
       setSqftResetTick((t) => t + 1);
+      return false;
     }
   };
 
@@ -393,7 +396,7 @@ export default function GarageInstallerJobDetail() {
             <p className="text-indigo-300/80 text-xs">Submitted for approval — the glass is locked unless the Garage Head returns it.</p>
           )}
 
-          <GarageJobGlassMap items={orderItems} layout={tintOrder?.vehicleLayout} userId={me} workStatus={invoice?.workStatus} canWork={glassOpen&&isInstaller} busy={!!busy} onClaim={handleClaim} onComplete={handleConfirm}/>
+          <GarageJobGlassMap items={orderItems} layout={tintOrder?.vehicleLayout} userId={me} workStatus={invoice?.workStatus} canWork={glassOpen&&isInstaller} busy={!!busy} onClaim={handleClaim} onComplete={handleConfirm} onUsage={handleSqft}/>
           <details className="space-y-3"><summary className="cursor-pointer text-sm text-white/60 py-3">Film usage and glass details</summary>
           {allSelections.map((sel) => {
             const item = itemFor(sel);
@@ -540,7 +543,7 @@ export default function GarageInstallerJobDetail() {
 
         {error && <p className="text-red-400 text-xs text-center">{error}</p>}
 
-        {invoice && <GarageInstallationReview invoiceId={invoice.id} ownerId={invoice.createdBy} items={items} onChange={()=>load(true)} />}
+        {invoice && <><GarageTintUsage invoiceId={invoice.id} version={items.map(i=>`${i.id}:${i.sqft}:${i.usageAttempt}`).join('|')}/><GarageInstallationReview invoiceId={invoice.id} ownerId={invoice.createdBy} items={items} onChange={()=>load(true)} /></>}
         {invoice && <GarageInstallationPhotos invoiceId={invoice.id} refreshKey={photoRefresh} />}
         {isInProgress && isInstaller && <label className="block text-sm text-white/60">Add work photos<input type="file" accept="image/*" multiple onChange={async e=>{const files=Array.from(e.target.files??[]);e.target.value='';try{for(const file of files)await uploadInstallationPhoto(invoice!.id,file);setPhotoRefresh(v=>v+1);}catch{setError('Could not upload photo. Your installation progress is kept.');}}} className="block mt-2 text-xs"/></label>}
 

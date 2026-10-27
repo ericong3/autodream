@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Check } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
+import GarageFilmManagement from '../components/GarageFilmManagement';
 import {
-  getFullPrices, setFullPrice, getPositionPrices, setPositionPrice, listFilmStock, setFilmStockConfig,
+  getFullPrices, setFullPrice, getPositionPrices, setPositionPrice,
 } from '../lib/garageTint';
 import { TINT_SERIES, VEHICLE_SIZES, TINT_PRICE_GROUPS } from '../utils/tintPricing';
-import type { TintSeries, TintPriceGroup, GarageVehicleSize, GarageFilmStock } from '../types';
+import type { TintSeries, TintPriceGroup, GarageVehicleSize } from '../types';
 
 // One per-window rate per group — every individual door window bills at the
 // Door Window rate, each panel at the Rear Panel Window rate. Extra Rear
@@ -39,43 +40,16 @@ function PriceCell({
   );
 }
 
-function SqftCell({
-  value, saved, onCommit,
-}: { value: number; saved: boolean; onCommit: (v: number) => void }) {
-  const [local, setLocal] = useState(String(value || ''));
-  useEffect(() => setLocal(String(value || '')), [value]);
-
-  return (
-    <div className="relative">
-      <input
-        type="number"
-        min={0}
-        className="w-full bg-white/[0.04] border border-white/10 focus:border-gold-400/50 rounded-lg
-          pl-3 pr-12 py-2 text-white text-sm outline-none transition-colors"
-        value={local}
-        onChange={(e) => setLocal(e.target.value)}
-        onBlur={() => {
-          const n = Number(local) || 0;
-          if (n !== value) onCommit(n);
-        }}
-      />
-      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 text-xs">sqft</span>
-      {saved && <Check size={12} className="absolute -right-4 top-1/2 -translate-y-1/2 text-green-400" />}
-    </div>
-  );
-}
-
 export default function GarageTintPricing() {
   const [fullPrices, setFullPrices] = useState<Record<string, number>>({});
   const [positionPrices, setPositionPrices] = useState<Record<string, number>>({});
-  const [filmStock, setFilmStock] = useState<GarageFilmStock[]>([]);
   const [loading, setLoading] = useState(true);
   const [activePosition, setActivePosition] = useState<TintPriceGroup>('front_windscreen');
   const [justSaved, setJustSaved] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([getFullPrices(), getPositionPrices(), listFilmStock()])
-      .then(([f, p, stock]) => { setFullPrices(f); setPositionPrices(p); setFilmStock(stock); })
+    Promise.all([getFullPrices(), getPositionPrices()])
+      .then(([f, p]) => { setFullPrices(f); setPositionPrices(p); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -95,13 +69,6 @@ export default function GarageTintPricing() {
     const key = `${position}|${series}`;
     setPositionPrices((p) => ({ ...p, [key]: price }));
     await setPositionPrice(position, series, price);
-    flashSaved(key);
-  };
-
-  const commitFilmStock = async (series: TintSeries, field: 'rollSqft' | 'remainingSqft' | 'lowStockThreshold', value: number) => {
-    const key = `stock-${series}-${field}`;
-    setFilmStock((prev) => prev.map((f) => (f.series === series ? { ...f, [field]: value } : f)));
-    await setFilmStockConfig(series, { [field]: value });
     flashSaved(key);
   };
 
@@ -202,57 +169,7 @@ export default function GarageTintPricing() {
           </table>
         </div>
 
-        {/* Film roll stock — per series, feeds the low-stock alert on the
-            installer job execution page */}
-        <div className="relative overflow-hidden rounded-[28px] p-6 sm:p-8 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
-          <h2 className="font-display text-lg text-white font-semibold tracking-wide mb-1">Film Stock</h2>
-          <p className="text-white/40 text-sm mb-6">Remaining film per series — installers draw down as jobs log sqft used</p>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[520px]">
-              <thead>
-                <tr>
-                  <th className="text-left text-white/40 text-xs font-medium pb-2">Series</th>
-                  <th className="text-left text-white/40 text-xs font-medium pb-2 px-2">1 Roll ≈</th>
-                  <th className="text-left text-white/40 text-xs font-medium pb-2 px-2">Remaining</th>
-                  <th className="text-left text-white/40 text-xs font-medium pb-2 px-2">Low Stock Below</th>
-                </tr>
-              </thead>
-              <tbody>
-                {TINT_SERIES.map((s) => {
-                  const stock = filmStock.find((f) => f.series === s.key);
-                  if (!stock) return null;
-                  return (
-                    <tr key={s.key}>
-                      <td className="text-white text-sm font-medium py-1.5 pr-3 whitespace-nowrap">{s.label}</td>
-                      <td className="py-1.5 px-2 w-32">
-                        <SqftCell
-                          value={stock.rollSqft}
-                          saved={justSaved === `stock-${s.key}-rollSqft`}
-                          onCommit={(v) => commitFilmStock(s.key, 'rollSqft', v)}
-                        />
-                      </td>
-                      <td className="py-1.5 px-2 w-32">
-                        <SqftCell
-                          value={stock.remainingSqft}
-                          saved={justSaved === `stock-${s.key}-remainingSqft`}
-                          onCommit={(v) => commitFilmStock(s.key, 'remainingSqft', v)}
-                        />
-                      </td>
-                      <td className="py-1.5 px-2 w-32">
-                        <SqftCell
-                          value={stock.lowStockThreshold}
-                          saved={justSaved === `stock-${s.key}-lowStockThreshold`}
-                          onCommit={(v) => commitFilmStock(s.key, 'lowStockThreshold', v)}
-                        />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <GarageFilmManagement/>
       </div>
     </GarageShell>
   );

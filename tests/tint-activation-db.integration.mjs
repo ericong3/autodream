@@ -1,0 +1,8 @@
+import{installationFixture}from'./installation-fixture.mjs';import{readFileSync}from'node:fs';import assert from'node:assert/strict';
+const db=await installationFixture(process.argv[2]);process.on('uncaughtException',e=>{console.error(e.message);process.exit(1);});
+await db.exec(`alter table garage_invoices add column receipt_path text,add column receipt_name text;create table garage_building_staff(id text primary key,enabled boolean,registration_status text,role text,business_access text);create schema storage;create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);create table storage.objects(id text primary key,bucket_id text);alter table storage.objects enable row level security;`);
+for(const f of ['20260919030000_garage_film_stock_atomic_adjust.sql','20261025040000_garage_atomic_confirmation.sql','20261025050000_garage_installation_review.sql','20261026000000_garage_vehicle_glass_layout.sql'])await db.exec(readFileSync(new URL('../supabase/migrations/'+f,import.meta.url),'utf8'));
+await db.exec(readFileSync(new URL('../../CAR-TINT-ACTIVATION-REVIEW.sql',import.meta.url),'utf8'));
+assert.equal((await db.query("select count(*)::int n from storage.buckets where id='garage-payment-proofs' and not public")).rows[0].n,1);
+for(const table of ['garage_tint_payments','garage_tint_usage_attempts','garage_film_movements','garage_tint_reworks'])assert.ok((await db.query('select to_regclass($1) r',['public.'+table])).rows[0].r);
+await db.close();console.log('PASS: exact reviewed activation SQL completes as one transaction against the recovered installation/layout baseline.');

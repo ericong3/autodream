@@ -1,4 +1,5 @@
 import {validGlassLayout} from '../utils/vehicleGlass';
+import {tintControl} from './garageTintControl';
 import {installationMutation} from './garageInstallationReview';
 import { supabase } from './supabase';
 import type {
@@ -94,6 +95,8 @@ function rowToItem(r: any): GarageTintWorkOrderItem {
     installedSeries: r.installed_series ?? undefined,
     installerId: r.installer_id ?? undefined,
     sqft: r.sqft === null ? undefined : Number(r.sqft),
+    usageAttempt: Number(r.usage_attempt??1),
+    replacementCount: Number(r.replacement_count??0),
     status: r.status ?? 'pending',
     remark: r.remark ?? undefined,
     claimedAt: r.claimed_at ?? undefined,
@@ -197,9 +200,8 @@ function rowToFilmStock(r: any): GarageFilmStock {
 }
 
 export async function listFilmStock(): Promise<GarageFilmStock[]> {
-  const { data, error } = await supabase.from('garage_film_stock').select('*');
-  if (error) throw error;
-  return (data ?? []).map(rowToFilmStock);
+  const data=await tintControl<{stock:unknown[]}>('stock','list');
+  return data.stock.map(rowToFilmStock);
 }
 
 // Log how much film one glass used. The glass's sqft and the film stock it
@@ -215,14 +217,3 @@ export async function setTintWorkOrderItemSqft(
   return {item:rowToItem(data.item),stock:data.stock?rowToFilmStock(data.stock):null};
 }
 
-export async function setFilmStockConfig(
-  series: TintSeries, updates: { rollSqft?: number; remainingSqft?: number; lowStockThreshold?: number },
-): Promise<GarageFilmStock> {
-  const row: Record<string, any> = { updated_at: new Date().toISOString() };
-  if (updates.rollSqft !== undefined) row.roll_sqft = updates.rollSqft;
-  if (updates.remainingSqft !== undefined) row.remaining_sqft = updates.remainingSqft;
-  if (updates.lowStockThreshold !== undefined) row.low_stock_threshold = updates.lowStockThreshold;
-  const { data, error } = await supabase.from('garage_film_stock').update(row).eq('series', series).select().single();
-  if (error) throw error;
-  return rowToFilmStock(data);
-}

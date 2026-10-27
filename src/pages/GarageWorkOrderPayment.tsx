@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import { useStore } from '../store';
-import { uploadInvoiceReceipt } from '../lib/garageInvoices';
+import {paymentProof} from '../lib/garageTintControl';
 import {saleAppointmentOptions} from '../lib/garageAppointments';
 import type {GarageAppointment} from '../types';
 import {saleConfirmation,readSaleRecovery,keepSaleIntent,finishSaleIntent,forgetSaleIntent,currentSaleDraftId,supersedeSaleDraft,type SaleIntent,type SaleResult} from '../lib/garageSaleConfirmation';
@@ -34,8 +34,8 @@ const PAYMENT_METHODS: { key: GaragePaymentMethod; label: string; icon: typeof B
 // the car is handed back. "Now" needs a method right away; "Later" just
 // records that payment is still owed, to be settled before delivery.
 const PAYMENT_TIMINGS: { key: GaragePaymentStatus; label: string; desc: string }[] = [
-  { key: 'paid', label: 'Pay Now', desc: 'Customer pays before the job starts' },
-  { key: 'pending', label: 'Pay Later', desc: 'Customer pays after the job — before delivery' },
+  { key: 'paid', label: 'Collect now', desc: 'Record a deposit or full collection for company verification' },
+  { key: 'pending', label: 'Collect later', desc: 'No money received yet; track the balance before delivery' },
 ];
 
 export default function GarageWorkOrderPayment() {
@@ -48,6 +48,7 @@ export default function GarageWorkOrderPayment() {
 
   const [timing, setTiming] = useState<GaragePaymentStatus>('paid');
   const [method, setMethod] = useState<GaragePaymentMethod | ''>('');
+  const [collectionAmount,setCollectionAmount]=useState(''),[paymentReference,setPaymentReference]=useState(''),[savedInvoiceId,setSavedInvoiceId]=useState('');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -76,8 +77,8 @@ export default function GarageWorkOrderPayment() {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    if (!/^image\//.test(file.type) && file.type !== 'application/pdf') {
-      setError('Receipt must be an image or a PDF');
+    if (!['image/jpeg','image/png','image/webp','application/pdf'].includes(file.type)||file.size>2097152) {
+      setError('Choose a JPEG, PNG, WebP or PDF up to 2 MB');
       return;
     }
     setError('');
@@ -100,6 +101,7 @@ export default function GarageWorkOrderPayment() {
     setError('');
     setTiming('paid');
     setMethod('');
+    setCollectionAmount(String(state?.grandTotal??0));setPaymentReference('');setSavedInvoiceId('');
     setReceiptFile(null);
     setAppointmentAt('');setAppointmentEnd('');setRecoveryBlocked(false);confirmLock.current=false;
     setRemark('');
@@ -119,10 +121,11 @@ export default function GarageWorkOrderPayment() {
     setRecoveryResult(result);
     if((result.receiptExpected??intent.sale.receiptExpected)&&!result.receiptPath){
       if(!receiptFile)throw new Error(`Sale ${result.invoiceNumber||''} is saved. Choose the receipt again, then retry the attachment.`);
-      await uploadInvoiceReceipt(result.invoiceId,receiptFile,intent.requestId);
+      if(!result.paymentId)throw new Error('Sale saved. Check its payment history before attaching proof.');
+      await paymentProof(result.invoiceId,result.paymentId,receiptFile);
     }
     if(generation!==bookingGeneration.current)return;
-    setTiming(result.paymentStatus??intent.sale.paymentStatus);setMethod((intent.sale.paymentMethod||'') as GaragePaymentMethod|'');finishSaleIntent(currentUser!.id,intent);setRecovery(null);setRecoveryResult(null);recoveryRef.current=null;setRecoveryBlocked(false);setError('');setDone(true);
+    setSavedInvoiceId(result.invoiceId);setTiming(result.paymentStatus??intent.sale.paymentStatus);setMethod((intent.sale.paymentMethod||'') as GaragePaymentMethod|'');finishSaleIntent(currentUser!.id,intent);setRecovery(null);setRecoveryResult(null);recoveryRef.current=null;setRecoveryBlocked(false);setError('');setDone(true);
   };
   const recoverSale=async(action:'status'|'confirm'|'abandon')=>{
     const intent=recoveryRef.current;if(!intent||confirmLock.current)return;const generation=bookingGeneration.current;
@@ -147,13 +150,15 @@ export default function GarageWorkOrderPayment() {
     const newStart=appointmentAt?new Date(appointmentAt):null,newEnd=appointmentEnd?new Date(appointmentEnd):null;
     if(bookingMode==='new'&&appointmentAt&&(!newStart||!newEnd||!Number.isFinite(newStart.getTime())||!Number.isFinite(newEnd.getTime())||newEnd<=newStart)){setError('Choose an end time after the appointment starts.');return;}
 
-    if (timing === 'paid' && !method) { setError('Choose a payment method'); return; }
+    if (timing === 'paid' && grandTotal>0 && !method) { setError('Choose a payment method'); return; }
+    const received=Number(collectionAmount);
+    if(timing==='paid'&&grandTotal>0&&(!Number.isFinite(received)||received<=0||received>grandTotal||Math.abs(received*100-Math.round(received*100))>0.00001)){setError('Enter the deposit/full amount received, within the order total and with at most two decimal places.');return;}
     setError('');
     const confirmGeneration=bookingGeneration.current;
     confirmLock.current=true;setConfirming(true);
     let intent:SaleIntent|null=null;
     try {
-      intent={requestId:pending.confirmationId?currentSaleDraftId(pending.confirmationId):crypto.randomUUID(),routeKey:location.key,sale:{customerId:id!,vehicleId:vehicleId!,paymentStatus:timing,paymentMethod:method||undefined,remark:remark.trim(),pending:JSON.parse(JSON.stringify(pending)),addons:addons.map(({name,price,qty})=>({name,price,qty})),receiptExpected:!!receiptFile,
+      intent={requestId:pending.confirmationId?currentSaleDraftId(pending.confirmationId):crypto.randomUUID(),routeKey:location.key,sale:{customerId:id!,vehicleId:vehicleId!,paymentStatus:timing,paymentMethod:method||undefined,remark:remark.trim(),pending:JSON.parse(JSON.stringify(pending)),addons:addons.map(({name,price,qty})=>({name,price,qty})),receiptExpected:grandTotal>0&&!!receiptFile,...(timing==='paid'&&grandTotal>0?{initialPayment:{amount:received,method,reference:paymentReference.trim()}}:{}),
         booking:booking?{mode:'existing',appointmentId:booking.id,revision:booking.revision}:bookingMode==='new'&&newStart&&newEnd?{mode:'new',startsAt:newStart.toISOString(),endsAt:newEnd.toISOString()}:{mode:'none'}}};
       // Persist before any network write. A retry or refresh uses this same intent.
       await keepSaleIntent(currentUser!.id,intent);recoveryRef.current=intent;setRecovery(intent);setRecoveryBlocked(true);
@@ -175,10 +180,9 @@ export default function GarageWorkOrderPayment() {
           </div>
           <h2 className="font-display text-xl text-white font-semibold tracking-wide mb-2">Work Order Confirmed</h2>
           <p className="text-white/50 text-sm mb-8">
-            {timing === 'pending'
-              ? 'Sent to the installer — they can now accept the job. Payment is still owed, to be collected before delivery.'
-              : 'Sent to the installer — they can now accept the job.'}
+            Sent to the installers. Recorded collections await director/admin verification. Track deposits and balances in the work order.
           </p>
+          {savedInvoiceId&&<button onClick={()=>navigate('/garage/invoice/'+savedInvoiceId)} className="btn-gold px-6 py-2.5 rounded-xl text-sm mb-3">View work order & payments</button>}
           <button
             onClick={() => navigate('/garage/dashboard')}
             className="btn-gold px-6 py-2.5 rounded-xl text-sm"
@@ -226,7 +230,7 @@ export default function GarageWorkOrderPayment() {
             ))}
           </div>
 
-          {timing === 'paid' && (
+          {timing === 'paid' && grandTotal>0 && (
             <>
               <p className="text-white/50 text-xs font-medium uppercase tracking-wider mb-4">Payment Method</p>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -251,8 +255,9 @@ export default function GarageWorkOrderPayment() {
           {timing === 'pending' && (
             <p className="text-white/40 text-sm">Payment will be collected later, before the car is delivered.</p>
           )}
+          {timing==='paid'&&grandTotal>0&&<div className="grid sm:grid-cols-2 gap-4 mt-5"><label className="text-white/60 text-sm">Amount received (RM)<input aria-label="Initial amount received" type="number" min="0.01" step="0.01" max={grandTotal} value={collectionAmount} onChange={e=>setCollectionAmount(e.target.value)} className="w-full mt-2 bg-white/5 border border-white/20 rounded-lg p-3 text-white"/></label><label className="text-white/60 text-sm">Reference / note<input aria-label="Initial payment reference" maxLength={200} value={paymentReference} onChange={e=>setPaymentReference(e.target.value)} className="w-full mt-2 bg-white/5 border border-white/20 rounded-lg p-3 text-white"/></label><p className="text-white/40 text-xs sm:col-span-2">A director or authorised admin must verify that the company received this money. A collection entry alone does not mark the order paid.</p></div>}
 
-          {timing === 'paid' && method && (
+          {timing === 'paid' && grandTotal>0 && method && (
             <div className="mt-8 pt-6 border-t border-white/10">
               <p className="text-white/50 text-xs font-medium uppercase tracking-wider mb-4">Proof of Payment (optional)</p>
               {receiptFile ? (

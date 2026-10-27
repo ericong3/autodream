@@ -10,7 +10,8 @@ export async function handleSales(req,deps){
   if(!['confirm','status','abandon'].includes(data.action)||typeof data.requestId!=='string'||!/^[A-Za-z0-9_-]{16,80}$/.test(data.requestId))throw new ApiError(400,'INVALID','Reload this sale before confirming.');
   if(data.action==='confirm'){
    const sale=data.sale;if(!sale||typeof sale!=='object'||Array.isArray(sale))throw new ApiError(400,'INVALID','Check the sale details.');
-   onlyKeys(sale,['customerId','vehicleId','paymentStatus','paymentMethod','remark','pending','addons','booking','receiptExpected']);
+   onlyKeys(sale,['customerId','vehicleId','paymentStatus','paymentMethod','remark','pending','addons','booking','receiptExpected','initialPayment']);
+   if(sale.initialPayment!==undefined){const p=sale.initialPayment;if(!p||typeof p!=='object'||Array.isArray(p))throw new ApiError(400,'INVALID','Check the payment received.');onlyKeys(p,['amount','method','reference']);if(typeof p.amount!=='number'||!Number.isFinite(p.amount)||p.amount<=0||!['cash','card','transfer','installment'].includes(p.method)||typeof p.reference!=='string'||p.reference.length>200)throw new ApiError(400,'INVALID','Check the payment received.');}
   }
   const r=await ctx.repo.rpc('garage_sale_confirmation',{p_actor:user.id,p_action:data.action,p_request:data.requestId,p_sale:data.sale??null});
   if(r.error){const msg=r.error.message||'';

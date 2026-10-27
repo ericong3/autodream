@@ -1,0 +1,32 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import bcrypt from 'bcryptjs';
+import {handleTintControl} from '../server/tintControl/core.mjs';
+import {handlePaymentProof} from '../server/tintControl/proofs.mjs';
+import {handleAppSession,COOKIE_NAME} from '../server/garageBuilding/core.mjs';
+const origin='https://app.example';
+function fixture(role='garage_salesman',access='garage'){
+ const user={id:'sales-a',username:'staff',name:'Sample',password:bcrypt.hashSync('test-password',4),role,business_access:access,enabled:true,registration_status:'active'};
+ const sessions=new Map(),calls=[];
+ const repo={findUserByUsername:async()=>user,findUserById:async()=>user,createSession:async s=>sessions.set(s.tokenHash,s),findSession:async h=>sessions.get(h),touchSession:async()=>{},deleteSession:async h=>sessions.delete(h),deleteExpiredSessions:async()=>{},throttleHit:async()=>({allowed:true}),throttleClear:async()=>{},rpc:async(fn,args)=>{calls.push({fn,args});return {data:{enquiries:[]}};}};
+ const deps={env:{GARAGE_ENQUIRIES_ONLINE:'1',GARAGE_BUILDING_ONLINE:'1',SUPABASE_URL:'https://example.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'not-real-service-key-123456789',GARAGE_SESSION_SECRET:'not-real-session-secret-123456789012345',GARAGE_ALLOWED_ORIGINS:origin},bcrypt,repo:()=>repo};
+ const req=(body,cookie,method='POST')=>({method,url:'/api/garage/sales',headers:{origin,'x-garage-building':'1','content-type':'application/json',...(cookie?{cookie}:{})},body:body===undefined?undefined:JSON.stringify(body)});
+ const login=async()=>{const r=await handleAppSession(req({username:'staff',password:'test-password'}),deps);assert.equal(r.status,200);return [].concat(r.headers['Set-Cookie']).find(c=>c.startsWith(COOKIE_NAME+'=')&&!c.includes('Max-Age=0')).split(';')[0];};
+ return {user,repo,deps,calls,req,login};
+}
+
+const finance=handleTintControl('finance'),stock=handleTintControl('stock');
+const payment={action:'record',invoiceId:'inv',requestId:'sample-request-00001',amount:30,method:'cash'};
+test('finance requires a verified session and derives actor from it',async()=>{const w=fixture();assert.equal((await finance(w.req(payment),w.deps)).status,401);const c=await w.login();assert.equal((await finance(w.req(payment,c),w.deps)).status,200);assert.equal(w.calls[0].args.p_actor,w.user.id);assert.equal((await finance(w.req({...payment,actorId:'director'},c),w.deps)).status,400);});
+test('company verification is restricted to authorised Garage director or admin',async()=>{for(const role of ['garage_salesman','garage_head','shareholder','garage_installer','admin','director']){const w=fixture(role,['director','shareholder'].includes(role)?'both':'garage'),c=await w.login();for(const action of ['verify','reject','void','queue'])assert.equal((await finance(w.req({...payment,action,paymentId:'p',note:'Sample reason'},c),w.deps)).status,['director','admin'].includes(role)?200:403);}const w=fixture('admin','used_car'),c=await w.login();assert.equal((await finance(w.req(payment,c),w.deps)).status,403);});
+test('stock mutations refuse sales and workshop roles',async()=>{for(const role of ['garage_salesman','garage_installer','garage_head','director']){const w=fixture(role,['director','shareholder'].includes(role)?'both':'garage'),c=await w.login();assert.equal((await stock(w.req({action:'receive',series:'eco',sqft:100,reason:'Sample roll',requestId:payment.requestId},c),w.deps)).status,['garage_head','director'].includes(role)?200:403);}});
+test('payment amounts reject invalid precision and unbounded inputs before database write',async()=>{const w=fixture(),c=await w.login();for(const amount of [-1,0.001,10000001,'30'])assert.equal((await finance(w.req({...payment,amount},c),w.deps)).status,400);assert.equal(w.calls.length,0);assert.equal((await finance(w.req({...payment,action:'receipt',path:'forged'},c),w.deps)).status,400);});
+test('payment proofs enforce ownership, content signature and immutable evidence with repeat-safe upload',async()=>{const w=fixture(),c=await w.login();let uploads=0;const p={id:'p',state:'pending',recorded_by:w.user.id};w.repo.rpc=async(fn,args)=>{w.calls.push({fn,args});return {data:args.p_action==='snapshot'?{payments:[p]}:{}};};w.repo.uploadPaymentProof=async()=>{uploads++;};w.repo.paymentProofUrl=async()=> 'https://example.test/signed';const body={action:'upload',invoiceId:'inv',paymentId:'p',fileName:'sample.pdf',mime:'application/pdf',content:Buffer.from('%PDF-Sample').toString('base64')};
+ assert.equal((await handlePaymentProof(w.req({...body,content:Buffer.from('not a pdf').toString('base64')},c),w.deps)).status,400);assert.equal(uploads,0);
+ assert.equal((await handlePaymentProof(w.req(body,c),w.deps)).status,200);assert.equal(uploads,1);p.receipt_path=w.calls.at(-1).args.p_data.path;
+ assert.equal((await handlePaymentProof(w.req(body,c),w.deps)).status,200);assert.equal(uploads,1);
+ assert.equal((await handlePaymentProof(w.req({...body,content:Buffer.from('%PDF-Other').toString('base64')},c),w.deps)).status,409);
+ p.recorded_by='someone-else';assert.equal((await handlePaymentProof(w.req(body,c),w.deps)).status,403);
+});
+
+test('after-sales uses verified staff identity and preserves shared sales purchase history access',async()=>{const claims=handleTintControl('claims'),w=fixture(),c=await w.login();const body={action:'create',invoiceId:'inv',requestId:'sample-rework-00001',kind:'replacement',reason:'Sample defect',itemIds:['piece'],amount:0};assert.equal((await claims(w.req(body,c),w.deps)).status,200);assert.equal(w.calls[0].fn,'garage_tint_rework');assert.equal(w.calls[0].args.p_actor,w.user.id);assert.equal((await claims(w.req({...body,createdBy:'someone'},c),w.deps)).status,400);assert.equal((await claims(w.req({...body,itemIds:['../forged']},c),w.deps)).status,400);const workshop=fixture('garage_installer'),cookie=await workshop.login();assert.equal((await claims(workshop.req(body,cookie),workshop.deps)).status,403);});

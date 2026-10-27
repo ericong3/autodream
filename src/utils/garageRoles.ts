@@ -31,3 +31,4 @@ export function canUseGarageSales(role?: string): boolean {
 export function canUseGarageWorkshop(role?: string): boolean {
   return isGarageManager(role) || isGarageWorkshopRole(role);
 }
+export function canUseGarageFinance(role?:string):boolean { return role==='director'||role==='admin'; }

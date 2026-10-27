@@ -1,5 +1,8 @@
+import GarageTintAfterSales from '../components/GarageTintAfterSales';
 import GarageJobGlassMap from '../components/GarageJobGlassMap';
 import GarageInstallationReview from '../components/GarageInstallationReview';
+import GarageTintPayments from '../components/GarageTintPayments';
+import GarageTintUsage from '../components/GarageTintUsage';
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
@@ -256,7 +259,7 @@ export default function GarageInvoiceDetail() {
   // The one action that moves this work order forward from where it is —
   // the pipeline itself is read-only.
   const mainAction: { label: string; icon: typeof CheckCircle2; onClick: () => void } | null = isInstaller || (invoice.service==='tinted' && !inspectionReady) ? null
-    : stage === 'payment_due' ? { label: 'Collect Payment', icon: Banknote, onClick: openCollectPayment }
+    : stage === 'payment_due' && invoice.service!=='tinted' ? { label: 'Collect Payment', icon: Banknote, onClick: openCollectPayment }
     : stage === 'ready_for_delivery' ? { label: 'Complete Delivery', icon: Car, onClick: () => { setActionError(''); setConfirmStep('deliver'); } }
     : stage === 'ready_for_warranty' ? { label: 'Register Warranty', icon: Award, onClick: () => { setActionError(''); setConfirmStep('warranty'); } }
     : null;
@@ -277,7 +280,7 @@ export default function GarageInvoiceDetail() {
     <GarageShell title={invoice.invoiceNumber} showBack backTo={backTo}>
       <div className="max-w-5xl mx-auto space-y-5">
         {invoice.service==='tinted'&&tintOrder&&<GarageJobGlassMap items={glassItems} layout={tintOrder.vehicleLayout} userId={currentUser?.id} workStatus={invoice.workStatus}/>}
-        {invoice.service==='tinted' && <GarageInstallationReview invoiceId={invoice.id} ownerId={invoice.createdBy} items={glassItems} onChange={refreshProgress} onReady={setInspectionReady}/> }
+        {invoice.service==='tinted' && <><GarageTintPayments invoiceId={invoice.id} onChange={refreshProgress}/><GarageTintUsage invoiceId={invoice.id} version={glassItems.map(i=>`${i.id}:${i.sqft}:${i.usageAttempt}`).join('|')}/><GarageInstallationReview invoiceId={invoice.id} ownerId={invoice.createdBy} items={glassItems} onChange={refreshProgress} onReady={setInspectionReady}/></> }
         {/* Header — which job this is, and the one action that moves it on */}
         <div className="relative overflow-hidden rounded-[24px] p-6 sm:p-7
           bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
@@ -340,7 +343,7 @@ export default function GarageInvoiceDetail() {
               )}
               {/* Pay Later can be settled any time before delivery; once the
                   job's done it becomes the main action instead. */}
-              {invoice.paymentStatus === 'pending' && !isInstaller && stage !== 'payment_due' && (
+              {invoice.service!=='tinted' && invoice.paymentStatus === 'pending' && !isInstaller && stage !== 'payment_due' && (
                 <button
                   onClick={openCollectPayment}
                   className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium border
@@ -452,7 +455,8 @@ export default function GarageInvoiceDetail() {
             </div>
           </div>
 
-          {/* After-sales — warranty claims / replacements */}
+          {/* After-sales stays on the customer's past purchase. */}
+          {invoice.service==='tinted'?<GarageTintAfterSales invoiceId={invoice.id} claims={claims} onChange={load}/>:<>
           <div className="rounded-[24px] p-6 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
             <h3 className="text-white text-sm font-semibold mb-4">After-sales</h3>
             <div className="flex flex-wrap gap-2.5 mb-4">
@@ -493,6 +497,7 @@ export default function GarageInvoiceDetail() {
               </div>
             )}
           </div>
+          </>}
         </div>
       </div>
 
