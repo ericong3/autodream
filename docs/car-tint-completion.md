@@ -1,6 +1,6 @@
-# Car tint completion — local work, not deployed
+# Car tint completion — live and verified
 
-Current live baseline: dpl_9nh72TvyM8ahnQZyqRg1f2QmeYf5. Branch: codex/car-tint-accountability.
+Current live release: dpl_D7yvtfv9Vy2zVcXZjH4TFR7qKNHB (source fd55320). Branch: codex/car-tint-accountability. Previous baseline: dpl_9nh72TvyM8ahnQZyqRg1f2QmeYf5. Earlier checkpoints below describe preparation; the final LIVE section records installation and publication.
 
 User changed priority from building tint to completing car tint. Confirmed: deposits and multiple balance payments; company receipt verified by director or authorised admin. Do not deploy or apply further database updates until approved.
 
