@@ -235,3 +235,12 @@ User approved database activation and main-app deployment in recovery chat. Both
 Production deployment dpl_4XoeTSy9zzswJcKFyrMBXYXqX51G promoted to https://autodream.vercel.app after successful database verification. Built by Vercel with existing production variables, shared secure login retained. Source-only export of recovery revision 49839c0; local recovery branch retains original ancestry and exact live baseline.
 
 Live checks: new installation API present and unsigned POST401; sales POST401; new glass chunk and five vehicle artwork files200; sign-in screen renders. Service-only bus24/van18 layout functions and active Head notice read pass. Local 130 tests, disposable database workflows and phone component/real-handler correction loop passed before deployment. No real customer/job/payment test records created. Live browser signed out; end-to-end staff trial still required. Other services, HR and full building workflow not claimed complete.
+
+
+### Production request-limit contract correction — 27 October 2026
+
+Signed-in user reported workshop notification refresh warning. Production logs confirmed repeated installation endpoint500. The installation throttle key used a prefix longer than the existing database limit and a raw staff ID rather than a fixed-format hash. API fixture previously mocked throttleHit unconditionally, so initial tests missed the production contract.
+
+Changed installation to install:SHA256(staff ID); discovered same overlong prefix in existing sale-confirm and appointments handlers, corrected to sale:SHA256 and appt:SHA256 respectively. Limits/windows/authentication/permissions unchanged; no database migration. New regression initially reproduced500, then passed; actual PostgreSQL throttle migration exercised through authenticated installation, appointment-list and sale-status handlers for short, punctuated and long staff IDs. All131 automated checks pass.
+
+First fix deployment dpl_DsYKCjtCMtEYDwRb9ziEf3WYoDkd verified on signed-in production page: warning absent and repeated notification POST200. Follow-up booking/sale correction deployment is recorded in the recovery release manifest. No customer, job, appointment or financial records were created during this verification.
