@@ -44,3 +44,5 @@ Rollout awaiting owner approval:
 Scope boundaries: records track reported customer collections and company verification; no bank/card transfer is executed. Supplier/company cost responsibility and film quantities are recorded; supplier reimbursement, monetary film valuation, customer refunds and order cancellation are not added by this release. Building workflow remains deferred.
 
 Final release checks: npm test 137/137; full production build succeeded; disposable database workflow suite passed; exact combined activation transaction rehearsal passed. No production application or database changes were made during this work.
+
+Hosting adjustment during approved rollout: Vercel Hobby refused the first upload because four separate new endpoints raised the total above 12 functions. Consolidated only the new tint endpoints behind /api/garage/tint?operation=..., retaining the original per-operation authenticated handlers, validation and permissions. Function count is now 11. Reviewed database SQL is unchanged. Added a routing/permission regression test; no plan upgrade or existing route removal.
