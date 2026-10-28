@@ -22,3 +22,8 @@
 @media(hover:hover){.garage-journey .gj-step[data-selected=true] .gj-step-button:hover .gj-step-icon{box-shadow:inset 0 3px 7px rgba(0,0,0,.48),inset 0 -1px 0 rgba(219,239,255,.14);transform:translateY(2px) scale(.96)}}
 .garage-journey .gj-step[data-selected=true] .gj-step-button:active .gj-step-icon{transform:translateY(3px) scale(.92)}
 @media(prefers-reduced-motion:reduce){.garage-journey .gj-step[data-selected=true] .gj-step-button:hover .gj-step-icon{transform:translateY(2px) scale(.96)}}
+
+/* Selection never replaces a completed/current stage's actual status colour. */
+.garage-journey .gj-step[data-state=done][data-selected=true] .gj-step-icon{background:linear-gradient(145deg,#67c692,#88dcae);border-color:#8cddb0;color:#123323;box-shadow:inset 0 3px 7px rgba(12,51,32,.38),inset 0 -1px 0 rgba(205,255,226,.2)}
+.garage-journey .gj-step[data-state=current][data-selected=true] .gj-step-icon{background:linear-gradient(145deg,#d9b454,#f1cf7d);border-color:#f0d38c;color:#31270f;box-shadow:inset 0 3px 7px rgba(66,48,8,.4),inset 0 -1px 0 rgba(255,240,192,.25)}
+@media(hover:hover){.garage-journey .gj-step[data-state=done][data-selected=true] .gj-step-button:hover .gj-step-icon{border-color:#8cddb0;box-shadow:inset 0 3px 7px rgba(12,51,32,.38),inset 0 -1px 0 rgba(205,255,226,.2)}.garage-journey .gj-step[data-state=current][data-selected=true] .gj-step-button:hover .gj-step-icon{border-color:#f0d38c;box-shadow:inset 0 3px 7px rgba(66,48,8,.4),inset 0 -1px 0 rgba(255,240,192,.25)}}
