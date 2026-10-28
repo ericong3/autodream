@@ -1,4 +1,4 @@
-# Garage Home shortcuts — local, not published
+# Garage Home shortcuts — live
 
 Request: show each worker's pending jobs/tasks as Home shortcuts. User confirmed balance means the customer's unpaid balance, not pay/commission.
 
@@ -33,3 +33,12 @@ Online practice preview — approved 28 October 2026:
 - Vercel's existing deployment protection is preserved. Eric may need to sign into his Vercel account from the other PC. No protection token is included in the shared link.
 - Preview HTML/assets verified through authenticated Vercel access. Full online visual/browser review still needs an available browser connection. This authorisation was for the separate practice preview; the Home change is not promoted to the live CRM.
 - Build script: node tests/home-online-ui/build.mjs. Generated static .vercel/output lives in ../home-online-preview. Release evidence: ../home-online-preview-release.json.
+
+
+Live CRM rollout — approved 28 October 2026:
+- User requested promoting the actual Home changes and will test with real data tonight.
+- Source 1c93fe8, deployment dpl_D2uR19gx3gLRKEQpABF8QfNjGYWY, promoted to https://autodream.vercel.app. Previous release dpl_D7yvtfv9Vy2zVcXZjH4TFR7qKNHB preserved.
+- 145 automated tests and remote production/PWA build pass. Expected live bundle index-DP9m9VoA.js confirmed. Home/finance/stock/claims endpoints reject anonymous requests with 401 AUTH. No database migration or real production test records.
+- Practice preview remains separate. Browser inventory still has no connected browser, so signed-in visual verification is not claimed; real staff trial is pending.
+- Evidence: ../home-shortcuts-release-live.json. This LIVE section supersedes earlier local/preview-only checkpoints.
+- Next functional gap: building measurements and versioned measured scope exist, but BuildingQuoteVersion contains no monetary price. Building order confirmation, deposits/verified company receipts, scheduling, installer claims, material usage, inspections/handover and after-sales links still need development. Do not claim a full building workflow is ready for tonight.
