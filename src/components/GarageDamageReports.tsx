@@ -1,3 +1,5 @@
+import GarageDamagePhotoPicker from './GarageDamagePhotoPicker';
+import {prepareDamagePhoto} from '../utils/damagePhoto';
 import {useEffect,useRef,useState} from 'react';
 import {useStore} from '../store';
 import {tintControl} from '../lib/garageTintControl';
@@ -47,7 +49,13 @@ export default function GarageDamageReports({invoiceId,onChange,onClear}:{invoic
     <p className={r.status==='open'?'text-amber-200':'text-emerald-300'}>{r.status==='open'?'Awaiting Garage Head review':r.status==='acknowledged'?'Arrival damage acknowledged':'Incident resolved'}</p>
     {r.resolution&&<p className="text-white/70 whitespace-pre-wrap">{r.resolution}<span className="block text-xs text-white/50 mt-1">{name(r.reviewed_by)} · {new Date(r.reviewed_at!).toLocaleString('en-MY')}</span></p>}
     {r.photos.map(p=><button key={p.id} disabled={busy} onClick={async()=>{const generation=epoch.current;try{const result=await photoRequest(invoiceId,r.id,undefined,Number(p.id));if(generation===epoch.current)setPhotoUrl(result.url??'');}catch(e){if(generation===epoch.current)setError((e as Error).message);}}} className="block py-2 text-gold-300 underline">View photo: {p.name}</button>)}
-    {data.canReport&&r.status==='open'&&r.photos.length<4&&(r.reported_by===user?.id||data.canReview)&&<label className="block text-white/70">Attach photo (up to 4; JPEG/PNG/WebP, max 2 MB each)<input type="file" aria-label="Damage photo" accept="image/jpeg,image/png,image/webp" disabled={busy} className="block mt-2 max-w-full" onChange={async e=>{const file=e.target.files?.[0];e.target.value='';if(!file)return;const generation=epoch.current;setBusy(true);setError('');try{await photoRequest(invoiceId,r.id,file);const result=await tintControl<Snapshot>('damage','snapshot',{invoiceId});if(generation===epoch.current){accept(result);callbacks.current.onChange?.();}}catch(err){if(generation===epoch.current)setError((err as Error).message);}finally{if(generation===epoch.current)setBusy(false);}}}/></label>}
+    {data.canReport&&r.status==='open'&&r.photos.length<4&&(r.reported_by===user?.id||data.canReview)&&<GarageDamagePhotoPicker remaining={4-r.photos.length} busy={busy} onFiles={async files=>{
+     const generation=epoch.current;setBusy(true);setError('');let failure:unknown;
+     try{for(const original of files){if(generation!==epoch.current)return;const file=await prepareDamagePhoto(original);if(generation!==epoch.current)return;await photoRequest(invoiceId,r.id,file);}}
+     catch(err){failure=err;}
+     finally{if(generation===epoch.current){try{const result=await tintControl<Snapshot>('damage','snapshot',{invoiceId});if(generation===epoch.current){accept(result);callbacks.current.onChange?.();}}catch(err){failure??=err;}if(generation===epoch.current)setBusy(false);}}
+     if(failure&&generation===epoch.current)throw failure;
+    }}/>}
     {data.canReview&&r.status==='open'&&(reviewId===r.id?<div className="space-y-3"><label className="block text-white/80">Review / resolution outcome<textarea aria-label="Damage review outcome" maxLength={2000} value={note} onChange={e=>setNote(e.target.value)} className="block w-full mt-1 p-3 bg-white/5 border border-white/20 rounded-lg"/></label><button disabled={busy||!note.trim()} onClick={()=>review(r.id)} className="btn-gold px-4 py-3 rounded-lg">{r.kind==='arrival'?'Acknowledge arrival damage':'Mark incident resolved'}</button><button className="ml-4 text-white/60" onClick={()=>setReviewId(null)}>Cancel</button></div>:<button onClick={()=>{setReviewId(r.id);setNote('');}} className="border border-gold-400/30 text-gold-300 rounded-lg px-4 py-3">Review report</button>)}
    </article>)}</div>
   </>}
