@@ -1,75 +1,11 @@
 import type { ReactNode } from 'react';
-import { Check, Clock, ArrowRight } from 'lucide-react';
+import { Clock, ArrowRight } from 'lucide-react';
 import { formatTime } from '../utils/garageWorkOrderTimeline';
-import type { PipelineStage, PipelineStageKey, ActivityEvent } from '../utils/garageWorkOrderTimeline';
+import type { PipelineStage, ActivityEvent } from '../utils/garageWorkOrderTimeline';
 
-const STATE_TEXT: Record<PipelineStage['state'], string> = {
-  done: 'Done',
-  current: 'Now',
-  upcoming: 'Pending',
-};
+export {default as PipelineStageTiles} from './GarageJourneyNavigator';
 
-// Live job pipeline — one numbered tile per stage. Done tiles in gold,
-// the current one lit up, future ones dim. Tapping a tile only selects it
-// for the stage panel; it never changes the work order.
-export function PipelineStageTiles({
-  stages, selectedKey, onSelect,
-}: { stages: PipelineStage[]; selectedKey: PipelineStageKey; onSelect: (key: PipelineStageKey) => void }) {
-  return (
-    // Padding on every side so the selected tile's ring (which sits outside
-    // the tile) isn't clipped — overflow-x-auto crops vertically too.
-    <div className="overflow-x-auto -mx-2 px-2 py-2 -my-1">
-      <div className="flex items-center min-w-[720px]">
-        {stages.map((s, i) => {
-          const selected = s.key === selectedKey;
-          return (
-            <div key={s.key} className="flex items-center flex-1 min-w-0">
-              {i > 0 && (
-                <div className={`h-px w-3 sm:w-4 shrink-0 ${s.state === 'upcoming' ? 'bg-white/10' : 'bg-gold-400/50'}`} />
-              )}
-              <button
-                type="button"
-                onClick={() => onSelect(s.key)}
-                aria-pressed={selected}
-                className={`relative flex-1 min-w-0 text-left rounded-xl px-3 py-2.5 border transition-all duration-200 ${
-                  s.state === 'current'
-                    ? 'bg-gold-500/[0.12] border-gold-400/70 shadow-[0_0_22px_rgba(212,175,55,0.25)]'
-                    : s.state === 'done'
-                      ? 'bg-gold-500/[0.05] border-gold-400/30 hover:border-gold-400/55'
-                      : 'bg-white/[0.02] border-white/10 hover:border-white/25'
-                } ${selected ? 'ring-2 ring-gold-400/60 ring-offset-2 ring-offset-obsidian-950' : ''}`}
-              >
-                <span className="flex items-center justify-between">
-                  <span className="relative flex items-center justify-center w-3.5 h-3.5">
-                    {s.state === 'current' && <span className="absolute inset-0 rounded-full bg-gold-400/50 animate-ping" />}
-                    <span className={`relative w-3 h-3 rounded-full flex items-center justify-center ${
-                      s.state === 'done' ? 'bg-gold-400 text-obsidian-950'
-                        : s.state === 'current' ? 'bg-gold-400'
-                        : 'border border-white/25'
-                    }`}>
-                      {s.state === 'done' && <Check size={8} strokeWidth={4} />}
-                    </span>
-                  </span>
-                  <span className={`text-[10px] font-medium ${s.state === 'upcoming' ? 'text-white/25' : 'text-gold-400/70'}`}>
-                    {String(i + 1).padStart(2, '0')}
-                  </span>
-                </span>
-                <span className={`block mt-2 text-sm font-semibold truncate ${s.state === 'upcoming' ? 'text-white/40' : 'text-white'}`}>
-                  {s.label}
-                </span>
-                <span className={`block text-[11px] truncate ${
-                  s.state === 'current' ? 'text-gold-400' : s.state === 'done' ? 'text-white/50' : 'text-white/25'
-                }`}>
-                  {s.state === 'done' && s.by ? s.by : STATE_TEXT[s.state]}
-                </span>
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+const STATE_TEXT:Record<PipelineStage['state'],string>={done:'Done',current:'Now',upcoming:'Pending'};
 
 const EYEBROW: Record<PipelineStage['state'], string> = {
   current: 'Current Stage',
@@ -89,7 +25,7 @@ export function StagePanel({
       }`}>
         {EYEBROW[stage.state]}
       </p>
-      <h3 className="font-display text-xl text-white font-semibold tracking-wide mb-2">{stage.headline}</h3>
+      <h3 aria-live="polite" aria-atomic="true" className="font-display text-xl text-white font-semibold tracking-wide mb-2">{stage.headline}</h3>
       <p className="text-white/55 text-sm leading-relaxed mb-5 whitespace-pre-line">{stage.note}</p>
 
       <div className="grid grid-cols-2 gap-3 mb-5">

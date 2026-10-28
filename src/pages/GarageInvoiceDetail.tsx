@@ -1,6 +1,6 @@
 import GarageCarCondition from '../components/GarageCarCondition';
 import GarageTintStageWorkspace from '../components/GarageTintStageWorkspace';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   Car, User, Phone, ShieldCheck, RefreshCw, AlertCircle, Banknote, CreditCard, ArrowRightLeft, CalendarClock,
@@ -54,6 +54,7 @@ export default function GarageInvoiceDetail() {
 
   const [inspectionReady,setInspectionReady]=useState(false);
   const [damageClear,setDamageClear]=useState(false);
+  const stagePanelRef=useRef<HTMLDivElement>(null);
   const [invoice, setInvoice] = useState<GarageInvoice | null>(null);
   const [vehicle, setVehicle] = useState<GarageVehicle | null>(null);
   const [customer, setCustomer] = useState<GarageCustomer | null>(null);
@@ -248,6 +249,13 @@ export default function GarageInvoiceDetail() {
   const nameOf = (id?: string) => (id ? allUsers.find((u) => u.id === id)?.name : undefined);
   const pipeline = buildWorkOrderPipeline(invoice, job, activity, nameOf, glassItems);
   const { stage } = pipeline;
+  const selectJourneyStage=(key:PipelineStageKey)=>{
+    setSelectedStageKey(key===pipeline.currentKey?null:key);
+    if(window.matchMedia('(max-width:767px)').matches)requestAnimationFrame(()=>{
+      stagePanelRef.current?.scrollIntoView({block:'start',behavior:window.matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth'});
+      stagePanelRef.current?.focus({preventScroll:true});
+    });
+  };
   const selectedStage = pipeline.stages.find((s) => s.key === (selectedStageKey ?? pipeline.currentKey)) ?? pipeline.stages[0];
   // Payment, delivery, warranty and closing are the salesman's (and
   // management's) steps — an installer finishes at Installation Completed and
@@ -392,39 +400,18 @@ export default function GarageInvoiceDetail() {
           </div>
         </div>
 
-        {/* Live job pipeline — read-only; tap a stage to inspect it */}
-        <div className="rounded-[24px] p-5 sm:p-6 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
-          <div className="flex items-start justify-between gap-3 mb-4">
-            <div>
-              <h3 className="text-white text-sm font-semibold">Live Job Pipeline</h3>
-              <p className="text-white/60 text-sm mt-1">Choose a stage to see its details and actions.</p>
-            </div>
-            {selectedStageKey && (
-              <button
-                onClick={() => setSelectedStageKey(null)}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium border border-white/10 text-white/60
-                  hover:text-white hover:border-white/25 transition-colors"
-              >
-                Back to current
-              </button>
-            )}
-          </div>
-          <PipelineStageTiles
-            stages={pipeline.stages}
-            selectedKey={selectedStage.key}
-            onSelect={(key) => setSelectedStageKey(key === pipeline.currentKey ? null : key)}
-          />
-          {invoice.service==='tinted'&&canManageInvoice&&selectedStage.key!=='payment'&&<button type="button" onClick={()=>setSelectedStageKey('payment')} className="mt-4 min-h-[44px] px-4 py-3 rounded-xl border border-gold-400/30 text-gold-300 text-sm">Record deposit / Check balance</button>}
-        </div>
+        <section className="garage-journey" aria-label="Work order journey">
+          <PipelineStageTiles stages={pipeline.stages} selectedKey={selectedStage.key} onSelect={selectJourneyStage} onPayment={invoice.service==='tinted'&&canManageInvoice?()=>selectJourneyStage('payment'):undefined}/>
+        </section>
 
         <div className={invoice.service==='tinted'?'grid grid-cols-1 gap-5 items-start':'grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-5 items-start'}>
           {/* Selected stage */}
-          <div className="rounded-[24px] p-6 sm:p-7 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
+          <div ref={stagePanelRef} tabIndex={-1} role="region" aria-label="Selected stage details" style={{scrollMarginTop:96}} className="rounded-[24px] p-6 sm:p-7 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
             <StagePanel
               stage={selectedStage}
               salesmanSees={selectedStage.state === 'current' ? WORK_ORDER_STAGE_LABEL[stage] : selectedStage.headline}
             >
-              {invoice.service==='tinted'&&tintOrder?<GarageTintStageWorkspace key={invoice.id+':'+currentUser?.id} stage={selectedStage.key} invoice={invoice} order={tintOrder} items={glassItems} jobId={job?.id} claims={claims} orderSummary={orderSummary} onChange={refreshProgress} onReady={setInspectionReady} onPayment={()=>setSelectedStageKey('payment')} action={mainAction&&((selectedStage.key==='delivery'&&stage==='ready_for_delivery')||(selectedStage.key==='warranty'&&stage==='ready_for_warranty'))?<button type="button" onClick={mainAction.onClick} className="btn-gold min-h-[44px] px-5 py-3 rounded-xl text-sm">{mainAction.label}</button>:null}/>:<>
+              {invoice.service==='tinted'&&tintOrder?<GarageTintStageWorkspace key={invoice.id+':'+currentUser?.id} stage={selectedStage.key} invoice={invoice} order={tintOrder} items={glassItems} jobId={job?.id} claims={claims} orderSummary={orderSummary} onChange={refreshProgress} onReady={setInspectionReady} onPayment={()=>selectJourneyStage('payment')} action={mainAction&&((selectedStage.key==='delivery'&&stage==='ready_for_delivery')||(selectedStage.key==='warranty'&&stage==='ready_for_warranty'))?<button type="button" onClick={mainAction.onClick} className="btn-gold min-h-[44px] px-5 py-3 rounded-xl text-sm">{mainAction.label}</button>:null}/>:<>
               {selectedStage.key === 'installation' && job?.status === 'completed' && (
                 <div className="mb-5"><GarageInstallationPhotos invoiceId={invoice.id} /></div>
               )}
