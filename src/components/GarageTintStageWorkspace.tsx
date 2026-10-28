@@ -1,6 +1,5 @@
 import type {ReactNode} from 'react';
 import GarageInvoiceGlassWork from './GarageInvoiceGlassWork';
-import GarageDamageReports from './GarageDamageReports';
 import GarageTintPayments from './GarageTintPayments';
 import GarageTintUsage from './GarageTintUsage';
 import GarageInstallationReview from './GarageInstallationReview';
@@ -10,9 +9,9 @@ import {GLASS_LABEL,TINT_SERIES} from '../utils/tintPricing';
 import type {PipelineStageKey} from '../utils/garageWorkOrderTimeline';
 import type {GarageInvoice,GarageTintOrder,GarageTintWorkOrderItem,GarageInvoiceClaim} from '../types';
 
-export default function GarageTintStageWorkspace({stage,invoice,order,items,jobId,claims,orderSummary,action,onChange,onReady,onDamageClear,onPayment}:{
+export default function GarageTintStageWorkspace({stage,invoice,order,items,jobId,claims,orderSummary,action,onChange,onReady,onPayment}:{
  stage:PipelineStageKey;invoice:GarageInvoice;order:GarageTintOrder;items:GarageTintWorkOrderItem[];jobId?:string;claims:GarageInvoiceClaim[];
- orderSummary:ReactNode;action?:ReactNode;onChange:()=>void;onReady:(ready:boolean)=>void;onDamageClear:(clear:boolean)=>void;onPayment:()=>void;
+ orderSummary:ReactNode;action?:ReactNode;onChange:()=>void;onReady:(ready:boolean)=>void;onPayment:()=>void;
 }){
  const version=items.map(i=>`${i.id}:${i.updatedAt}:${i.sqft}:${i.usageAttempt}`).join('|');
  return <div className="space-y-5" aria-label={`${stage} work order functions`}>
@@ -33,9 +32,7 @@ export default function GarageTintStageWorkspace({stage,invoice,order,items,jobI
   <div hidden={!['installation','approval','inspection'].includes(stage)}>
    <GarageInstallationReview invoiceId={invoice.id} ownerId={invoice.createdBy} items={items} viewStage={stage} onChange={onChange} onReady={onReady}/>
   </div>
-  <div hidden={!['created','installation','approval','delivery'].includes(stage)}>
-   <GarageDamageReports invoiceId={invoice.id} onChange={onChange} onClear={onDamageClear}/>
-  </div>
+
   <div hidden={stage!=='payment'}>
    <GarageTintPayments invoiceId={invoice.id} onChange={onChange}/>
   </div>

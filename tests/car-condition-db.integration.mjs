@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
+process.argv.push('--serve');const {db,paidReplacement}=await import('./tint-accountability-db.integration.mjs');
+await db.exec(readFileSync(new URL('../docs/garage-tint-readiness-activation.sql',import.meta.url),'utf8'));
+const iid=paidReplacement.invoiceId;let serial=0;const key=()=>`condition-trial-${String(++serial).padStart(12,'0')}`;
+const act=async(actor,action,data={},request=key())=>(await db.query('select garage_tint_damage($1,$2,$3) r',[actor,action,{invoiceId:iid,requestId:request,...data}])).rows[0].r;
+const request=key(),body={area:'Front left door',kind:'arrival',description:'Car condition photos'};
+const first=await act('i1','create',body,request),id=first.reportId;
+const evidence=n=>({reportId:id,path:`${iid}/${id}/${n.toString(16).padStart(64,'0')}`,name:`condition-${n}.jpg`});
+for(let n=1;n<=4;n++)await act('i1','evidence',evidence(n));
+await assert.rejects(()=>act('i1','evidence',evidence(5)),/PHOTO_LIMIT/);
+const script=readFileSync(new URL('../docs/garage-car-condition-INSTALL-AND-CHECK.sql',import.meta.url),'utf8');await db.exec(script);await db.exec(script);
+for(let n=5;n<=12;n++)await act('i1','evidence',evidence(n));
+const snapshot=await act('head','snapshot'),entry=snapshot.reports.find(r=>r.id===id);
+assert.equal(snapshot.unlimitedPhotos,true);assert.equal(entry.photos.length,12);assert.equal(entry.reported_by,'i1');assert.ok(entry.created_at);assert.ok(entry.photos.every(p=>p.uploaded_by==='i1'&&p.created_at));
+assert.equal((await act('i1','create',body,request)).reportId,id);
+assert.notEqual((await act('i1','create',body)).reportId,id); // Separate entries can label the same area.
+await assert.rejects(()=>act('i2','evidence',evidence(13)),/NOT_ALLOWED/);
+await assert.rejects(()=>act('director','resolve',{reportId:id,note:'Not permitted'}),/NOT_ALLOWED/);
+await act('head','resolve',{reportId:id,note:'Arrival condition checked with the customer.'});
+await assert.rejects(()=>act('i1','evidence',evidence(13)),/DAMAGE_ALREADY_REVIEWED/);
+const flags=(await db.query("select has_function_privilege('anon','garage_tint_damage(text,text,jsonb)','EXECUTE') a,has_function_privilege('authenticated','garage_tint_damage(text,text,jsonb)','EXECUTE') b")).rows[0];assert.equal(flags.a,false);assert.equal(flags.b,false);
+await db.exec('set role anon');await assert.rejects(()=>db.exec('select * from garage_damage_photos'),/permission denied/);await db.exec('reset role');
+await db.close();console.log('PASS: exact cap-removal bundle, 12 photos per entry, repeated entries, audit attribution, retry, ownership, Head review and privacy.');

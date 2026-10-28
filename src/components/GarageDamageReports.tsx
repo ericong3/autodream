@@ -6,7 +6,7 @@ import {tintControl} from '../lib/garageTintControl';
 type Photo={id:number;name:string;uploaded_by:string;created_at:string};
 type Report={id:string;kind:'arrival'|'installation';area:string;description:string;status:'open'|'acknowledged'|'resolved';reported_by:string;created_at:string;reviewed_by?:string;reviewed_at?:string;resolution?:string;photos:Photo[]};
 type Snapshot={reportId?:string;invoiceId:string;canReport:boolean;canReview:boolean;openCount:number;reports:Report[]};
-async function photoRequest(invoiceId:string,reportId:string,file?:File,photoId?:number){
+export async function photoRequest(invoiceId:string,reportId:string,file?:File,photoId?:number){
  let content:string|undefined;if(file){if(file.size>2097152)throw Error('Choose a photo up to 2 MB.');content=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(Error('The photo could not be read.'));reader.readAsDataURL(file);});}
  return tintControl<{attached?:boolean;url?:string}>('damage',file?'upload':'photo',{invoiceId,reportId,...(file?{fileName:file.name,mime:file.type,content}:{photoId})});
 }

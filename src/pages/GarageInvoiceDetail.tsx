@@ -1,3 +1,4 @@
+import GarageCarCondition from '../components/GarageCarCondition';
 import GarageTintStageWorkspace from '../components/GarageTintStageWorkspace';
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
@@ -372,6 +373,7 @@ export default function GarageInvoiceDetail() {
                   {stage === 'closed' ? <CheckCircle2 size={15} /> : <Clock size={15} />} {waitingText[stage]}
                 </div>
               )}
+              {invoice.service==='tinted'&&canManageInvoice&&<GarageCarCondition key={invoice.id+':'+currentUser?.id} invoiceId={invoice.id} workStatus={invoice.workStatus} onChange={refreshProgress} onClear={setDamageClear}/>}
               {/* Pay Later can be settled any time before delivery; once the
                   job's done it becomes the main action instead. */}
               {invoice.service!=='tinted' && invoice.paymentStatus === 'pending' && !isInstaller && stage !== 'payment_due' && (
@@ -422,7 +424,7 @@ export default function GarageInvoiceDetail() {
               stage={selectedStage}
               salesmanSees={selectedStage.state === 'current' ? WORK_ORDER_STAGE_LABEL[stage] : selectedStage.headline}
             >
-              {invoice.service==='tinted'&&tintOrder?<GarageTintStageWorkspace key={invoice.id+':'+currentUser?.id} stage={selectedStage.key} invoice={invoice} order={tintOrder} items={glassItems} jobId={job?.id} claims={claims} orderSummary={orderSummary} onChange={refreshProgress} onReady={setInspectionReady} onDamageClear={setDamageClear} onPayment={()=>setSelectedStageKey('payment')} action={mainAction&&((selectedStage.key==='delivery'&&stage==='ready_for_delivery')||(selectedStage.key==='warranty'&&stage==='ready_for_warranty'))?<button type="button" onClick={mainAction.onClick} className="btn-gold min-h-[44px] px-5 py-3 rounded-xl text-sm">{mainAction.label}</button>:null}/>:<>
+              {invoice.service==='tinted'&&tintOrder?<GarageTintStageWorkspace key={invoice.id+':'+currentUser?.id} stage={selectedStage.key} invoice={invoice} order={tintOrder} items={glassItems} jobId={job?.id} claims={claims} orderSummary={orderSummary} onChange={refreshProgress} onReady={setInspectionReady} onPayment={()=>setSelectedStageKey('payment')} action={mainAction&&((selectedStage.key==='delivery'&&stage==='ready_for_delivery')||(selectedStage.key==='warranty'&&stage==='ready_for_warranty'))?<button type="button" onClick={mainAction.onClick} className="btn-gold min-h-[44px] px-5 py-3 rounded-xl text-sm">{mainAction.label}</button>:null}/>:<>
               {selectedStage.key === 'installation' && job?.status === 'completed' && (
                 <div className="mb-5"><GarageInstallationPhotos invoiceId={invoice.id} /></div>
               )}

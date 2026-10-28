@@ -26,7 +26,7 @@ export async function handleDamage(req,deps){return respond(req,deps,['POST'],as
  if(!valid||bytes.length<8||bytes.length>2097152)throw new ApiError(400,'INVALID','Choose a valid JPEG, PNG or WebP photo up to 2 MB.');
  const digest=hash(bytes),path=`${data.invoiceId}/${report.id}/${digest}`;
  if(report.photos.some(p=>p.path===path))return {status:200,body:{attached:true}};
- if(report.photos.length>=4)throw new ApiError(409,'PHOTO_LIMIT','A report can have up to four photos.');
+ // The private database function remains authoritative for evidence limits during rollout.
  await ctx.repo.uploadDamageProof(path,bytes,data.mime);
  await rpc('evidence',{invoiceId:data.invoiceId,reportId:report.id,path,name:data.fileName,requestId:'damage_'+hash(report.id+digest)});
  return {status:200,body:{attached:true}};

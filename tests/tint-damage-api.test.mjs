@@ -27,3 +27,10 @@ assert.equal((await handleDamage(w.req(body,c),w.deps)).status,200);assert.equal
 report.reported_by='someone';assert.equal((await handleDamage(w.req(body,c),w.deps)).status,403);report.reported_by=w.user.id;report.status='resolved';assert.equal((await handleDamage(w.req(body,c),w.deps)).status,403);
 });
 test('damage storage actions enforce cross-order references through the authorised snapshot',async()=>{const w=fixture('garage_installer'),c=await w.login();w.repo.rpc=async()=>({data:{reports:[],canReport:true}});assert.equal((await handleDamage(w.req({action:'photo',invoiceId:'inv',reportId:'another-report',photoId:1},c),w.deps)).status,403);});
+
+test('photo upload API delegates the photo-count decision to the private database during cap-removal rollout',async()=>{
+ const w=fixture('garage_installer'),c=await w.login();let uploaded=0;const report={id:'r',reported_by:w.user.id,status:'open',photos:Array.from({length:4},(_,i)=>({id:i+1,path:'existing-'+i}))};
+ w.repo.rpc=async(fn,args)=>{w.calls.push({fn,args});return {data:args.p_action==='snapshot'?{canReport:true,reports:[report]}:{}};};w.repo.uploadDamageProof=async()=>{uploaded++;};
+ const body={action:'upload',invoiceId:'inv',reportId:'r',fileName:'fifth.png',mime:'image/png',content:Buffer.from([137,80,78,71,13,10,26,10,5]).toString('base64')};
+ assert.equal((await handleDamage(w.req(body,c),w.deps)).status,200);assert.equal(uploaded,1);assert.equal(w.calls.at(-1).args.p_action,'evidence');
+});

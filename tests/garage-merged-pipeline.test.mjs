@@ -10,7 +10,7 @@ const Workspace=compile('GarageTintStageWorkspace',name=>{
 const props={invoice:{id:'invoice',workStatus:'in_progress',createdBy:'sales'},order:{selections:[],extras:[]},items:[],claims:[],orderSummary:jsx('OrderSummary',{}),action:jsx('DeliveryOrWarrantyAction',{}),onChange:()=>{},onReady:()=>{},onDamageClear:()=>{},onPayment:()=>{}};
 const visible=stage=>nodes(Workspace({...props,stage})).map(n=>n.type);
 test('the existing pipeline selects the correct functions without stacked duplicate panels',()=>{
- const expected={created:['OrderSummary','GarageDamageReports'],installation:['GarageInvoiceGlassWork','GarageTintUsage','GarageInstallationPhotos','GarageInstallationReview','GarageDamageReports'],approval:['GarageInstallationReview','GarageDamageReports'],inspection:['GarageInstallationReview'],payment:['GarageTintPayments'],delivery:['GarageDamageReports','DeliveryOrWarrantyAction'],warranty:['GarageTintAfterSales','DeliveryOrWarrantyAction'],closed:['GarageTintAfterSales']};
+ const expected={created:['OrderSummary',],installation:['GarageInvoiceGlassWork','GarageTintUsage','GarageInstallationPhotos','GarageInstallationReview',],approval:['GarageInstallationReview',],inspection:['GarageInstallationReview'],payment:['GarageTintPayments'],delivery:['DeliveryOrWarrantyAction'],warranty:['GarageTintAfterSales','DeliveryOrWarrantyAction'],closed:['GarageTintAfterSales']};
  for(const [stage,components] of Object.entries(expected)){
   const actual=visible(stage).filter(type=>typeof type==='string'&&(type.startsWith('Garage')||['OrderSummary','DeliveryOrWarrantyAction'].includes(type)));
   assert.deepEqual(actual.sort(),components.sort(),stage);
@@ -19,10 +19,9 @@ test('the existing pipeline selects the correct functions without stacked duplic
 test('switching stages retains exactly one mounted instance of live checks, payments and glass work',()=>{
  for(const stage of ['installation','approval','payment','delivery']){
   const all=nodes(Workspace({...props,stage}),[],false);
-  for(const name of ['GarageInstallationReview','GarageTintPayments','GarageDamageReports','GarageInvoiceGlassWork'])assert.equal(all.filter(n=>n.type===name).length,1);
+  for(const name of ['GarageInstallationReview','GarageTintPayments','GarageInvoiceGlassWork'])assert.equal(all.filter(n=>n.type===name).length,1);
   assert.equal(all.find(n=>n.type==='GarageInstallationReview').props.viewStage,stage);
   assert.equal(all.find(n=>n.type==='GarageInstallationReview').props.onReady,props.onReady);
-  assert.equal(all.find(n=>n.type==='GarageDamageReports').props.onClear,props.onDamageClear);
  }
 });
 test('delivery payment shortcut changes the selected stage without executing a work order mutation',()=>{
