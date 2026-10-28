@@ -1,6 +1,6 @@
 import {tintQuoteTotal} from '../utils/tintQuoteTotal';
 import GarageGlassSetup from '../components/GarageGlassSetup';
-import {defaultGlassLayout,vehicleGlassPositions,type VehicleGlassSelection,type VehicleGlassLayout} from '../utils/vehicleGlass';
+import {defaultGlassLayout,vehicleGlassPositions,FRONT_THREE_GLASS,isFrontThreeGlass,type VehicleGlassSelection,type VehicleGlassLayout} from '../utils/vehicleGlass';
 import {glassName} from '../components/GarageRenderedGlassMap';
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
@@ -155,6 +155,21 @@ export default function GarageTintPackage() {
   const rearGlass = layout.filter((g) => g.zone === 'rear');
   const availableExtras = EXTRA_GLASS_OPTIONS.filter((ex) => !ex.xlargeOnly || size === 'xlarge');
   const mixChoice = (pos: GlassPosition) => mix[pos] ?? EMPTY_CHOICE;
+  const frontThreeOnly = isFrontThreeGlass(layout.map(g => g.key));
+
+  const selectFrontThree = (config: VehicleGlassSelection = glassConfig) => {
+    // Use the existing per-window pricing and order format. Rear/roof pieces
+    // and optional extras must not create installer tasks for this shortcut.
+    setGlassConfig({...config, included: [...FRONT_THREE_GLASS]});
+    setMix(previous => ({...previous, ...Object.fromEntries(FRONT_THREE_GLASS.map(position => [position,
+      packageType === 'full'
+        ? {series: fullSeries, vlt: effectiveFullVlt(position)}
+        : previous[position] ?? EMPTY_CHOICE,
+    ]))}));
+    setPackageType('mix');
+    setExtras(detectExtras(undefined));
+    setError('');
+  };
 
   // Full Package's VLT, resolved for whichever grouping mode is active.
   function effectiveFullVlt(pos: GlassPosition): string {
@@ -263,15 +278,34 @@ export default function GarageTintPackage() {
           )}
         </div>
 
-        <GarageGlassSetup value={glassConfig} onApply={value=>{setGlassConfig(value);setError('');}}/>
+        <section className="mb-6 rounded-2xl border border-white/15 bg-black/30 p-5" aria-label="Tint coverage">
+          <h2 className="text-white font-semibold mb-3">Which glass is being tinted?</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button type="button" aria-pressed={glassConfig.included.length === vehicleGlassPositions(glassConfig).length}
+              onClick={() => {setGlassConfig({...glassConfig, included: vehicleGlassPositions(glassConfig)}); setPackageType('full'); setError('');}}
+              className="min-h-[44px] px-4 py-3 rounded-xl border border-white/20 text-white text-sm hover:border-gold-400/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-400">
+              Full car
+            </button>
+            <button type="button" aria-pressed={frontThreeOnly} onClick={() => selectFrontThree()}
+              className={`min-h-[44px] px-4 py-3 rounded-xl border text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-400 ${frontThreeOnly ? 'bg-gold-500/15 border-gold-400/50 text-gold-400' : 'border-white/20 text-white hover:border-gold-400/50'}`}>
+              Front 3 pieces / Half car
+            </button>
+          </div>
+          <p className="mt-3 text-sm text-white/70" aria-live="polite">{frontThreeOnly
+            ? 'Front windscreen + front left and right windows only. Rear and roof glass stay unchanged. Priced per selected piece.'
+            : 'Choose full car, front 3 pieces, or use Set up glass below for a custom selection.'}</p>
+        </section>
+        <GarageGlassSetup value={glassConfig} onApply={value=>{if(isFrontThreeGlass(value.included)){selectFrontThree(value);}else{setGlassConfig(value);setError('');}}}/>
         {(agreedVehicle||roofGlass.length>0)&&<section className="mb-6 rounded-2xl border border-gold-400/25 bg-black/30 p-5 space-y-4" aria-label="Agreed pricing">{agreedVehicle&&<label className="block text-white/80 text-sm">Agreed job price (excluding roof add-ons)<input type="number" min="0" step="0.01" inputMode="decimal" value={agreedBase} onChange={e=>setAgreedBase(e.target.value)} placeholder="RM" className="block w-full mt-2 bg-black border border-white/20 rounded-xl p-3 text-white"/><span className="block mt-2 text-xs text-white/50">Enter the agreed amount after measuring and discussing the job.</span></label>}{roofGlass.map(p=><label key={p.key} className="block text-white/80 text-sm">{p.label} add-on price<input type="number" min="0" step="0.01" inputMode="decimal" value={roofPrices[p.key]??''} onChange={e=>setRoofPrices({...roofPrices,[p.key]:e.target.value})} placeholder="RM" className="block w-full mt-2 bg-black border border-white/20 rounded-xl p-3 text-white"/></label>)}</section>}
         {/* Package type toggle */}
         <div className="grid grid-cols-2 gap-3 mb-6 max-w-sm">
           {(['full', 'mix'] as TintPackageType[]).map((t) => (
             <button
               key={t}
+              type="button"
+              disabled={t === 'full' && frontThreeOnly}
               onClick={() => setPackageType(t)}
-              className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium transition-colors ${
+              className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                 packageType === t
                   ? 'bg-gold-500/15 border-gold-400/50 text-gold-400'
                   : 'bg-white/[0.03] border-white/10 text-white/50 hover:text-white/80 hover:border-white/20'
@@ -431,7 +465,7 @@ export default function GarageTintPackage() {
               </>
             ) : (
               <>
-                <h2 className="font-display text-lg text-white font-semibold tracking-wide mb-1">Mix &amp; Match</h2>
+                <h2 className="font-display text-lg text-white font-semibold tracking-wide mb-1">{frontThreeOnly ? 'Front 3 pieces / Half car' : 'Mix & Match'}</h2>
                 <p className="text-white/40 text-sm mb-6">Select series and VLT for each individual glass — priced per window</p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-[190px_1fr_100px_auto] gap-2 items-center mb-5 pb-5 border-b border-white/10">
@@ -491,7 +525,7 @@ export default function GarageTintPackage() {
                   ))}
                 </div>
 
-                <div className="pt-5 border-t border-white/10 space-y-3">
+                {!frontThreeOnly && <div className="pt-5 border-t border-white/10 space-y-3">
                   <p className="text-white/50 text-xs font-medium">Extras</p>
                   {availableExtras.map((ex) => (
                     <div key={ex.key} className="grid grid-cols-1 sm:grid-cols-[190px_1fr_100px] gap-2 items-center">
@@ -527,7 +561,7 @@ export default function GarageTintPackage() {
                       </select>
                     </div>
                   ))}
-                </div>
+                </div>}
               </>
             )}
           </div>
@@ -545,7 +579,7 @@ export default function GarageTintPackage() {
               ) : (
                 <>
                   <div className="flex justify-between text-white/50">
-                    <span>{agreedVehicle?'Agreed job price':'Mix & Match Total'}</span>
+                    <span>{agreedVehicle?'Agreed job price':frontThreeOnly?'Front 3 pieces total':'Mix & Match Total'}</span>
                     <span className="text-white">{formatRM(agreedVehicle?Number(agreedBase)||0:mixTotal)}</span>
                   </div>
                   {extrasTotal > 0 && (

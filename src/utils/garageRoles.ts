@@ -21,6 +21,11 @@ export function isGarageWorkshopRole(role?: string): boolean {
   return role === 'garage_installer' || role === 'garage_detailer' || role === 'garage_spray';
 }
 
+// Garage Head also installs tint; keep their management navigation unchanged.
+export function canInstallGarageTint(role?: string): boolean {
+  return role === 'garage_head' || isGarageWorkshopRole(role);
+}
+
 // Sales workflow: dashboard, sales tools, work-order creation, customers,
 // vehicles, calendar, My Pipeline, work-order detail.
 export function canUseGarageSales(role?: string): boolean {

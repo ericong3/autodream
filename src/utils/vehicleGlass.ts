@@ -2,6 +2,10 @@ export type VehicleGlassBody='sedan'|'coupe'|'mpv'|'suv'|'van'|'bus';
 export type VehicleRoof='none'|'single'|'split'|'panoramic';
 export type VehicleGlassLayout={body:VehicleGlassBody;roof:VehicleRoof;sideRows:number};
 export type VehicleGlassSelection=VehicleGlassLayout&{included:string[]};
+export const FRONT_THREE_GLASS = ['front_windscreen', 'front_left_window', 'front_right_window'] as const;
+export function isFrontThreeGlass(positions: readonly string[]): boolean {
+ return positions.length === 3 && FRONT_THREE_GLASS.every(position => positions.includes(position));
+}
 export const defaultGlassLayout:VehicleGlassLayout={body:'sedan',roof:'none',sideRows:0};
 export const bodyNames:Record<VehicleGlassBody,string>={sedan:'Sedan',coupe:'Two-door coupe',mpv:'MPV',suv:'SUV',van:'Van',bus:'Bus'};
 export function vehicleGlassPositions(config:VehicleGlassLayout):string[]{const {body,roof,sideRows}=config;const core=body==='bus'||body==='van'?['front_windscreen','front_left_window','front_right_window',...Array.from({length:sideRows},(_,i)=>['side_left_'+(i+1),'side_right_'+(i+1)]).flat(),'rear_windscreen']:body==='coupe'?['front_windscreen','front_left_window','front_right_window','rear_left_panel_window','rear_right_panel_window','rear_windscreen']:['front_windscreen','front_left_window','front_right_window','rear_left_window','rear_right_window','rear_left_panel_window','rear_right_panel_window','rear_windscreen'];return [...core,...(body==='bus'||roof==='none'?[]:roof==='split'?['front_roof_glass','rear_roof_glass']:roof==='single'?['front_roof_glass']:['panoramic_roof_glass'])];}

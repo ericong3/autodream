@@ -1,6 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { garageNavigation, garageSection, garageSecondaryNavigation } from '../src/utils/garageNavigation.ts';
+import {canInstallGarageTint,isGarageWorkshopRole,isGarageManager} from '../src/utils/garageRoles.ts';
+
+test('Garage Head can install tint while keeping management navigation and other role boundaries',()=>{
+  for(const role of ['garage_head','garage_installer','garage_detailer','garage_spray'])assert.equal(canInstallGarageTint(role),true);
+  for(const role of ['garage_salesman','director','shareholder','admin','salesperson',undefined])assert.equal(canInstallGarageTint(role),false);
+  assert.equal(isGarageWorkshopRole('garage_head'),false);
+  assert.equal(isGarageManager('garage_head'),true);
+});
 
 test('Garage navigation preserves role boundaries', () => {
   for (const role of ['director', 'shareholder', 'garage_head']) {

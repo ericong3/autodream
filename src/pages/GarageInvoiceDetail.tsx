@@ -1,9 +1,4 @@
-import GarageDamageReports from '../components/GarageDamageReports';
-import GarageTintAfterSales from '../components/GarageTintAfterSales';
-import GarageJobGlassMap from '../components/GarageJobGlassMap';
-import GarageInstallationReview from '../components/GarageInstallationReview';
-import GarageTintPayments from '../components/GarageTintPayments';
-import GarageTintUsage from '../components/GarageTintUsage';
+import GarageTintStageWorkspace from '../components/GarageTintStageWorkspace';
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
@@ -279,11 +274,44 @@ export default function GarageInvoiceDetail() {
     closed: 'Work order closed',
   };
 
+  const orderSummary=(
+          <div className="rounded-[24px] p-6 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
+            <h3 className="text-white text-sm font-semibold mb-4">Order Summary</h3>
+            <div className="space-y-2 text-sm">
+              {tintOrder && (
+                <div className="flex justify-between gap-3">
+                  <span className="text-white/60">
+                    Window Tint · {tintOrder.packageType === 'full' ? 'Full Package' : 'Mix & Match'}
+                    {tintOrder.extras.length > 0 && ` + ${tintOrder.extras.length} extra${tintOrder.extras.length > 1 ? 's' : ''}`}
+                  </span>
+                  <span className="text-white">{formatRM(tintOrder.finalTotal + tintOrder.discount)}</span>
+                </div>
+              )}
+              {tintOrder && tintOrder.discount > 0 && (
+                <div className="flex justify-between gap-3 text-white/50">
+                  <span>Discount</span>
+                  <span>-{formatRM(tintOrder.discount)}</span>
+                </div>
+              )}
+              {addons.map((a) => (
+                <div key={a.id} className="flex justify-between gap-3">
+                  <span className="text-white/60">{a.name} {a.qty > 1 && <span className="text-white/30">× {a.qty}</span>}</span>
+                  <span className="text-white">{formatRM(a.price * a.qty)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 pt-4 border-t border-white/10 flex justify-between items-baseline">
+              <span className="text-white font-semibold text-sm">Order Total</span>
+              <span className="text-gold-400 font-display text-xl font-bold">
+                {formatRM((tintOrder?.finalTotal ?? 0) + addons.reduce((sum, a) => sum + a.price * a.qty, 0))}
+              </span>
+            </div>
+          </div>
+  );
+
   return (
     <GarageShell title={invoice.invoiceNumber} showBack backTo={backTo}>
       <div className="max-w-5xl mx-auto space-y-5">
-        {invoice.service==='tinted'&&tintOrder&&<GarageJobGlassMap items={glassItems} layout={tintOrder.vehicleLayout} userId={currentUser?.id} workStatus={invoice.workStatus}/>}
-        {invoice.service==='tinted' && canManageInvoice && <><GarageDamageReports invoiceId={invoice.id} onChange={refreshProgress} onClear={setDamageClear}/><GarageTintPayments invoiceId={invoice.id} onChange={refreshProgress}/><GarageTintUsage invoiceId={invoice.id} version={glassItems.map(i=>`${i.id}:${i.sqft}:${i.usageAttempt}`).join('|')}/><GarageInstallationReview invoiceId={invoice.id} ownerId={invoice.createdBy} items={glassItems} onChange={refreshProgress} onReady={setInspectionReady}/></> }
         {/* Header — which job this is, and the one action that moves it on */}
         <div className="relative overflow-hidden rounded-[24px] p-6 sm:p-7
           bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
@@ -327,7 +355,7 @@ export default function GarageInvoiceDetail() {
             </div>
 
             <div className="flex flex-col items-stretch sm:items-end gap-2 w-full sm:w-auto">
-              {mainAction ? (
+              {mainAction && invoice.service!=='tinted' ? (
                 <button
                   onClick={mainAction.onClick}
                   className="flex items-center justify-center gap-2 btn-gold px-6 py-3 rounded-xl text-sm font-semibold
@@ -367,7 +395,7 @@ export default function GarageInvoiceDetail() {
           <div className="flex items-start justify-between gap-3 mb-4">
             <div>
               <h3 className="text-white text-sm font-semibold">Live Job Pipeline</h3>
-              <p className="text-white/40 text-xs mt-0.5">Tap a stage to see its details</p>
+              <p className="text-white/60 text-sm mt-1">Choose a stage to see its details and actions.</p>
             </div>
             {selectedStageKey && (
               <button
@@ -384,15 +412,17 @@ export default function GarageInvoiceDetail() {
             selectedKey={selectedStage.key}
             onSelect={(key) => setSelectedStageKey(key === pipeline.currentKey ? null : key)}
           />
+          {invoice.service==='tinted'&&canManageInvoice&&selectedStage.key!=='payment'&&<button type="button" onClick={()=>setSelectedStageKey('payment')} className="mt-4 min-h-[44px] px-4 py-3 rounded-xl border border-gold-400/30 text-gold-300 text-sm">Record deposit / Check balance</button>}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-5 items-start">
+        <div className={invoice.service==='tinted'?'grid grid-cols-1 gap-5 items-start':'grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-5 items-start'}>
           {/* Selected stage */}
           <div className="rounded-[24px] p-6 sm:p-7 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
             <StagePanel
               stage={selectedStage}
               salesmanSees={selectedStage.state === 'current' ? WORK_ORDER_STAGE_LABEL[stage] : selectedStage.headline}
             >
+              {invoice.service==='tinted'&&tintOrder?<GarageTintStageWorkspace key={invoice.id+':'+currentUser?.id} stage={selectedStage.key} invoice={invoice} order={tintOrder} items={glassItems} jobId={job?.id} claims={claims} orderSummary={orderSummary} onChange={refreshProgress} onReady={setInspectionReady} onDamageClear={setDamageClear} onPayment={()=>setSelectedStageKey('payment')} action={mainAction&&((selectedStage.key==='delivery'&&stage==='ready_for_delivery')||(selectedStage.key==='warranty'&&stage==='ready_for_warranty'))?<button type="button" onClick={mainAction.onClick} className="btn-gold min-h-[44px] px-5 py-3 rounded-xl text-sm">{mainAction.label}</button>:null}/>:<>
               {selectedStage.key === 'installation' && job?.status === 'completed' && (
                 <div className="mb-5"><GarageInstallationPhotos invoiceId={invoice.id} /></div>
               )}
@@ -406,6 +436,7 @@ export default function GarageInvoiceDetail() {
                   ))}
                 </div>
               )}
+              </>}
             </StagePanel>
           </div>
 
@@ -422,44 +453,13 @@ export default function GarageInvoiceDetail() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+        {invoice.service!=='tinted'&&<div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
           {/* Order summary — what was sold and for how much (the glass
               breakdown lives in the stage panel above) */}
-          <div className="rounded-[24px] p-6 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
-            <h3 className="text-white text-sm font-semibold mb-4">Order Summary</h3>
-            <div className="space-y-2 text-sm">
-              {tintOrder && (
-                <div className="flex justify-between gap-3">
-                  <span className="text-white/60">
-                    Window Tint · {tintOrder.packageType === 'full' ? 'Full Package' : 'Mix & Match'}
-                    {tintOrder.extras.length > 0 && ` + ${tintOrder.extras.length} extra${tintOrder.extras.length > 1 ? 's' : ''}`}
-                  </span>
-                  <span className="text-white">{formatRM(tintOrder.finalTotal + tintOrder.discount)}</span>
-                </div>
-              )}
-              {tintOrder && tintOrder.discount > 0 && (
-                <div className="flex justify-between gap-3 text-white/50">
-                  <span>Discount</span>
-                  <span>-{formatRM(tintOrder.discount)}</span>
-                </div>
-              )}
-              {addons.map((a) => (
-                <div key={a.id} className="flex justify-between gap-3">
-                  <span className="text-white/60">{a.name} {a.qty > 1 && <span className="text-white/30">× {a.qty}</span>}</span>
-                  <span className="text-white">{formatRM(a.price * a.qty)}</span>
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 pt-4 border-t border-white/10 flex justify-between items-baseline">
-              <span className="text-white font-semibold text-sm">Order Total</span>
-              <span className="text-gold-400 font-display text-xl font-bold">
-                {formatRM((tintOrder?.finalTotal ?? 0) + addons.reduce((sum, a) => sum + a.price * a.qty, 0))}
-              </span>
-            </div>
-          </div>
+          {orderSummary}
 
           {/* After-sales stays on the customer's past purchase. */}
-          {invoice.service==='tinted'?<GarageTintAfterSales invoiceId={invoice.id} claims={claims} onChange={load}/>:<>
+          <>
           <div className="rounded-[24px] p-6 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
             <h3 className="text-white text-sm font-semibold mb-4">After-sales</h3>
             <div className="flex flex-wrap gap-2.5 mb-4">
@@ -500,8 +500,8 @@ export default function GarageInvoiceDetail() {
               </div>
             )}
           </div>
-          </>}
-        </div>
+          </>
+        </div>}
       </div>
 
       <Modal

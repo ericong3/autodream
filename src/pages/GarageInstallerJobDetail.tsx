@@ -1,7 +1,8 @@
+import GarageGlassUnclaim from '../components/GarageGlassUnclaim';
 import GarageDamageReports from '../components/GarageDamageReports';
 import GarageJobGlassMap from '../components/GarageJobGlassMap';
 import GarageTintUsage from '../components/GarageTintUsage';
-import {isGarageWorkshopRole} from '../utils/garageRoles';
+import {canInstallGarageTint} from '../utils/garageRoles';
 import GarageInstallationReview from '../components/GarageInstallationReview';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -169,7 +170,7 @@ export default function GarageInstallerJobDetail() {
   // ── Who / where ────────────────────────────────────────────────────────
   const me = currentUser?.id;
   const isManager = isGarageManager(currentUser?.role);
-  const isInstaller = isGarageWorkshopRole(currentUser?.role);
+  const isInstaller = canInstallGarageTint(currentUser?.role);
   const ws = invoice?.workStatus;
   const isCompleted = job?.status === 'completed';
   const isWaiting = !isCompleted && (ws === 'waiting_for_installer');
@@ -398,7 +399,7 @@ export default function GarageInstallerJobDetail() {
             <p className="text-indigo-300/80 text-xs">Submitted for approval — the glass is locked unless the Garage Head returns it.</p>
           )}
 
-          <GarageJobGlassMap items={orderItems} layout={tintOrder?.vehicleLayout} userId={me} workStatus={invoice?.workStatus} canWork={glassOpen&&isInstaller} busy={!!busy} onClaim={handleClaim} onComplete={handleConfirm} onUsage={handleSqft}/>
+          <GarageJobGlassMap items={orderItems} layout={tintOrder?.vehicleLayout} userId={me} workStatus={invoice?.workStatus} canWork={glassOpen&&isInstaller} busy={!!busy} onClaim={handleClaim} onUnclaim={handleRelease} onComplete={handleConfirm} onUsage={handleSqft}/>
           <details className="space-y-3"><summary className="cursor-pointer text-sm text-white/60 py-3">Film usage and glass details</summary>
           {allSelections.map((sel) => {
             const item = itemFor(sel);
@@ -485,14 +486,7 @@ export default function GarageInstallerJobDetail() {
                     )}
                     {item.status === 'taken' && canWorkThis && (
                       <>
-                        <button
-                          type="button"
-                          onClick={() => handleRelease(item)}
-                          disabled={saving}
-                          className={`${smallBtn} bg-white/[0.03] border-white/10 text-white/60 hover:text-white/90 hover:border-white/20`}
-                        >
-                          Release
-                        </button>
+                        {(item.sqft??0)<=0&&!item.needsCorrection&&<GarageGlassUnclaim key={item.id} busy={saving} onConfirm={()=>handleRelease(item)}/>}
                         <button
                           type="button"
                           onClick={() => handleConfirm(item)}
