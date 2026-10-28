@@ -1,7 +1,8 @@
 import {ApiError,respond} from '../garageBuilding/core.mjs';
 import {handleTintControl} from './core.mjs';
+import {handleHomeTasks} from './home.mjs';
 import {handlePaymentProof} from './proofs.mjs';
-const handlers={finance:handleTintControl('finance'),stock:handleTintControl('stock'),claims:handleTintControl('claims'),'payment-proof':handlePaymentProof};
+const handlers={home:handleHomeTasks,finance:handleTintControl('finance'),stock:handleTintControl('stock'),claims:handleTintControl('claims'),'payment-proof':handlePaymentProof};
 export function handleTintRequest(req,deps){
  const params=new URL(req.url??'/', 'https://local.invalid').searchParams;
  const operation=params.get('operation');

@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ClipboardList, Car, User, ChevronRight, Clock3, Plus } from 'lucide-react';
+import GarageHomeTasks from '../components/GarageHomeTasks';
 import GarageShell from '../components/GarageShell';
 import GarageEnquiryReminders from '../components/GarageEnquiryReminders';
 import GarageTodayAppointments from '../components/GarageTodayAppointments';
@@ -119,6 +120,7 @@ export default function GarageMyWorkOrders() {
     <GarageShell title="AutoDream Garage" nav>
       <div className="max-w-4xl mx-auto">
         <div className="flex items-center justify-between gap-4 mb-8"><div><h1 className="text-2xl font-semibold text-white">Home</h1><p className="text-white/50 text-sm mt-2">Your orders and next steps, in one place.</p></div><button onClick={() => navigate('/garage/sales-tools')} className="btn-gold rounded-xl px-4 py-2.5 text-sm flex items-center gap-2"><Plus size={16} /> New sale</button></div>
+        <GarageHomeTasks/>
         <div className="flex items-center gap-2.5 mb-5">
           <ClipboardList size={18} className="text-gold-400" />
           <h2 className="font-display text-lg text-white font-semibold tracking-wide">My work</h2>

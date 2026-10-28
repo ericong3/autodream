@@ -10,7 +10,7 @@ test('Garage navigation preserves role boundaries', () => {
   assert.deepEqual(garageNavigation('garage_salesman').map(n => n.label), ['Home', 'Sales', 'Jobs']);
   assert.equal(garageNavigation('garage_salesman')[2].path, '/garage/calendar');
   for (const role of ['garage_installer', 'garage_detailer', 'garage_spray']) {
-    assert.deepEqual(garageNavigation(role), [{ label: 'Jobs', path: '/garage/installer' }]);
+    assert.deepEqual(garageNavigation(role), [{label:'Home',path:'/garage/dashboard'},{ label: 'Jobs', path: '/garage/installer' }]);
     assert.deepEqual(garageSecondaryNavigation(role, 'Jobs'), []);
   }
   assert.deepEqual(garageNavigation('salesperson'), []);

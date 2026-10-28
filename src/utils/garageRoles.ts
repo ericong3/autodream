@@ -32,3 +32,5 @@ export function canUseGarageWorkshop(role?: string): boolean {
   return isGarageManager(role) || isGarageWorkshopRole(role);
 }
 export function canUseGarageFinance(role?:string):boolean { return role==='director'||role==='admin'; }
+
+export function canUseGarageHome(role?:string):boolean { return canUseGarageSales(role)||canUseGarageWorkshop(role)||canUseGarageFinance(role); }

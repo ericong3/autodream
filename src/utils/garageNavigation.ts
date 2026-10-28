@@ -8,13 +8,14 @@ export function garageSection(path: string): GarageSection {
   return 'Home';
 }
 export function garageNavigation(role?: string) {
-  if(role==='admin')return [{label:'Manage' as GarageSection,path:'/garage/payments'}];
+  if(role==='admin')return [{label:'Home' as GarageSection,path:'/garage/dashboard'},{label:'Manage' as GarageSection,path:'/garage/payments'}];
   const manager = ['director', 'shareholder', 'garage_head'].includes(role ?? '');
   const sales = manager || role === 'garage_salesman';
   const workshop = ['garage_installer', 'garage_detailer', 'garage_spray'].includes(role ?? '');
   if (!sales && !workshop) return [];
   return [
-    ...(sales ? [{ label: 'Home' as GarageSection, path: '/garage/dashboard' }, { label: 'Sales' as GarageSection, path: '/garage/sales-tools' }] : []),
+    {label:'Home' as GarageSection,path:'/garage/dashboard'},
+    ...(sales ? [{ label: 'Sales' as GarageSection, path: '/garage/sales-tools' }] : []),
     { label: 'Jobs' as GarageSection, path: manager || workshop ? '/garage/installer' : '/garage/calendar' },
     ...(manager ? [{ label: 'Manage' as GarageSection, path: '/garage/team' }] : []),
   ];

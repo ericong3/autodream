@@ -24,6 +24,36 @@ export function supabaseRepo(config) {
   const check = ({ data, error }) => { if (error) throw error; return data; };
 
   return {
+    async homeOrders(user) {
+      const worker=['garage_installer','garage_detailer','garage_spray'].includes(user.role);
+      const manager=['director','shareholder','garage_head'].includes(user.role);
+      if(!worker&&!manager&&user.role!=='garage_salesman')throw Error('NOT_ALLOWED');
+      let query=sb.from('garage_invoices').select('id,invoice_number,vehicle_id,created_by,service,work_status,created_at,delivered_at').not('work_status','in','(closed,draft)').order('created_at',{ascending:true}).limit(51);
+      if(!manager&&!worker)query=query.eq('created_by',user.id);
+      if(worker)query=query.eq('service','tinted').is('delivered_at',null);
+      let found,sourceMore=false;
+      if(worker){
+        // Assigned work comes before the shared queue, even with a large backlog.
+        const ownPieces=check(await sb.from('garage_tint_installation_pieces').select('invoice_id').eq('installer_id',user.id).order('created_at',{ascending:false}).limit(1001))||[];
+        const availablePieces=check(await sb.from('garage_tint_installation_pieces').select('invoice_id').is('installer_id',null).neq('status','installed').order('created_at',{ascending:false}).limit(1001))||[];
+        const ownIds=[...new Set(ownPieces.slice(0,1000).map(p=>p.invoice_id))],availableIds=[...new Set(availablePieces.slice(0,1000).map(p=>p.invoice_id))];
+        const active=()=>sb.from('garage_invoices').select('id,invoice_number,vehicle_id,created_by,service,work_status,created_at,delivered_at').eq('service','tinted').is('delivered_at',null).not('work_status','in','(closed,draft)').order('created_at',{ascending:true}).limit(51);
+        const own=ownIds.length?check(await active().in('id',ownIds))||[]:[];
+        const shared=availableIds.length?check(await active().in('id',availableIds))||[]:[];
+        found=[...new Map([...own,...shared].map(i=>[i.id,i])).values()];sourceMore=ownPieces.length>1000||availablePieces.length>1000;
+      }else found=check(await query)||[];
+      const invoices=found.slice(0,50),ids=invoices.map(i=>i.id);
+      if(!ids.length)return {invoices,jobs:[],reviews:[],pieces:[],vehicles:[],users:[],hasMore:false};
+      const rows=await Promise.all([
+        sb.from('garage_installer_jobs').select('id,invoice_id,status').in('invoice_id',ids),
+        sb.from('garage_installation_reviews').select('invoice_id,state,confirmations').in('invoice_id',ids),
+        sb.from('garage_tint_installation_pieces').select('invoice_id,id,position,installer_id,status,needs_correction').in('invoice_id',ids),
+        sb.from('garage_vehicles').select('id,registration_no,make,model').in('id',[...new Set(invoices.map(i=>i.vehicle_id))]),
+        manager?sb.from('garage_building_staff').select('id,name').in('id',[...new Set(invoices.map(i=>i.created_by).filter(Boolean))]):Promise.resolve({data:[],error:null}),
+      ]);
+      const [jobs,reviews,pieces,vehicles,users]=rows.map(r=>check(r)||[]);
+      return {invoices,jobs,reviews,pieces,vehicles,users,hasMore:sourceMore||found.length>50};
+    },
     async findUserByUsername(username) {
       // Same exact-match lookup as the app login. Duplicate usernames are
       // treated as "no such user" rather than guessing which one.

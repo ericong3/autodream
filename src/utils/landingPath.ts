@@ -1,5 +1,5 @@
 import type { User } from '../types';
-import { canUseGarageSales, canUseGarageWorkshop } from './garageRoles';
+import { canUseGarageHome } from './garageRoles';
 
 // Where a role lands *inside* the Used Car side. Only meaningful once we
 // already know the user belongs there — see landingPath for the top-level
@@ -12,13 +12,10 @@ export function roleHome(role: string) {
 }
 
 // Where a role lands *inside* Garage — mirrors roleHome above. Workshop
-// roles (installer etc.) go straight to their Work Flow; sales and
-// management land on the Dashboard. A Garage account with no Garage role
+// roles, sales, management and authorised finance staff land on Home. A Garage account with no Garage role
 // gets the no-access page rather than bouncing between guarded routes.
 export function garageHome(role: string) {
-  if(role==='admin')return '/garage/payments';
-  if (canUseGarageSales(role)) return '/garage/dashboard';
-  if (canUseGarageWorkshop(role)) return '/garage/installer';
+  if(canUseGarageHome(role))return '/garage/dashboard';
   return '/garage/no-access';
 }
 

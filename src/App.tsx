@@ -68,7 +68,7 @@ import GarageWorkOrderTracking from './pages/GarageWorkOrderTracking';
 import GarageServiceWorkOrders from './pages/GarageServiceWorkOrders';
 import GarageNoAccess from './pages/GarageNoAccess';
 import { roleHome, landingPath, garageHome } from './utils/landingPath';
-import { isGarageManager, canUseGarageSales, canUseGarageWorkshop,canUseGarageFinance } from './utils/garageRoles';
+import { isGarageManager, canUseGarageSales, canUseGarageWorkshop,canUseGarageFinance,canUseGarageHome } from './utils/garageRoles';
 const GaragePaymentReview=lazy(()=>import('./pages/GaragePaymentReview'));
 
 const GarageBuildingProjects = lazy(() => import('./pages/GarageBuildingProjects'));
@@ -245,7 +245,7 @@ export default function App() {
         <Route path="/garage/payments" element={<RequireGarageRole allow={canUseGarageFinance}><Suspense fallback={<p className="p-10 text-white/60">Loading payment verification…</p>}><GaragePaymentReview/></Suspense></RequireGarageRole>}/>
         <Route path="/garage/no-access" element={<RequireGarage><GarageNoAccess /></RequireGarage>} />
         <Route path="/garage/enquiries" element={<RequireGarageSales><Suspense fallback={<div className="p-10 text-white/60">Loading follow-ups...</div>}><GarageFollowUps /></Suspense></RequireGarageSales>} />
-        <Route path="/garage/dashboard" element={<RequireGarageSales><GarageDashboard /></RequireGarageSales>} />
+        <Route path="/garage/dashboard" element={<RequireGarageRole allow={canUseGarageHome}><GarageDashboard /></RequireGarageRole>} />
         <Route path="/garage/sales-tools" element={<RequireGarageSales><GarageSalesTools /></RequireGarageSales>} />
         <Route path="/garage/building" element={<RequireGarageSales><Suspense fallback={<div className="p-10 text-white/60">Loading building tint…</div>}><GarageBuildingProjects /></Suspense></RequireGarageSales>} />
         <Route path="/garage/building/new" element={<RequireGarageSales><Suspense fallback={<div className="p-10 text-white/60">Loading building tint…</div>}><GarageBuildingProject /></Suspense></RequireGarageSales>} />
