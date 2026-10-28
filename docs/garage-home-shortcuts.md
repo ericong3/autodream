@@ -24,3 +24,12 @@ Next:
 3. After approval, source-only Vercel build with --prod --skip-domain, then promote and verify signed-in Home reads/navigation. No Supabase changes.
 
 Production remains dpl_D7yvtfv9Vy2zVcXZjH4TFR7qKNHB, source fd55320. All Home changes are local.
+
+Online practice preview — approved 28 October 2026:
+- Published a static, separate Preview deployment: https://autodream-qqdoj0bzy-megustaaa95-3177s-projects.vercel.app/#/garage/dashboard
+- Deployment dpl_8Uebo4x7rJeVeZppjjtu8gjonjgo. Real CRM remains dpl_D7yvtfv9Vy2zVcXZjH4TFR7qKNHB; its index assets were rechecked unchanged.
+- Reuses the actual GarageShell/Home card components with explicitly fictional, browser-only practice fixtures. Role switches: Salesman, Installer, Garage Head, Finance Admin, Director. Shortcut destinations explain their live function without performing any mutations.
+- Static output contains no server functions, API integrations, Supabase connections, credentials or production records. A build-time asset scan checks for live integration identifiers. No .env files are used.
+- Vercel's existing deployment protection is preserved. Eric may need to sign into his Vercel account from the other PC. No protection token is included in the shared link.
+- Preview HTML/assets verified through authenticated Vercel access. Full online visual/browser review still needs an available browser connection. This authorisation was for the separate practice preview; the Home change is not promoted to the live CRM.
+- Build script: node tests/home-online-ui/build.mjs. Generated static .vercel/output lives in ../home-online-preview. Release evidence: ../home-online-preview-release.json.

@@ -1,0 +1,10 @@
+import{build}from'vite';import react from'@vitejs/plugin-react';import fs from'node:fs';import path from'node:path';
+const project=process.cwd(),output=path.resolve('../home-online-preview');
+fs.mkdirSync(path.join(output,'.vercel/output/static'),{recursive:true});fs.mkdirSync(path.join(output,'.vercel'),{recursive:true});
+fs.copyFileSync('.vercel/project.json',path.join(output,'.vercel/project.json'));
+await build({configFile:false,root:path.join(project,'tests/home-online-ui'),envDir:path.join(output,'no-environment-files'),base:'/',publicDir:false,plugins:[react()],resolve:{alias:[{find:/^\.\.\/store$/,replacement:path.join(project,'tests/home-online-ui/store.ts')},{find:/^\.\.\/lib\/garageTintControl$/,replacement:path.join(project,'tests/home-online-ui/control.ts')},{find:/^\.\/GarageWorkshopNotices$/,replacement:path.join(project,'tests/home-online-ui/notices.tsx')}]},css:{postcss:path.join(project,'postcss.config.js')},build:{outDir:path.join(output,'.vercel/output/static'),emptyOutDir:true,rollupOptions:{input:path.join(project,'tests/home-online-ui/index.html')}}});
+fs.copyFileSync('public/garage-bg.png',path.join(output,'.vercel/output/static/garage-bg.png'));
+fs.writeFileSync(path.join(output,'.vercel/output/config.json'),JSON.stringify({version:3,routes:[{handle:'filesystem'},{src:'/.*',dest:'/index.html'}]}));
+let combined='';for(const f of fs.readdirSync(path.join(output,'.vercel/output/static/assets')))if(f.endsWith('.js'))combined+=fs.readFileSync(path.join(output,'.vercel/output/static/assets',f),'utf8');
+for(const forbidden of ['supabase.co','SUPABASE_SERVICE_ROLE_KEY','/api/garage/','/api/auth/','__Host-autodream_gb'])if(combined.includes(forbidden))throw Error('Practice preview unexpectedly contains live integration: '+forbidden);
+console.log('Static practice preview built. No server functions, credentials, live APIs or database connections included.');
