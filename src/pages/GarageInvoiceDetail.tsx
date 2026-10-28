@@ -384,9 +384,9 @@ export default function GarageInvoiceDetail() {
                   {stage === 'closed' ? <CheckCircle2 size={15} /> : <Clock size={15} />} {waitingText[stage]}
                 </div>
               )}
-                <button type="button" onClick={()=>setLogOpen(true)} aria-haspopup="dialog" className="min-h-[44px] inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/[0.04] px-4 py-3 text-sm text-white/80 hover:bg-white/[0.08] hover:border-white/35 transition-colors"><FileText size={15} aria-hidden="true"/>Log</button>
+
               </div>
-              {invoice.service==='tinted'&&canManageInvoice&&<div className="gj-header-tools"><GarageCarCondition key={invoice.id+':'+currentUser?.id} invoiceId={invoice.id} workStatus={invoice.workStatus} onChange={refreshProgress} onClear={setDamageClear}/><button type="button" onClick={()=>selectJourneyStage('payment')}><CreditCard size={16} aria-hidden="true"/>Deposit &amp; balance</button></div>}
+              {invoice.service==='tinted'&&canManageInvoice&&<div className="gj-header-tools"><GarageCarCondition key={invoice.id+':'+currentUser?.id} invoiceId={invoice.id} workStatus={invoice.workStatus} onChange={refreshProgress} onClear={setDamageClear}/><button type="button" onClick={()=>setLogOpen(true)} aria-haspopup="dialog"><FileText size={16} aria-hidden="true"/>Log</button></div>}
               {/* Pay Later can be settled any time before delivery; once the
                   job's done it becomes the main action instead. */}
               {invoice.service!=='tinted' && invoice.paymentStatus === 'pending' && !isInstaller && stage !== 'payment_due' && (
