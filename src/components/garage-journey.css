@@ -16,3 +16,9 @@
 .garage-journey .gj-step[data-state=done] .gj-step-name{color:#9bdfb9}.garage-journey .gj-step[data-state=done] .gj-step-status{color:#7bcba0}
 .garage-journey .gj-step[data-selected=true] .gj-step-icon{background:rgba(132,190,239,.22);border-color:rgba(170,211,247,.7);color:#d2e8fc;box-shadow:inset 0 1px 0 rgba(215,236,255,.08)}
 @media(hover:hover){.garage-journey .gj-step[data-state=done] .gj-step-button:hover .gj-step-icon{border-color:#a6ebc4;box-shadow:0 0 14px #69d49b20}.garage-journey .gj-step[data-state=current] .gj-step-button:hover .gj-step-icon{border-color:#ffe5a2;box-shadow:0 0 14px #f3ca6925}.garage-journey .gj-step[data-selected=true] .gj-step-button:hover .gj-step-icon{border-color:#c0e1ff;box-shadow:0 0 12px rgba(132,190,239,.16)}}
+
+/* Selected steps stay visibly depressed; hover cannot lift them back out. */
+.garage-journey .gj-step[data-selected=true] .gj-step-icon{background:linear-gradient(145deg,rgba(66,109,147,.34),rgba(132,190,239,.18));box-shadow:inset 0 3px 7px rgba(0,0,0,.48),inset 0 -1px 0 rgba(219,239,255,.14);transform:translateY(2px) scale(.96)}
+@media(hover:hover){.garage-journey .gj-step[data-selected=true] .gj-step-button:hover .gj-step-icon{box-shadow:inset 0 3px 7px rgba(0,0,0,.48),inset 0 -1px 0 rgba(219,239,255,.14);transform:translateY(2px) scale(.96)}}
+.garage-journey .gj-step[data-selected=true] .gj-step-button:active .gj-step-icon{transform:translateY(3px) scale(.92)}
+@media(prefers-reduced-motion:reduce){.garage-journey .gj-step[data-selected=true] .gj-step-button:hover .gj-step-icon{transform:translateY(2px) scale(.96)}}
