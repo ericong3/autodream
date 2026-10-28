@@ -77,6 +77,8 @@ export default function GarageInvoiceDetail() {
   const [registeringWarranty, setRegisteringWarranty] = useState(false);
   // Pipeline: which stage's info is showing (null = the current stage).
   const [selectedStageKey, setSelectedStageKey] = useState<PipelineStageKey | null>(null);
+  const [logOpen,setLogOpen]=useState(false);
+  useEffect(()=>setLogOpen(false),[invoiceId]);
   const [collectOpen, setCollectOpen] = useState(false);
   const [collectMethod, setCollectMethod] = useState<GaragePaymentMethod | ''>('');
   const [confirmStep, setConfirmStep] = useState<'deliver' | 'warranty' | null>(null);
@@ -364,6 +366,7 @@ export default function GarageInvoiceDetail() {
             </div>
 
             <div className="flex flex-col items-stretch sm:items-end gap-2 w-full sm:w-auto">
+              <div className="flex items-center justify-end flex-wrap gap-2">
               {mainAction && invoice.service!=='tinted' ? (
                 <button
                   onClick={mainAction.onClick}
@@ -381,6 +384,8 @@ export default function GarageInvoiceDetail() {
                   {stage === 'closed' ? <CheckCircle2 size={15} /> : <Clock size={15} />} {waitingText[stage]}
                 </div>
               )}
+                <button type="button" onClick={()=>setLogOpen(true)} aria-haspopup="dialog" className="min-h-[44px] inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/[0.04] px-4 py-3 text-sm text-white/80 hover:bg-white/[0.08] hover:border-white/35 transition-colors"><FileText size={15} aria-hidden="true"/>Log</button>
+              </div>
               {invoice.service==='tinted'&&canManageInvoice&&<div className="gj-header-tools"><GarageCarCondition key={invoice.id+':'+currentUser?.id} invoiceId={invoice.id} workStatus={invoice.workStatus} onChange={refreshProgress} onClear={setDamageClear}/><button type="button" onClick={()=>selectJourneyStage('payment')}><CreditCard size={16} aria-hidden="true"/>Deposit &amp; balance</button></div>}
               {/* Pay Later can be settled any time before delivery; once the
                   job's done it becomes the main action instead. */}
@@ -404,7 +409,7 @@ export default function GarageInvoiceDetail() {
           <PipelineStageTiles stages={pipeline.stages} selectedKey={selectedStage.key} onSelect={selectJourneyStage}/>
         </section>
 
-        <div className={invoice.service==='tinted'?'grid grid-cols-1 gap-5 items-start':'grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-5 items-start'}>
+        <div className="grid grid-cols-1 gap-5 items-start">
           {/* Selected stage */}
           <div ref={stagePanelRef} tabIndex={-1} role="region" aria-label="Selected stage details" style={{scrollMarginTop:96}} className="rounded-[24px] p-6 sm:p-7 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">
             <StagePanel
@@ -429,17 +434,7 @@ export default function GarageInvoiceDetail() {
             </StagePanel>
           </div>
 
-          {/* Activity */}
-          <div className="rounded-[24px] p-6 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg lg:sticky lg:top-4">
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-white text-sm font-semibold">Activity</h3>
-              <span className="flex items-center gap-1.5 text-[11px] text-white/40">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live timeline
-              </span>
-            </div>
-            <ActivityTimeline events={pipeline.events} />
-            <NextAction text={WORK_ORDER_NEXT_ACTION[stage]} />
-          </div>
+
         </div>
 
         {invoice.service!=='tinted'&&<div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
@@ -492,6 +487,10 @@ export default function GarageInvoiceDetail() {
           </>
         </div>}
       </div>
+
+      <Modal isOpen={logOpen} onClose={()=>setLogOpen(false)} title="Activity log" maxWidth="max-w-2xl">
+        <div className="space-y-5"><p className="text-white/60 text-sm">{invoice.invoiceNumber} · Latest activity first</p><ActivityTimeline events={pipeline.events}/><NextAction text={WORK_ORDER_NEXT_ACTION[stage]}/></div>
+      </Modal>
 
       <Modal
         isOpen={!!claimModal}
