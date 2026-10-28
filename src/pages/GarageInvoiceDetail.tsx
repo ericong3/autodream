@@ -381,7 +381,7 @@ export default function GarageInvoiceDetail() {
                   {stage === 'closed' ? <CheckCircle2 size={15} /> : <Clock size={15} />} {waitingText[stage]}
                 </div>
               )}
-              {invoice.service==='tinted'&&canManageInvoice&&<GarageCarCondition key={invoice.id+':'+currentUser?.id} invoiceId={invoice.id} workStatus={invoice.workStatus} onChange={refreshProgress} onClear={setDamageClear}/>}
+              {invoice.service==='tinted'&&canManageInvoice&&<div className="gj-header-tools"><GarageCarCondition key={invoice.id+':'+currentUser?.id} invoiceId={invoice.id} workStatus={invoice.workStatus} onChange={refreshProgress} onClear={setDamageClear}/><button type="button" onClick={()=>selectJourneyStage('payment')}><CreditCard size={16} aria-hidden="true"/>Deposit &amp; balance</button></div>}
               {/* Pay Later can be settled any time before delivery; once the
                   job's done it becomes the main action instead. */}
               {invoice.service!=='tinted' && invoice.paymentStatus === 'pending' && !isInstaller && stage !== 'payment_due' && (
@@ -401,7 +401,7 @@ export default function GarageInvoiceDetail() {
         </div>
 
         <section className="garage-journey" aria-label="Work order journey">
-          <PipelineStageTiles stages={pipeline.stages} selectedKey={selectedStage.key} onSelect={selectJourneyStage} onPayment={invoice.service==='tinted'&&canManageInvoice?()=>selectJourneyStage('payment'):undefined}/>
+          <PipelineStageTiles stages={pipeline.stages} selectedKey={selectedStage.key} onSelect={selectJourneyStage}/>
         </section>
 
         <div className={invoice.service==='tinted'?'grid grid-cols-1 gap-5 items-start':'grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-5 items-start'}>
