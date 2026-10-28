@@ -13,7 +13,7 @@ export default function GarageDamagePhotoPicker({remaining,busy,onFiles}:{remain
   finally{running.current=false;setSaving(false);}
  };
  return <div className="space-y-3 pt-2">
-  <p className="text-white/60 text-xs">Up to {remaining} more photo{remaining===1?'':'s'} · JPEG, PNG or WebP · large photos are resized to fit the 2 MB limit.</p>
+  <p className="text-white/60 text-xs">Up to {remaining} more photo{remaining===1?'':'s'}.</p>
   <div className="flex flex-wrap gap-3">
    <button type="button" disabled={disabled} onClick={()=>camera.current?.click()} className="min-h-[44px] px-4 py-3 rounded-xl border border-gold-400/40 text-gold-300 disabled:opacity-40">Take photo</button>
    <button type="button" disabled={disabled} onClick={()=>upload.current?.click()} className="min-h-[44px] px-4 py-3 rounded-xl border border-white/20 text-white/80 disabled:opacity-40">Upload photos</button>
