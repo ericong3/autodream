@@ -4,7 +4,7 @@ import {ArrowUpRight,RefreshCw,ClipboardCheck} from 'lucide-react';
 import {useStore} from '../store';
 import {tintControl} from '../lib/garageTintControl';
 import {formatRM} from '../utils/format';
-type Task={id:string;invoiceNumber:string;vehicle:string;service:string;scope:string;action:string;href:string;owner?:string;availableGlass?:number;assignedGlass?:number;balanceUnavailable?:boolean;money?:{toCollect:number;awaitingVerification:number;verifiedBalance:number}};
+type Task={id:string;invoiceNumber:string;vehicle:string;service:string;scope:string;action:string;href:string;owner?:string;availableGlass?:number;assignedGlass?:number;openDamage?:number;balanceUnavailable?:boolean;money?:{toCollect:number;awaitingVerification:number;verifiedBalance:number}};
 type Home={tasks:Task[];hasMore:boolean;canSeeBalances:boolean;financeUnavailable:boolean;verification:null|{count:number;hasMore:boolean;href:string};checkedAt:string};
 export default function GarageHomeTasks(){
  const user=useStore(s=>s.currentUser),sequence=useRef(0);
@@ -26,6 +26,7 @@ export default function GarageHomeTasks(){
    {!!current.tasks.length&&<div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{current.tasks.map(task=><Link key={task.id} to={task.href} className="block min-w-0 rounded-xl border border-white/15 p-4 hover:border-gold-400/40 hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-400">
     <div className="flex justify-between gap-3"><span className="text-gold-300 text-sm font-semibold">{task.action}</span><ArrowUpRight className="text-white/50 shrink-0" size={18}/></div>
     <p className="text-white font-medium mt-3 break-words">{task.invoiceNumber}</p><p className="text-white/70 text-sm mt-1 break-words">{task.vehicle}</p><p className="text-white/50 text-xs mt-2">{task.scope}{task.owner?' · '+task.owner:''} · {task.service==='tinted'?'Car tint':task.service}</p>
+    {!!task.openDamage&&<p className="text-orange-200 text-sm mt-2">{task.openDamage} damage report{task.openDamage===1?'':'s'} awaiting Garage Head review</p>}
     {task.assignedGlass!==undefined&&<p className="text-white/60 text-sm mt-2">{task.assignedGlass} glass assigned to you{task.availableGlass?` · ${task.availableGlass} available to claim`:''}</p>}
     {current.canSeeBalances&&task.money&&<div className="border-t border-white/10 mt-3 pt-3 text-sm"><p className="text-white">Customer still to pay: <strong>{formatRM(task.money.toCollect)}</strong></p>{task.money.awaitingVerification>0&&<p className="text-amber-200 mt-1">{formatRM(task.money.awaitingVerification)} already collected · company verification pending</p>}</div>}
     {current.canSeeBalances&&task.balanceUnavailable&&<p className="text-amber-200 text-sm mt-3">Open the order to check its balance.</p>}

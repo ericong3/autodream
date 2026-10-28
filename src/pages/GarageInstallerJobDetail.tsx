@@ -1,3 +1,4 @@
+import GarageDamageReports from '../components/GarageDamageReports';
 import GarageJobGlassMap from '../components/GarageJobGlassMap';
 import GarageTintUsage from '../components/GarageTintUsage';
 import {isGarageWorkshopRole} from '../utils/garageRoles';
@@ -383,6 +384,7 @@ export default function GarageInstallerJobDetail() {
           </button>
         )}
 
+        {invoice&&<GarageDamageReports invoiceId={invoice.id} onChange={()=>void refreshCar()}/>}
         {/* ── Glass checklist ── */}
         <div className="relative overflow-hidden rounded-2xl p-6 bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card space-y-3">
           <div className="flex items-center justify-between gap-3 mb-1">

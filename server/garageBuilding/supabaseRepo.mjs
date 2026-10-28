@@ -50,9 +50,10 @@ export function supabaseRepo(config) {
         sb.from('garage_tint_installation_pieces').select('invoice_id,id,position,installer_id,status,needs_correction').in('invoice_id',ids),
         sb.from('garage_vehicles').select('id,registration_no,make,model').in('id',[...new Set(invoices.map(i=>i.vehicle_id))]),
         manager?sb.from('garage_building_staff').select('id,name').in('id',[...new Set(invoices.map(i=>i.created_by).filter(Boolean))]):Promise.resolve({data:[],error:null}),
+        sb.from('garage_damage_reports').select('id,invoice_id,status').in('invoice_id',ids).eq('status','open'),
       ]);
-      const [jobs,reviews,pieces,vehicles,users]=rows.map(r=>check(r)||[]);
-      return {invoices,jobs,reviews,pieces,vehicles,users,hasMore:sourceMore||found.length>50};
+      const [jobs,reviews,pieces,vehicles,users,damageReports]=rows.map(r=>check(r)||[]);
+      return {invoices,jobs,reviews,pieces,vehicles,users,damageReports,hasMore:sourceMore||found.length>50};
     },
     async findUserByUsername(username) {
       // Same exact-match lookup as the app login. Duplicate usernames are
@@ -82,6 +83,11 @@ export function supabaseRepo(config) {
     async deleteExpiredSessions(userId, nowIso) {
       check(await sb.from('garage_building_sessions').delete().eq('user_id', userId).lt('expires_at', nowIso));
     },
+    async uploadDamageProof(path,bytes,mime) {
+      const r=await sb.storage.from('garage-damage-evidence').upload(path,bytes,{contentType:mime,upsert:false});
+      if(r.error&&String(r.error.statusCode)!=='409')throw r.error;
+    },
+    async damageProofUrl(path) {return check(await sb.storage.from('garage-damage-evidence').createSignedUrl(path,60)).signedUrl;},
     async uploadPaymentProof(path,bytes,mime) {
       const result=await sb.storage.from('garage-payment-proofs').upload(path,bytes,{contentType:mime,upsert:false});
       if(result.error&&String(result.error.statusCode)!=='409')throw result.error;

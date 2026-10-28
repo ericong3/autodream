@@ -30,9 +30,12 @@ export function homeTaskRows(user,data){
   else if(inv.work_status==='payment_due'){action=inv.created_by===user.id?'Check payment balance':'Check order payment';priority=1;}
   else if(inv.work_status==='ready_for_delivery'){action='Arrange handover';priority=1;}
   else if(inv.work_status==='ready_for_warranty'){action='Register warranty';priority=2;}
+  const openDamage=(data.damageReports??[]).filter(r=>r.invoice_id===inv.id&&r.status==='open').length;
+  if(openDamage&&user.role==='garage_head'){action='Review damage report';priority=0;if(job)href='/garage/installer/job/'+encodeURIComponent(job.id);}
+  else if(openDamage&&!isWorker){action='Check damage report';priority=0;}
   const vehicle=data.vehicles.find(v=>v.id===inv.vehicle_id);
   tasks.push({id:inv.id,invoiceNumber:inv.invoice_number,service:inv.service,action,priority,scope,href,
-   vehicle:vehicle?[vehicle.registration_no,vehicle.make,vehicle.model].filter(Boolean).join(' · '):'Vehicle details in job',
+   openDamage,vehicle:vehicle?[vehicle.registration_no,vehicle.make,vehicle.model].filter(Boolean).join(' · '):'Vehicle details in job',
    owner:isManager?data.users.find(u=>u.id===inv.created_by)?.name:undefined,
    availableGlass:isWorker?available.length:undefined,assignedGlass:isWorker?own.length:undefined});
  }

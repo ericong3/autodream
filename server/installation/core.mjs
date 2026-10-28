@@ -24,6 +24,7 @@ export async function handleInstallation(req,deps){
   if(r.error){const m=r.error.message||'';
    if(m.includes('NOT_ALLOWED'))throw new ApiError(403,'FORBIDDEN','This action is not available for your account.');
    if(m.includes('REVISION_CONFLICT')||m.includes('REQUEST_CHANGED'))throw new ApiError(409,'CONFLICT','This job changed. Refresh and check it before trying again.');
+   if(m.includes('DAMAGE_REVIEW_REQUIRED'))throw new ApiError(409,'DAMAGE_REVIEW_REQUIRED','Garage Head must review all open damage reports before handover.');
    if(m.includes('FILM_USAGE_REQUIRED'))throw new ApiError(409,'FILM_USAGE_REQUIRED','Record the film used for this installation attempt before marking this glass complete.');
    if(m.includes('FILM_USAGE_CANNOT_DECREASE'))throw new ApiError(409,'FILM_USAGE_CANNOT_DECREASE','Previously used film cannot be returned by lowering usage. Ask management to record an audited stock correction.');
    if(m.includes('PAYMENT_LEDGER_REQUIRED')||m.includes('PAYMENT_NOT_VERIFIED'))throw new ApiError(409,'PAYMENT_NOT_VERIFIED','Record payments under Payment tracking and have a director/admin verify company receipt before handover.');

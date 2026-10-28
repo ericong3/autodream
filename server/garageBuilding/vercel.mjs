@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { waitUntil } from '@vercel/functions';
 import { LIMITS } from './core.mjs';
 
-const REPO_METHODS = ['findUserByUsername', 'findUserById', 'createSession', 'findSession', 'touchSession', 'deleteSession', 'deleteExpiredSessions', 'throttleHit', 'throttleClear', 'canActivateStaff', 'activateStaff', 'rpc','uploadPaymentProof','paymentProofUrl','homeOrders'];
+const REPO_METHODS = ['findUserByUsername', 'findUserById', 'createSession', 'findSession', 'touchSession', 'deleteSession', 'deleteExpiredSessions', 'throttleHit', 'throttleClear', 'canActivateStaff', 'activateStaff', 'rpc','uploadPaymentProof','paymentProofUrl','homeOrders','uploadDamageProof','damageProofUrl'];
 
 // Default production dependencies. The Supabase client is imported lazily
 // so a misconfigured deployment answers 503 instead of crashing on load.

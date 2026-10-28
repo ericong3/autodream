@@ -1,3 +1,4 @@
+import GarageDamageReports from '../components/GarageDamageReports';
 import GarageTintAfterSales from '../components/GarageTintAfterSales';
 import GarageJobGlassMap from '../components/GarageJobGlassMap';
 import GarageInstallationReview from '../components/GarageInstallationReview';
@@ -56,6 +57,7 @@ export default function GarageInvoiceDetail() {
   const allUsers = useStore((s) => s.users);
 
   const [inspectionReady,setInspectionReady]=useState(false);
+  const [damageClear,setDamageClear]=useState(false);
   const [invoice, setInvoice] = useState<GarageInvoice | null>(null);
   const [vehicle, setVehicle] = useState<GarageVehicle | null>(null);
   const [customer, setCustomer] = useState<GarageCustomer | null>(null);
@@ -255,12 +257,13 @@ export default function GarageInvoiceDetail() {
   // management's) steps — an installer finishes at Installation Completed and
   // must never close the work order.
   const isInstaller = currentUser?.role === 'garage_installer';
+  const canManageInvoice=currentUser?.id===invoice.createdBy||isGarageManager(currentUser?.role);
 
   // The one action that moves this work order forward from where it is —
   // the pipeline itself is read-only.
-  const mainAction: { label: string; icon: typeof CheckCircle2; onClick: () => void } | null = isInstaller || (invoice.service==='tinted' && !inspectionReady) ? null
+  const mainAction: { label: string; icon: typeof CheckCircle2; onClick: () => void } | null = !canManageInvoice || isInstaller || (invoice.service==='tinted' && !inspectionReady) ? null
     : stage === 'payment_due' && invoice.service!=='tinted' ? { label: 'Collect Payment', icon: Banknote, onClick: openCollectPayment }
-    : stage === 'ready_for_delivery' ? { label: 'Complete Delivery', icon: Car, onClick: () => { setActionError(''); setConfirmStep('deliver'); } }
+    : stage === 'ready_for_delivery' && (invoice.service!=='tinted'||damageClear) ? { label: 'Complete Delivery', icon: Car, onClick: () => { setActionError(''); setConfirmStep('deliver'); } }
     : stage === 'ready_for_warranty' ? { label: 'Register Warranty', icon: Award, onClick: () => { setActionError(''); setConfirmStep('warranty'); } }
     : null;
   const waitingText: Record<typeof stage, string> = {
@@ -280,7 +283,7 @@ export default function GarageInvoiceDetail() {
     <GarageShell title={invoice.invoiceNumber} showBack backTo={backTo}>
       <div className="max-w-5xl mx-auto space-y-5">
         {invoice.service==='tinted'&&tintOrder&&<GarageJobGlassMap items={glassItems} layout={tintOrder.vehicleLayout} userId={currentUser?.id} workStatus={invoice.workStatus}/>}
-        {invoice.service==='tinted' && <><GarageTintPayments invoiceId={invoice.id} onChange={refreshProgress}/><GarageTintUsage invoiceId={invoice.id} version={glassItems.map(i=>`${i.id}:${i.sqft}:${i.usageAttempt}`).join('|')}/><GarageInstallationReview invoiceId={invoice.id} ownerId={invoice.createdBy} items={glassItems} onChange={refreshProgress} onReady={setInspectionReady}/></> }
+        {invoice.service==='tinted' && canManageInvoice && <><GarageDamageReports invoiceId={invoice.id} onChange={refreshProgress} onClear={setDamageClear}/><GarageTintPayments invoiceId={invoice.id} onChange={refreshProgress}/><GarageTintUsage invoiceId={invoice.id} version={glassItems.map(i=>`${i.id}:${i.sqft}:${i.usageAttempt}`).join('|')}/><GarageInstallationReview invoiceId={invoice.id} ownerId={invoice.createdBy} items={glassItems} onChange={refreshProgress} onReady={setInspectionReady}/></> }
         {/* Header — which job this is, and the one action that moves it on */}
         <div className="relative overflow-hidden rounded-[24px] p-6 sm:p-7
           bg-white/[0.04] backdrop-blur-xl border border-gold-400/15 shadow-card-lg">

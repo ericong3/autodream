@@ -1,0 +1,48 @@
+{
+  "checkedAt": "2026-10-28T07:13:27.032Z",
+  "method": "public API schema visibility only; no customer rows requested",
+  "tables": {
+    "garage_invoices": {
+      "status": 200,
+      "code": null,
+      "count": "*/0",
+      "visibility": "present"
+    },
+    "garage_installer_jobs": {
+      "status": 200,
+      "code": null,
+      "count": "*/0",
+      "visibility": "present"
+    },
+    "garage_installation_reviews": {
+      "status": 401,
+      "code": "42501",
+      "count": null,
+      "visibility": "restricted or unavailable"
+    },
+    "garage_tint_payments": {
+      "status": 401,
+      "code": "42501",
+      "count": null,
+      "visibility": "restricted or unavailable"
+    },
+    "garage_tint_usage_attempts": {
+      "status": 401,
+      "code": "42501",
+      "count": null,
+      "visibility": "restricted or unavailable"
+    },
+    "garage_tint_reworks": {
+      "status": 401,
+      "code": "42501",
+      "count": null,
+      "visibility": "restricted or unavailable"
+    },
+    "garage_damage_reports": {
+      "status": 404,
+      "code": "PGRST205",
+      "count": null,
+      "visibility": "absent from API schema cache"
+    }
+  }
+}

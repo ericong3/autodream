@@ -2,7 +2,7 @@ import {useStore} from '../store';
 export type TintPayment={id:string;invoice_id:string;invoice_number?:string;amount:number;method:string;reference:string;received_at:string;recorded_by:string;state:'pending'|'verified'|'rejected'|'voided';reviewed_by?:string;reviewed_at?:string;review_note?:string;receipt_path?:string;receipt_name?:string};
 export type TintMoney={invoiceId:string;invoiceNumber:string;total:number;collected:number;verified:number;awaitingVerification:number;toCollect:number;verifiedBalance:number;canVerify:boolean;paymentId?:string;payments:TintPayment[]};
 export type TintUsage={afterSalesReplacementCount:number;afterSalesUsage:number;replacementCount:number;totalUsage:number;attempts:{position:string;item_id:string;attempt:number;installer_id:string;series:string;kind:string;sqft:number;closed_at?:string}[]};
-export async function tintControl<T>(kind:'finance'|'stock'|'claims'|'home',action:string,data:Record<string,unknown>={}):Promise<T>{
+export async function tintControl<T>(kind:'finance'|'stock'|'claims'|'home'|'damage',action:string,data:Record<string,unknown>={}):Promise<T>{
  const owner=useStore.getState().currentUser?.id;
  const r=await fetch('/api/garage/tint?operation='+kind,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-Garage-Building':'1'},body:JSON.stringify({action,...data})});
  const result=await r.json().catch(()=>null);

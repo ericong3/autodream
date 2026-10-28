@@ -15,7 +15,7 @@ export async function handlePaymentProof(req,deps){return respond(req,deps,['POS
   if(!payment.receipt_path)throw new ApiError(404,'NOT_FOUND','No proof has been attached.');
   return {status:200,body:{url:await ctx.repo.paymentProofUrl(payment.receipt_path)}};
  }
- if(!['pending','rejected'].includes(payment.state)||(payment.recorded_by!==user.id&&!['director','admin'].includes(user.role)))throw new ApiError(403,'FORBIDDEN','Only the collector or authorised finance staff can attach proof before verification.');
+ if(!['pending','rejected','verified'].includes(payment.state)||(payment.recorded_by!==user.id&&!['director','admin'].includes(user.role)))throw new ApiError(403,'FORBIDDEN','Only the collector or authorised finance staff can attach missing proof.');
  if(typeof data.content!=='string'||data.content.length>2800000||!/^[A-Za-z0-9+/]+={0,2}$/.test(data.content)||typeof data.fileName!=='string'||data.fileName.length<1||data.fileName.length>255)throw new ApiError(400,'INVALID','Choose an image or PDF up to 2 MB.');
  const bytes=Buffer.from(data.content,'base64');
  const signatures={
