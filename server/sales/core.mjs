@@ -1,6 +1,8 @@
 import {ApiError,authenticate,canUseApp,respond,readJson,onlyKeys} from '../garageBuilding/core.mjs';
 import {createHash} from 'node:crypto';
+import {handleReferralAccounts,isReferralAccountRequest} from '../referrals/accounts.mjs';
 export async function handleSales(req,deps){
+ if(isReferralAccountRequest(req))return handleReferralAccounts(req,deps);
  return respond(req,deps,['POST'],async(ctx,res)=>{
   const {user}=await authenticate(req,ctx,res,canUseApp);
   if(!['garage','both'].includes(user.business_access)||!['director','shareholder','garage_head','garage_salesman'].includes(user.role))throw new ApiError(403,'FORBIDDEN','Garage sales access is required.');

@@ -32,5 +32,5 @@ function VerifiedGarage({ children, allow }: { children: ReactNode; allow?: (rol
 }
 export default function GarageSessionGate(props:{children:ReactNode;allow?:(role:string)=>boolean}) {
   const location=useLocation();
-  return secureGarageLoginEnabled() && location.pathname !== '/login' && location.pathname !== '/garage/login' && !/^\/account\/(register|verify|reset|forgot|resend|check)$/.test(location.pathname) ? <VerifiedGarage {...props}/> : <>{props.children}</>;
+  return secureGarageLoginEnabled() && location.pathname !== '/login' && location.pathname !== '/garage/login' && !/^\/account\/(register|verify|reset|forgot|resend|check)$/.test(location.pathname) && !/^\/referral-account\/(register|verify|login|resend|forgot|reset|home)$/.test(location.pathname) ? <VerifiedGarage {...props}/> : <>{props.children}</>;
 }

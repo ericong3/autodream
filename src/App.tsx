@@ -13,6 +13,8 @@ import Login from './pages/Login';
 import AccountRegistration from './pages/AccountRegistration';
 import AccountSignInCheck from './pages/AccountSignInCheck';
 import StaffAccountAccess from './pages/StaffAccountAccess';
+import GarageReferralAccount from './pages/GarageReferralAccount';
+import GarageReferralAccounts from './pages/GarageReferralAccounts';
 import GarageSessionGate from './components/GarageSessionGate';
 import { secureGarageLoginEnabled } from './lib/garageSession';
 import Dashboard from './pages/Dashboard';
@@ -183,7 +185,7 @@ function RequireDataAccess({ children }: { children: React.ReactNode }) {
 
 function StartupDataGate({ready,children}:{ready:boolean;children:React.ReactNode}){
  const {pathname}=useLocation();
- const publicEntry=pathname==='/login'||pathname==='/garage/login'||/^\/account\/(register|verify|reset|forgot|resend|check)$/.test(pathname);
+ const publicEntry=pathname==='/login'||pathname==='/garage/login'||/^\/account\/(register|verify|reset|forgot|resend|check)$/.test(pathname)||/^\/referral-account\/(register|verify|login|resend|forgot|reset|home)$/.test(pathname);
  const fastEntry=pathname==='/choose-business'||((pathname==='/garage'||pathname.startsWith('/garage/'))&&pathname!=='/garage/team'&&!pathname.startsWith('/garage/team/'));
  if(!ready&&!publicEntry&&!fastEntry)return <div className="min-h-screen bg-black text-white/60 flex items-center justify-center">Loading...</div>;
  return <>{children}</>;
@@ -212,6 +214,8 @@ export default function App() {
   // App from scratch and this effect fires again for real.
   useEffect(() => {
     let active=true;
+    // Public partner pages authenticate independently and never load the staff directory.
+    if(/^#\/referral-account\//.test(window.location.hash)){setFetchDone(true);return;}
     if(!currentUser){setFetchDone(true);return;}
     setFetchDone(false);
     loadAll().catch(()=>undefined).finally(() => {if(active)setFetchDone(true);});
@@ -228,6 +232,8 @@ export default function App() {
         <Route path="/movement" element={<CarMovement />} />
 
         {/* Public */}
+        <Route path="/referral-account/:mode" element={<GarageReferralAccount />} />
+        <Route path="/garage/referral-accounts" element={<RequireGarageRole allow={role=>['director','garage_head'].includes(role)}><GarageReferralAccounts /></RequireGarageRole>} />
         <Route path="/account/check" element={<AccountSignInCheck />} />
         <Route path="/account/:mode" element={<AccountRegistration />} />
         <Route path="/staff-access" element={<StaffAccountAccess />} />
