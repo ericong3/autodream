@@ -75,3 +75,37 @@ test('password recovery keeps account existence private and hashes a bounded new
  assert.equal(await bcrypt.compare('new-test-password',f.calls.at(-1).args.p_data.passwordHash),true);
  assert.ok(!reset.body.includes('passwordHash'));
 });
+test('staff can save an accountless profile without email infrastructure or login credentials',async()=>{
+ const f=fixture('garage_head','garage'),cookie=await f.login();delete f.deps.env.AUTH_INVITES_ENABLED;delete f.deps.env.AUTH_GMAIL_USER;delete f.deps.env.AUTH_GMAIL_APP_PASSWORD;
+ const profile={recipientType:'individual',legalName:'Sample dealer salesman',phone:'0100000000',brand:'Sample brand',branch:'Sample branch'};
+ const body={action:'create_profile',requestId:'profile-save-test-0001',profile};
+ const r=await handleSales(f.req(body,cookie),f.deps);assert.equal(r.status,201);assert.equal(f.calls.length,1);
+ assert.equal(f.calls[0].args.p_action,'create_profile');assert.equal(f.calls[0].args.p_actor,'staff');assert.equal(f.calls[0].args.p_data.passwordHash,undefined);assert.equal(f.calls[0].args.p_data.emailTokenHash,undefined);
+ assert.equal((await handleSales(f.req({...body,password:'not-allowed'},cookie),f.deps)).status,400);
+ assert.equal((await handleSales(f.req({...body,profile:{...profile,approvedAt:'forged'}},cookie),f.deps)).status,400);
+ const sales=fixture('garage_salesman','garage'),salesCookie=await sales.login();assert.equal((await handleSales(sales.req(body,salesCookie),sales.deps)).status,403);
+});
+test('one invitation form can save a profile accountless and cannot accept hidden login fields',async()=>{
+ const f=fixture();delete f.deps.env.AUTH_INVITES_ENABLED;
+ const body={action:'save_profile',token:'a'.repeat(64),profile:{recipientType:'individual',legalName:'Sample',phone:'0100000000',brand:'Sample',branch:'Sample branch'}};
+ const saved=await handleSales(f.req(body),f.deps);assert.equal(saved.status,201);assert.match(JSON.parse(saved.body).message,/without a login/);
+ assert.equal(f.calls[0].args.p_action,'save_profile');assert.equal(f.calls[0].args.p_actor,null);
+ for(const extra of [{password:'not-allowed'},{email:'not-allowed@example.test'},{profileId:'forged'},{approved:true}])assert.equal((await handleSales(f.req({...body,...extra}),f.deps)).status,400);
+});
+test('creating account access later binds the invitation to the existing permanent profile',async()=>{
+ const f=fixture(),cookie=await f.login(),id='00000000-0000-0000-0000-000000000001';
+ const r=await handleSales(f.req({action:'invite',profileId:id},cookie),f.deps);assert.equal(r.status,201);assert.equal(f.calls[0].args.p_data.profileId,id);
+ assert.equal((await handleSales(f.req({action:'invite',profileId:id,externalSalesmanId:id},cookie),f.deps)).status,400);
+ assert.equal((await handleSales(f.req({action:'cancel_invite',id},cookie),f.deps)).status,200);
+ assert.equal(f.calls.at(-1).args.p_action,'cancel_invite');assert.equal(f.calls.at(-1).args.p_actor,'staff');
+});
+test('profile edits retain staff authentication and require a valid revision',async()=>{
+ const f=fixture(),cookie=await f.login(),id='00000000-0000-0000-0000-000000000001';
+ const profile={recipientType:'individual',legalName:'Sample',phone:'0100000000',brand:'Sample',branch:'Sample branch'};
+ const body={action:'update_profile',id,revision:1,requestId:'update-profile-test-0001',profile};
+ assert.equal((await handleSales(f.req({...body,revision:2147483647},cookie),f.deps)).status,400);
+ assert.equal((await handleSales(f.req({...body,password:'forged'},cookie),f.deps)).status,400);
+ assert.equal((await handleSales(f.req(body,cookie),f.deps)).status,200);assert.equal(f.calls[0].args.p_actor,'staff');assert.equal(f.calls[0].args.p_data.id,id);
+ f.repo.rpc=async()=>({error:{message:'REVISION_CONFLICT',code:'P0001'}});
+ const stale=await handleSales(f.req(body,cookie),f.deps);assert.equal(stale.status,409);assert.equal(JSON.parse(stale.body).error.code,'CONFLICT');
+});

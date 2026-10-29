@@ -20,7 +20,7 @@ const profile={legalName:'Fictional Partner',recipientType:'individual',identity
 for(const actor of ['s','u','x',null])await assert.rejects(()=>call('invite',actor,{tokenHash:invite}),/NOT_ALLOWED/);
 const legacy=(await db.query('select id from external_salesmen')).rows[0].id;
 const first=await call('invite','h',{tokenHash:invite,externalSalesmanId:legacy});
-assert.deepEqual(await call('inspect',null,{tokenHash:invite}),{valid:true});
+assert.equal((await call('inspect',null,{tokenHash:invite})).valid,true);
 assert.equal((await call('inspect',null,{tokenHash:invite})).email,undefined);
 await assert.rejects(()=>call('approve','d',{id:first.profileId}),/PROFILE_NOT_READY/);
 await assert.rejects(()=>call('register',null,{tokenHash:invite,email:'person@example.test',passwordHash,emailTokenHash:verify,profile:{...profile,role:'director'}}),/INVALID/);
@@ -61,5 +61,63 @@ await call('verify',null,{tokenHash:'f'.repeat(64)});await call('approve','h',{i
 assert.equal((await db.query('select count(*)::int n from external_salesmen')).rows[0].n,2);
 assert.equal((await db.query("select bank from external_salesmen where name='Fictional Partner'")).rows[0].bank,null,'private bank information not copied into legacy directory');
 assert.equal((await call('list','d')).profiles.length,2);
-for(const role of ['anon','authenticated']){await db.exec(`set role ${role}`);await assert.rejects(()=>call('list','d'),/permission denied/);await assert.rejects(()=>db.query('select * from garage_referral_profiles'),/permission denied/);await assert.rejects(()=>db.query('select * from garage_referral_sessions'),/permission denied/);await db.exec('reset role');}
-await db.close();console.log('PASS: private external registration, one-use links, email verification, manager approval, legacy profile reuse, duplicate identity, scoped sessions and revocation.');
+// One permanent business profile can exist without any login, then gain access later.
+const minimal={legalName:'Accountless Example',recipientType:'individual',phone:'0100000001',brand:'Sample brand',branch:'Sample branch',bank:'Private bank',bankAccount:'000000001',identityNumber:'TEST-003'};
+const profileRequest={requestId:'accountless-profile-0001',profile:minimal};
+const accountless=await call('create_profile','h',profileRequest);
+assert.deepEqual(await call('create_profile','h',profileRequest),accountless,'network retries do not create another profile');
+await assert.rejects(()=>call('create_profile','h',{...profileRequest,profile:{...minimal,legalName:'Changed'}}),/REQUEST_CHANGED/);
+for(const actor of ['s','u','x',null])await assert.rejects(()=>call('create_profile',actor,profileRequest),/NOT_ALLOWED/);
+const before=(await db.query('select * from garage_referral_profiles where id=$1',[accountless.profileId])).rows[0];
+assert.equal(before.password_hash,null);assert.equal(before.email,null);assert.equal(before.registered_at,null);assert.equal(before.approved_at,null);assert.ok(before.profile_approved_at);
+const directoryCount=(await db.query('select count(*)::int n from external_salesmen')).rows[0].n;
+await assert.rejects(()=>call('create_profile','d',{requestId:'duplicate-profile-0001',profile:{...minimal,legalName:'Duplicate ID'}}),/duplicate key/);
+assert.equal((await db.query('select count(*)::int n from external_salesmen')).rows[0].n,directoryCount,'duplicate profile failure leaves no orphan directory row');
+assert.equal((await db.query('select count(*)::int n from garage_referral_invites where profile_id=$1',[accountless.profileId])).rows[0].n,0);
+await assert.rejects(()=>call('new_session',null,{id:accountless.profileId,version:0,tokenHash:'3'.repeat(64)}),/NOT_ALLOWED/);
+await db.exec('create table test_referral_history(profile_id uuid references garage_referral_profiles(id),month text,earned numeric,paid numeric)');
+await db.query("insert into test_referral_history values($1,'2026-08',360,360),($1,'2026-09',450,100)",[accountless.profileId]);
+const edit={id:accountless.profileId,revision:before.profile_revision,requestId:'profile-edit-test-0001',profile:{...minimal,tin:'TIN-added-later'}};
+await call('update_profile','h',edit);await call('update_profile','h',edit);
+const edited=(await db.query('select * from garage_referral_profiles where id=$1',[accountless.profileId])).rows[0];
+assert.equal(edited.profile_revision,before.profile_revision+1,'retry does not apply an edit twice');assert.equal(edited.profile.tin,'TIN-added-later');assert.equal(edited.registered_at,null);assert.equal(edited.password_hash,null);
+await assert.rejects(()=>call('update_profile','d',{...edit,requestId:'stale-profile-edit-0001',profile:{...minimal,tin:'Wrong stale value'}}),/REVISION_CONFLICT/);
+const version=(await db.query('select profile from garage_referral_profile_versions where profile_id=$1 order by id desc limit 1',[accountless.profileId])).rows[0];
+assert.equal(version.profile.bank,minimal.bank);assert.equal(version.profile.tin,undefined);
+const inviteLater=await call('invite','d',{profileId:accountless.profileId,tokenHash:'3'.repeat(64)});
+assert.equal(inviteLater.profileId,accountless.profileId);
+await call('update_profile','h',{id:accountless.profileId,revision:edited.profile_revision,requestId:'accountless-mode-save-0001',profile:edited.profile,remainAccountless:true});
+await assert.rejects(()=>call('inspect',null,{tokenHash:'3'.repeat(64)}),/INVALID_LINK/);
+await call('invite','h',{profileId:accountless.profileId,tokenHash:'6'.repeat(64)});
+await call('cancel_invite','h',{id:accountless.profileId});await assert.rejects(()=>call('inspect',null,{tokenHash:'6'.repeat(64)}),/INVALID_LINK/);
+await call('invite','h',{profileId:accountless.profileId,tokenHash:'4'.repeat(64)});
+const inspected=await call('inspect',null,{tokenHash:'4'.repeat(64)});
+assert.equal(inspected.profile.legalName,minimal.legalName);assert.equal(inspected.profile.bank,undefined);assert.equal(inspected.profile.identityNumber,undefined);
+const newDetails={legalName:minimal.legalName,recipientType:'individual',phone:minimal.phone,brand:minimal.brand,branch:minimal.branch,bank:'',bankAccount:''};
+await call('register',null,{tokenHash:'4'.repeat(64),email:'later@example.test',passwordHash,emailTokenHash:'3'.repeat(64),profile:newDetails});
+await call('verify',null,{tokenHash:'3'.repeat(64)});await call('approve','d',{id:accountless.profileId});
+const upgraded=await call('login_lookup',null,{email:'later@example.test'});assert.equal(upgraded.id,accountless.profileId);
+await call('new_session',null,{...upgraded,tokenHash:'4'.repeat(64)});
+const upgradedSession=await call('session',null,{tokenHash:'4'.repeat(64)});
+assert.equal(upgradedSession.profile.bank,minimal.bank,'setup does not erase saved payment details');
+assert.equal(upgradedSession.profile.tin,'TIN-added-later');
+const after=(await db.query('select * from garage_referral_profiles where id=$1',[upgraded.id])).rows[0];
+assert.equal(after.external_salesman_id,before.external_salesman_id,'existing directory payee is unchanged');
+const history=(await db.query('select month,earned::text,paid::text from test_referral_history where profile_id=$1 order by month',[upgraded.id])).rows;
+assert.deepEqual(history,[{month:'2026-08',earned:'360',paid:'360'},{month:'2026-09',earned:'450',paid:'100'}]);
+// The same public form can save an accountless profile with no email/password.
+const publicInvite=await call('invite','d',{tokenHash:'5'.repeat(64)});
+const publicProfile={legalName:'Public accountless sample',recipientType:'individual',phone:'0100000002',brand:'Sample',branch:'Sample branch'};
+const publicSaved=await call('save_profile',null,{tokenHash:'5'.repeat(64),profile:publicProfile});
+assert.equal(publicSaved.profileId,publicInvite.profileId);
+assert.deepEqual(await call('save_profile',null,{tokenHash:'5'.repeat(64),profile:publicProfile}),publicSaved);
+await assert.rejects(()=>call('save_profile',null,{tokenHash:'5'.repeat(64),profile:{...publicProfile,legalName:'Different'}}),/REQUEST_CHANGED/);
+await call('approve','h',{id:publicSaved.profileId});
+const publicRow=(await db.query('select * from garage_referral_profiles where id=$1',[publicSaved.profileId])).rows[0];
+assert.ok(publicRow.profile_approved_at);assert.equal(publicRow.approved_at,null);assert.equal(publicRow.email_verified_at,null);assert.equal(publicRow.password_hash,null);
+for(const role of ['anon','authenticated']){
+ await db.exec(`set role ${role}`);await assert.rejects(()=>call('list','d'),/permission denied/);
+ for(const table of ['garage_referral_profiles','garage_referral_sessions','garage_referral_profile_requests','garage_referral_profile_versions'])await assert.rejects(()=>db.query(`select * from ${table}`),/permission denied/);
+ await db.exec('reset role');
+}
+await db.close();console.log('PASS: accountless profiles, retry safety, optional login upgrade with historical links retained, private details preserved, verification, approval, session revocation and browser-role denial.');

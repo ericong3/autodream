@@ -17,6 +17,14 @@ Status: requirements confirmed 29 October 2026. Read-only live metadata checked 
 
 ## External registration
 
+- One salesman profile has an inline choice: **Remain accountless** (default) or **Create account**. These are modes of the same profile, not separate business records or separate onboarding products.
+- Staff can save a profile without a login, email, password, SMTP configuration or verification email. Name, phone, dealership brand and branch are required; tax/payment details can be added later.
+- Staff-created accountless profiles have business profile approval, not login approval. External self-submitted accountless profiles require management profile approval, without email verification.
+- Staff choosing Create account save the same profile and generate an optional setup link. Staff do not choose the external salesman's password. Upgrading an existing profile passes its permanent profile ID.
+- Login setup retains the original profile and external directory payee IDs. Historical referrals, earnings and payouts must use these stable IDs, never a username, login creation date or email as their history key.
+- Blank setup fields do not erase saved private tax/bank details. Invite inspection returns only basic contact/dealership fields; saved government identifiers, TIN, address and bank details are withheld.
+- Future referral/commission eligibility must not require a login. History remains attached if setup is cancelled, login is disabled or an account is created later.
+- Staff can edit the same profile to add tax/payment details later. Edits use a revision check, preserve private previous versions and never change the profile ID or directory payee ID. Saving Remain accountless cancels pending setup links atomically; it cannot silently delete an already-created login.
 - Reuse an existing external salesman profile when safely identified and approved; do not create duplicate recipients automatically.
 - Store legal name, individual/business recipient classification, IC/passport or business registration, TIN, address, phone, email, dealership brand and branch, and bank/payment recipient details.
 - A dealership affiliation is not necessarily the payee. The profile must identify the person/entity actually receiving commission.
@@ -41,14 +49,15 @@ Status: requirements confirmed 29 October 2026. Read-only live metadata checked 
 
 - Migration `20261029020000_garage_referral_accounts.sql` and exact guarded activation bundle `garage-referral-accounts-INSTALL-AND-CHECK.sql` create private profiles, invites, verification/recovery tokens, separate sessions and audit records. Existing staff roles and permissions are not expanded.
 - `server/referrals/accounts.mjs` is multiplexed through the existing sales endpoint without adding a hosted function. The new scope is off unless `GARAGE_REFERRALS_ONLINE=1`.
-- Setup invitation requires Garage Head or Director. Registration requires a one-use invite, hashed password, email verification and separate management approval. Partner sessions cannot authenticate internal staff endpoints. Password resets invalidate existing partner sessions.
+- Account setup invitation requires Garage Head or Director. Creating login access requires a one-use invite, hashed password, email verification and management approval. Saving an accountless profile does not require email infrastructure. Partner sessions cannot authenticate internal staff endpoints. Password resets invalidate existing partner sessions.
 - Optional existing external profile ID is reused, with no private tax/bank information copied into the old directory. Duplicate new-account email and normalised identity are rejected.
 - Public partner routes do not require an internal staff login or load the staff directory. Only the partner's own profile is returned through the partner session.
-- Manager UI supports invitation links, private profile review, approval and disabling/re-enabling sessions. It does not send invitations automatically to other people.
-- Partner UI supports registration, email verification, sign-in, own profile, sign-out and password recovery. Deal/commission/payout displays are not yet implemented.
+- One shared profile form offers Remain accountless by default or Create account. Manager UI supports profile creation/editing, later account setup on the existing profile, invitation cancellation, private profile review, approval and disabling/re-enabling logins. It does not send invitations automatically to other people.
+- Partner UI supports the same account choice, optional email verification/sign-in, own profile, sign-out and password recovery. Deal/commission/payout displays and monthly income screens are not yet implemented.
 - The isolated `tests/referral-ui` page previews the real registration component but refuses writes. It is labelled as a design preview. The normal localhost preview on port 5198 has not been replaced.
-- Disposable PostgreSQL tests cover the exact activation bundle, duplicate-install refusal, one-use tokens, verification/approval ordering, profile reuse, duplicate identity, password reset, session revocation and browser-role denial. API tests cover manager permissions, CSRF, actor forgery, hashed credentials, cookie separation, generic recovery and private errors.
-- Email transport is mocked in tests. No real invitation, verification email, account, database migration or deployment has been created by this work.
+- Disposable PostgreSQL tests cover the exact activation bundle, accountless saving, stale-edit rejection, repeat-safe saves, private old versions, cancellation, profile/recipient identity preservation, two sample historic months after login upgrade, verification/approval, password reset and browser-role denial. The history rows in this test are fixtures; they do not implement the pending commission ledger or monthly portal.
+- API and form tests cover optional credentials, no email infrastructure in accountless mode, manager permissions, CSRF, actor forgery, hashed credentials, cookie separation, generic recovery, duplicate-click/retry safety and private errors.
+- Email transport is mocked in tests. No real invitation, verification email or account was created, and no live migration or deployment was applied by this work.
 
 ## Delivery sequence and acceptance checks
 
