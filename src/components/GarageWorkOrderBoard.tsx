@@ -126,7 +126,7 @@ export default function GarageWorkOrderBoard({
                       <div className="mt-2 space-y-1 text-[11px] text-white/50">
                         <p className="flex items-center gap-1.5">
                           <UserCheck size={11} className="text-white/30 shrink-0" />
-                          <span className="truncate">{nameOf(invoice.createdBy) ?? '—'}</span>
+                          <span className="truncate">{nameOf((invoice.salesOwnerId??invoice.createdBy)) ?? '—'}</span>
                         </p>
                         <p className="flex items-center gap-1.5">
                           <Wrench size={11} className="text-white/30 shrink-0" />

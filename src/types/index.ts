@@ -196,6 +196,7 @@ export interface GarageInvoice {
   appointmentAt?: string;
   remark?: string;
   createdAt: string;
+  salesOwnerId?: string;
   createdBy?: string;
 }
 

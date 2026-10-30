@@ -1,4 +1,7 @@
-import { useEffect, useState } from 'react';
+import {useStore} from '../store';
+import GarageSalesAssignment from '../components/GarageSalesAssignment';
+import type {SalesAssignment} from '../lib/garageSalesAssignment';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Car, User, Phone, Layers, X, ArrowRight, ArrowLeft } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
@@ -22,6 +25,7 @@ const TINT_SERIES_LABEL = Object.fromEntries(TINT_SERIES.map((s) => [s.key, s.la
 // Built by GarageTintPackage and handed over via router state — nothing is
 // persisted until the Payment page's final Confirm is pressed.
 export interface PendingTintOrder {
+  salesAssignment?: SalesAssignment;
   vehicleLayout?: import('../utils/vehicleGlass').VehicleGlassLayout;
   confirmationId?: string;
   agreedBase?:number;
@@ -36,6 +40,7 @@ export interface PendingTintOrder {
 // A product tacked onto the order here on the Summary page — not persisted
 // until Confirm, so it only needs a client-side id for list rendering.
 export interface PendingAddon {
+  serviceKey?: 'coating'|'ppf'|'spray';
   clientId: string;
   name: string;
   price: number;
@@ -46,6 +51,7 @@ export default function GarageWorkOrderSummary() {
   const { id, vehicleId } = useParams<{ id: string; vehicleId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
+  const actorId=useStore(s=>s.currentUser?.id);
 
   const incoming=location.state as PendingTintOrder|undefined;
   const pending=incoming?{...incoming,confirmationId:incoming.confirmationId||saleDraftId(location.key,id!,vehicleId!)}:undefined;
@@ -58,7 +64,10 @@ export default function GarageWorkOrderSummary() {
   const [addonName, setAddonName] = useState('');
   const [addonPrice, setAddonPrice] = useState('');
   const [addonQty, setAddonQty] = useState('1');
+  const [addonService,setAddonService]=useState<PendingAddon['serviceKey']>();
   const [addonError, setAddonError] = useState('');
+  const [assignment,setAssignment]=useState<SalesAssignment|undefined>(pending?.salesAssignment);
+  const [salesReady,setSalesReady]=useState(false);
 
   // Same customer/vehicle means the same pathname for a second work order,
   // so React Router reuses this component instance instead of remounting —
@@ -71,6 +80,7 @@ export default function GarageWorkOrderSummary() {
     }
     if (!id || !vehicleId) return;
     setAddons([]);
+    setAssignment(pending?.salesAssignment);setSalesReady(false);
     setAddonModalOpen(false);
     setLoading(true);
     Promise.all([getGarageVehicle(vehicleId), getGarageCustomer(id)])
@@ -79,11 +89,15 @@ export default function GarageWorkOrderSummary() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.key]);
 
+  const previousActor=useRef(actorId);
+  useEffect(()=>{if(previousActor.current!==actorId){previousActor.current=actorId;setAssignment(undefined);setSalesReady(false);}},[actorId]);
+
   if (!pending) return null;
 
   const backToPackage = `/garage/work-order/customer/${id}/vehicle/${vehicleId}/service/tinted`;
 
-  const openAddonModal = (prefillName?: string) => {
+  const openAddonModal = (prefillName?: string, serviceKey?:PendingAddon['serviceKey']) => {
+    setAddonService(serviceKey);
     setAddonName(prefillName ?? '');
     setAddonPrice('');
     setAddonQty('1');
@@ -97,7 +111,7 @@ export default function GarageWorkOrderSummary() {
     if (!addonName.trim()) { setAddonError('Enter a product name'); return; }
     if (!(price >= 0)) { setAddonError('Enter a valid price'); return; }
     if (!(qty >= 1)) { setAddonError('Quantity must be at least 1'); return; }
-    setAddons([...addons, { clientId: generateId(), name: addonName.trim(), price, qty }]);
+    setAddons([...addons, { clientId: generateId(), name: addonName.trim(), price, qty, ...(addonService?{serviceKey:addonService}:{}) }]);
     setAddonModalOpen(false);
   };
 
@@ -107,8 +121,9 @@ export default function GarageWorkOrderSummary() {
   const grandTotal = pending.finalTotal + addonsTotal;
 
   const handleContinue = () => {
+    if(!salesReady)return;
     navigate(`/garage/work-order/customer/${id}/vehicle/${vehicleId}/service/tinted/payment`, {
-      state: { pending, addons, addonsTotal, grandTotal },
+      state: { pending: {...pending,...(assignment?{salesAssignment:assignment}:{})}, addons, addonsTotal, grandTotal },
     });
   };
 
@@ -203,7 +218,7 @@ export default function GarageWorkOrderSummary() {
                 {OTHER_SERVICES.map((s) => (
                   <button
                     key={s.key}
-                    onClick={() => openAddonModal(s.label)}
+                    onClick={() => openAddonModal(s.label,s.key as PendingAddon['serviceKey'])}
                     className="flex flex-col items-center justify-center gap-2 py-6 rounded-2xl border
                       bg-white/[0.03] border-white/10 text-white/70
                       hover:text-gold-400 hover:border-gold-400/50 hover:bg-white/[0.06]
@@ -238,6 +253,7 @@ export default function GarageWorkOrderSummary() {
 
         {!loading && (
           <div className="mt-6 space-y-6">
+            <GarageSalesAssignment key={`${location.key}:${actorId}`} value={assignment} onChange={setAssignment} onReady={setSalesReady}/>
             <div className="flex justify-between items-baseline px-2">
               <span className="text-white font-semibold text-sm">Order Total</span>
               <span className="text-gold-400 font-display text-lg font-bold">{formatRM(grandTotal)}</span>
@@ -245,6 +261,7 @@ export default function GarageWorkOrderSummary() {
 
             <button
               onClick={handleContinue}
+              disabled={!salesReady}
               className="w-full flex items-center justify-center gap-2 btn-gold px-4 py-3 rounded-xl text-sm"
             >
               Continue to Payment <ArrowRight size={15} />

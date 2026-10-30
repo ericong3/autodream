@@ -158,7 +158,7 @@ export default function GarageWorkOrderPayment() {
     confirmLock.current=true;setConfirming(true);
     let intent:SaleIntent|null=null;
     try {
-      intent={requestId:pending.confirmationId?currentSaleDraftId(pending.confirmationId):crypto.randomUUID(),routeKey:location.key,sale:{customerId:id!,vehicleId:vehicleId!,paymentStatus:timing,paymentMethod:method||undefined,remark:remark.trim(),pending:JSON.parse(JSON.stringify(pending)),addons:addons.map(({name,price,qty})=>({name,price,qty})),receiptExpected:grandTotal>0&&!!receiptFile,...(timing==='paid'&&grandTotal>0?{initialPayment:{amount:received,method,reference:paymentReference.trim()}}:{}),
+      intent={requestId:pending.confirmationId?currentSaleDraftId(pending.confirmationId):crypto.randomUUID(),routeKey:location.key,sale:{...(pending.salesAssignment?{salesAssignment:pending.salesAssignment}:{}),customerId:id!,vehicleId:vehicleId!,paymentStatus:timing,paymentMethod:method||undefined,remark:remark.trim(),pending:JSON.parse(JSON.stringify(pending)),addons:addons.map(({name,price,qty,serviceKey})=>({name,price,qty,...(serviceKey?{serviceKey}:{})})),receiptExpected:grandTotal>0&&!!receiptFile,...(timing==='paid'&&grandTotal>0?{initialPayment:{amount:received,method,reference:paymentReference.trim()}}:{}),
         booking:booking?{mode:'existing',appointmentId:booking.id,revision:booking.revision}:bookingMode==='new'&&newStart&&newEnd?{mode:'new',startsAt:newStart.toISOString(),endsAt:newEnd.toISOString()}:{mode:'none'}}};
       // Persist before any network write. A retry or refresh uses this same intent.
       await keepSaleIntent(currentUser!.id,intent);recoveryRef.current=intent;setRecovery(intent);setRecoveryBlocked(true);

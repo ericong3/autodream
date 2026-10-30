@@ -235,7 +235,7 @@ export default function GarageInvoiceDetail() {
   // Salesmen only see their own work orders (managers see every one). The
   // route guard can't know who owns an order, so it's checked here once
   // the order has loaded.
-  if (!isGarageManager(currentUser?.role) && invoice.createdBy !== currentUser?.id) {
+  if (!isGarageManager(currentUser?.role) && (invoice.salesOwnerId??invoice.createdBy) !== currentUser?.id) {
     return (
       <GarageShell title="Invoice" showBack backTo="/garage/my-work-orders">
         <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -263,7 +263,7 @@ export default function GarageInvoiceDetail() {
   // management's) steps — an installer finishes at Installation Completed and
   // must never close the work order.
   const isInstaller = currentUser?.role === 'garage_installer';
-  const canManageInvoice=currentUser?.id===invoice.createdBy||isGarageManager(currentUser?.role);
+  const canManageInvoice=currentUser?.id===(invoice.salesOwnerId??invoice.createdBy)||isGarageManager(currentUser?.role);
 
   // The one action that moves this work order forward from where it is —
   // the pipeline itself is read-only.

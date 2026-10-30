@@ -1,6 +1,6 @@
 # Garage sales ownership, referrals and interdepartment collections
 
-Status: requirements confirmed 29 October 2026. Read-only live metadata checked at 12:25 UTC. External registration/account code prepared and tested locally; no migration or deployment authorised by this document. Sales ownership, commission and department-transfer integration below remain outstanding.
+Status: requirements confirmed 29 October 2026. Read-only live metadata checked at 12:25 UTC. External registration/account code prepared and tested locally; no migration or deployment authorised by this document. Sales ownership, exact deal linking and per-order commission eligibility are now prepared locally. Department transfers, early release, actual payouts and monthly income remain outstanding.
 
 ## Confirmed rules
 
@@ -67,3 +67,18 @@ Status: requirements confirmed 29 October 2026. Read-only live metadata checked 
 4. Used Car collection/transfer ledger, authorised delivery request, and commission payout records.
 5. Disposable database and API tests: cross-user access, disabled staff, duplicate registration, idempotent sale retry, one recipient, rounding/discount/tax, partial payments, transfer verification, early delivery without paid status, unchanged inspection/damage gates, post-delivery transfer, payout retries and annual actual-paid totals.
 6. User reviews localhost; explicit approval before live installation and deployment. Record separate database and application release results.
+
+
+## Prepared sales assignment milestone — 31 October 2026
+
+- Required Garage salesperson/Director PIC, independent of the creator. The compact summary form has one optional Used Car or external referrer. Approved accountless profiles qualify without login credentials.
+- Used Car month is a filter. The saved link is customer ID + car ID + exact final-deal submission timestamp. Both current owner IDs and approved status are checked again inside the atomic save. Customer/vehicle data is never overwritten by this selection.
+- New sales persist assignment, recipient identity snapshot and commission basis in the existing replayable sale transaction. Invalid recipients or changed deals roll back the whole new sale. Original creator remains unchanged.
+- Tint basis uses the saved post-discount tint total. Only coating explicitly added through the coating service shortcut joins that basis. Generic products named Coating and PPF/spray do not. Current work orders have no tax line; no separate tax amount is added to commission basis. A standalone coating installation pipeline is not implemented by this milestone.
+- Commission is a saved 30% entitlement with a current payable flag based on full verified Garage receipt. This is NOT an actual payout record or monthly earnings implementation.
+- Explicit owner is used by workshop final inspection, notices, invoice access, My work, payment/stock snapshots and team labels. Historical invoices fall back to their original creator. No historical owner or commission data is invented.
+- Guarded script: `garage-sales-referrals-INSTALL-AND-CHECK.sql`. Requires the reviewed optional-account profile schema first. Checks nine exact live function fingerprints verified by the 31 October read-only preflight and refuses changed/repeated installation. No migrate-all operation is proposed.
+- Application activation is separate: `GARAGE_SALES_REFERRALS_ONLINE=1` only after the approved database update. While disabled, new selectors/queries remain inactive. Existing internal after-sales calls retain their previous behavior.
+- Tests cover the real installer/Head/sales checks, creator preservation, correct PIC visibility, accountless recipient privacy, exact Used Car deal revalidation, atomic rollback, replay, service basis, deposits, unverified collections, and full verified receipt. The guarded SQL body is rehearsed in a disposable database using fixture fingerprints; production fingerprints are never rewritten in that test.
+- Sample-only UI: `http://localhost:5202/tests/sales-referral-ui/index.html`. API and staff directory are replaced with explicitly labelled fixtures; there is no live backend write. Normal localhost 5198 remains separate.
+- Still required before the full feature is ready: Used Car transfer ledger and receipt matching; an authorised exact-deal release request preserving damage/inspection/payment truth; actual commission payout records with recipient snapshots; monthly income and actual-paid statement totals scoped to the same profile before/after login; fresh production preflight, approval, installation and deployment.

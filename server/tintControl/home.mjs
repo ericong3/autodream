@@ -8,7 +8,8 @@ export function homeTaskRows(user,data){
  const tasks=[];
  for(const inv of data.invoices){
   if(inv.work_status==='closed'||inv.work_status==='draft')continue;
-  if(!isWorker&&!isManager&&inv.created_by!==user.id)continue;
+  if(!isWorker&&!isManager&&(inv.sales_owner_id??inv.created_by)!==user.id)continue;
+  const ownerId=inv.sales_owner_id??inv.created_by;
   const job=data.jobs.find(j=>j.invoice_id===inv.id),review=data.reviews.find(r=>r.invoice_id===inv.id);
   const pieces=data.pieces.filter(p=>p.invoice_id===inv.id&&!['door_window','rear_panel_window'].includes(p.position));
   const own=pieces.filter(p=>p.installer_id===user.id),available=pieces.filter(p=>!p.installer_id&&p.status!=='installed');
@@ -26,8 +27,8 @@ export function homeTaskRows(user,data){
   }else if(user.role==='garage_head'&&['head','correction_review'].includes(review?.state)){
    action=review.state==='head'?'Review installation':'Review returned work';priority=0;
    if(job)href='/garage/installer/job/'+encodeURIComponent(job.id);
-  }else if(review?.state==='sales'&&inv.created_by===user.id){action='Complete your final inspection';priority=0;}
-  else if(inv.work_status==='payment_due'){action=inv.created_by===user.id?'Check payment balance':'Check order payment';priority=1;}
+  }else if(review?.state==='sales'&&ownerId===user.id){action='Complete your final inspection';priority=0;}
+  else if(inv.work_status==='payment_due'){action=ownerId===user.id?'Check payment balance':'Check order payment';priority=1;}
   else if(inv.work_status==='ready_for_delivery'){action='Arrange handover';priority=1;}
   else if(inv.work_status==='ready_for_warranty'){action='Register warranty';priority=2;}
   const openDamage=(data.damageReports??[]).filter(r=>r.invoice_id===inv.id&&r.status==='open').length;
@@ -36,7 +37,7 @@ export function homeTaskRows(user,data){
   const vehicle=data.vehicles.find(v=>v.id===inv.vehicle_id);
   tasks.push({id:inv.id,invoiceNumber:inv.invoice_number,service:inv.service,action,priority,scope,href,
    openDamage,vehicle:vehicle?[vehicle.registration_no,vehicle.make,vehicle.model].filter(Boolean).join(' · '):'Vehicle details in job',
-   owner:isManager?data.users.find(u=>u.id===inv.created_by)?.name:undefined,
+   owner:isManager?data.users.find(u=>u.id===ownerId)?.name:undefined,
    availableGlass:isWorker?available.length:undefined,assignedGlass:isWorker?own.length:undefined});
  }
  return tasks.sort((a,b)=>a.priority-b.priority||a.invoiceNumber.localeCompare(b.invoiceNumber));
@@ -49,7 +50,7 @@ export async function handleHomeTasks(req,deps){return respond(req,deps,['POST']
  if(!rate.allowed)throw new ApiError(429,'RATE_LIMITED','Try refreshing again shortly.');
  const isWorker=workshop.includes(user.role),canVerify=['director','admin'].includes(user.role);
  let data={invoices:[],jobs:[],reviews:[],pieces:[],vehicles:[],users:[],hasMore:false};
- if(user.role!=='admin')data=await ctx.repo.homeOrders(user);
+ if(user.role!=='admin')data=await ctx.repo.homeOrders({...user,salesReferrals:deps.env.GARAGE_SALES_REFERRALS_ONLINE==='1'});
  const tasks=homeTaskRows(user,data);
  // Existing finance RPC remains authoritative for every returned balance.
  if(!isWorker){await Promise.all(tasks.slice(0,12).filter(t=>t.service==='tinted').map(async task=>{

@@ -1,3 +1,4 @@
+import GarageReferralSummary from './GarageReferralSummary';
 import type {ReactNode} from 'react';
 import GarageInvoiceGlassWork from './GarageInvoiceGlassWork';
 import GarageTintPayments from './GarageTintPayments';
@@ -30,11 +31,12 @@ export default function GarageTintStageWorkspace({stage,invoice,order,items,jobI
    <GarageInstallationPhotos invoiceId={invoice.id} refreshKey={version}/>
   </div>
   <div hidden={!['installation','approval','inspection'].includes(stage)}>
-   <GarageInstallationReview invoiceId={invoice.id} ownerId={invoice.createdBy} items={items} viewStage={stage} onChange={onChange} onReady={onReady}/>
+   <GarageInstallationReview invoiceId={invoice.id} ownerId={(invoice.salesOwnerId??invoice.createdBy)} items={items} viewStage={stage} onChange={onChange} onReady={onReady}/>
   </div>
 
   <div hidden={stage!=='payment'}>
    <GarageTintPayments invoiceId={invoice.id} onChange={onChange}/>
+   <GarageReferralSummary invoiceId={invoice.id} version={`${invoice.paymentStatus}:${invoice.paidAt??''}`}/>
   </div>
   {stage==='delivery'&&<section className="rounded-xl border border-white/15 p-5 space-y-4" aria-label="Delivery checks">
    <p className="text-white/70 text-sm">Handover requires Garage Head approval, the salesman’s final inspection, verified payment and reviewed damage reports.</p>

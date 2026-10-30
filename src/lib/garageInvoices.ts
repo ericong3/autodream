@@ -1,3 +1,4 @@
+import {salesReferralRequest} from './garageSalesAssignment';
 import {installationMutation} from './garageInstallationReview';
 import { supabase } from './supabase';
 import type {
@@ -29,6 +30,7 @@ function rowToInvoice(r: any): GarageInvoice {
     remark: r.remark ?? undefined,
     createdAt: r.created_at,
     createdBy: r.created_by ?? undefined,
+    salesOwnerId: r.sales_owner_id ?? undefined,
   };
 }
 
@@ -73,6 +75,8 @@ export async function getGarageInvoice(id: string): Promise<GarageInvoice | null
 
 // "My Work Orders" — every invoice a given salesman created, newest first.
 export async function listInvoicesCreatedBy(userId: string): Promise<GarageInvoice[]> {
+  const assigned=await salesReferralRequest<{enabled:boolean;invoices?:unknown[]}>('orders');
+  if(assigned.enabled)return (assigned.invoices??[]).map(rowToInvoice);
   const { data, error } = await supabase
     .from('garage_invoices')
     .select('*')

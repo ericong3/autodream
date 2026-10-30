@@ -28,8 +28,9 @@ export function supabaseRepo(config) {
       const worker=['garage_installer','garage_detailer','garage_spray'].includes(user.role);
       const manager=['director','shareholder','garage_head'].includes(user.role);
       if(!worker&&!manager&&user.role!=='garage_salesman')throw Error('NOT_ALLOWED');
-      let query=sb.from('garage_invoices').select('id,invoice_number,vehicle_id,created_by,service,work_status,created_at,delivered_at').not('work_status','in','(closed,draft)').order('created_at',{ascending:true}).limit(51);
-      if(!manager&&!worker)query=query.eq('created_by',user.id);
+      const invoiceColumns='id,invoice_number,vehicle_id,created_by,service,work_status,created_at,delivered_at'+(user.salesReferrals?',sales_owner_id':'');
+      let query=sb.from('garage_invoices').select(invoiceColumns).not('work_status','in','(closed,draft)').order('created_at',{ascending:true}).limit(51);
+      if(!manager&&!worker)query=user.salesReferrals?query.or(`sales_owner_id.eq.${user.id},and(sales_owner_id.is.null,created_by.eq.${user.id})`):query.eq('created_by',user.id);
       if(worker)query=query.eq('service','tinted').is('delivered_at',null);
       let found,sourceMore=false;
       if(worker){
@@ -37,7 +38,7 @@ export function supabaseRepo(config) {
         const ownPieces=check(await sb.from('garage_tint_installation_pieces').select('invoice_id').eq('installer_id',user.id).order('created_at',{ascending:false}).limit(1001))||[];
         const availablePieces=check(await sb.from('garage_tint_installation_pieces').select('invoice_id').is('installer_id',null).neq('status','installed').order('created_at',{ascending:false}).limit(1001))||[];
         const ownIds=[...new Set(ownPieces.slice(0,1000).map(p=>p.invoice_id))],availableIds=[...new Set(availablePieces.slice(0,1000).map(p=>p.invoice_id))];
-        const active=()=>sb.from('garage_invoices').select('id,invoice_number,vehicle_id,created_by,service,work_status,created_at,delivered_at').eq('service','tinted').is('delivered_at',null).not('work_status','in','(closed,draft)').order('created_at',{ascending:true}).limit(51);
+        const active=()=>sb.from('garage_invoices').select(invoiceColumns).eq('service','tinted').is('delivered_at',null).not('work_status','in','(closed,draft)').order('created_at',{ascending:true}).limit(51);
         const own=ownIds.length?check(await active().in('id',ownIds))||[]:[];
         const shared=availableIds.length?check(await active().in('id',availableIds))||[]:[];
         found=[...new Map([...own,...shared].map(i=>[i.id,i])).values()];sourceMore=ownPieces.length>1000||availablePieces.length>1000;
@@ -49,7 +50,7 @@ export function supabaseRepo(config) {
         sb.from('garage_installation_reviews').select('invoice_id,state,confirmations').in('invoice_id',ids),
         sb.from('garage_tint_installation_pieces').select('invoice_id,id,position,installer_id,status,needs_correction').in('invoice_id',ids),
         sb.from('garage_vehicles').select('id,registration_no,make,model').in('id',[...new Set(invoices.map(i=>i.vehicle_id))]),
-        manager?sb.from('garage_building_staff').select('id,name').in('id',[...new Set(invoices.map(i=>i.created_by).filter(Boolean))]):Promise.resolve({data:[],error:null}),
+        manager?sb.from('garage_building_staff').select('id,name').in('id',[...new Set(invoices.map(i=>i.sales_owner_id??i.created_by).filter(Boolean))]):Promise.resolve({data:[],error:null}),
         sb.from('garage_damage_reports').select('id,invoice_id,status').in('invoice_id',ids).eq('status','open'),
       ]);
       const [jobs,reviews,pieces,vehicles,users,damageReports]=rows.map(r=>check(r)||[]);

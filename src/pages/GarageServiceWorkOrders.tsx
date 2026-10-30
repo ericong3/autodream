@@ -150,7 +150,7 @@ export default function GarageServiceWorkOrders() {
           <div className="space-y-3">
             {visible.map(({ invoice, vehicle, customer, job, stage }) => {
               const rowMeta = GARAGE_SERVICE_MAP[invoice.service];
-              const creator = allUsers.find((u) => u.id === invoice.createdBy);
+              const creator = allUsers.find((u) => u.id === (invoice.salesOwnerId??invoice.createdBy));
               return (
                 <button
                   key={invoice.id}

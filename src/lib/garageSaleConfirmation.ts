@@ -1,5 +1,6 @@
+import type {SalesAssignment} from './garageSalesAssignment';
 import type {PendingPayment} from '../pages/GarageWorkOrderPayment';
-export type SalePayload={customerId:string;vehicleId:string;paymentStatus:'paid'|'pending';paymentMethod?:string;remark:string;pending:PendingPayment['pending'];addons:{name:string;price:number;qty:number}[];booking:{mode:'none'}|{mode:'existing';appointmentId:string;revision:number}|{mode:'new';startsAt:string;endsAt:string};receiptExpected:boolean;initialPayment?:{amount:number;method:string;reference:string}};
+export type SalePayload={salesAssignment?:SalesAssignment;customerId:string;vehicleId:string;paymentStatus:'paid'|'pending';paymentMethod?:string;remark:string;pending:PendingPayment['pending'];addons:{name:string;price:number;qty:number;serviceKey?:'coating'|'ppf'|'spray'}[];booking:{mode:'none'}|{mode:'existing';appointmentId:string;revision:number}|{mode:'new';startsAt:string;endsAt:string};receiptExpected:boolean;initialPayment?:{amount:number;method:string;reference:string}};
 export type SaleIntent={requestId:string;sale:SalePayload;routeKey:string};
 export type SaleResult={state:'saved'|'missing'|'abandoned'|'removed';invoiceId?:string;invoiceNumber?:string;receiptPath?:string|null;receiptExpected?:boolean;paymentStatus?:'paid'|'pending';replacementRequestId?:string;paymentId?:string;collectionPending?:boolean};
 export async function saleConfirmation(action:'confirm'|'status'|'abandon',intent:SaleIntent):Promise<SaleResult>{

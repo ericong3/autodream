@@ -1,7 +1,9 @@
 import {ApiError,authenticate,canUseApp,respond,readJson,onlyKeys} from '../garageBuilding/core.mjs';
 import {createHash} from 'node:crypto';
 import {handleReferralAccounts,isReferralAccountRequest} from '../referrals/accounts.mjs';
+import {handleSalesReferrals,isSalesReferralRequest,validateSalesAssignment} from '../referrals/sales.mjs';
 export async function handleSales(req,deps){
+ if(isSalesReferralRequest(req))return handleSalesReferrals(req,deps);
  if(isReferralAccountRequest(req))return handleReferralAccounts(req,deps);
  return respond(req,deps,['POST'],async(ctx,res)=>{
   const {user}=await authenticate(req,ctx,res,canUseApp);
@@ -12,12 +14,18 @@ export async function handleSales(req,deps){
   if(!['confirm','status','abandon'].includes(data.action)||typeof data.requestId!=='string'||!/^[A-Za-z0-9_-]{16,80}$/.test(data.requestId))throw new ApiError(400,'INVALID','Reload this sale before confirming.');
   if(data.action==='confirm'){
    const sale=data.sale;if(!sale||typeof sale!=='object'||Array.isArray(sale))throw new ApiError(400,'INVALID','Check the sale details.');
-   onlyKeys(sale,['customerId','vehicleId','paymentStatus','paymentMethod','remark','pending','addons','booking','receiptExpected','initialPayment']);
+   onlyKeys(sale,['customerId','vehicleId','paymentStatus','paymentMethod','remark','pending','addons','booking','receiptExpected','initialPayment','salesAssignment']);
+   if(deps.env.GARAGE_SALES_REFERRALS_ONLINE==='1'&&sale.salesAssignment===undefined)throw new ApiError(400,'INVALID','Choose the Garage salesperson in charge before confirming.');
+   if(sale.salesAssignment!==undefined){
+    if(deps.env.GARAGE_SALES_REFERRALS_ONLINE!=='1')throw new ApiError(503,'SETUP','Sales referrals have not been activated. Your draft is kept.');
+    validateSalesAssignment(sale.salesAssignment);
+   }
    if(sale.initialPayment!==undefined){const p=sale.initialPayment;if(!p||typeof p!=='object'||Array.isArray(p))throw new ApiError(400,'INVALID','Check the payment received.');onlyKeys(p,['amount','method','reference']);if(typeof p.amount!=='number'||!Number.isFinite(p.amount)||p.amount<=0||!['cash','card','transfer','installment'].includes(p.method)||typeof p.reference!=='string'||p.reference.length>200)throw new ApiError(400,'INVALID','Check the payment received.');}
   }
   const r=await ctx.repo.rpc('garage_sale_confirmation',{p_actor:user.id,p_action:data.action,p_request:data.requestId,p_sale:data.sale??null});
   if(r.error){const msg=r.error.message||'';
    if(msg.includes('REQUEST_CHANGED'))throw new ApiError(409,'CHANGED','This recovery reference belongs to different sale details. Check the saved sale first.');
+   if(msg.includes('DEAL_CHANGED'))throw new ApiError(409,'CONFLICT','The Used Car deal changed. Cancel this attempt to review and select the deal again.');
    if(msg.includes('REQUEST_ABANDONED'))throw new ApiError(409,'ABANDONED','This confirmation was cancelled. Start a new confirmation.');
    if(msg.includes('REVISION_CONFLICT')||msg.includes('ALREADY_LINKED'))throw new ApiError(409,'CONFLICT','The booking changed. Check this confirmation, then update the booking before trying again.');
    if(msg.includes('NOT_ALLOWED'))throw new ApiError(403,'FORBIDDEN','This sale is unavailable for your account.');

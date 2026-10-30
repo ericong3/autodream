@@ -188,7 +188,7 @@ export default function GarageInstallerJobDetail() {
     .map((id) => nameOf(id) ?? 'Installer');
   const totalUsage = orderItems.reduce((sum, i) => sum + (i.sqft ?? 0), 0);
   const sizeLabel = vehicle ? VEHICLE_SIZES.find((s) => s.key === vehicle.size)?.label ?? vehicle.size : '';
-  const salesman = nameOf(invoice?.createdBy);
+  const salesman = nameOf(invoice?.salesOwnerId??invoice?.createdBy);
   const pipelinePath = job ? `/garage/installer/${job.service}` : '/garage/installer';
 
   const usedSeries = useMemo(() => Array.from(new Set(allSelections.map((s) => s.series))), [allSelections]);
@@ -539,7 +539,7 @@ export default function GarageInstallerJobDetail() {
 
         {error && <p className="text-red-400 text-xs text-center">{error}</p>}
 
-        {invoice && <><GarageTintUsage invoiceId={invoice.id} version={items.map(i=>`${i.id}:${i.sqft}:${i.usageAttempt}`).join('|')}/><GarageInstallationReview invoiceId={invoice.id} ownerId={invoice.createdBy} items={items} onChange={()=>load(true)} /></>}
+        {invoice && <><GarageTintUsage invoiceId={invoice.id} version={items.map(i=>`${i.id}:${i.sqft}:${i.usageAttempt}`).join('|')}/><GarageInstallationReview invoiceId={invoice.id} ownerId={invoice.salesOwnerId??invoice.createdBy} items={items} onChange={()=>load(true)} /></>}
         {invoice && <GarageInstallationPhotos invoiceId={invoice.id} refreshKey={photoRefresh} />}
         {isInProgress && isInstaller && <label className="block text-sm text-white/60">Add work photos<input type="file" accept="image/*" multiple onChange={async e=>{const files=Array.from(e.target.files??[]);e.target.value='';try{for(const file of files)await uploadInstallationPhoto(invoice!.id,file);setPhotoRefresh(v=>v+1);}catch{setError('Could not upload photo. Your installation progress is kept.');}}} className="block mt-2 text-xs"/></label>}
 

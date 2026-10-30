@@ -31,3 +31,11 @@ test('finance admin Home only loads verification queue and links to permitted fi
 test('own correction and personal confirmation outrank available work',()=>{const d=structuredClone(data);d.pieces[0].installer_id='installer';d.pieces[0].needs_correction=true;let rows=homeTaskRows({id:'installer',role:'garage_installer'},d);assert.equal(rows[0].action,'Complete your correction work');d.pieces[0].needs_correction=false;d.pieces[0].status='installed';rows=homeTaskRows({id:'installer',role:'garage_installer'},d);assert.equal(rows[0].action,'Confirm your finished installation');d.reviews[0].confirmations.installer='time';assert.equal(homeTaskRows({id:'installer',role:'garage_installer'},d)[0].action,'Check inspection progress');});
 test('an unavailable balance is never silently displayed as zero',async()=>{const w=homeFixture(),c=await w.login();w.repo.rpc=async()=>({error:{message:'Unavailable'}});const b=JSON.parse((await handleHomeTasks(w.req({action:'list'},c),w.deps)).body);assert.equal(b.tasks[0].balanceUnavailable,true);assert.equal(b.tasks[0].money,undefined);});
 test('Head gets an open damage review shortcut while workers keep work-only actions',()=>{const d=structuredClone(data);d.damageReports=[{id:'damage',invoice_id:'own',status:'open'}];const head=homeTaskRows({id:'head',role:'garage_head'},d).find(t=>t.id==='own');assert.equal(head.action,'Review damage report');assert.equal(head.openDamage,1);assert.equal(head.href,'/garage/installer/job/j1');const worker=homeTaskRows({id:'installer',role:'garage_installer'},d)[0];assert.equal(worker.openDamage,1);assert.notEqual(worker.action,'Review damage report');});
+
+
+test('assigned salesperson receives the final inspection shortcut while the creator remains audit only',()=>{
+ const d=structuredClone(data);d.invoices[0].sales_owner_id='sales-b';d.reviews[0].state='sales';
+ const creator=homeTaskRows({id:'sales-a',role:'garage_salesman'},d);assert.equal(creator.some(t=>t.id==='own'),false);
+ const assigned=homeTaskRows({id:'sales-b',role:'garage_salesman'},d).find(t=>t.id==='own');assert.equal(assigned.action,'Complete your final inspection');
+ const manager=homeTaskRows({id:'director',role:'director'},d).find(t=>t.id==='own');assert.equal(manager.owner,'Other salesman');assert.equal(d.invoices[0].created_by,'sales-a');
+});

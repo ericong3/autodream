@@ -10,7 +10,7 @@ const Workspace=compile('GarageTintStageWorkspace',name=>{
 const props={invoice:{id:'invoice',workStatus:'in_progress',createdBy:'sales'},order:{selections:[],extras:[]},items:[],claims:[],orderSummary:jsx('OrderSummary',{}),action:jsx('DeliveryOrWarrantyAction',{}),onChange:()=>{},onReady:()=>{},onDamageClear:()=>{},onPayment:()=>{}};
 const visible=stage=>nodes(Workspace({...props,stage})).map(n=>n.type);
 test('the existing pipeline selects the correct functions without stacked duplicate panels',()=>{
- const expected={created:['OrderSummary',],installation:['GarageInvoiceGlassWork','GarageTintUsage','GarageInstallationPhotos','GarageInstallationReview',],approval:['GarageInstallationReview',],inspection:['GarageInstallationReview'],payment:['GarageTintPayments'],delivery:['DeliveryOrWarrantyAction'],warranty:['GarageTintAfterSales','DeliveryOrWarrantyAction'],closed:['GarageTintAfterSales']};
+ const expected={created:['OrderSummary',],installation:['GarageInvoiceGlassWork','GarageTintUsage','GarageInstallationPhotos','GarageInstallationReview',],approval:['GarageInstallationReview',],inspection:['GarageInstallationReview'],payment:['GarageTintPayments','GarageReferralSummary'],delivery:['DeliveryOrWarrantyAction'],warranty:['GarageTintAfterSales','DeliveryOrWarrantyAction'],closed:['GarageTintAfterSales']};
  for(const [stage,components] of Object.entries(expected)){
   const actual=visible(stage).filter(type=>typeof type==='string'&&(type.startsWith('Garage')||['OrderSummary','DeliveryOrWarrantyAction'].includes(type)));
   assert.deepEqual(actual.sort(),components.sort(),stage);
