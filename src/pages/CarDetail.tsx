@@ -1,3 +1,4 @@
+import { deliveredDealPrice } from '../utils/deliveredDealPrice';
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
@@ -1803,9 +1804,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             </div>
           );
 
-          const sellingPrice = wo?.sellingPrice ?? deal.dealPrice;
+          const { sellingPrice, discount } = deliveredDealPrice(car, wo);
           const purchasePrice = car.purchasePrice;
-          const discount = wo?.discount ?? 0;
           const insurance = wo?.insurance ?? 0;
           const bankProduct = wo?.bankProduct ?? 0;
           const additionalItems = wo?.additionalItems ?? [];
