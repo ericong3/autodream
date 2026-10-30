@@ -47,6 +47,7 @@ import { formatRM as _formatRM } from '../utils/format';
 import Modal from '../components/Modal';
 import { useStore } from '../store';
 import { getDeliveryDate, calcConsignmentPayoutAmount } from '../utils/generatePayments';
+import { deliveredDealPrice } from '../utils/deliveredDealPrice';
 import { recordDisbursement } from '../utils/recordDisbursement';
 import { getCaseCompletion } from '../utils/caseCompletion';
 import { formatRM, formatMileage, shortName, generateId } from '../utils/format';
@@ -281,12 +282,10 @@ export default function History() {
     for (const c of cars.filter(x => x.status === 'delivered')) {
       const wo = customers.find(cu => cu.interestedCarId === c.id && (cu.cashWorkOrder || cu.loanWorkOrder));
       const w = wo?.loanWorkOrder ?? wo?.cashWorkOrder;
-      const grossPrice = (w?.sellingPrice && w.sellingPrice > 0) ? w.sellingPrice : (c.finalDeal?.dealPrice ?? c.sellingPrice);
-      const discount = w?.discount ?? 0;
+      const { netPrice: dealNetPrice } = deliveredDealPrice(c, w);
       const additionalTotal = w?.additionalItems?.reduce((a, i) => a + i.amount, 0) ?? 0;
       const repairCosts = repairs.filter(r => r.carId === c.id && r.status === 'done').reduce((a, r) => a + (r.actualCost ?? r.totalCost), 0);
       const miscCosts = (c.miscCosts ?? []).reduce((a, m) => a + m.amount, 0);
-      const dealNetPrice = grossPrice - discount;
       const profitBeforeCommission = dealNetPrice - c.purchasePrice - repairCosts - miscCosts - additionalTotal;
       const commission = (c.outgoingConsignment || c.isStaffSale) ? 0 : (c.consignment || (c.priceFloor != null && dealNetPrice < c.priceFloor)) ? 1000 : 1500;
       map[c.id] = { dealNetPrice, profit: profitBeforeCommission - commission };
