@@ -1,6 +1,6 @@
 export type BonusParticipant={id:string;name:string};
 export type BonusCampaign={id:string;title:string;startMonth:string;endMonth:string;minimumUnits:number;amountPerUnit:number;revision:number;publishedAt:string|null;participants:BonusParticipant[];confirmedMonths:string[]};
-export type BonusResult={campaignId:string;month:string;units:number;minimumUnits:number;pool:number;qualified:boolean;previewHash:string;confirmed?:boolean;shares:{id:string;name:string;amount:number}[];issues:{id:string;label:string;reason:string}[];cars:{id:string;label:string;basis?:'early_credit'|'delivery';creditedMonth?:string}[];confirmedAt?:string};
+export type BonusResult={campaignId:string;month:string;units:number;minimumUnits:number;pool:number;qualified:boolean;previewHash:string;confirmed?:boolean;payrollPosted?:boolean;shares:{id:string;name:string;amount:number}[];issues:{id:string;label:string;reason:string}[];cars:{id:string;label:string;basis?:'early_credit'|'delivery';creditedMonth?:string}[];confirmedAt?:string};
 export type BonusCampaignDraft={title:string;startMonth:string;endMonth:string;minimumUnits:number;amountPerUnit:number;participantIds:string[]};
 export type CampaignView='active'|'upcoming'|'completed';
 export function campaignView(campaign:BonusCampaign,month:string):CampaignView{

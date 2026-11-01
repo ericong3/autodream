@@ -43,3 +43,12 @@ test('late previous-account lists cannot populate the next account',async()=>{
  const pending=[];const w=fixture({request:()=>new Promise(resolve=>pending.push(resolve))});await w.flush();w.actor('next-director');await w.flush();pending[0]({enabled:true,campaigns:[sample],participants:sample.participants,hasMore:false});await w.flush();assert.ok(!w.text().includes('Example campaign'));pending[1]({enabled:true,campaigns:[],participants:[],hasMore:false});await w.flush();assert.ok(w.text().includes('No active campaigns yet.'));
 });
 test('shareholder oversight cannot open campaign creation',async()=>{const w=fixture({role:'shareholder'});await w.flush();assert.ok(w.button('New campaign').props.disabled);});
+
+test('confirmation explains pending payroll and expense, and uses the atomic posting action',async()=>{
+ const result={campaignId:sample.id,month:'2026-10',units:6,minimumUnits:5,pool:3000,qualified:true,previewHash:'a'.repeat(32),confirmed:false,shares:[{id:'sales',name:'Example salesperson',amount:3000}],cars:[],issues:[]};
+ const w=fixture({request:async action=>action==='list'?{enabled:true,campaigns:[{...sample,publishedAt:'2026-10-01'}],participants:sample.participants,hasMore:false}:action==='preview'?result:{...result,confirmed:true,payrollPosted:true,confirmedAt:'2026-11-01T00:00:00Z'}});
+ await w.flush();w.click('View progress');await w.flush();
+ const month=w.all().find(n=>n.type==='select'&&n.props['aria-label']==='Result month');month.props.onChange({target:{value:'2026-10'}});await w.flush();
+ w.click('Confirm monthly result');await w.flush();assert.ok(w.text().includes('pending staff pay and a department expense'));w.click('Confirm result');await w.flush();
+ assert.equal(w.calls.filter(c=>c.action==='confirm_and_post').length,1);assert.ok(w.text().includes('Added to payroll and accounting'));
+});

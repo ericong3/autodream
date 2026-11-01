@@ -1,5 +1,6 @@
 import { garageSessionRequest, secureGarageLoginEnabled } from '../lib/garageSession';
 import { mergeLegacyIdentity } from '../utils/garageIdentity';
+import { bonusCampaignRequest } from '../lib/bonusCampaigns';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
@@ -1020,6 +1021,8 @@ function kanbanColumnToRow(c: Partial<KanbanColumn>) {
 
 function rowToPayment(r: any): Payment {
   return {
+    bonusCampaignId: r.bonus_campaign_id ?? undefined,
+    bonusMonth: r.bonus_month ?? undefined,
     id: r.id,
     type: r.type,
     carId: r.car_id ?? undefined,
@@ -2619,10 +2622,20 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     await supabase.from('payments').insert(newPayments.map(paymentToRow));
   },
   updatePayment: async (id, updates) => {
+    if (get().payments.find(p => p.id === id)?.type === 'campaign_bonus') {
+      const actingUser = get().currentUser?.id;
+      if (updates.status !== 'transferred' || Object.keys(updates).some(k => !['status','transferredAt','transferredBy','receiptUrl','notes'].includes(k))) throw new Error('Confirmed campaign bonus amounts are fixed.');
+      const result = await bonusCampaignRequest<{payment:any;journal:any}>('settle_bonus',{paymentId:id,transferredAt:updates.transferredAt,notes:updates.notes ?? '',...(updates.receiptUrl?{receiptUrl:updates.receiptUrl}:{})});
+      if (get().currentUser?.id !== actingUser) return;
+      const payment=rowToPayment(result.payment),journal=rowToJournalEntry(result.journal);
+      set(s=>({payments:s.payments.map(p=>p.id===id?payment:p),journalEntries:[journal,...s.journalEntries.filter(j=>j.id!==journal.id)]}));
+      return;
+    }
     set((s) => ({ payments: s.payments.map((p) => p.id === id ? { ...p, ...updates } : p) }));
     await supabase.from('payments').update(paymentToRow(updates)).eq('id', id);
   },
   deletePayment: async (id) => {
+    if (get().payments.find(p => p.id === id)?.type === 'campaign_bonus') throw new Error('Use a separate adjustment for confirmed campaign bonuses.');
     set((s) => ({ payments: s.payments.filter((p) => p.id !== id) }));
     await supabase.from('payments').delete().eq('id', id);
   },

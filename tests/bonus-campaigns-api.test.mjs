@@ -16,6 +16,23 @@ function fixture(role='director',access='both'){
 
 const draft={title:'Year-end',startMonth:'2026-10',endMonth:'2026-12',minimumUnits:6,amountPerUnit:500,participantIds:['sales-a']};
 const id='11111111-1111-4111-8111-111111111111';
+
+test('bonus payroll posting and settlement derive director from the session and refuse forged amounts',async()=>{
+ const w=fixture(),cookie=await w.login();
+ for(const action of ['confirm_and_post','post_payroll']){
+  const body={scope:'bonus_campaigns',action,id,month:'2026-10',requestId:'payroll-request-sample-001',...(action==='confirm_and_post'?{previewHash:'a'.repeat(32)}:{})};
+  assert.equal((await handleSales(w.req(body,cookie),w.deps)).status,200);
+  assert.equal(w.calls.at(-1).args.p_actor,'sales-a');
+  assert.equal((await handleSales(w.req({...body,amount:999},cookie),w.deps)).status,400);
+ }
+ const payment={scope:'bonus_campaigns',action:'settle_bonus',paymentId:`bonus:${id}:2026-10:sales-a`,transferredAt:'2026-11-01T08:00:00.000Z',notes:'Recorded payment'};
+ assert.equal((await handleSales(w.req(payment,cookie),w.deps)).status,200);
+ assert.equal((await handleSales(w.req({...payment,transferredBy:'forged'},cookie),w.deps)).status,400);
+ assert.equal((await handleSales(w.req({...payment,receiptUrl:'javascript:bad'},cookie),w.deps)).status,400);
+ const share=fixture('shareholder'),shareCookie=await share.login();
+ assert.equal((await handleSales(share.req(payment,shareCookie),share.deps)).status,403);
+ assert.equal((await handleSales(share.req({scope:'bonus_campaigns',action:'post_payroll',id,month:'2026-10',requestId:'payroll-sample-002'},shareCookie),share.deps)).status,403);
+});
 test('campaigns use the private session and reject forged actors',async()=>{
  const w=fixture();assert.equal((await handleSales(w.req({scope:'bonus_campaigns',action:'list'}),w.deps)).status,401);const cookie=await w.login();
  assert.equal((await handleSales(w.req({scope:'bonus_campaigns',action:'list',actorId:'other'},cookie),w.deps)).status,400);

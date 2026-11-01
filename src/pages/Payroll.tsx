@@ -1,3 +1,4 @@
+import { campaignBonusFor } from '../utils/campaignPayroll';
 import { salesCommission } from '../utils/salesCommission';
 import PayrollTabs from '../components/PayrollTabs';
 import { useState } from 'react';
@@ -153,7 +154,7 @@ export default function Payroll() {
 
   const monthLabel = new Date(monthFilter + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   const monthPayrollPayments = payments.filter(
-    (p) => (p.type === 'salary' || p.type === 'allowance') && p.description?.endsWith(monthLabel)
+    (p) => p.type === 'campaign_bonus' ? p.bonusMonth === monthFilter : (p.type === 'salary' || p.type === 'allowance') && !!p.description?.endsWith(monthLabel)
   );
   // Once Run Payroll has actually created a payment for this person+month,
   // that's the frozen source of truth for that month from then on — editing
@@ -171,7 +172,7 @@ export default function Payroll() {
   };
   const monthTotalPayroll = staff.reduce((s, u) => {
     const { basic, allowance } = payrollAmountsFor(u);
-    return s + basic + allowance;
+    return s + basic + allowance + campaignBonusFor(payments,u.id,monthFilter);
   }, 0);
 
   const prevMonth = () => setMonthFilter((m) => {
@@ -246,7 +247,7 @@ export default function Payroll() {
         if (!u.employeeId) { skipped.push(u.name); continue; }
         const [year, monthNum] = monthFilter.split('-');
         const salesCommission = u.role === 'salesperson' ? monthCommission(u.id) : 0;
-        const draft = computePayslipDraft({ user: u, month: monthFilter, salesCommission });
+        const draft = computePayslipDraft({ user: u, month: monthFilter, salesCommission, campaignBonus: campaignBonusFor(payments,u.id,monthFilter) });
         const payslip: Payslip = {
           ...draft,
           id: generateId(),
@@ -271,7 +272,7 @@ export default function Payroll() {
     setPayslipTarget(u);
     setPayslipError('');
     const salesCommission = u.role === 'salesperson' ? monthCommission(u.id) : 0;
-    const draft = computePayslipDraft({ user: u, month: monthFilter, salesCommission });
+    const draft = computePayslipDraft({ user: u, month: monthFilter, salesCommission, campaignBonus: campaignBonusFor(payments,u.id,monthFilter) });
     setPayslipForm({ ...emptyPayslipForm, ...draft });
   };
 
@@ -410,7 +411,7 @@ export default function Payroll() {
               </button>
               {!isCollapsed && roleStaff.map((u) => {
                 const isFullTime = u.employmentType === 'full_time';
-                const wasRun = monthPayrollPayments.some((p) => p.recipientId === u.id);
+                const wasRun = monthPayrollPayments.some((p) => p.recipientId === u.id && p.type !== 'campaign_bonus');
                 const { basic: effectiveBasic, allowance: allowanceAmount } = payrollAmountsFor(u);
                 const boostActive = !wasRun && isFullTime && !!u.temporaryBoost && !!u.temporaryBoostUntil && monthFilter <= u.temporaryBoostUntil;
                 const commissionCars = u.role === 'salesperson' ? monthSoldCarsFor(u.id) : [];
@@ -419,7 +420,8 @@ export default function Payroll() {
                 const commission = commissionCars.reduce((s, c) => s + calcCommission(c), 0) +
                   intakeCars.reduce((s, c) => s + (c.intakeCommission ?? 0), 0) +
                   sourcingCars.reduce((s, c) => s + (c.sourceCommission ?? 0), 0);
-                const totalPay = effectiveBasic + allowanceAmount + commission;
+                const campaignBonus = campaignBonusFor(payments,u.id,monthFilter);
+                const totalPay = effectiveBasic + allowanceAmount + commission + campaignBonus;
                 const isCommissionExpanded = expandedCommission.has(u.id);
                 return (
                   <div key={u.id} className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card p-4">
@@ -443,6 +445,7 @@ export default function Payroll() {
                         ) : (
                           <span className="text-gray-600">{isFullTime ? 'Not run for this month' : 'No fixed pay configured'}</span>
                         )}
+                        {campaignBonus > 0 && <span className="text-amber-300">Campaign bonus: <span className="font-medium">{formatRM(campaignBonus)}</span></span>}
                         {u.role === 'salesperson' && (
                           commissionCars.length > 0 || intakeCars.length > 0 || sourcingCars.length > 0 ? (
                             <button
@@ -458,7 +461,7 @@ export default function Payroll() {
                           )
                         )}
                       </div>
-                      {(effectiveBasic > 0 || allowanceAmount > 0 || commission > 0) && (
+                      {(effectiveBasic > 0 || allowanceAmount > 0 || commission > 0 || campaignBonus > 0) && (
                         <p className="text-gray-500 text-[11px]">Total this month: <span className="text-white font-semibold">{formatRM(totalPay)}</span></p>
                       )}
                     </div>

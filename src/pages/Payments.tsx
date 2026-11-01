@@ -29,6 +29,7 @@ async function uploadReceipt(file: File): Promise<string> {
 const TYPE_LABELS: Record<PaymentType, string> = {
   salesman_commission:    'Commission',
   intake_bonus:           'Intake Bonus',
+  campaign_bonus:         'Campaign Bonus',
   salary:                 'Basic Salary',
   allowance:              'Allowance',
   source_commission:      'Source Comm.',
@@ -48,6 +49,7 @@ const TYPE_LABELS: Record<PaymentType, string> = {
 const TYPE_COLORS: Record<PaymentType, string> = {
   salesman_commission:    'bg-gold-500/20 text-gold-300 border-gold-500/20',
   intake_bonus:           'bg-purple-500/20 text-purple-300 border-purple-500/20',
+  campaign_bonus:         'bg-amber-500/20 text-amber-300 border-amber-500/20',
   salary:                 'bg-sky-500/20 text-sky-300 border-sky-500/20',
   allowance:              'bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/20',
   source_commission:      'bg-blue-500/20 text-blue-300 border-blue-500/20',
@@ -928,7 +930,7 @@ export default function Payments({ embedded }: PaymentsProps) {
             <CheckCircle2 size={14} className="text-green-400 opacity-60" />
           )}
           {/* Delete / Request Delete */}
-          {isDirectorView && p.deleteRequestedBy ? (
+          {p.type === 'campaign_bonus' ? null : isDirectorView && p.deleteRequestedBy ? (
             <div className="flex items-center gap-1">
               <button
                 onClick={() => handleApproveDelete(p.id)}
@@ -1146,7 +1148,7 @@ export default function Payments({ embedded }: PaymentsProps) {
               <CheckCircle2 size={12} className="inline -mt-0.5 mr-1" />Done
             </span>
           )}
-          {isDirectorView && (
+          {p.type !== 'campaign_bonus' && isDirectorView && (
             p.deleteRequestedBy ? (
               <div className="flex items-center gap-1">
                 <button onClick={() => handleApproveDelete(p.id)} title="Approve deletion" className="p-1 rounded text-red-400 hover:bg-red-500/20 transition-colors"><Check size={12} /></button>
@@ -1382,7 +1384,7 @@ export default function Payments({ embedded }: PaymentsProps) {
               <CheckCircle2 size={12} className="inline -mt-0.5 mr-1" />Done
             </span>
           )}
-          {isDirectorView && (
+          {p.type !== 'campaign_bonus' && isDirectorView && (
             p.deleteRequestedBy ? (
               <div className="flex items-center gap-1">
                 <button onClick={() => handleApproveDelete(p.id)} title="Approve deletion" className="p-1 rounded text-red-400 hover:bg-red-500/20 transition-colors"><Check size={12} /></button>
@@ -1397,7 +1399,7 @@ export default function Payments({ embedded }: PaymentsProps) {
               </button>
             )
           )}
-          {isAdmin && !isDirectorView && (
+          {p.type !== 'campaign_bonus' && isAdmin && !isDirectorView && (
             p.deleteRequestedBy ? (
               <span title="Pending director approval" className="flex items-center gap-1 text-[10px] text-amber-400 px-1.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20">
                 <Clock size={10} /> Pending
@@ -1813,7 +1815,7 @@ export default function Payments({ embedded }: PaymentsProps) {
                   className="w-full px-3 py-2 rounded-lg bg-obsidian-700/40 border border-white/[0.08] text-white text-sm focus:outline-none focus:border-gold-500/50 transition-colors"
                 >
                   <option value="">Select type…</option>
-                  {Object.entries(TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  {Object.entries(TYPE_LABELS).filter(([v])=>v!=='campaign_bonus').map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                 </select>
               </div>
               {/* Recipient type */}

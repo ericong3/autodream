@@ -5,7 +5,7 @@ import Modal from '../components/Modal';
 import PayrollTabs from '../components/PayrollTabs';
 import {formatRM} from '../utils/format';
 import {bonusCampaignRequest,campaignView,campaignMonths,malaysiaMonth,type BonusCampaign,type BonusCampaignDraft,type BonusParticipant,type BonusResult,type CampaignView} from '../lib/bonusCampaigns';
-type Pending={action:'save'|'publish'|'confirm_month';data:Record<string,unknown>};
+type Pending={action:'save'|'publish'|'confirm_month'|'confirm_and_post'|'post_payroll';data:Record<string,unknown>};
 const input='w-full min-h-[44px] bg-obsidian-800 border border-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-gold-400';
 const labelMonth=(value:string)=>new Date(value+'-15T12:00:00Z').toLocaleDateString('en-MY',{month:'short',year:'numeric',timeZone:'Asia/Kuala_Lumpur'});
 const draftFor=(month:string):BonusCampaignDraft=>({title:'',startMonth:month,endMonth:month,minimumUnits:5,amountPerUnit:500,participantIds:[]});
@@ -26,7 +26,7 @@ export default function BonusCampaigns(){
   finally{if(mine===epoch.current&&read===readEpoch.current)setLoading(false);}
  }
  useEffect(()=>{epoch.current++;readEpoch.current++;previewEpoch.current++;lock.current=false;pendingRef.current=null;setPending(null);setBusy(false);setCampaigns([]);setPeople([]);setEnabled(false);setFormOpen(false);setSelected(null);setResult(null);setConfirmation(null);setNotice('');
-  try{const raw=key?localStorage.getItem(key):null;if(raw){const saved=JSON.parse(raw) as Pending;if(!['save','publish','confirm_month'].includes(saved.action)||typeof saved.data?.requestId!=='string'||!/^[A-Za-z0-9_-]{16,80}$/.test(saved.data.requestId))throw Error();pendingRef.current=saved;setPending(saved);}}
+  try{const raw=key?localStorage.getItem(key):null;if(raw){const saved=JSON.parse(raw) as Pending;if(!['save','publish','confirm_month','confirm_and_post','post_payroll'].includes(saved.action)||typeof saved.data?.requestId!=='string'||!/^[A-Za-z0-9_-]{16,80}$/.test(saved.data.requestId))throw Error();pendingRef.current=saved;setPending(saved);}}
   catch{setError('A previous save could not be read. Ask a director to check it before creating another campaign.');return;}
   if(actor)void load();return()=>{epoch.current++;readEpoch.current++;previewEpoch.current++;};
  // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -45,12 +45,12 @@ export default function BonusCampaigns(){
   lock.current=true;setBusy(true);setError('');setNotice('');
   try{const response=await bonusCampaignRequest<{id?:string}&Partial<BonusResult>>(operation.action,operation.data);
    if(mine!==epoch.current)return;
-   localStorage.removeItem(storageKey);pendingRef.current=null;setPending(null);setFormOpen(false);setConfirmation(null);setNotice(operation.action==='confirm_month'?'Monthly bonus confirmed. It is recorded separately from payments and existing payslips.':operation.action==='publish'?'Campaign published. Its rules and enrolment are now fixed.':'Draft saved. Enrolment and rules can be changed before publishing.');
-   if(operation.action==='confirm_month'&&response.campaignId)setResult(response as BonusResult);
+   localStorage.removeItem(storageKey);pendingRef.current=null;setPending(null);setFormOpen(false);setConfirmation(null);setNotice(['confirm_month','confirm_and_post','post_payroll'].includes(operation.action)?(response.payrollPosted?'Confirmed bonus added to payroll and Staff Bonus Expense. No money transferred.':'Monthly result confirmed. Add it to payroll when ready.'):operation.action==='publish'?'Campaign published. Its rules and enrolment are now fixed.':'Draft saved. Enrolment and rules can be changed before publishing.');
+   if(['confirm_month','confirm_and_post','post_payroll'].includes(operation.action)&&response.campaignId)setResult(response as BonusResult);
    await load();
    if(operation.action==='publish'&&selected)void preview(selected,month);
   }catch(e){if(mine!==epoch.current)return;const code=(e as {code?:string}).code;
-   if(['INVALID','FORBIDDEN','NOT_ALLOWED','REVISION_CONFLICT','PUBLISHED_LOCKED','PREVIEW_CHANGED','DELIVERY_REVIEW_REQUIRED','FUTURE_MONTH'].includes(code??'')){localStorage.removeItem(storageKey);pendingRef.current=null;setPending(null);setConfirmation(null);if(selected)void preview(selected,month);}
+   if(['INVALID','FORBIDDEN','NOT_ALLOWED','REVISION_CONFLICT','PUBLISHED_LOCKED','PREVIEW_CHANGED','DELIVERY_REVIEW_REQUIRED','FUTURE_MONTH','BONUS_NOT_CONFIRMED','BONUS_POSTING_CONFLICT','BONUS_IMMUTABLE'].includes(code??'')){localStorage.removeItem(storageKey);pendingRef.current=null;setPending(null);setConfirmation(null);if(selected)void preview(selected,month);}
    setError((e as Error).message);
   }finally{if(mine===epoch.current){lock.current=false;setBusy(false);}}
  }
@@ -89,7 +89,8 @@ export default function BonusCampaigns(){
     <ul className="divide-y divide-white/5">{result.shares.map(p=><li key={p.id} className="flex items-center justify-between gap-3 py-2 text-sm"><span className="text-white/70">{p.name}</span><span className="text-white">{formatRM(p.amount)}</span></li>)}</ul>
     {!!result.issues.length&&<div className="border border-amber-400/25 rounded-lg p-3 text-sm text-amber-200"><p>Check these delivery records before confirming:</p><ul className="mt-2 space-y-1">{result.issues.map(i=><li key={i.id}>{i.label}: {i.reason}</li>)}</ul></div>}
     <details className="text-white/50 text-xs"><summary className="cursor-pointer min-h-[36px] py-2">Qualifying units ({result.cars.length})</summary><ul className="space-y-1">{result.cars.map(c=><li key={c.id}>{c.label}{c.basis==='early_credit'&&<span className="text-gold-300"> · Commission credited early ({c.creditedMonth})</span>}</li>)}</ul></details>
-    {result.confirmed?<p className="text-emerald-300 text-sm flex items-center gap-2"><CheckCircle2 size={16}/>Confirmed · {new Date(result.confirmedAt!).toLocaleString('en-MY')} · result kept unchanged</p>:selected.publishedAt&&<div className="flex flex-wrap items-center justify-between gap-3"><p className="text-white/45 text-xs">Confirm after the month ends. This saves the bonus breakdown; it does not pay staff or change existing payslips.</p><button type="button" disabled={writeBlocked||month>=currentMonth||!!result.issues.length} onClick={()=>setConfirmation(result)} className="btn-gold px-4 min-h-[44px] rounded-lg text-sm disabled:opacity-40">Confirm monthly result</button></div>}
+    {result.confirmed?<p className="text-emerald-300 text-sm flex items-center gap-2"><CheckCircle2 size={16}/>Confirmed · {new Date(result.confirmedAt!).toLocaleString('en-MY')} · {result.payrollPosted?'Added to payroll and accounting':'Awaiting payroll posting'}</p>:selected.publishedAt&&<div className="flex flex-wrap items-center justify-between gap-3"><p className="text-white/45 text-xs">Confirm after the month ends. This saves the result, adds pending payroll bonuses and records Staff Bonus Expense. No money is transferred.</p><button type="button" disabled={writeBlocked||month>=currentMonth||!!result.issues.length} onClick={()=>setConfirmation(result)} className="btn-gold px-4 min-h-[44px] rounded-lg text-sm disabled:opacity-40">Confirm monthly result</button></div>}
+    {result.confirmed&&!result.payrollPosted&&canManage&&<button type="button" disabled={writeBlocked} onClick={()=>setConfirmation(result)} className="btn-gold px-4 min-h-[44px] rounded-lg text-sm disabled:opacity-40">Add confirmed bonus to payroll</button>}
    </>}
   </section>}
   <Modal isOpen={formOpen} onClose={()=>{if(!writeBlocked)setFormOpen(false);}} title={editing?'Edit bonus campaign':'New bonus campaign'} maxWidth="max-w-xl">
@@ -105,7 +106,7 @@ export default function BonusCampaigns(){
    </form>
   </Modal>
   <Modal isOpen={!!confirmation} onClose={()=>{if(!busy)setConfirmation(null);}} title="Confirm monthly bonus">
-   {confirmation&&<div className="space-y-4 text-sm text-white/70">{error&&<p role="alert" className="text-red-200">{error}</p>}<p>Keep the {labelMonth(confirmation.month)} bonus breakdown of <strong className="text-white">{formatRM(confirmation.pool)}</strong> for {confirmation.shares.length} enrolled salespeople?</p><p className="text-white/45">Later rule or sales changes will not rewrite this confirmed result. No payment or payslip is created.</p><button type="button" disabled={busy} onClick={()=>void mutate('confirm_month',{id:confirmation.campaignId,month:confirmation.month,previewHash:confirmation.previewHash})} className="btn-gold rounded-lg w-full min-h-[44px] disabled:opacity-40">{busy?'Confirming…':pending?'Retry original confirmation':'Confirm result'}</button></div>}
+   {confirmation&&<div className="space-y-4 text-sm text-white/70">{error&&<p role="alert" className="text-red-200">{error}</p>}<p>Keep the {labelMonth(confirmation.month)} bonus breakdown of <strong className="text-white">{formatRM(confirmation.pool)}</strong> for {confirmation.shares.length} enrolled salespeople?</p><p className="text-white/45">The confirmed bonus becomes pending staff pay and a department expense. Existing payslips stay unchanged. No bank transfer is made.</p><button type="button" disabled={busy} onClick={()=>void mutate(confirmation.confirmed?'post_payroll':'confirm_and_post',{id:confirmation.campaignId,month:confirmation.month,...(confirmation.confirmed?{}:{previewHash:confirmation.previewHash})})} className="btn-gold rounded-lg w-full min-h-[44px] disabled:opacity-40">{busy?'Confirming…':pending?'Retry original confirmation':'Confirm result'}</button></div>}
   </Modal>
  </div>;
 }

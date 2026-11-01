@@ -18,7 +18,7 @@ Activated and published on 1 November 2026 with four enrolled salespeople. Noah 
 - Shareholders retain Payroll oversight but cannot change rules, enrolment or confirm months. Other roles cannot read this management endpoint.
 - Monthly figures remain estimates until the month ends and a director reviews and confirms the breakdown. A preview hash detects changed deliveries before confirmation. Conflicting/missing delivery evidence blocks confirmation.
 - Confirmed results contain their own rule, qualifying cars, participant names, pool, allocations, actor and timestamp. Later car/staff changes do not rewrite them.
-- Confirmation records a campaign bonus breakdown only. It does not issue payments or create/recalculate existing payslips. Integration into actual bonus payments/payslip adjustments is outside this tab milestone; the UI says this explicitly.
+- The new confirmation workflow atomically records the bonus breakdown, pending gross staff bonuses and Staff Bonus Expense. Recording payment later clears Accounts Payable without recognising the expense again. Existing payslips remain fixed; new drafts include confirmed campaign bonus earnings. See bonus-payroll-accounting.md. Older clients retain snapshot-only confirmation and can post that confirmed snapshot separately.
 - Existing campaign saves use version checks, durable browser retry references and private database idempotency records. Unknown outcomes retry the original payload; old-account responses cannot populate a switched account.
 
 ## Activation

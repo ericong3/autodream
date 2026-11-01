@@ -1063,6 +1063,7 @@ export interface KanbanColumn {
 export type PaymentType =
   | 'salesman_commission'
   | 'intake_bonus'
+  | 'campaign_bonus'
   | 'salary'
   | 'allowance'
   | 'source_commission'
@@ -1176,6 +1177,8 @@ export interface Shipment {
 }
 
 export interface Payment {
+  bonusCampaignId?: string;
+  bonusMonth?: string;
   id: string;
   type: PaymentType;
   // Source references

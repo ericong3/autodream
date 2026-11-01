@@ -1,3 +1,4 @@
+import { campaignBonusFor } from '../utils/campaignPayroll';
 import { salesCommission } from '../utils/salesCommission';
 import { useState } from 'react';
 import { FileText, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -18,6 +19,7 @@ export default function MyPayslipCard() {
   const currentUser = useStore((s) => s.currentUser);
   const cars = useStore((s) => s.cars);
   const customers = useStore((s) => s.customers);
+  const payments = useStore(s=>s.payments);
   const payslips = useStore((s) => s.payslips);
   const addPayslip = useStore((s) => s.addPayslip);
 
@@ -56,7 +58,7 @@ export default function MyPayslipCard() {
     setGenerating(true);
     try {
       const [year, month] = monthFilter.split('-');
-      const draft = computePayslipDraft({ user: currentUser, month: monthFilter, salesCommission: monthCommission });
+      const draft = computePayslipDraft({ user: currentUser, month: monthFilter, salesCommission: monthCommission, campaignBonus: campaignBonusFor(payments,currentUser.id,monthFilter) });
       const payslip: Payslip = {
         ...draft,
         id: generateId(),

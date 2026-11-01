@@ -98,6 +98,7 @@ export function computePayslipDraft(opts: {
   user: User;
   month: string; // 'YYYY-MM'
   salesCommission: number; // caller computes from cars/customers for this user+month
+  campaignBonus?: number; // confirmed campaign earnings; already allocated, never prorated again
 }): Pick<Payslip,
   'userId' | 'payPeriodStart' | 'payPeriodEnd' |
   'basicSalary' | 'salesCommission' | 'performanceBonus' | 'allowance' |
@@ -113,7 +114,7 @@ export function computePayslipDraft(opts: {
   const basicSalary = isFullTime ? round2((user.basicSalary ?? 0) * proration) : 0;
   const allowance = isFullTime ? round2((user.allowance ?? 0) * proration) : 0;
   const boostActive = isFullTime && !!user.temporaryBoost && !!user.temporaryBoostUntil && month <= user.temporaryBoostUntil;
-  const performanceBonus = isFullTime ? round2(((user.salaryIncrement ?? 0) + (boostActive ? user.temporaryBoost! : 0)) * proration) : 0;
+  const performanceBonus = (isFullTime ? round2(((user.salaryIncrement ?? 0) + (boostActive ? user.temporaryBoost! : 0)) * proration) : 0) + (opts.campaignBonus ?? 0);
   const wage = basicSalary + allowance;
   const grossTaxable = basicSalary + salesCommission + performanceBonus + allowance;
   const epfEmployee = calcEpfEmployee(wage);
