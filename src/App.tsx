@@ -1,3 +1,4 @@
+import BonusCampaigns from './pages/BonusCampaigns';
 import React, { useEffect, useState, lazy, Suspense } from 'react';
 import {
   HashRouter,
@@ -296,6 +297,7 @@ export default function App() {
           <Route path="/loan-cases" element={<RequireSalesOrDirector><LoanCases /></RequireSalesOrDirector>} />
           <Route path="/finance" element={<RequireDirector><Finance /></RequireDirector>} />
           <Route path="/payroll" element={<RequireDirector><Payroll /></RequireDirector>} />
+          <Route path="/payroll/bonus-campaigns" element={<RequireDirector><BonusCampaigns /></RequireDirector>} />
           <Route path="/team" element={<RequireDirector><TeamMembers /></RequireDirector>} />
           <Route path="/data" element={<RequireDataAccess><Data /></RequireDataAccess>} />
           <Route path="/investors" element={<RequireDirector><Investors /></RequireDirector>} />

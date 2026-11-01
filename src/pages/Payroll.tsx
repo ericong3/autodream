@@ -1,3 +1,4 @@
+import PayrollTabs from '../components/PayrollTabs';
 import { useState } from 'react';
 import { Wallet, Edit2, ChevronLeft, ChevronRight, ChevronDown, Shield, UserCheck, Wrench, Settings, CheckCircle2, Clock, FileText } from 'lucide-react';
 import { useStore } from '../store';
@@ -345,6 +346,8 @@ export default function Payroll() {
         <h1 className="text-white text-xl font-bold flex items-center gap-2"><Wallet size={20} className="text-gold-400" />Payroll</h1>
         <p className="text-gray-500 text-sm mt-0.5">Full-time staff rates and monthly payroll runs</p>
       </div>
+
+      <PayrollTabs/>
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

@@ -1,0 +1,62 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {pathToFileURL} from 'node:url';
+import {resolve} from 'node:path';
+process.on('uncaughtException',e=>{console.error(e.message,e.where??'');process.exit(1);});
+const {PGlite}=await import(pathToFileURL(resolve(process.argv[2],'dist/index.js')));
+const db=new PGlite();
+await db.exec(`create role anon;create role authenticated;create role service_role;
+ create table garage_building_staff(id text primary key,name text,role text,business_access text,enabled boolean,registration_status text);
+ insert into garage_building_staff values('director','Director','director','both',true,'active'),('share','Shareholder','shareholder','both',true,'active'),('garage','Garage Head','garage_head','garage',true,'active'),('admin','Admin','admin','used_car',true,'active'),('a','Sales A','salesperson','used_car',true,'active'),('b','Sales B','salesperson','both',true,'active'),('c','Sales C','salesperson','used_car',true,'active'),('d','Sales D','salesperson','used_car',true,'active'),('off','Disabled','salesperson','used_car',false,'active');
+ create table cars(id text primary key,car_plate text,make text,model text,status text,consignment jsonb,outgoing_consignment jsonb);
+ create table customers(id text primary key,interested_car_id text,delivered boolean,delivered_at timestamptz);
+ create table payslips(id text primary key,amount numeric);insert into payslips values('historic',1234.56);
+ create table payments(id text primary key,amount numeric);insert into payments values('historic-payment',1234.56);`);
+const installation=readFileSync(new URL('../docs/used-car-bonus-campaigns-INSTALL-AND-CHECK.sql',import.meta.url),'utf8');
+const migration=readFileSync(new URL('../supabase/migrations/20261101000000_used_car_bonus_campaigns.sql',import.meta.url),'utf8');
+assert.ok(installation.replaceAll('\r\n','\n').includes(migration.replaceAll('\r\n','\n').trim()));
+await db.exec(installation);
+await assert.rejects(()=>db.exec(installation),/already exists/);await db.exec('rollback');
+const call=async(actor,action,data={})=>(await db.query('select used_car_bonus_campaign($1,$2,$3) r',[actor,action,data])).rows[0].r;
+let serial=0;const key=()=>`bonus-disposable-${++serial}`;
+const now=new Date(),year=now.getUTCFullYear()-1,month=`${year}-10`,end=`${year}-12`;
+const campaign={title:'Sample year-end',startMonth:month,endMonth:end,minimumUnits:6,amountPerUnit:500,participantIds:['a','b','c','d']};
+for(const actor of ['a','garage','admin',null])await assert.rejects(()=>call(actor,'list'),/NOT_ALLOWED/);
+const saveRequest={requestId:key(),campaign};const saved=await call('director','save',saveRequest);assert.deepEqual(await call('director','save',saveRequest),saved);
+await assert.rejects(()=>call('director','save',{...saveRequest,campaign:{...campaign,amountPerUnit:900}}),/REQUEST_CHANGED/);
+await assert.rejects(()=>call('share','save',{requestId:key(),campaign}),/NOT_ALLOWED/);
+assert.equal((await call('share','list')).campaigns.length,1);
+await assert.rejects(()=>call('director','save',{requestId:key(),campaign:{...campaign,participantIds:['a','a']}}),/INVALID/);
+await assert.rejects(()=>call('director','save',{requestId:key(),campaign:{...campaign,participantIds:['off']}}),/NOT_ALLOWED/);
+await assert.rejects(()=>call('director','save',{requestId:key(),id:saved.id,revision:999,campaign}),/REVISION_CONFLICT/);
+const edited=await call('director','save',{requestId:key(),id:saved.id,revision:1,campaign});assert.equal(edited.revision,2);
+await call('director','publish',{requestId:key(),id:saved.id,revision:2});
+await assert.rejects(()=>call('director','save',{requestId:key(),id:saved.id,revision:3,campaign:{...campaign,amountPerUnit:999}}),/PUBLISHED_LOCKED/);
+for(let n=1;n<=5;n++){await db.query("insert into cars values($1,$1,'Sample','Car','delivered',null,null)",['car-'+n]);await db.query('insert into customers values($1,$2,true,$3)',['customer-'+n,'car-'+n,`${month}-15T12:00:00Z`]);}
+let preview=await call('director','preview',{id:saved.id,month});assert.equal(preview.units,5);assert.equal(preview.pool,0);assert.ok(preview.shares.every(s=>s.amount===0));
+await db.query("insert into cars values('six','SIX','Sample','Car','delivered',null,null)");await db.query("insert into customers values('six-customer','six',true,$1)",[`${month}-31T15:59:59Z`]);
+// Duplicate leads must not double count the same delivered unit.
+await db.query("insert into customers values('duplicate-lead','six',true,$1)",[`${month}-31T15:59:59Z`]);
+preview=await call('director','preview',{id:saved.id,month});assert.equal(preview.units,6);assert.equal(preview.pool,3000);assert.ok(preview.shares.every(s=>s.amount===750));
+// Malaysian midnight belongs to the next month; dealer consignments never qualify.
+await db.query("insert into cars values('boundary','BOUNDARY','Sample','Car','delivered',null,null),('dealer','DEALER','Sample','Car','delivered','{}',null),('out','OUT','Sample','Car','delivered',null,'{}')");
+await db.query("insert into customers values('boundary-customer','boundary',true,$1),('dealer-customer','dealer',true,$2),('out-customer','out',true,$2)",[`${month}-31T16:00:00Z`,`${month}-15T12:00:00Z`]);
+assert.equal((await call('director','preview',{id:saved.id,month})).units,6);
+const stale=preview;
+await db.exec("update cars set status='available' where id='car-1'");
+await assert.rejects(()=>call('director','confirm_month',{id:saved.id,month,requestId:key(),previewHash:stale.previewHash}),/PREVIEW_CHANGED/);
+preview=await call('director','preview',{id:saved.id,month});assert.equal(preview.issues.length,1);
+await assert.rejects(()=>call('director','confirm_month',{id:saved.id,month,requestId:key(),previewHash:preview.previewHash}),/DELIVERY_REVIEW_REQUIRED/);
+await db.exec("update cars set status='delivered' where id='car-1'");preview=await call('director','preview',{id:saved.id,month});
+const confirmRequest={id:saved.id,month,requestId:key(),previewHash:preview.previewHash};const confirmed=await call('director','confirm_month',confirmRequest);assert.equal(confirmed.confirmed,true);assert.equal(confirmed.pool,3000);assert.deepEqual(await call('director','confirm_month',confirmRequest),confirmed);
+await db.exec("update cars set status='available' where id='car-2';update garage_building_staff set name='Renamed' where id='a'");
+assert.deepEqual(await call('director','preview',{id:saved.id,month}),confirmed,'confirmed history survives later sales and staff changes');
+// A second campaign has independent rules and does not replace the first.
+const other=await call('director','save',{requestId:key(),campaign:{...campaign,title:'Independent campaign',minimumUnits:1,amountPerUnit:0.01,participantIds:['a','b','c']}});
+const split=await call('director','preview',{id:other.id,month});assert.equal(split.pool,0.05);assert.equal(split.shares.reduce((s,p)=>s+Math.round(p.amount*100),0),5);assert.deepEqual(split.shares.map(s=>s.amount),[0.02,0.02,0.01]);
+const current=(await db.query("select to_char(now() at time zone 'Asia/Kuala_Lumpur','YYYY-MM') m")).rows[0].m;
+const future=await call('director','save',{requestId:key(),campaign:{...campaign,startMonth:current,endMonth:current}});await call('director','publish',{requestId:key(),id:future.id,revision:1});
+const futurePreview=await call('director','preview',{id:future.id,month:current});await assert.rejects(()=>call('director','confirm_month',{requestId:key(),id:future.id,month:current,previewHash:futurePreview.previewHash}),/FUTURE_MONTH/);
+assert.deepEqual((await db.query('select * from payslips')).rows,[{id:'historic',amount:'1234.56'}]);assert.equal((await db.query('select count(*)::int n from payments')).rows[0].n,1);
+for(const role of ['anon','authenticated']){await db.exec(`set role ${role}`);await assert.rejects(()=>db.query('select * from used_car_bonus_months'),/permission denied/);await assert.rejects(()=>db.query("select used_car_bonus_campaign('director','list','{}')"),/permission denied/);await db.exec('reset role');}
+await db.close();console.log('PASS: private campaigns, draft revisions, director-only mutations, enrolment, replay, 5/6-unit threshold, all-unit pool, own-stock/date criteria, cents split, stale preview rejection, frozen history, future-month protection and unchanged payroll.');

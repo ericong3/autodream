@@ -2,7 +2,9 @@ import {ApiError,authenticate,canUseApp,respond,readJson,onlyKeys} from '../gara
 import {createHash} from 'node:crypto';
 import {handleReferralAccounts,isReferralAccountRequest} from '../referrals/accounts.mjs';
 import {handleSalesReferrals,isSalesReferralRequest,validateSalesAssignment} from '../referrals/sales.mjs';
+import {handleBonusCampaigns,isBonusCampaignRequest} from '../usedCar/bonusCampaigns.mjs';
 export async function handleSales(req,deps){
+ if(isBonusCampaignRequest(req))return handleBonusCampaigns(req,deps);
  if(isSalesReferralRequest(req))return handleSalesReferrals(req,deps);
  if(isReferralAccountRequest(req))return handleReferralAccounts(req,deps);
  return respond(req,deps,['POST'],async(ctx,res)=>{
