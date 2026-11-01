@@ -1,3 +1,4 @@
+import type {BonusPayrollSnapshot} from '../utils/campaignPayroll';
 import {useEffect,useRef,useState} from 'react';
 import {Plus,Copy,Users,CalendarDays,Gift,CheckCircle2} from 'lucide-react';
 import {useStore} from '../store';
@@ -43,8 +44,9 @@ export default function BonusCampaigns(){
   let operation=pendingRef.current;
   if(!operation){operation={action,data:{...data,requestId:crypto.randomUUID()}};try{localStorage.setItem(storageKey,JSON.stringify(operation));}catch{setError('Could not keep the save reference. Free some browser storage before trying again.');return;}pendingRef.current=operation;setPending(operation);}
   lock.current=true;setBusy(true);setError('');setNotice('');
-  try{const response=await bonusCampaignRequest<{id?:string}&Partial<BonusResult>>(operation.action,operation.data);
+  try{const response=await bonusCampaignRequest<{id?:string}&Partial<BonusResult>&BonusPayrollSnapshot>(operation.action,operation.data);
    if(mine!==epoch.current)return;
+   if(response.payrollPosted)useStore.getState().applyBonusPayrollPosting(actor,response);
    localStorage.removeItem(storageKey);pendingRef.current=null;setPending(null);setFormOpen(false);setConfirmation(null);setNotice(['confirm_month','confirm_and_post','post_payroll'].includes(operation.action)?(response.payrollPosted?'Confirmed bonus added to payroll and Staff Bonus Expense. No money transferred.':'Monthly result confirmed. Add it to payroll when ready.'):operation.action==='publish'?'Campaign published. Its rules and enrolment are now fixed.':'Draft saved. Enrolment and rules can be changed before publishing.');
    if(['confirm_month','confirm_and_post','post_payroll'].includes(operation.action)&&response.campaignId)setResult(response as BonusResult);
    await load();

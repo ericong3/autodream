@@ -1,5 +1,6 @@
 import { garageSessionRequest, secureGarageLoginEnabled } from '../lib/garageSession';
 import { mergeLegacyIdentity } from '../utils/garageIdentity';
+import { mergeBonusRows, type BonusPayrollSnapshot } from '../utils/campaignPayroll';
 import { bonusCampaignRequest } from '../lib/bonusCampaigns';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
@@ -205,6 +206,7 @@ interface StoreState {
   payments: Payment[];
   addPayment: (payment: Payment) => Promise<void>;
   batchAddPayments: (payments: Payment[]) => Promise<void>;
+  applyBonusPayrollPosting: (actor: string, snapshot: BonusPayrollSnapshot) => void;
   updatePayment: (id: string, updates: Partial<Payment>) => Promise<void>;
   deletePayment: (id: string) => Promise<void>;
 
@@ -1487,11 +1489,11 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         suppliers:           suppliers.data            ? (suppliers.data as Supplier[])                                         : s.suppliers,
         merchants:           merchants.data            ? (merchants.data as Merchant[])                                         : s.merchants,
         claimCategories:     claimCategories.data       ? (claimCategories.data as ClaimCategory[])                              : s.claimCategories,
-        ledgerAccounts:      ledgerAccounts.data        ? ledgerAccounts.data.map(rowToLedgerAccount)                            : s.ledgerAccounts,
-        journalEntries:      journalEntries.data        ? journalEntries.data.map(rowToJournalEntry)                             : s.journalEntries,
+        ledgerAccounts:      ledgerAccounts.data        ? mergeBonusRows(ledgerAccounts.data.map(rowToLedgerAccount),s.ledgerAccounts,a=>a.id==='acct-exp-campaign-bonus')                            : s.ledgerAccounts,
+        journalEntries:      journalEntries.data        ? mergeBonusRows(journalEntries.data.map(rowToJournalEntry),s.journalEntries,j=>j.sourceType==='campaign_bonus'||j.sourceType==='campaign_bonus_paid')                             : s.journalEntries,
         loanCaseDocuments:   loanCaseDocsResult.data   ? loanCaseDocsResult.data.map(rowToLoanCaseDocument)                     : s.loanCaseDocuments,
         loanCaseActivities:  loanCaseActivitiesResult.data ? loanCaseActivitiesResult.data.map(rowToLoanCaseActivity)           : s.loanCaseActivities,
-        payments:            paymentsResult.data       ? paymentsResult.data.map(rowToPayment)                                  : s.payments,
+        payments:            paymentsResult.data       ? mergeBonusRows(paymentsResult.data.map(rowToPayment),s.payments,p=>p.type==='campaign_bonus')                                  : s.payments,
         investorTransactions:investorTxnsResult.data   ? investorTxnsResult.data.map(rowToInvestorTxn)                          : s.investorTransactions,
         shipments:           shipmentsResult.data      ? shipmentsResult.data.map(rowToShipment)                                : s.shipments,
         carMovements:        carMovementsResult.data   ? carMovementsResult.data.map(rowToCarMovement)                           : s.carMovements,
@@ -2615,6 +2617,11 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       `${payment.recipientName} · ${amtStr} · ${label}`,
       '/finance',
     );
+  },
+  applyBonusPayrollPosting: (actor, snapshot) => {
+    if (get().currentUser?.id !== actor) return;
+    const payments=(snapshot.payrollPayments??[]).map(rowToPayment),journal=snapshot.payrollJournal?rowToJournalEntry(snapshot.payrollJournal):null,account=snapshot.payrollAccount?rowToLedgerAccount(snapshot.payrollAccount):null;
+    set(s=>({payments:mergeBonusRows(payments,s.payments,p=>p.type==='campaign_bonus'||!payments.some(n=>n.id===p.id)),journalEntries:journal?[journal,...s.journalEntries.filter(j=>j.id!==journal.id)]:s.journalEntries,ledgerAccounts:account?[account,...s.ledgerAccounts.filter(a=>a.id!==account.id)]:s.ledgerAccounts}));
   },
   batchAddPayments: async (newPayments) => {
     if (!newPayments.length) return;

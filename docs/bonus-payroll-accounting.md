@@ -29,3 +29,5 @@ The live preflight found the existing payment type constraint omitted salary and
 ## Verification
 
 Full application tests/build, endpoint role and forged-field tests, UI confirmation wording/action tests, frozen payment-month/payroll earnings and payslip tests. Disposable PostgreSQL rehearsals cover the exact installer with LF/Windows CRLF, mid-posting rollback, four shares, repeat confirmation/posting/settlement, zero bonus, old-client confirmation, immutable protected records, private helpers, no duplicate expense on settlement, and unchanged existing financial records.
+
+Posting responses return the committed payroll, expense entry and account together. The app merges them immediately for the same signed-in user; late background finance reads cannot remove a new bonus or revert a recorded bonus payment. This refresh-only follow-up creates no additional financial records.

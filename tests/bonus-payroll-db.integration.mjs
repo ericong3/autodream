@@ -24,6 +24,7 @@ await db.exec(load('../supabase/migrations/20261101020000_bonus_early_commission
 const installation=load('../docs/bonus-payroll-INSTALL-AND-CHECK.sql');
 assert.ok(installation.includes(load('../supabase/migrations/20261101030000_bonus_payroll_accounting.sql').trim()));
 await db.exec(process.argv[3]==='crlf'?installation.replaceAll('\n','\r\n'):installation);
+await db.exec(load('../supabase/migrations/20261101040000_bonus_payroll_refresh.sql'));
 assert.equal((await db.query('select count(*)::int n from payments')).rows[0].n,1);
 assert.equal((await db.query('select count(*)::int n from journal_entries')).rows[0].n,1);
 const call=async(actor,action,data)=>(await db.query('select used_car_bonus_campaign($1,$2,$3) r',[actor,action,data])).rows[0].r;
@@ -45,7 +46,7 @@ assert.equal((await db.query('select count(*)::int n from used_car_bonus_months'
 assert.equal((await db.query('select count(*)::int n from journal_entries')).rows[0].n,1);
 assert.equal((await db.query('select count(*)::int n from payments')).rows[0].n,1);
 await db.exec('drop trigger simulated_failure on payments');
-const confirmed=await call('director','confirm_and_post',request);assert.equal(confirmed.confirmed,true);assert.equal(confirmed.payrollPosted,true);
+const confirmed=await call('director','confirm_and_post',request);assert.equal(confirmed.confirmed,true);assert.equal(confirmed.payrollPosted,true);assert.equal(confirmed.payrollPayments.length,4);assert.equal(confirmed.payrollAccount.id,'acct-exp-campaign-bonus');
 assert.deepEqual(await call('director','confirm_and_post',request),confirmed);
 assert.equal((await call('director','preview',{id,month})).payrollPosted,true);
 await call('director','post_payroll',{id,month,requestId:key()});

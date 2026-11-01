@@ -6,6 +6,14 @@ import {readFileSync} from 'node:fs';
 const modules=new Map();
 function load(path){const url=new URL(path,import.meta.url);if(modules.has(url.href))return modules.get(url.href);const module={exports:{}};modules.set(url.href,module.exports);vm.runInNewContext(ts.transpileModule(readFileSync(url,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{module,exports:module.exports,Date,Math,Map,crypto:{randomUUID:()=>String(Math.random())},require:n=>load(new URL(n+'.ts',url).href)});return module.exports;}
 const {campaignBonusFor}=load('../src/utils/campaignPayroll.ts'),{computePayslipDraft}=load('../src/utils/payslip.ts');
+test('late background finance responses cannot remove a posted bonus or revert recorded payment',()=>{
+ const {mergeBonusRows}=load('../src/utils/campaignPayroll.ts');
+ const paid={id:'bonus',type:'campaign_bonus',status:'transferred',amount:750};
+ const protectedRow=p=>p.type==='campaign_bonus';
+ assert.equal(mergeBonusRows([], [paid],protectedRow).length,1);
+ assert.equal(mergeBonusRows([{...paid,status:'pending'}],[paid],protectedRow)[0].status,'transferred');
+ assert.equal(mergeBonusRows([], [{id:'unrelated',type:'salary'}],protectedRow).length,0);
+});
 test('campaign payroll earnings use frozen payments for the right staff and month, once per ID',()=>{
  const p={id:'one',type:'campaign_bonus',recipientId:'a',bonusMonth:'2026-10',amount:750,status:'pending'};
  assert.equal(campaignBonusFor([p,p,{...p,id:'two',amount:100,status:'transferred'},{...p,id:'other-person',recipientId:'b'},{...p,id:'other-month',bonusMonth:'2026-11'},{...p,id:'per-car',type:'salesman_commission'}],'a','2026-10'),850);

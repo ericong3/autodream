@@ -9,19 +9,20 @@ const libModule={exports:{}};vm.runInNewContext(transpile(readFileSync(new URL('
 const library=libModule.exports;
 const sample={id:'11111111-1111-4111-8111-111111111111',title:'Example campaign',startMonth:'2026-10',endMonth:'2026-12',minimumUnits:6,amountPerUnit:500,revision:1,publishedAt:null,participants:[{id:'sales',name:'Example salesperson'}],confirmedMonths:[]};
 function fixture({role='director',request,storage=new Map()}={}){
- let cursor=0,tree,dirty=true,actor='director',serial=0;const slots=[],effects=[],calls=[];
+ let cursor=0,tree,dirty=true,actor='director',serial=0;const slots=[],effects=[],calls=[],postings=[];
  const react={useState(initial){const i=cursor++;if(!(i in slots))slots[i]=typeof initial==='function'?initial():initial;return [slots[i],value=>{const next=typeof value==='function'?value(slots[i]):value;if(next!==slots[i]){slots[i]=next;dirty=true;}}];},useRef(initial){const i=cursor++;return slots[i]??(slots[i]={current:initial});},useEffect(fn,deps){const i=cursor++,old=slots[i];if(!old||deps.some((d,k)=>d!==old.deps[k])){slots[i]={deps,cleanup:old?.cleanup};effects.push(()=>{slots[i].cleanup?.();slots[i].cleanup=fn();});}}};
  const list={enabled:true,campaigns:[sample],participants:sample.participants,hasMore:false};
  const api=async(action,data)=>{calls.push({action,data:JSON.parse(JSON.stringify(data??{}))});return request?request(action,data):list;};
+ const useStore=Object.assign(select=>select({currentUser:{id:actor,role}}),{getState:()=>({applyBonusPayrollPosting(actor,snapshot){postings.push({actor,snapshot});}})});
  const jsx=(type,props)=>({type,props}),module={exports:{}};
- vm.runInNewContext(transpile(readFileSync(new URL('../src/pages/BonusCampaigns.tsx',import.meta.url),'utf8')),{module,exports:module.exports,Intl,Date,crypto:{randomUUID:()=>`bonus-request-${++serial}`},localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},require:n=>n==='react'?react:n==='react/jsx-runtime'?{jsx,jsxs:jsx}:n.endsWith('/store')?{useStore:select=>select({currentUser:{id:actor,role}})}:n.endsWith('/bonusCampaigns')?{...library,bonusCampaignRequest:api}:n.endsWith('/format')?{formatRM:n=>`RM${n}`}:n==='lucide-react'?new Proxy({},{get:(_,name)=>String(name)}):{default:n.split('/').at(-1)}});
+ vm.runInNewContext(transpile(readFileSync(new URL('../src/pages/BonusCampaigns.tsx',import.meta.url),'utf8')),{module,exports:module.exports,Intl,Date,crypto:{randomUUID:()=>`bonus-request-${++serial}`},localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},require:n=>n==='react'?react:n==='react/jsx-runtime'?{jsx,jsxs:jsx}:n.endsWith('/store')?{useStore}:n.endsWith('/bonusCampaigns')?{...library,bonusCampaignRequest:api}:n.endsWith('/format')?{formatRM:n=>`RM${n}`}:n==='lucide-react'?new Proxy({},{get:(_,name)=>String(name)}):{default:n.split('/').at(-1)}});
  function nodes(n,out=[]){if(Array.isArray(n))n.forEach(v=>nodes(v,out));else if(n&&typeof n==='object'){if(n.type==='Modal'&&!n.props.isOpen)return out;out.push(n);nodes(n.props?.children,out);}return out;}
  function text(n){if(Array.isArray(n))return n.map(text).join('');if(n&&typeof n==='object')return text(n.props?.children);return typeof n==='string'||typeof n==='number'?String(n):'';}
  const render=()=>{cursor=0;dirty=false;tree=module.exports.default();while(effects.length)effects.shift()();};
  const all=()=>nodes(tree),flush=async()=>{for(let i=0;i<8;i++){if(dirty)render();await new Promise(setImmediate);}};
  const button=name=>all().find(n=>n.type==='button'&&text(n).trim()===name);
  const input=name=>{const label=all().find(n=>n.type==='label'&&text(n).startsWith(name));return nodes(label).find(n=>n.type==='input');};
- return {calls,storage,flush,all,text:()=>text(tree),button,click(name){const b=button(name);assert.ok(b,`Button missing: ${name}`);assert.ok(!b.props.disabled,`Button disabled: ${name}`);b.props.onClick();},change(name,value){input(name).props.onChange({target:{value}});},submit(){all().find(n=>n.type==='form').props.onSubmit({preventDefault(){}});},actor(next){actor=next;dirty=true;}};
+ return {calls,postings,storage,flush,all,text:()=>text(tree),button,click(name){const b=button(name);assert.ok(b,`Button missing: ${name}`);assert.ok(!b.props.disabled,`Button disabled: ${name}`);b.props.onClick();},change(name,value){input(name).props.onChange({target:{value}});},submit(){all().find(n=>n.type==='form').props.onSubmit({preventDefault(){}});},actor(next){actor=next;dirty=true;}};
 }
 test('campaign statuses distinguish drafts, future enrolment, active months and completed periods',()=>{
  assert.equal(library.campaignView(sample,'2026-11'),'upcoming');assert.equal(library.campaignView({...sample,publishedAt:'2026-10-01'},'2026-11'),'active');assert.equal(library.campaignView({...sample,publishedAt:'2026-10-01'},'2027-01'),'completed');assert.equal(library.campaignView({...sample,publishedAt:'2026-10-01'},'2026-09'),'upcoming');
@@ -50,5 +51,5 @@ test('confirmation explains pending payroll and expense, and uses the atomic pos
  await w.flush();w.click('View progress');await w.flush();
  const month=w.all().find(n=>n.type==='select'&&n.props['aria-label']==='Result month');month.props.onChange({target:{value:'2026-10'}});await w.flush();
  w.click('Confirm monthly result');await w.flush();assert.ok(w.text().includes('pending staff pay and a department expense'));w.click('Confirm result');await w.flush();
- assert.equal(w.calls.filter(c=>c.action==='confirm_and_post').length,1);assert.ok(w.text().includes('Added to payroll and accounting'));
+ assert.equal(w.calls.filter(c=>c.action==='confirm_and_post').length,1);assert.ok(w.text().includes('Added to payroll and accounting'));assert.equal(w.postings.length,1);assert.equal(w.postings[0].actor,'director');
 });
