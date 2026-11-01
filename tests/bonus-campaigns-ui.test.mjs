@@ -27,9 +27,9 @@ test('campaign statuses distinguish drafts, future enrolment, active months and 
  assert.equal(library.campaignView(sample,'2026-11'),'upcoming');assert.equal(library.campaignView({...sample,publishedAt:'2026-10-01'},'2026-11'),'active');assert.equal(library.campaignView({...sample,publishedAt:'2026-10-01'},'2027-01'),'completed');assert.equal(library.campaignView({...sample,publishedAt:'2026-10-01'},'2026-09'),'upcoming');
  assert.deepEqual(Array.from(library.campaignMonths({...sample,startMonth:'2026-11',endMonth:'2027-01'})),['2026-11','2026-12','2027-01']);assert.equal(library.malaysiaMonth(new Date('2026-10-31T16:00:00Z')),'2026-11');
 });
-test('year-end template uses six-unit monthly threshold, RM500 and the selected enrolment',async()=>{
+test('year-end template uses five-unit monthly threshold, RM500 and the selected enrolment',async()=>{
  const w=fixture();await w.flush();w.click('New campaign');await w.flush();w.click('Use year-end 2026 rules');await w.flush();w.submit();w.submit();await w.flush();
- const saves=w.calls.filter(c=>c.action==='save');assert.equal(saves.length,1);assert.deepEqual(saves[0].data.campaign,{title:'Year-end 2026',startMonth:'2026-10',endMonth:'2026-12',minimumUnits:6,amountPerUnit:500,participantIds:['sales']});
+ const saves=w.calls.filter(c=>c.action==='save');assert.equal(saves.length,1);assert.deepEqual(saves[0].data.campaign,{title:'Year-end 2026',startMonth:'2026-10',endMonth:'2026-12',minimumUnits:5,amountPerUnit:500,participantIds:['sales']});
 });
 test('unknown saves keep a durable original request and a usable retry button inside the form',async()=>{
  let attempts=0;const w=fixture({request:async action=>{if(action==='list')return {enabled:true,campaigns:[],participants:sample.participants,hasMore:false};if(++attempts===1)throw Object.assign(Error('Connection lost'),{code:'UNAVAILABLE'});return {id:sample.id,revision:1};}});

@@ -1,19 +1,19 @@
 # Used Car Bonus Campaigns
 
-Prepared locally on 1 November 2026. Not installed, pushed or deployed. Garage development remains paused. The Noah recon commission and PPU7298 delivered-status correction remain separate unfinished work.
+Activated and published on 1 November 2026 with four enrolled salespeople. Noah recon commission and PPU7298 delivery repairs are live. Garage development remains paused. See bonus-early-commission.md for the owner-requested target and early-credit correction.
 
 ## Confirmed campaign rule
 
 - Monthly calculation for October, November and December 2026.
-- At least six actual company-owned deliveries unlocks RM500 for every qualifying unit that month.
+- At least five qualifying company-owned units unlocks RM500 for every qualifying unit that month.
 - The whole pool is split equally among the campaign's enrolled Used Car salespeople. Whole cents are allocated deterministically so the shares add back to the pool.
 - Dealer consignments and consignments out do not qualify as company stock. Recon classification alone does not establish ownership.
-- Uses actual customer handover dates in Malaysia time. Early commission credit, deal submission date and intake date are not handover evidence. Duplicate leads do not count a unit twice.
+- Uses the existing Credit Commission Early month when enabled; otherwise uses actual customer handover dates in Malaysia time. Deal submission and intake dates are not used as a substitute. Duplicate leads and later delivery cannot count a unit twice. Confirmed results remain frozen.
 
 ## Management and history
 
 - Payroll has a separate Bonus Campaigns section with Active, Upcoming and Completed views.
-- Directors create/edit drafts, choose the month range, minimum deliveries, bonus per unit and enrolled salespeople, then publish. The year-end template pre-fills the confirmed rule; it does not create a real campaign automatically.
+- Directors create/edit drafts, choose the month range, minimum qualifying units, bonus per unit and enrolled salespeople, then publish. The year-end template pre-fills the confirmed rule; it does not create a real campaign automatically.
 - Published rules and enrolment stay fixed. Copy creates an independent draft for new rules. Published campaigns are additive; the publish review states this explicitly.
 - Shareholders retain Payroll oversight but cannot change rules, enrolment or confirm months. Other roles cannot read this management endpoint.
 - Monthly figures remain estimates until the month ends and a director reviews and confirms the breakdown. A preview hash detects changed deliveries before confirmation. Conflicting/missing delivery evidence blocks confirmation.
@@ -33,7 +33,7 @@ No migration or production deployment is authorised by this document. While the 
 
 ## Verification
 
-- Full application build and 230 automated tests passed.
+- Full application build and 234 automated tests passed, plus targeted PostgreSQL integration rehearsals.
 - Exact guarded script rehearsed in a disposable PostgreSQL database: privacy, repeated-install stop, immutable published rules, stale edits, eligible enrolment, request replay, 5/6-unit threshold, all-unit pool, own-stock criteria, Malaysian month boundary, duplicate lead handling, cent allocation, changed-preview rejection, unresolved delivery blockers, frozen confirmed history, current/future-month confirmation rejection, and unchanged existing payslips/payments.
 - API tests cover session-derived actors, role/department access, CSRF, inactive rollout, input precision/ranges, server-calculated amounts and private errors.
 - UI tests cover status categories, the year-end template, duplicate clicks, durable retry/reload, old-account responses and shareholder read-only access.
