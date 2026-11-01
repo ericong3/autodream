@@ -72,7 +72,7 @@ export default function PayslipDocument({ payslip: p, employee, ytd }: {
           </div>
           <LineItem label="Basic Salary" value={p.basicSalary} />
           <LineItem label="Sales Commission" value={p.salesCommission} />
-          <LineItem label="Performance Bonus" value={p.performanceBonus} />
+          <LineItem label="Bonus" value={p.performanceBonus} />
           <LineItem label="Allowance" value={p.allowance} />
           <div className="flex items-center justify-between pt-1.5 mt-1.5 border-t" style={{ borderColor: '#e5d9c0' }}>
             <span className="text-xs font-bold tracking-wide" style={heading}>TOTAL EARNINGS</span>

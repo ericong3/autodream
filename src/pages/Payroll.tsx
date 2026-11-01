@@ -709,7 +709,7 @@ export default function Payroll() {
                 <input type="number" className={inputCls()} value={payslipForm.salesCommission} min={0}
                   onChange={(e) => setPayslipForm({ ...payslipForm, salesCommission: Number(e.target.value) })} />
               </FormField>
-              <FormField label="Performance Bonus">
+              <FormField label="Bonus">
                 <input type="number" className={inputCls()} value={payslipForm.performanceBonus} min={0}
                   onChange={(e) => setPayslipForm({ ...payslipForm, performanceBonus: Number(e.target.value) })} />
               </FormField>
