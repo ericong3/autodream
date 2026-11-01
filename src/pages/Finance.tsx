@@ -1,3 +1,4 @@
+import { salesCommission } from '../utils/salesCommission';
 import { useMemo, useState } from 'react';
 import { DollarSign, TrendingUp, Car, Wrench, Award, ChevronLeft, ChevronRight, Wallet, BookOpen, Plus, Trash2, ScrollText, Ban, Scale, Landmark } from 'lucide-react';
 import { useStore } from '../store';
@@ -102,13 +103,7 @@ export default function Finance() {
     return dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
   };
 
-  const calcCommission = (car: typeof cars[0]): number => {
-    if (car.outgoingConsignment || car.isStaffSale) return 0;
-    const wo = getWorkOrder(car);
-    const dealPrice = ((wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0)) || car.sellingPrice;
-    if (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) return 1000;
-    return 1500;
-  };
+  const calcCommission = (car: typeof cars[0]): number => salesCommission(car, customers);
 
   // Per-car data (compute first so totals derive from it)
   const carData = soldCarsThisMonth.map((car) => {

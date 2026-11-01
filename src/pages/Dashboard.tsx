@@ -1,3 +1,4 @@
+import { salesCommission } from '../utils/salesCommission';
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -78,7 +79,7 @@ export default function Dashboard() {
     const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
 
     const profitBeforeComm = dealPrice - car.purchasePrice - repairCost - miscCost;
-    const commission = (car.outgoingConsignment || car.isStaffSale || car.waiveCommission) ? 0 : (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
+    const commission = salesCommission(car, customers);
     const intakeComm = car.intakeCommission ?? 0;
     const sourceComm = car.sourceCommission ?? 0;
 

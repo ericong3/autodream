@@ -1,3 +1,4 @@
+import { salesCommission } from '../utils/salesCommission';
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { createPortal } from 'react-dom';
@@ -423,7 +424,7 @@ export default function Inventory() {
       const repairCosts = repairs.filter(r => r.carId === car.id && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
       const miscCosts = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
       const profitBeforeComm = dealPrice - car.purchasePrice - repairCosts - miscCosts;
-      const commission = (car.outgoingConsignment || car.isStaffSale || car.waiveCommission) ? 0 : (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
+      const commission = salesCommission(car, customers);
       map[car.id] = profitBeforeComm - commission;
     }
     return map;
@@ -2661,6 +2662,7 @@ export default function Inventory() {
         const isLoan = !!buyer.loanWorkOrder;
 
         const handleCancelDeal = async () => {
+          if (buyer.delivered || car.status === 'delivered') { toast.error('Delivered deals cannot be cancelled.'); return; }
           const { updateCar } = useStore.getState();
           // Close overlay first — the optimistic store update below causes a re-render
           // while the sheet is still open, which crashes because loanWorkOrder becomes undefined.
@@ -2673,15 +2675,12 @@ export default function Inventory() {
             updateCustomer(buyer.id, { cashWorkOrder: undefined, dealPrice: 0, leadStatus: 'follow_up' });
             await supabase.from('customers').update({ cash_work_order: null, deal_price: 0 }).eq('id', buyer.id);
           }
-          updateCar(car.id, { status: 'available', finalDeal: undefined });
-          await supabase.from('cars').update({ status: 'available', final_deal: null }).eq('id', car.id);
+          await updateCar(car.id, { status: 'available', finalDeal: undefined });
         };
 
         const handleDelivery = async () => {
           const { updateCar } = useStore.getState();
-          const wo = buyer.loanWorkOrder ?? buyer.cashWorkOrder;
-          const dealPrice = wo ? (wo.sellingPrice - (wo.discount ?? 0)) : (car.sellingPrice ?? 0);
-          const commission = (car.isStaffSale || car.waiveCommission) ? 0 : (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
+          const commission = salesCommission(car, customers);
           try {
             // Car first — it's what actually pulls the unit out of Stock. These
             // used to fire independently with no error handling, so a failed

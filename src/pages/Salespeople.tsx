@@ -1,3 +1,4 @@
+import { salesCommission } from '../utils/salesCommission';
 import React, { useState } from 'react';
 import { Plus, Edit, Trash2, Users, AlertCircle } from 'lucide-react';
 import { useStore } from '../store';
@@ -47,14 +48,7 @@ export default function Salespeople() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const calcCommission = (car: typeof cars[0]): number => {
-    if (car.outgoingConsignment) return 0;
-    const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
-    const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
-    const dealPrice = (wo?.sellingPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
-    if (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) return 1000;
-    return 1500;
-  };
+  const calcCommission = (car: typeof cars[0]): number => salesCommission(car, customers);
 
   const getDealSalespersonId = (car: typeof cars[0]): string | undefined => {
     const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));

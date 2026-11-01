@@ -275,6 +275,8 @@ function parseJsonField<T>(v: any): T | undefined {
 // Map snake_case DB row to camelCase Car
 function rowToCar(r: any): Car {
   return {
+    isRecon: r.is_recon ?? false,
+    salesCommission: r.sales_commission ?? undefined,
     id: r.id,
     make: r.make ?? '',
     model: r.model ?? '',
@@ -536,6 +538,8 @@ function shipmentToRow(s: Partial<Shipment>) {
 
 function carToRow(c: Partial<Car>) {
   const row: any = {};
+  if (c.isRecon !== undefined) row.is_recon = c.isRecon;
+  if ('salesCommission' in c) row.sales_commission = c.salesCommission ?? null;
   if (c.id !== undefined) row.id = c.id;
   if (c.make !== undefined) row.make = c.make;
   if (c.model !== undefined) row.model = c.model;
@@ -1945,8 +1949,10 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     // #20 New car added
     sendPush(dirIds(get().users), '🚘 New car added', `${car.year} ${car.make} ${car.model} added to inventory`, '/inventory', car.id);
   },
-  updateCar: async (id, car) => {
+  updateCar: async (id, patch) => {
+    const car = { ...patch };
     const prev = get().cars.find(c => c.id === id);
+    if ((prev?.status === 'delivered' || get().customers.some(c => c.interestedCarId === id && c.delivered)) && ((car.status && car.status !== 'delivered') || ('finalDeal' in car && !car.finalDeal))) throw new Error('This car has been delivered. Its deal cannot be cancelled.');
     // deal_pending cars: ONLY 'delivered' can change the status. Everything else is blocked.
     // Exception: explicitly clearing finalDeal (rejection/cancellation) is always allowed.
     const clearingFinalDeal = 'finalDeal' in car && !car.finalDeal;
@@ -2235,6 +2241,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   },
   updateCustomer: async (id, customer) => {
     const prev = get().customers.find(c => c.id === id);
+    if (prev?.delivered && ((customer.delivered === false) || ('cashWorkOrder' in customer && !customer.cashWorkOrder && prev.cashWorkOrder) || ('loanWorkOrder' in customer && !customer.loanWorkOrder && prev.loanWorkOrder) || ('interestedCarId' in customer && customer.interestedCarId !== prev.interestedCarId))) throw new Error('This deal has been delivered and cannot be reverted.');
     set((s) => ({ customers: s.customers.map((c) => (c.id === id ? { ...c, ...customer } : c)) }));
     const { error } = await supabase.from('customers').update(customerToRow(customer)).eq('id', id);
     if (error) {

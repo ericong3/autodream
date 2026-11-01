@@ -1,3 +1,4 @@
+import { salesCommission } from '../utils/salesCommission';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { thumbUrl } from '../utils/photoUrl';
 import {
@@ -107,7 +108,7 @@ export default function Investors() {
       : car.finalDeal?.dealPrice ?? car.sellingPrice;
     const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
     const profitBeforeComm = dealPrice - car.purchasePrice - repairCost - miscCost - additionalTotal;
-    const commission = (car.outgoingConsignment || car.isStaffSale) ? 0 : (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
+    const commission = salesCommission(car, customers);
     const netProfit = profitBeforeComm - commission;
     return { car, repairCost, miscCost, additionalTotal, commission, dealPrice, netProfit, myShare: netProfit * split, split, customer };
   };

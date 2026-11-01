@@ -1,3 +1,4 @@
+import { salesCommission } from '../utils/salesCommission';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { thumbUrl } from '../utils/photoUrl';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -287,7 +288,7 @@ export default function History() {
       const repairCosts = repairs.filter(r => r.carId === c.id && r.status === 'done').reduce((a, r) => a + (r.actualCost ?? r.totalCost), 0);
       const miscCosts = (c.miscCosts ?? []).reduce((a, m) => a + m.amount, 0);
       const profitBeforeCommission = dealNetPrice - c.purchasePrice - repairCosts - miscCosts - additionalTotal;
-      const commission = (c.outgoingConsignment || c.isStaffSale) ? 0 : (c.consignment || (c.priceFloor != null && dealNetPrice < c.priceFloor)) ? 1000 : 1500;
+      const commission = salesCommission(c, customers);
       map[c.id] = { dealNetPrice, profit: profitBeforeCommission - commission };
     }
     return map;

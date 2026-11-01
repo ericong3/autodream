@@ -1,3 +1,4 @@
+import { salesCommission } from '../utils/salesCommission';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Car, Users, Calendar, Bell, ChevronDown, ChevronUp, AlertCircle, Plus, CheckCircle, Circle, Trash2, ChevronLeft, ChevronRight, Eye, EyeOff, Lock, RefreshCw, Skull, X, CalendarCheck, Phone, MessageCircle, Wrench, Upload, MapPin } from 'lucide-react';
@@ -112,14 +113,7 @@ export default function SalesDashboard() {
   const myId = currentUser?.id ?? '';
   const today = new Date().toISOString().split('T')[0];
 
-  const calcDealCommission = (car: typeof cars[0]): number => {
-    if (car.outgoingConsignment) return 0;
-    const wo = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
-    const workOrder = wo?.loanWorkOrder ?? wo?.cashWorkOrder;
-    const dealPrice = ((workOrder?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (workOrder?.discount ?? 0)) || car.sellingPrice;
-    if (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) return 1000;
-    return 1500;
-  };
+  const calcDealCommission = (car: typeof cars[0]): number => salesCommission(car, customers);
 
   const myCustomers = useMemo(() => customers.filter(c => c.assignedSalesId === myId), [customers, myId]);
   const activeLeads = useMemo(() => myCustomers.filter(c => !c.isDead && !c.isTrashed), [myCustomers]);

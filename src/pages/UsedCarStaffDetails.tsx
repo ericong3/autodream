@@ -1,3 +1,4 @@
+import { salesCommission } from '../utils/salesCommission';
 
 
 
@@ -118,14 +119,7 @@ function EmployeeDetailModal({ member, onClose, currentUserId }: { member: User;
   const soldCars = cars.filter((c) => (c.status === 'delivered' || c.commissionCreditedEarly) && getDealSalespersonId(c) === member.id);
   const activeCars = cars.filter((c) => c.status !== 'delivered' && !c.commissionCreditedEarly && c.assignedSalesperson === member.id);
 
-  const calcCommission = (car: typeof cars[0]): number => {
-    if (car.outgoingConsignment) return 0;
-    const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
-    const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
-    const dealPrice = (wo?.sellingPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
-    if (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) return 1000;
-    return 1500;
-  };
+  const calcCommission = (car: typeof cars[0]): number => salesCommission(car, customers);
 
   const commission = soldCars.reduce((s, c) => s + calcCommission(c), 0);
   const activeCustomers = customers.filter((c) => c.assignedSalesId === member.id);
@@ -442,14 +436,7 @@ export default function UsedCarStaffDetails() {
     return car.assignedSalesperson || dealCustomer?.assignedSalesId;
   };
 
-  const calcCommission = (car: typeof cars[0]): number => {
-    if (car.outgoingConsignment) return 0;
-    const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
-    const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
-    const dealPrice = (wo?.sellingPrice ?? car.sellingPrice) - (wo?.discount ?? 0);
-    if (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) return 1000;
-    return 1500;
-  };
+  const calcCommission = (car: typeof cars[0]): number => salesCommission(car, customers);
 
   const legacyAccountEditingEnabled = false; // Account changes use director-verified Staff setup.
 

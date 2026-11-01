@@ -1,0 +1,40 @@
+import {readFileSync} from 'node:fs';
+import {pathToFileURL} from 'node:url';
+import {resolve} from 'node:path';
+import assert from 'node:assert/strict';
+const {PGlite}=await import(pathToFileURL(resolve(process.argv[2],'dist/index.js')));
+const db=new PGlite();
+await db.exec(`create role anon;create role authenticated;create role service_role;
+ create table cars(id text primary key,status text,final_deal jsonb,notes text);
+ create table customers(id text primary key,interested_car_id text,delivered boolean,delivered_at timestamptz,cash_work_order jsonb,loan_work_order jsonb);
+ insert into cars values('delivered','delivered','{}','before'),('stock','available',null,null),('inconsistent','available','{}',null);
+ insert into customers values('buyer','delivered',true,now(),'{}',null),('drift','inconsistent',true,now(),null,'{}'),('lead','stock',false,null,'{}',null);`);
+await db.exec(readFileSync(new URL('../supabase/migrations/20261101010000_used_car_delivery_and_recon.sql',import.meta.url),'utf8'));
+for(const query of ["update cars set status='available' where id='delivered'","update cars set final_deal=null where id='delivered'","update cars set notes='old browser' where id='inconsistent'","update customers set delivered=false where id='buyer'","update customers set cash_work_order=null where id='buyer'","update customers set interested_car_id='stock' where id='buyer'"]){
+ await assert.rejects(()=>db.exec(query),/DELIVERED_LOCKED/);
+}
+await db.exec("update cars set status='delivered' where id='inconsistent';update cars set notes='allowed edit',is_recon=true,sales_commission=2000 where id='delivered';update customers set delivered_at='2026-10-30' where id='buyer';update customers set cash_work_order=null where id='lead';update cars set status='reserved' where id='stock';");
+assert.equal((await db.query("select sales_commission from cars where id='delivered'")).rows[0].sales_commission,'2000.00');
+await assert.rejects(()=>db.exec("update cars set sales_commission=-1 where id='stock'"),/check constraint/);
+console.log('Delivery guard: stale cancellation blocked; delivered data edits and ordinary stock workflows preserved.');
+await db.close();
+const live=new PGlite();
+await live.exec(`create role anon;create role authenticated;create role service_role;
+ create table cars(id text primary key,car_plate text,model text,status text,delivery_collected boolean,final_deal jsonb,consignment jsonb);
+ create table customers(id text primary key,interested_car_id text,delivered boolean,delivered_at timestamptz,commission numeric,cash_work_order jsonb,loan_work_order jsonb);
+ create table payments(id text primary key,car_id text,type text,amount numeric);
+ insert into cars values('08xao10m398qmvg2z0he','PPU7298','Triton','available',true,'{"dealPrice":84891.52}','{"dealer":"original"}'),('1791530284110-9qkg1enf1','','Noah ','delivered',true,'{"dealPrice":0}','{"dealer":"unchanged"}');
+ insert into customers values('1791525983278-v2qwimrgs','08xao10m398qmvg2z0he',true,'2026-10-30T08:48:52.895+00:00',1000,null,'{}'),('1791006548439-6i19u7mtz','1791530284110-9qkg1enf1',true,'2026-10-20T05:06:01.704+00:00',1000,'{}',null);
+ insert into payments values('untouched','other','salesman_commission',1500);`);
+const install=readFileSync(new URL('../docs/used-car-delivery-recon-INSTALL-AND-CHECK.sql',import.meta.url),'utf8');
+await live.exec(install);
+const audit=(await live.query('select before_state,after_state from used_car_data_repairs')).rows[0];
+const expected=structuredClone(audit.before_state);
+for(const c of expected.cars){c.is_recon=c.model.trim()==='Noah';c.sales_commission=c.is_recon?2000:null;if(c.car_plate==='PPU7298')c.status='delivered';}
+expected.customers.find(c=>c.interested_car_id==='1791530284110-9qkg1enf1').commission=2000;
+assert.deepEqual(audit.after_state,expected);
+assert.equal((await live.query('select amount from payments')).rows[0].amount,'1500');
+await assert.rejects(()=>live.exec(install),/already installed/);await live.exec('rollback');
+assert.equal((await live.query("select has_table_privilege('anon','used_car_data_repairs','SELECT') as allowed")).rows[0].allowed,false);
+console.log('Exact installation rehearsed: only approved three record changes, private before/after audit, payments unchanged, repeat refused.');
+await live.close();

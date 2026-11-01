@@ -737,6 +737,8 @@ export interface Consignment {
 }
 
 export interface Car {
+  isRecon?: boolean;
+  salesCommission?: number;
   id: string;
   make: string;
   model: string;

@@ -1,3 +1,4 @@
+import { salesCommission } from '../utils/salesCommission';
 import { useState, useMemo } from 'react';
 import {
   Car as CarIcon, Package, CheckCircle2, Wallet,
@@ -68,7 +69,7 @@ export default function InvestorPortal() {
         : car.finalDeal?.dealPrice ?? car.sellingPrice;
       const additionalTotal = wo?.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
 
-      const commission = car.isStaffSale ? 0 : (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
+      const commission = salesCommission(car, customers);
 
       const totalExpenses = repairCost + miscCost + additionalTotal + commission;
       const netProfit = dealPrice - car.purchasePrice - totalExpenses;

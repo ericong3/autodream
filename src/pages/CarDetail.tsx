@@ -1,3 +1,4 @@
+import { salesCommission } from '../utils/salesCommission';
 import { deliveredDealPrice } from '../utils/deliveredDealPrice';
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
@@ -559,7 +560,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   // separate from the customer-facing deal terms.
   const _disbursementCharges = (car.disbursementCharges ?? []).reduce((s, c) => s + c.amount, 0);
   const _profitBeforeComm = _dealPrice + _addOnRevenue - car.purchasePrice - totalRepairCost - totalMiscCost - _disbursementCharges;
-  const _commission = (car.outgoingConsignment || car.isStaffSale || car.waiveCommission) ? 0 : (car.consignment || (car.priceFloor != null && _dealPrice < car.priceFloor)) ? 1000 : 1500;
+  const _commission = salesCommission(car, customers);
   const netProfit = car.isStaffSale ? 0 : _profitBeforeComm - _commission - _intakeCommission - _sourceCommission;
 
   // Checklist helpers
@@ -590,6 +591,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     if (!editForm.model?.trim()) e.model = 'Required';
     if (!editForm.colour?.trim()) e.colour = 'Required';
     if (!editForm.consignment && (!editForm.purchasePrice || editForm.purchasePrice <= 0)) e.purchasePrice = 'Required';
+    if (editForm.salesCommission != null && (!Number.isFinite(editForm.salesCommission) || editForm.salesCommission < 0 || editForm.salesCommission > 100000 || Math.abs(editForm.salesCommission * 100 - Math.round(editForm.salesCommission * 100)) > 0.00001)) e.salesCommission = 'Enter an amount from 0 to 100,000 with at most 2 decimal places.';
     setEditErrors(e);
     if (Object.keys(e).length > 0) return;
     setShowEditModal(false);
@@ -807,9 +809,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     // Ledger: dealer-consignment cars (someone else's car, we're just selling it
     // for them) are a separate existing flow and never booked as our inventory.
     const _dealPriceAtDelivery = ((dealWo?.sellingPrice ?? car.sellingPrice) - (dealWo?.discount ?? 0)) || car.sellingPrice;
-    const _effectiveFloorAtDelivery = car.priceFloor ?? car.sellingPrice;
-    const _commissionAtDelivery = (car.isStaffSale || car.waiveCommission) ? 0
-      : (car.consignment || _dealPriceAtDelivery < _effectiveFloorAtDelivery) ? 1000 : 1500;
+    const _commissionAtDelivery = salesCommission(car, customers);
 
     // Trade-in reconciliation — now that this deal's final costs are known,
     // lock in the traded-in car's real price and book its acquisition. Runs
@@ -1823,7 +1823,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           const moneyIn = dealNetPrice + addOnTotal;
           const disbursementChargesTotal = (car.disbursementCharges ?? []).reduce((s, c) => s + c.amount, 0);
           const profitBeforeCommission = moneyIn - purchasePrice - totalRepairCost - totalMiscCost - disbursementChargesTotal;
-          const commission = (car.outgoingConsignment || car.isStaffSale || car.waiveCommission) ? 0 : (car.consignment || (car.priceFloor != null && dealNetPrice < car.priceFloor)) ? 1000 : 1500;
+          const commission = salesCommission(car, customers);
           const dealIntakeCommission = car.intakeCommission ?? 0;
           const dealSourceCommission = car.sourceCommission ?? 0;
           const netProfit = car.isStaffSale ? 0 : profitBeforeCommission - commission - dealIntakeCommission - dealSourceCommission;
@@ -2510,6 +2510,17 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           <FormField label="Mileage (km)">
             <input type="number" className={inputCls()} value={editForm.mileage ?? ''} onChange={(e) => setEditForm({ ...editForm, mileage: Number(e.target.value) })} />
           </FormField>
+          {isDirector && <>
+            <FormField label="Vehicle type">
+              <select className={inputCls()} value={editForm.isRecon ? 'recon' : 'used'} onChange={e => setEditForm({ ...editForm, isRecon: e.target.value === 'recon' })}>
+                <option value="used">Used car</option><option value="recon">Recon car</option>
+              </select>
+            </FormField>
+            <FormField label="Sales commission per unit (RM)" error={editErrors.salesCommission}>
+              <input type="number" min="0" step="0.01" className={inputCls()} value={editForm.salesCommission ?? ''} placeholder={editForm.isRecon ? 'Default: 2000' : 'Use standard commission'} onChange={e => setEditForm({ ...editForm, salesCommission: e.target.value === '' ? undefined : Number(e.target.value) })} />
+              <p className="text-xs text-gray-500 mt-1">Blank uses the existing deal rate, or the vehicle default. Existing payment records stay unchanged.</p>
+            </FormField>
+          </>}
           <FormField label="Condition">
             <select className={inputCls()} value={editForm.condition ?? 'good'} onChange={(e) => setEditForm({ ...editForm, condition: e.target.value as Car['condition'] })}>
               <option value="excellent">Excellent</option>

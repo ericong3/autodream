@@ -1,3 +1,6 @@
+import { toast } from '../utils/toast';
+import { deliveredDealPrice } from '../utils/deliveredDealPrice';
+import { salesCommission } from '../utils/salesCommission';
 import { useState, useMemo, useRef } from 'react';
 import { Car, Plus, CheckCircle, Circle, Trash2, Bell, Pencil, Check, X } from 'lucide-react';
 import { useStore } from '../store';
@@ -14,7 +17,6 @@ export default function Commission() {
   const users = useStore((s) => s.users);
   const customers = useStore((s) => s.customers);
   const updateCar = useStore((s) => s.updateCar);
-  const updateCustomer = useStore((s) => s.updateCustomer);
   const personalReminders = useStore((s) => s.personalReminders);
   const addPersonalReminder = useStore((s) => s.addPersonalReminder);
   const updatePersonalReminder = useStore((s) => s.updatePersonalReminder);
@@ -44,15 +46,7 @@ export default function Commission() {
     return car.assignedSalesperson || dealCustomer?.assignedSalesId;
   };
 
-  const calcCommission = (car: typeof cars[0]): number => {
-    if (car.outgoingConsignment) return 0;
-    const dealCustomer = getDealCustomer(car);
-    if (dealCustomer?.commission != null) return dealCustomer.commission;
-    const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
-    const dealPrice = ((wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0)) || car.sellingPrice;
-    if (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) return 1000;
-    return 1500;
-  };
+  const calcCommission = (car: typeof cars[0]): number => salesCommission(car, customers);
 
   const startEdit = (carId: string, field: EditState['field'], currentValue: number, customerId?: string) => {
     setEditing({ carId, field, customerId, value: String(currentValue) });
@@ -62,15 +56,17 @@ export default function Commission() {
   const saveEdit = async () => {
     if (!editing) return;
     const amount = parseFloat(editing.value);
-    if (isNaN(amount) || amount < 0) { setEditing(null); return; }
-    if (editing.field === 'deal' && editing.customerId) {
-      await updateCustomer(editing.customerId, { commission: amount });
+    if (!Number.isFinite(amount) || amount < 0 || amount > 100000 || Math.abs(amount * 100 - Math.round(amount * 100)) > 0.00001) { toast.error('Enter an amount from 0 to 100,000 with at most 2 decimal places.'); return; }
+    try {
+    if (editing.field === 'deal') {
+      await updateCar(editing.carId, { salesCommission: amount });
     } else if (editing.field === 'intake') {
       await updateCar(editing.carId, { intakeCommission: amount });
     } else if (editing.field === 'source') {
       await updateCar(editing.carId, { sourceCommission: amount });
     }
     setEditing(null);
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not save commission. Try again.'); }
   };
 
   const filteredSoldCars = useMemo(() => allSoldCars.filter(c => {
@@ -146,7 +142,7 @@ export default function Commission() {
     <div className="space-y-5">
       <div>
         <h1 className="text-white text-xl font-bold">Commission & Reminders</h1>
-        <p className="text-gray-500 text-sm mt-0.5">Tiered commission based on deal price and profit</p>
+        <p className="text-gray-500 text-sm mt-0.5">Commission per unit · recon default RM2,000 · director can adjust</p>
       </div>
 
       {/* Tabs */}
@@ -240,7 +236,7 @@ export default function Commission() {
                   {filteredSoldCars.map((c, i) => {
                     const dealCustomer = getDealCustomer(c);
                     const isEditingThis = editing?.carId === c.id && editing.field === 'deal';
-                    const isOverride = dealCustomer?.commission != null;
+                    const isOverride = c.salesCommission != null || dealCustomer?.commission != null;
                     return (
                       <tr key={c.id} className={`border-b border-obsidian-400/60/50 ${i % 2 !== 0 ? 'bg-obsidian-950/30' : ''} hover:bg-obsidian-700/50 transition-colors`}>
                         <td className="px-5 py-3">
@@ -250,7 +246,7 @@ export default function Commission() {
                         <td className="px-5 py-3 text-gray-400">{new Date(getDeliveryDate(c, customers)).toLocaleDateString('en-MY')}</td>
                         {isDirector && <td className="px-5 py-3 text-gray-400">{getSalesName(getDealSalespersonId(c))}</td>}
                         <td className="px-5 py-3 text-right text-gold-400 font-semibold">
-                          {formatRM(c.finalDeal?.dealPrice ?? c.sellingPrice)}
+                          {formatRM(deliveredDealPrice(c, dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder).netPrice)}
                         </td>
                         <td className="px-5 py-3 text-right">
                           {isDirector && isEditingThis ? (

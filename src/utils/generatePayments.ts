@@ -1,3 +1,4 @@
+import { salesCommission } from './salesCommission';
 import { Car, Payment, RepairJob, MiscCost, User, ExternalSalesman, Workshop, Dealer, Merchant, Customer } from '../types';
 import { generateId } from './format';
 
@@ -59,8 +60,7 @@ export function calcCarNetProfitBreakdown(car: Car, customers: Customer[], repai
   const miscCost = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
   const disbursementCharges = (car.disbursementCharges ?? []).reduce((s, c) => s + c.amount, 0);
   const profitBeforeComm = dealPrice + addOnRevenue - car.purchasePrice - repairCost - miscCost - disbursementCharges;
-  const commission = (car.outgoingConsignment || car.isStaffSale || car.waiveCommission) ? 0
-    : (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
+  const commission = salesCommission(car, customers);
   const intakeCommission = car.intakeCommission ?? 0;
   const sourceCommission = car.sourceCommission ?? 0;
   const netProfit = car.isStaffSale ? 0 : profitBeforeComm - commission - intakeCommission - sourceCommission;
@@ -157,8 +157,7 @@ export async function generateDeliveryPayments(opts: {
   if (car.assignedSalesperson && !car.outgoingConsignment && !car.isStaffSale && !car.waiveCommission) {
     const sp = users.find(u => u.id === car.assignedSalesperson);
     if (sp && !exists(payments, 'salesman_commission', { carId: car.id })) {
-      const effectiveFloor = car.priceFloor ?? car.sellingPrice;
-        const amount = (car.consignment || dealPrice < effectiveFloor) ? 1000 : 1500;
+      const amount = salesCommission(car, customers);
       await addPayment({
         id: generateId(), type: 'salesman_commission', carId: car.id,
         recipientType: 'user', recipientId: sp.id, recipientName: sp.name,
@@ -435,8 +434,7 @@ export function collectMissingPayments(data: {
     if (car.assignedSalesperson && !car.outgoingConsignment && !car.isStaffSale && !car.waiveCommission && !alreadyExists('salesman_commission', { carId: car.id })) {
       const sp = users.find(u => u.id === car.assignedSalesperson);
       if (sp) {
-        const effectiveFloor = car.priceFloor ?? car.sellingPrice;
-        const amount = (car.consignment || dealPrice < effectiveFloor) ? 1000 : 1500;
+        const amount = salesCommission(car, customers);
         result.push({
           id: generateId(), type: 'salesman_commission', carId: car.id,
           recipientType: 'user', recipientId: sp.id, recipientName: sp.name,
@@ -707,10 +705,7 @@ export function collectMonthlyPayroll(opts: {
     const spId = car.assignedSalesperson || dealCustomer?.assignedSalesId;
     const sp = spId ? users.find(u => u.id === spId) : undefined;
     if (!sp) continue;
-    const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
-    const dealPrice = ((wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0)) || car.sellingPrice;
-    const effectiveFloor = car.priceFloor ?? car.sellingPrice;
-    const amount = (car.consignment || dealPrice < effectiveFloor) ? 1000 : 1500;
+    const amount = salesCommission(car, customers);
     const carLabel = `${car.year} ${car.make} ${car.model}${car.carPlate ? ` (${car.carPlate})` : ''}`;
     result.push({
       id: generateId(), type: 'salesman_commission', carId: car.id,

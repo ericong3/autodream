@@ -1,3 +1,4 @@
+import { salesCommission } from './salesCommission';
 import { Car, CashWorkOrder, LoanWorkOrder, RepairJob } from '../types';
 import { generateId } from './format';
 
@@ -27,9 +28,7 @@ export function buildTradeInCar(opts: {
   if (mode === 'swap' && sourceCar) {
     const repairCost = repairs.filter(r => r.carId === sourceCar.id && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
     const miscCost = (sourceCar.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
-    const effectiveFloor = sourceCar.priceFloor ?? sourceCar.sellingPrice;
-    const commission = (sourceCar.isStaffSale || sourceCar.waiveCommission) ? 0
-      : (sourceCar.consignment || sourceCar.sellingPrice < effectiveFloor) ? 1000 : 1500;
+    const commission = salesCommission(sourceCar);
     estimatedPurchasePrice = (sourceCar.purchasePrice ?? 0) + repairCost + miscCost + commission;
   }
   return {

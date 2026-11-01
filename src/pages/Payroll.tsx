@@ -1,3 +1,4 @@
+import { salesCommission } from '../utils/salesCommission';
 import PayrollTabs from '../components/PayrollTabs';
 import { useState } from 'react';
 import { Wallet, Edit2, ChevronLeft, ChevronRight, ChevronDown, Shield, UserCheck, Wrench, Settings, CheckCircle2, Clock, FileText } from 'lucide-react';
@@ -118,14 +119,7 @@ export default function Payroll() {
     const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
     return car.assignedSalesperson || dealCustomer?.assignedSalesId;
   };
-  const calcCommission = (car: typeof cars[0]): number => {
-    if (car.outgoingConsignment) return 0;
-    const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
-    const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
-    const dealPrice = ((wo?.sellingPrice ?? car.finalDeal?.dealPrice ?? car.sellingPrice) - (wo?.discount ?? 0)) || car.sellingPrice;
-    if (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) return 1000;
-    return 1500;
-  };
+  const calcCommission = (car: typeof cars[0]): number => salesCommission(car, customers);
   const monthSoldCars = cars.filter(c => (c.status === 'delivered' || c.commissionCreditedEarly) && getCommissionMonth(c, customers) === monthFilter);
   const monthSoldCarsFor = (userId: string) => monthSoldCars.filter(c => getDealSalespersonId(c) === userId);
 

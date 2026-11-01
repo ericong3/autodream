@@ -1,3 +1,4 @@
+import { salesCommission } from '../utils/salesCommission';
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
@@ -512,6 +513,7 @@ export default function Customers() {
 
   // ── Revert ────────────────────────────────────────────────
   const handleRevert = async (c: Customer) => {
+    if (c.delivered || cars.find(car => car.id === c.interestedCarId)?.status === 'delivered') { toast.error('Delivered deals cannot be reverted.'); return; }
     const { cars: allCars, updateCar } = useStore.getState();
     const car = allCars.find(x => x.id === c.interestedCarId);
     if (c.loanWorkOrder) {
@@ -519,16 +521,14 @@ export default function Customers() {
       updateCustomer(c.id, { loanWorkOrder: undefined, dealPrice: 0 });
       await supabase.from('customers').update({ loan_work_order: null, deal_price: 0 }).eq('id', c.id);
       if (car) {
-        updateCar(car.id, { status: 'available', finalDeal: undefined });
-        await supabase.from('cars').update({ status: 'available', final_deal: null }).eq('id', car.id);
+        await updateCar(car.id, { status: 'available', finalDeal: undefined });
       }
     } else if (c.cashWorkOrder) {
       // Confirmed (cash) → Leads: clear work order, reset to follow_up
       updateCustomer(c.id, { cashWorkOrder: undefined, dealPrice: 0, leadStatus: 'follow_up', loanStatus: 'not_started', loanBankSubmitted: '', loanApplications: [] });
       await supabase.from('customers').update({ cash_work_order: null, deal_price: 0 }).eq('id', c.id);
       if (car) {
-        updateCar(car.id, { status: 'available', finalDeal: undefined });
-        await supabase.from('cars').update({ status: 'available', final_deal: null }).eq('id', car.id);
+        await updateCar(car.id, { status: 'available', finalDeal: undefined });
       }
     } else if (c.leadStatus === 'loan_submitted') {
       // Loan tab → Leads: reset status, loan data, and deal type
@@ -544,6 +544,7 @@ export default function Customers() {
   };
 
   const getRevertLabel = (c: Customer): string | null => {
+    if (c.delivered || cars.find(car => car.id === c.interestedCarId)?.status === 'delivered') return null;
     if (c.loanWorkOrder) return 'Revert to Loan';
     if (c.cashWorkOrder) return 'Revert to Leads';
     if (c.dealType === 'cash' && !c.cashWorkOrder) return 'Remove Cash Tag';
@@ -562,9 +563,7 @@ export default function Customers() {
       return;
     }
     // Commission auto-calc: profit = selling - purchase - repairs; RM 2k if > 12k else RM 1k
-    const wo = c.loanWorkOrder ?? c.cashWorkOrder;
-    const dealPrice = wo ? (wo.sellingPrice - (wo.discount ?? 0)) : (car.sellingPrice ?? 0);
-    const commission = car.isStaffSale ? 0 : (car.consignment || (car.priceFloor != null && dealPrice < car.priceFloor)) ? 1000 : 1500;
+    const commission = salesCommission(car, customers);
 
     try {
       // Car first — it's what actually pulls the unit out of Stock. These
