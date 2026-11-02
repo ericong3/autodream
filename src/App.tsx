@@ -69,7 +69,6 @@ import GarageMyWorkOrders from './pages/GarageMyWorkOrders';
 import GarageCalendar from './pages/GarageCalendar';
 import GarageTintPricing from './pages/GarageTintPricing';
 import GarageWorkOrderTracking from './pages/GarageWorkOrderTracking';
-import GarageServiceWorkOrders from './pages/GarageServiceWorkOrders';
 import GarageNoAccess from './pages/GarageNoAccess';
 import { roleHome, landingPath, garageHome } from './utils/landingPath';
 import { isGarageManager, canUseGarageSales, canUseGarageWorkshop,canUseGarageFinance,canUseGarageHome } from './utils/garageRoles';
@@ -278,7 +277,7 @@ export default function App() {
         <Route path="/garage/tint-pricing" element={<RequireGarageManager><GarageTintPricing /></RequireGarageManager>} />
         <Route path="/garage/team" element={<RequireGarageManager><GarageTeamMembers /></RequireGarageManager>} />
         <Route path="/garage/work-order-tracking" element={<RequireGarageManager><GarageWorkOrderTracking /></RequireGarageManager>} />
-        <Route path="/garage/work-order-tracking/:service" element={<RequireGarageManager><GarageServiceWorkOrders /></RequireGarageManager>} />
+        <Route path="/garage/work-order-tracking/:service" element={<RequireGarageManager><GarageWorkOrderTracking /></RequireGarageManager>} />
 
         {/* Regular users — Layout mounts once, stays alive across all these routes */}
         <Route element={<AuthedLayout />}>

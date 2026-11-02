@@ -7,6 +7,7 @@ import type { WorkOrderStage } from '../utils/garageWorkOrderStatus';
 import { getJobTiming } from '../utils/garageJobPriority';
 import { JobPriorityBadges } from './GarageJobPriority';
 import type { GarageInvoice, GarageVehicle, GarageInstallerJob, GarageTintWorkOrderItem } from '../types';
+import {GARAGE_SERVICE_MAP} from '../utils/garageServices';
 
 export interface BoardRow {
   invoice: GarageInvoice;
@@ -50,8 +51,8 @@ const formatWhen = (iso: string) =>
   new Date(iso).toLocaleString('en-MY', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 
 export default function GarageWorkOrderBoard({
-  rows, nameOf, onOpen,
-}: { rows: BoardRow[]; nameOf: (userId?: string) => string | undefined; onOpen: (invoiceId: string) => void }) {
+  rows, nameOf, onOpen, showService=false,
+}: { rows: BoardRow[]; nameOf: (userId?: string) => string | undefined; onOpen: (invoiceId: string) => void;showService?:boolean }) {
   // Re-render every minute so "time in stage" keeps counting.
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -111,6 +112,7 @@ export default function GarageWorkOrderBoard({
                           {WORK_ORDER_STAGE_LABEL[stage]}
                         </span>
                       </div>
+                      {showService&&<p className="text-gold-300 text-xs mb-2">{GARAGE_SERVICE_MAP[invoice.service]?.label}</p>}
 
                       {timing.indicators.length > 0 && (
                         <div className="mb-2"><JobPriorityBadges timing={timing} size="xs" /></div>

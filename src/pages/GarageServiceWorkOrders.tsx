@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ClipboardList, Car, User, UserCheck, ChevronRight, LayoutGrid, List } from 'lucide-react';
 import GarageShell from '../components/GarageShell';
@@ -11,7 +11,7 @@ import { useStore } from '../store';
 import { listInvoicesByService } from '../lib/garageInvoices';
 import { getInstallerJobForInvoice } from '../lib/garageInstallerJobs';
 import { getGarageVehicle, getGarageCustomer } from '../lib/garageCustomers';
-import { GARAGE_SERVICE_MAP } from '../utils/garageServices';
+import { GARAGE_SERVICES, GARAGE_SERVICE_MAP } from '../utils/garageServices';
 import {
   getWorkOrderStage, isWorkOrderClosed, WORK_ORDER_STAGE_LABEL, WORK_ORDER_STAGE_BADGE, WORK_ORDER_STAGE_ORDER,
 } from '../utils/garageWorkOrderStatus';
@@ -33,28 +33,36 @@ interface Row {
 // salesman's own orders. Two views of the same work orders: an operational
 // Kanban board (the default for Tinted, which has the full installer
 // pipeline) and the original list.
-export default function GarageServiceWorkOrders() {
-  const { service } = useParams<{ service: string }>();
+export default function GarageServiceWorkOrders({serviceKey,embedded=false,active=true}:{serviceKey?:GarageService|'all';embedded?:boolean;active?:boolean}) {
+  const { service: routeService } = useParams<{ service: string }>();
+  const service=serviceKey??routeService;
   const navigate = useNavigate();
   const allUsers = useStore((s) => s.users);
+  const actor = useStore(s=>s.currentUser?.id);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [showClosed, setShowClosed] = useState(false);
+  const [search,setSearch]=useState(''),[error,setError]=useState('');
+  const generation=useRef(0);
+  const loaded=useRef(false);
   // In the URL so opening a card and coming back keeps the chosen view.
   const [searchParams, setSearchParams] = useSearchParams();
-  const hasBoard = service === 'tinted';
-  const view: 'board' | 'list' = hasBoard && searchParams.get('view') !== 'list' ? 'board' : 'list';
-  const setView = (v: 'board' | 'list') => setSearchParams({ view: v }, { replace: true });
+  const hasBoard = service === 'tinted'||service==='all';
+  const viewKey=embedded?'view-'+service:'view';
+  const view: 'board' | 'list' = hasBoard && searchParams.get(viewKey) !== 'list' ? 'board' : 'list';
+  const setView = (v: 'board' | 'list') => setSearchParams(previous=>{const next=new URLSearchParams(previous);next.set(viewKey,v);return next;}, { replace: true });
   const nameOf = (id?: string) => (id ? allUsers.find((u) => u.id === id)?.name : undefined);
   // Upcoming / Due Now / Overdue / Running Late — derived, refreshed each minute.
   const now = useNow();
 
-  const meta = GARAGE_SERVICE_MAP[service as GarageService];
+  const meta = service==='all'?{label:'Vehicle',icon:ClipboardList}:GARAGE_SERVICE_MAP[service as GarageService];
 
   const load = (quiet = false) => {
-    if (!service) return;
+    if (!service||!active) return;
+    const request=++generation.current;
     if (!quiet) setLoading(true);
-    listInvoicesByService(service as GarageService)
+    setError('');
+    (service==='all'?Promise.all(GARAGE_SERVICES.map(s=>listInvoicesByService(s.key))).then(groups=>groups.flat()):listInvoicesByService(service as GarageService))
       .then(async (invoices) => {
         // Per-glass installers for every order, in one request.
         const allGlass = await listTintItemsForInvoices(invoices.filter((i) => i.service === 'tinted').map((i) => i.id)).catch(() => []);
@@ -67,23 +75,24 @@ export default function GarageServiceWorkOrders() {
           return { invoice, vehicle, customer, job, stage: getWorkOrderStage(invoice), glass: allGlass.filter((g) => g.invoiceId === invoice.id) };
         }));
         built.sort((a, b) => WORK_ORDER_STAGE_ORDER[a.stage] - WORK_ORDER_STAGE_ORDER[b.stage]);
-        setRows(built);
+        if(request===generation.current){loaded.current=true;setRows(built);}
       })
-      .finally(() => setLoading(false));
+      .catch(e=>{if(request===generation.current)setError(e instanceof Error?e.message:'Could not load work orders. Try again.');})
+      .finally(() => {if(request===generation.current)setLoading(false);});
   };
 
-  useEffect(() => load(), [service]);
+  useEffect(() => {if(active)load(loaded.current);return()=>{generation.current++;};}, [service,actor,active]);
   // Keep the board live: installer job changes, plus every salesman step
   // (each records an activity-history entry).
   useInstallerJobUpdates(() => load(true));
   useWorkOrderActivityUpdates('all', () => load(true));
 
-  const active = rows.filter((r) => !isWorkOrderClosed(r.invoice));
-  const closed = rows.filter((r) => isWorkOrderClosed(r.invoice));
-  const visible = showClosed ? closed : active;
+  const searched=rows.filter(r=>!search.trim()||[r.invoice.invoiceNumber,r.vehicle?.make,r.vehicle?.model,r.vehicle?.registrationNo,r.customer?.name,nameOf(r.invoice.salesOwnerId??r.invoice.createdBy)].filter(Boolean).join(' ').toLowerCase().includes(search.trim().toLowerCase()));
+  const activeRows = searched.filter((r) => !isWorkOrderClosed(r.invoice));
+  const closed = searched.filter((r) => isWorkOrderClosed(r.invoice));
+  const visible = showClosed ? closed : activeRows;
 
-  return (
-    <GarageShell title={`${meta?.label ?? 'Service'} Work Orders`} showBack backTo="/garage/work-order-tracking">
+  const content = (
       <div className={view === 'board' ? '' : 'max-w-2xl mx-auto'}>
         <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
           <div className="flex items-center gap-2.5">
@@ -108,7 +117,7 @@ export default function GarageServiceWorkOrders() {
           )}
           {view === 'list' && (
           <div className="flex gap-1.5">
-            {([[false, `Active (${active.length})`], [true, `Closed (${closed.length})`]] as [boolean, string][]).map(([val, label]) => (
+            {([[false, `Active (${activeRows.length})`], [true, `Closed (${closed.length})`]] as [boolean, string][]).map(([val, label]) => (
               <button
                 key={String(val)}
                 onClick={() => setShowClosed(val)}
@@ -126,14 +135,16 @@ export default function GarageServiceWorkOrders() {
           </div>
         </div>
 
-        {loading ? (
+        <input aria-label="Search work orders" type="search" placeholder="Search invoice, vehicle, customer or salesperson" value={search} onChange={e=>setSearch(e.target.value)} className="w-full min-h-[44px] mb-4 rounded-xl border border-white/15 bg-white/[.04] px-4 py-3 text-white text-sm placeholder:text-white/40 focus:outline-none focus:border-gold-400/50"/>
+        {error?<div role="alert" className="text-red-300 text-sm py-8">{error}<button onClick={()=>load()} className="ml-3 text-gold-300 underline">Try again</button></div>:loading ? (
           <p className="text-white/40 text-sm text-center py-20">Loading…</p>
         ) : view === 'board' ? (
           // The board breaks out of the page's reading-width column to use
           // the whole screen — seven columns don't fit in a form-width frame.
           <div className="relative left-1/2 w-screen -translate-x-1/2 px-5 sm:px-8">
             <GarageWorkOrderBoard
-              rows={rows}
+              rows={searched}
+              showService={service==='all'}
               nameOf={nameOf}
               onOpen={(invoiceId) => navigate(`/garage/invoice/${invoiceId}`)}
             />
@@ -189,6 +200,6 @@ export default function GarageServiceWorkOrders() {
           </div>
         )}
       </div>
-    </GarageShell>
   );
+  return embedded?content:<GarageShell title={`${meta?.label ?? 'Service'} Work Orders`} showBack backTo="/garage/work-order-tracking">{content}</GarageShell>;
 }
