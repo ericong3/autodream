@@ -1,0 +1,123 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {installationFixture} from './installation-fixture.mjs';
+process.on('uncaughtException',e=>{console.error(e.stack,e.where??'');process.exit(1);});
+const db=await installationFixture(process.argv[2]);
+await db.exec(`alter table garage_invoices add column receipt_path text,add column receipt_name text;
+ create table garage_building_staff(id text primary key,name text,enabled boolean,registration_status text,role text,business_access text);
+ insert into users values('other','Other sales','garage_salesman');
+ insert into garage_building_staff select id,name,true,'active',role,'garage' from users;
+ insert into garage_building_staff values('uc','Used Car salesperson',true,'active','salesperson','used_car');
+ create table external_salesmen(id uuid primary key default gen_random_uuid(),name text,ic text,phone text,email text,bank text,bank_account text,notes text,created_at timestamptz default now());
+ create table customers(id text primary key,name text,assigned_sales_id text,interested_car_id text);
+ create table cars(id text primary key,car_plate text,make text,model text,assigned_salesperson text,final_deal jsonb);
+ create table garage_enquiries(id text primary key);
+ create schema storage;create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
+ create table storage.objects(id text primary key,bucket_id text);alter table storage.objects enable row level security;
+ insert into customers values('customer-deal','Example customer','uc','car-deal');
+ insert into cars values('car-deal','EXAMPLE','Sample','Car','uc','{"submittedAt":"2026-10-10T10:00:00Z","approvalStatus":"approved"}');
+ update garage_film_stock set remaining_sqft=1000 where series='eco';`);
+for(const file of ['20260919010000_garage_appointments.sql','20260919030000_garage_film_stock_atomic_adjust.sql','20261025010000_garage_private_appointments.sql','20261025030000_garage_sale_appointments.sql','20261025040000_garage_atomic_confirmation.sql','20261025050000_garage_installation_review.sql','20261026000000_garage_vehicle_glass_layout.sql','20261027000000_garage_tint_payment_ledger.sql','20261027010000_garage_tint_usage_history.sql','20261027030000_garage_tint_after_sales.sql','20261028000000_garage_damage_reports.sql','20261028010000_garage_verified_payment_evidence.sql','20261029020000_garage_referral_accounts.sql'])await db.exec(readFileSync(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));
+await db.exec(readFileSync(new URL('../docs/garage-head-tint-INSTALL-AND-CHECK.sql',import.meta.url),'utf8'));
+const migration=readFileSync(new URL('../supabase/migrations/20261031000000_garage_sales_referrals.sql',import.meta.url),'utf8');
+let bundle=readFileSync(new URL('../docs/garage-sales-referrals-INSTALL-AND-CHECK.sql',import.meta.url),'utf8');
+assert.ok(bundle.replaceAll('\r\n','\n').includes(migration.replaceAll('\r\n','\n').trim()),'guarded bundle contains the exact migration body');
+// The production baseline hashes remain unchanged on disk. Substitute the
+// disposable fixture's own definitions only for this installation rehearsal.
+const baselines=[...bundle.matchAll(/\('([a-z_]+\([^']+\))','([a-f0-9]{32})'\)/g)];
+assert.equal(baselines.length,9);
+for(const [,signature,hash] of baselines){
+ const actual=(await db.query('select md5(pg_get_functiondef($1::regprocedure)) hash',[signature])).rows[0].hash;bundle=bundle.replace(hash,actual);
+}
+await assert.rejects(()=>db.exec(bundle.replace(/('garage_sale_confirmation\(text,text,text,jsonb\)','?)[a-f0-9]{32}/,"$1"+'0'.repeat(32))),/baseline changed/);
+await db.exec('rollback');assert.equal((await db.query("select to_regclass('garage_sales_assignments') t")).rows[0].t,null);
+await db.exec(bundle);
+await assert.rejects(()=>db.exec(bundle),/already exists/);await db.exec('rollback');
+await db.exec(`insert into garage_customers(id,name,ic_number,phone,created_by) values('c','Example customer','TEST','0100000000','sales');
+ insert into garage_vehicles(id,customer_id,make,model,year,registration_no) values('v','c','Sample','Car',2026,'EXAMPLE');`);
+let settlementBundle=readFileSync(new URL('../docs/garage-referral-settlement-INSTALL-AND-CHECK.sql',import.meta.url),'utf8');
+assert.ok(settlementBundle.replaceAll('\r\n','\n').includes(readFileSync(new URL('../supabase/migrations/20261102000000_garage_referral_settlement.sql',import.meta.url),'utf8').replaceAll('\r\n','\n').trim()));
+const settlementBaselines=[...settlementBundle.matchAll(/\('([a-z_]+\([^']+\))','([a-f0-9]{32})'\)/g)];assert.equal(settlementBaselines.length,3);
+for(const [,signature,hash] of settlementBaselines){const actual=(await db.query('select md5(pg_get_functiondef($1::regprocedure)) hash',[signature])).rows[0].hash;settlementBundle=settlementBundle.replace(hash,actual);}
+await assert.rejects(()=>db.exec(settlementBundle.replace(/('garage_tint_finance\(text,text,jsonb\)','?)[a-f0-9]{32}/,"$1"+'0'.repeat(32))),/baseline changed/);
+await db.exec('rollback');assert.equal((await db.query("select to_regclass('garage_referral_transfers') t")).rows[0].t,null);
+await db.exec(settlementBundle);await assert.rejects(()=>db.exec(settlementBundle),/already installed/);await db.exec('rollback');
+await db.exec("update garage_building_staff set business_access='both' where id='director';insert into garage_building_staff values('admin','Admin',true,'active','admin','both'),('uc2','Other Used Car salesman',true,'active','salesperson','used_car')");
+const q=async(sql,args=[])=>(await db.query(sql,args)).rows[0];let n=0;
+const key=()=>`settlement-request-${String(++n).padStart(8,'0')}`;
+const rpc=async(actor,action,data={})=>(await q('select garage_referral_settlement($1,$2,$3) r',[actor,action,data])).r;
+const sale={customerId:'c',vehicleId:'v',paymentStatus:'pending',receiptExpected:false,
+ pending:{packageType:'mix',selections:[{position:'front_windscreen',series:'eco',vlt:'70%',price:100}],extras:[],discount:0,finalTotal:100},addons:[],booking:{mode:'none'},
+ salesAssignment:{ownerId:'sales',referrer:{kind:'used_car',staffId:'uc',deal:{customerId:'customer-deal',carId:'car-deal',submittedAt:'2026-10-10T10:00:00Z'}}}};
+const makeSale=async(payload=sale)=>(await q("select garage_sale_confirmation('sales','confirm',$1,$2) r",[key(),payload])).r.invoiceId;
+const iid=await makeSale();
+const snapshot=async()=>(await rpc('director','snapshot',{invoiceId:iid}));
+const mutate=(actor,action,data={},requestId=key())=>rpc(actor,action,{invoiceId:iid,requestId,...data});
+for(const actor of ['admin','uc2','i1','missing'])await assert.rejects(()=>rpc(actor,'snapshot',{invoiceId:iid}),/NOT_ALLOWED/);
+await assert.rejects(()=>mutate('admin','release',{note:'No admin authority'}),/NOT_ALLOWED/);
+await assert.rejects(()=>mutate('uc2','release',{note:'Another deal'}),/NOT_ALLOWED/);
+const releaseRequest=key();await mutate('uc','release',{note:'Used Car requests delivery; transfer follows'},releaseRequest);
+assert.equal((await snapshot()).order.releaseAuthorised,true);
+assert.equal((await q('select payment_status from garage_invoices where id=$1',[iid])).payment_status,'pending');
+const piece=(await q('select id from garage_tint_installation_pieces where invoice_id=$1',[iid])).id;
+const installation=async(actor,action,extra={})=>{
+ const s=(await q("select garage_installation_workflow($1,'snapshot',$2) r",[actor,{invoiceId:iid}])).r;
+ return (await q('select garage_installation_workflow($1,$2,$3) r',[actor,action,{invoiceId:iid,itemId:piece,revision:s.review.revision,requestId:key(),...extra}])).r;
+};
+await assert.rejects(()=>installation('sales','deliver'),/INSPECTION_REQUIRED|NOT_READY|NOT_ALLOWED/);
+await installation('head','claim');await installation('head','sqft',{value:5});await installation('head','complete');await installation('head','confirm');await installation('head','head_approve',{value:true});await installation('sales','sales_approve',{value:true});
+const damage=(await q("select garage_tint_damage('sales','create',$1) r",[{invoiceId:iid,requestId:key(),kind:'arrival',area:'Test bumper',description:'Sample only'}])).r;
+await assert.rejects(()=>installation('sales','deliver'),/DAMAGE_REVIEW_REQUIRED/);
+await q("select garage_tint_damage('head','resolve',$1)",[{invoiceId:iid,requestId:key(),reportId:damage.reportId,note:'Sample acknowledged'}]);
+await db.exec("update cars set final_deal=jsonb_set(final_deal,'{submittedAt}','\"2026-10-11T10:00:00Z\"') where id='car-deal'");
+assert.equal((await snapshot()).order.releaseAuthorised,false);
+await assert.rejects(()=>installation('sales','deliver'),/PAYMENT_NOT_VERIFIED/);
+await db.exec("update cars set final_deal=jsonb_set(final_deal,'{submittedAt}','\"2026-10-10T10:00:00Z\"') where id='car-deal'");
+await installation('sales','deliver');
+assert.ok((await q('select delivered_at from garage_invoices where id=$1',[iid])).delivered_at);
+assert.equal((await snapshot()).order.payable,false,'release never unlocks commission');
+await assert.rejects(()=>mutate('director','payout',{amount:30,reference:'No receipts',paidOn:'2026-01-01'}),/PAYMENT_NOT_VERIFIED/);
+const direct=(await q("select garage_tint_finance('sales','record',$1) r",[{invoiceId:iid,amount:40,method:'cash',reference:'Customer paid Garage',requestId:key()}])).r;
+await q("select garage_tint_finance('director','verify',$1)",[{invoiceId:iid,paymentId:direct.paymentId,requestId:key()}]);
+assert.equal((await snapshot()).order.balance,60);
+const reportReq=key();await mutate('uc','report_transfer',{amount:60,reference:'Used Car balance transfer'},reportReq);await mutate('uc','report_transfer',{amount:60,reference:'Used Car balance transfer'},reportReq);
+assert.equal((await snapshot()).transfers.length,1);
+await assert.rejects(()=>mutate('uc','report_transfer',{amount:50,reference:'Changed'},reportReq),/REQUEST_CHANGED/);
+const transfer=(await snapshot()).transfers[0];
+await assert.rejects(()=>mutate('uc','accept_transfer',{transferId:transfer.id}),/NOT_ALLOWED/);
+const acceptReq=key();await mutate('director','accept_transfer',{transferId:transfer.id},acceptReq);await mutate('director','accept_transfer',{transferId:transfer.id},acceptReq);
+assert.equal((await q('select count(*)::int n from garage_tint_payments where invoice_id=$1',[iid])).n,2);
+assert.equal((await snapshot()).order.verified,100);assert.equal((await snapshot()).order.payable,true);
+await assert.rejects(()=>mutate('director','payout',{amount:31,reference:'Overpayment',paidOn:'2026-01-01'}),/AMOUNT_EXCEEDS_BALANCE/);
+await assert.rejects(()=>mutate('uc','payout',{amount:30,reference:'Self-payment',paidOn:'2026-01-01'}),/NOT_ALLOWED/);
+const payoutReq=key();await mutate('director','payout',{amount:10,reference:'Part paid',paidOn:'2026-01-01'},payoutReq);await mutate('director','payout',{amount:10,reference:'Part paid',paidOn:'2026-01-01'},payoutReq);
+await mutate('director','payout',{amount:20,reference:'Balance paid',paidOn:'2026-02-01'});
+assert.equal((await snapshot()).order.paid,30);assert.equal((await snapshot()).order.remainingCommission,0);
+assert.equal((await rpc('uc','month',{month:'2026-01'})).paidThisMonth,10);assert.equal((await rpc('uc','month',{month:'2026-02'})).paidThisMonth,20);
+assert.equal((await rpc('uc2','month',{month:'2026-01'})).orders.length,0);
+// A report cannot be accepted a second time after direct customer payment reserves the balance.
+const iid2=await makeSale();await rpc('uc','report_transfer',{invoiceId:iid2,requestId:key(),amount:100,reference:'Dealer sent'});
+const t2=(await rpc('director','snapshot',{invoiceId:iid2})).transfers[0];
+await q("select garage_tint_finance('sales','record',$1)",[{invoiceId:iid2,requestId:key(),amount:100,method:'cash',reference:'Customer direct'}]);
+await assert.rejects(()=>rpc('director','accept_transfer',{invoiceId:iid2,requestId:key(),transferId:t2.id}),/PAYMENT_EXCEEDS_BALANCE/);
+assert.equal((await rpc('director','snapshot',{invoiceId:iid2})).transfers[0].state,'reported');
+// Accountless history is attached to the permanent profile, not login creation time.
+const partner=(await q("select garage_referral_account('create_profile','head',$1) r",[{requestId:key(),profile:{legalName:'Sample partner',recipientType:'individual',phone:'0100000001',brand:'Sample',branch:'Branch',tin:'SAMPLE-PRIVATE-TIN',bankAccount:'SAMPLE-PRIVATE-BANK'}}])).r;
+const externalId=await makeSale({...sale,salesAssignment:{ownerId:'sales',referrer:{kind:'external',profileId:partner.profileId}}});
+await assert.rejects(()=>rpc('uc','snapshot',{invoiceId:externalId}),/NOT_ALLOWED/);
+await db.query("update garage_referral_profiles set enabled=true,email='sample@example.test',email_verified_at=now(),approved_at=now(),approved_by='director',registered_at=now() where id=$1",[partner.profileId]);
+await db.query("insert into garage_referral_sessions(token_hash,profile_id,version) select $1,id,session_version from garage_referral_profiles where id=$2",['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',partner.profileId]);
+const month=(await q("select to_char(now() at time zone 'Asia/Kuala_Lumpur','YYYY-MM') m")).m;
+const externalMoney=(await q("select garage_tint_finance('sales','record',$1) r",[{invoiceId:externalId,requestId:key(),amount:100,method:'transfer',reference:'Sample customer direct'}])).r;
+await q("select garage_tint_finance('director','verify',$1)",[{invoiceId:externalId,paymentId:externalMoney.paymentId,requestId:key()}]);
+await rpc('director','payout',{invoiceId:externalId,requestId:key(),amount:30,reference:'Sample external payout',paidOn:month+'-01'});
+const payeeSnapshot=(await q('select recipient_snapshot from garage_referral_payouts where invoice_id=$1',[externalId])).recipient_snapshot;
+assert.equal(payeeSnapshot.payeeProfile.tin,'SAMPLE-PRIVATE-TIN');
+await db.query("update garage_referral_profiles set profile=jsonb_set(profile,'{tin}','\"NEW-TIN\"') where id=$1",[partner.profileId]);
+assert.equal((await q('select recipient_snapshot from garage_referral_payouts where invoice_id=$1',[externalId])).recipient_snapshot.payeeProfile.tin,'SAMPLE-PRIVATE-TIN');
+assert.ok(!JSON.stringify(await rpc('director','snapshot',{invoiceId:externalId})).includes('SAMPLE-PRIVATE-'));
+const portal=(await q('select garage_referral_partner_income($1,$2) r',['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',month])).r;
+assert.equal(portal.orders.length,1);assert.equal(portal.orders[0].commission,30);assert.equal(portal.paidThisMonth,30);assert.ok(!JSON.stringify(portal).includes('customer-deal'));assert.ok(!JSON.stringify(portal).includes('SAMPLE-PRIVATE-'));
+await assert.rejects(()=>q('select garage_referral_partner_income($1,$2)',['someone-else',month]),/SESSION_REQUIRED/);
+for(const role of ['anon','authenticated']){await db.exec(`set role ${role}`);for(const table of ['garage_referral_transfers','garage_referral_releases','garage_referral_payouts','garage_referral_settlement_requests'])await assert.rejects(()=>db.query('select * from '+table),/permission denied/);await assert.rejects(()=>db.query("select garage_referral_settlement('director','month','{}')"),/permission denied/);await db.exec('reset role');}
+await db.close();console.log('PASS: real installation checks, damage block, exact deal release, pending debt, direct/split/dealer receipt, duplicate transfer protection, payout limits, monthly actual income, stable accountless history and private access.');

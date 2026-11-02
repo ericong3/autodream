@@ -1,6 +1,7 @@
 // Garage destinations only; route guards remain the authority for access.
 export type GarageSection = 'Home' | 'Sales' | 'Jobs' | 'Manage';
 export function garageSection(path: string): GarageSection {
+  if(path.startsWith('/garage/referral-settlement'))return 'Sales';
   if(path.startsWith('/garage/payments')||path.startsWith('/garage/referral-accounts'))return 'Manage';
   if (/^\/garage\/(team|tint-pricing)(\/|$)/.test(path)) return 'Manage';
   if (/^\/garage\/(installer|calendar)(\/|$)/.test(path)) return 'Jobs';
@@ -21,6 +22,7 @@ export function garageNavigation(role?: string) {
   ];
 }
 export function garageSecondaryNavigation(role: string | undefined, section: GarageSection) {
+  if(section==='Sales'&&['director','shareholder','garage_head','garage_salesman'].includes(role??''))return [{label:'Sales tools',path:'/garage/sales-tools'},{label:'Referrals',path:'/garage/referral-settlement'}];
   if(section==='Manage'&&role==='admin')return [{label:'Payment verification',path:'/garage/payments'}];
   const manager = ['director', 'shareholder', 'garage_head'].includes(role ?? '');
   if (section === 'Jobs') return manager ? [{ label: 'Workshop', path: '/garage/installer' }, { label: 'Calendar', path: '/garage/calendar' }] : [];

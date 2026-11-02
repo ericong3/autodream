@@ -3,7 +3,9 @@ import {createHash} from 'node:crypto';
 import {handleReferralAccounts,isReferralAccountRequest} from '../referrals/accounts.mjs';
 import {handleSalesReferrals,isSalesReferralRequest,validateSalesAssignment} from '../referrals/sales.mjs';
 import {handleBonusCampaigns,isBonusCampaignRequest} from '../usedCar/bonusCampaigns.mjs';
+import {handleReferralSettlement,isReferralSettlementRequest} from '../referrals/settlement.mjs';
 export async function handleSales(req,deps){
+ if(isReferralSettlementRequest(req))return handleReferralSettlement(req,deps);
  if(isBonusCampaignRequest(req))return handleBonusCampaigns(req,deps);
  if(isSalesReferralRequest(req))return handleSalesReferrals(req,deps);
  if(isReferralAccountRequest(req))return handleReferralAccounts(req,deps);

@@ -2,6 +2,7 @@ import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {Link,useParams,useSearchParams} from 'react-router-dom';
 import {referralAccountRequest,type ReferralProfile} from '../lib/garageReferralAccounts';
 import GarageReferralProfileForm,{referralProfileFields as fields,type ReferralProfileSave} from '../components/GarageReferralProfileForm';
+import GaragePartnerIncome from '../components/GaragePartnerIncome';
 const input='w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-white outline-none focus:border-gold-400';
 export default function GarageReferralAccount(){
  const {mode='login'}=useParams(),[params]=useSearchParams(),token=params.get('token')||'';
@@ -39,7 +40,7 @@ export default function GarageReferralAccount(){
   {error&&<p role="alert" className="rounded-xl border border-red-400/30 bg-red-400/5 p-4 text-red-200 mb-5">{error}</p>}
   {message&&<p role="status" className="rounded-xl border border-emerald-400/30 p-4 text-emerald-200 mb-5">{message}</p>}
   {!ready&&!error&&<p className="text-white/50">Checking your account…</p>}
-  {mode==='home'&&account&&<dl className="rounded-2xl border border-white/10 p-5 space-y-4 mb-5"><div><dt className="text-white/50 text-xs">Email</dt><dd>{account.email}</dd></div>{fields.map(([key,label])=><div key={key}><dt className="text-white/50 text-xs">{label}</dt><dd className="break-words">{account.profile[key]}</dd></div>)}</dl>}
+  {mode==='home'&&account&&<><GaragePartnerIncome/><dl className="rounded-2xl border border-white/10 p-5 space-y-4 mb-5"><div><dt className="text-white/50 text-xs">Email</dt><dd>{account.email}</dd></div>{fields.map(([key,label])=><div key={key}><dt className="text-white/50 text-xs">{label}</dt><dd className="break-words">{account.profile[key]}</dd></div>)}</dl></>}
   {mode==='register'&&ready&&!saved&&<GarageReferralProfileForm key={token} initialProfile={profile} onSave={saveProfile}/>}
   {mode!=='register'&&ready&&!saved&&(mode!=='home'||account)&&<form onSubmit={submit} className="space-y-5">
    {['login','resend','forgot'].includes(mode)&&<label className="block text-sm space-y-2"><span>Email</span><input className={input} type="email" autoComplete="email" required maxLength={254} value={email} onChange={e=>setEmail(e.target.value)}/></label>}

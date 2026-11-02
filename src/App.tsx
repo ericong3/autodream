@@ -16,6 +16,7 @@ import AccountSignInCheck from './pages/AccountSignInCheck';
 import StaffAccountAccess from './pages/StaffAccountAccess';
 import GarageReferralAccount from './pages/GarageReferralAccount';
 import GarageReferralAccounts from './pages/GarageReferralAccounts';
+import GarageReferralSettlement from './pages/GarageReferralSettlement';
 import GarageSessionGate from './components/GarageSessionGate';
 import { secureGarageLoginEnabled } from './lib/garageSession';
 import Dashboard from './pages/Dashboard';
@@ -235,6 +236,7 @@ export default function App() {
         {/* Public */}
         <Route path="/referral-account/:mode" element={<GarageReferralAccount />} />
         <Route path="/garage/referral-accounts" element={<RequireGarageRole allow={role=>['director','garage_head'].includes(role)}><GarageReferralAccounts /></RequireGarageRole>} />
+        <Route path="/garage/referral-settlement" element={<RequireGarageRole allow={role=>['director','shareholder','garage_head','garage_salesman'].includes(role)}><GarageReferralSettlement /></RequireGarageRole>} />
         <Route path="/account/check" element={<AccountSignInCheck />} />
         <Route path="/account/:mode" element={<AccountRegistration />} />
         <Route path="/staff-access" element={<StaffAccountAccess />} />
@@ -290,6 +292,7 @@ export default function App() {
           <Route path="/quotations" element={<RequireSalesOrDirector><Quotations /></RequireSalesOrDirector>} />
           <Route path="/customers" element={<RequireSalesOrDirector><Customers /></RequireSalesOrDirector>} />
           <Route path="/commission" element={<RequireSalesOrDirector><Commission /></RequireSalesOrDirector>} />
+          <Route path="/garage-referrals" element={<RequireSalesOrDirector><GarageReferralSettlement /></RequireSalesOrDirector>} />
           <Route path="/loan-calculator" element={<RequireSalesOrDirector><LoanCalculator /></RequireSalesOrDirector>} />
           <Route path="/car-compare" element={<RequireSalesOrDirector><CarCompare /></RequireSalesOrDirector>} />
           <Route path="/calendar" element={<RequireSalesOrDirector><Calendar /></RequireSalesOrDirector>} />

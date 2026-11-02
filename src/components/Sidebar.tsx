@@ -59,12 +59,14 @@ const salesGroupItems: NavItem[] = [
   { to: '/customers', icon: Users, label: 'Leads & Loan' },
   { to: '/quotations', icon: FileText, label: 'Quotations' },
   { to: '/commission', icon: Banknote, label: 'Commission' },
+  { to: '/garage-referrals', icon: Banknote, label: 'Garage referrals' },
   { to: '/loan-calculator', icon: Calculator, label: 'Loan Calculator' },
   { to: '/car-compare', icon: GitCompare, label: 'Car Compare' },
   { to: '/calendar', icon: CalendarDays, label: 'Calendar' },
 ];
 
 const salespersonItems: NavItem[] = [
+  { to: '/garage-referrals', icon: Banknote, label: 'Garage referrals' },
   { to: '/sales-dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/inventory', icon: Car, label: 'Inventory' },
   { to: '/customers', icon: Users, label: 'Leads & Loan' },
