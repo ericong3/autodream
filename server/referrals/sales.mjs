@@ -31,7 +31,7 @@ export async function handleSalesReferrals(req,deps){return respond(req,deps,['P
   if(b.action==='snapshot')return {status:200,body:{enabled:false,assignment:null}};
   throw new ApiError(503,'SETUP','Sales referrals have not been activated yet.');
  }
- const rate=await ctx.repo.throttleHit('referral-sales:'+createHash('sha256').update(user.id).digest('hex'),120,900);
+ const rate=await ctx.repo.throttleHit('referral:'+createHash('sha256').update('sales:'+user.id).digest('hex'),120,900);
  if(!rate.allowed)throw new ApiError(429,'RATE_LIMITED','Try again shortly.');
  const {scope,action,...data}=b;
  const r=await ctx.repo.rpc('garage_sales_referrals',{p_actor:user.id,p_action:action,p_data:data});

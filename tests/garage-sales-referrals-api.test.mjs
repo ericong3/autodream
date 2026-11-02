@@ -14,6 +14,13 @@ function fixture(role='garage_salesman',access='garage'){
  return {user,repo,deps,calls,req,login};
 }
 
+test('referrer selection uses the installed private throttle contract',async()=>{
+ const w=fixture(),cookie=await w.login();let hits=0;
+ w.repo.throttleHit=async(key)=>{assert.match(key,/^[a-z]{1,8}:[A-Za-z0-9_-]{16,128}$/);hits++;return {allowed:true};};
+ assert.equal((await handleSales(w.req({scope:'sales_referrals',action:'options'},cookie),w.deps)).status,200);
+ assert.equal(hits,1);
+});
+
 test('referral choices require a private Garage sales session and cannot forge actor',async()=>{
  const w=fixture();assert.equal((await handleSales(w.req({scope:'sales_referrals',action:'options'}),w.deps)).status,401);
  const cookie=await w.login();assert.equal((await handleSales(w.req({scope:'sales_referrals',action:'options',actorId:'director'},cookie),w.deps)).status,400);
