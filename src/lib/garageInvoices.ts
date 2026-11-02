@@ -7,7 +7,7 @@ import type {
 } from '../types';
 import { generateId } from '../utils/format';
 
-function rowToInvoice(r: any): GarageInvoice {
+export function rowToInvoice(r: any): GarageInvoice {
   return {
     id: r.id,
     invoiceNumber: r.invoice_number,

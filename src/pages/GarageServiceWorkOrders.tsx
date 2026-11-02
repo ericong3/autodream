@@ -1,50 +1,29 @@
-import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ClipboardList, Car, User, UserCheck, ChevronRight, LayoutGrid, List } from 'lucide-react';
+import {useState} from 'react';
+import {useNavigate,useParams,useSearchParams} from 'react-router-dom';
+import {ClipboardList,Car,User,UserCheck,ChevronRight,LayoutGrid,List} from 'lucide-react';
 import GarageShell from '../components/GarageShell';
 import GarageWorkOrderBoard from '../components/GarageWorkOrderBoard';
-import { JobPriorityBadges, useNow } from '../components/GarageJobPriority';
-import { getJobTiming } from '../utils/garageJobPriority';
-import { listTintItemsForInvoices } from '../lib/garageTint';
-import { useWorkOrderActivityUpdates } from '../hooks/useWorkOrderActivityUpdates';
-import { useStore } from '../store';
-import { listInvoicesByService } from '../lib/garageInvoices';
-import { getInstallerJobForInvoice } from '../lib/garageInstallerJobs';
-import { getGarageVehicle, getGarageCustomer } from '../lib/garageCustomers';
-import { GARAGE_SERVICES, GARAGE_SERVICE_MAP } from '../utils/garageServices';
-import {
-  getWorkOrderStage, isWorkOrderClosed, WORK_ORDER_STAGE_LABEL, WORK_ORDER_STAGE_BADGE, WORK_ORDER_STAGE_ORDER,
-} from '../utils/garageWorkOrderStatus';
-import { useInstallerJobUpdates } from '../hooks/useInstallerJobUpdates';
-import type { GarageInvoice, GarageVehicle, GarageCustomer, GarageInstallerJob, GarageService, GarageTintWorkOrderItem } from '../types';
-import type { WorkOrderStage } from '../utils/garageWorkOrderStatus';
-
-interface Row {
-  invoice: GarageInvoice;
-  vehicle: GarageVehicle | null;
-  customer: GarageCustomer | null;
-  job: GarageInstallerJob | null;
-  stage: WorkOrderStage;
-  glass: GarageTintWorkOrderItem[];
-}
+import {JobPriorityBadges,useNow} from '../components/GarageJobPriority';
+import {getJobTiming} from '../utils/garageJobPriority';
+import {useStore} from '../store';
+import {GARAGE_SERVICE_MAP} from '../utils/garageServices';
+import {isWorkOrderClosed,WORK_ORDER_STAGE_LABEL,WORK_ORDER_STAGE_BADGE} from '../utils/garageWorkOrderStatus';
+import type {GarageService} from '../types';
+import type {GarageTrackingState} from '../lib/garageTracking';
 
 // Manager-level oversight — every work order for one service, across every
 // salesman, unlike "My Pipeline" which is scoped to the logged-in
 // salesman's own orders. Two views of the same work orders: an operational
 // Kanban board (the default for Tinted, which has the full installer
 // pipeline) and the original list.
-export default function GarageServiceWorkOrders({serviceKey,embedded=false,active=true}:{serviceKey?:GarageService|'all';embedded?:boolean;active?:boolean}) {
+export default function GarageServiceWorkOrders({serviceKey,embedded=false,tracking}:{serviceKey?:GarageService|'all';embedded?:boolean;tracking:GarageTrackingState}) {
   const { service: routeService } = useParams<{ service: string }>();
   const service=serviceKey??routeService;
   const navigate = useNavigate();
   const allUsers = useStore((s) => s.users);
-  const actor = useStore(s=>s.currentUser?.id);
-  const [rows, setRows] = useState<Row[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showClosed, setShowClosed] = useState(false);
-  const [search,setSearch]=useState(''),[error,setError]=useState('');
-  const generation=useRef(0);
-  const loaded=useRef(false);
+  const {loading,error}=tracking;
+  const [showClosed,setShowClosed]=useState(false);
+  const [search,setSearch]=useState('');
   // In the URL so opening a card and coming back keeps the chosen view.
   const [searchParams, setSearchParams] = useSearchParams();
   const hasBoard = service === 'tinted'||service==='all';
@@ -57,36 +36,7 @@ export default function GarageServiceWorkOrders({serviceKey,embedded=false,activ
 
   const meta = service==='all'?{label:'Vehicle',icon:ClipboardList}:GARAGE_SERVICE_MAP[service as GarageService];
 
-  const load = (quiet = false) => {
-    if (!service||!active) return;
-    const request=++generation.current;
-    if (!quiet) setLoading(true);
-    setError('');
-    (service==='all'?Promise.all(GARAGE_SERVICES.map(s=>listInvoicesByService(s.key))).then(groups=>groups.flat()):listInvoicesByService(service as GarageService))
-      .then(async (invoices) => {
-        // Per-glass installers for every order, in one request.
-        const allGlass = await listTintItemsForInvoices(invoices.filter((i) => i.service === 'tinted').map((i) => i.id)).catch(() => []);
-        const built = await Promise.all(invoices.map(async (invoice): Promise<Row> => {
-          const [vehicle, customer, job] = await Promise.all([
-            getGarageVehicle(invoice.vehicleId),
-            getGarageCustomer(invoice.customerId),
-            invoice.service === 'tinted' ? getInstallerJobForInvoice(invoice.id) : Promise.resolve(null),
-          ]);
-          return { invoice, vehicle, customer, job, stage: getWorkOrderStage(invoice), glass: allGlass.filter((g) => g.invoiceId === invoice.id) };
-        }));
-        built.sort((a, b) => WORK_ORDER_STAGE_ORDER[a.stage] - WORK_ORDER_STAGE_ORDER[b.stage]);
-        if(request===generation.current){loaded.current=true;setRows(built);}
-      })
-      .catch(e=>{if(request===generation.current)setError(e instanceof Error?e.message:'Could not load work orders. Try again.');})
-      .finally(() => {if(request===generation.current)setLoading(false);});
-  };
-
-  useEffect(() => {if(active)load(loaded.current);return()=>{generation.current++;};}, [service,actor,active]);
-  // Keep the board live: installer job changes, plus every salesman step
-  // (each records an activity-history entry).
-  useInstallerJobUpdates(() => load(true));
-  useWorkOrderActivityUpdates('all', () => load(true));
-
+  const rows=service==='all'?tracking.rows:tracking.rows.filter(row=>row.invoice.service===service);
   const searched=rows.filter(r=>!search.trim()||[r.invoice.invoiceNumber,r.vehicle?.make,r.vehicle?.model,r.vehicle?.registrationNo,r.customer?.name,nameOf(r.invoice.salesOwnerId??r.invoice.createdBy)].filter(Boolean).join(' ').toLowerCase().includes(search.trim().toLowerCase()));
   const activeRows = searched.filter((r) => !isWorkOrderClosed(r.invoice));
   const closed = searched.filter((r) => isWorkOrderClosed(r.invoice));
@@ -136,7 +86,7 @@ export default function GarageServiceWorkOrders({serviceKey,embedded=false,activ
         </div>
 
         <input aria-label="Search work orders" type="search" placeholder="Search invoice, vehicle, customer or salesperson" value={search} onChange={e=>setSearch(e.target.value)} className="w-full min-h-[44px] mb-4 rounded-xl border border-white/15 bg-white/[.04] px-4 py-3 text-white text-sm placeholder:text-white/40 focus:outline-none focus:border-gold-400/50"/>
-        {error?<div role="alert" className="text-red-300 text-sm py-8">{error}<button onClick={()=>load()} className="ml-3 text-gold-300 underline">Try again</button></div>:loading ? (
+        {error?<div role="alert" className="text-red-300 text-sm py-8">{error}<button onClick={tracking.reload} className="ml-3 text-gold-300 underline">Try again</button></div>:loading ? (
           <p className="text-white/40 text-sm text-center py-20">Loading…</p>
         ) : view === 'board' ? (
           // The board breaks out of the page's reading-width column to use

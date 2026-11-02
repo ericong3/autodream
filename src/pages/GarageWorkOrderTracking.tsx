@@ -6,12 +6,14 @@ import GarageServiceWorkOrders from './GarageServiceWorkOrders';
 const GarageBuildingProjects=lazy(()=>import('./GarageBuildingProjects'));
 import {GARAGE_SERVICES} from '../utils/garageServices';
 import {useStore} from '../store';
+import {useGarageTracking} from '../hooks/useGarageTracking';
 
 // One manager workspace; visited panels retain their own search and filters.
 const tabs=[{key:'all',label:'All',icon:ClipboardList},...GARAGE_SERVICES.map(s=>({...s,label:s.key==='tinted'?'Car Tint':s.label})),{key:'building',label:'Building Tint',icon:Building2}];
 export default function GarageWorkOrderTracking(){
  const {service}=useParams(),[params,setParams]=useSearchParams(),navigate=useNavigate();
  const actor=useStore(s=>s.currentUser?.id);
+ const tracking=useGarageTracking();
  const requested=params.get('service')??service??'all';
  const selected=tabs.some(t=>t.key===requested)?requested:'all';
  const [visited,setVisited]=useState([selected]);
@@ -28,8 +30,9 @@ export default function GarageWorkOrderTracking(){
      className={`inline-flex min-h-[44px] items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400 active:opacity-75 ${selected===key?'border-gold-400/50 bg-gold-400/15 text-gold-300':'border-white/10 bg-white/[.03] text-white/60 hover:border-white/25 hover:text-white'}`}><Icon aria-hidden="true" size={16}/>{label}</button>)}
    </div>
    <div id="work-orders-panel" role="tabpanel" aria-labelledby={'work-orders-tab-'+selected}>
-    {vehicleTabs.map(tab=><div key={actor+':'+tab.key} hidden={selected!==tab.key}><GarageServiceWorkOrders embedded serviceKey={tab.key as 'all'|'tinted'|'coating'|'ppf'|'spray'} active={selected===tab.key}/></div>)}
-    {(visited.includes('building')||visited.includes('all')||selected==='building'||selected==='all')&&<div hidden={selected!=='building'&&selected!=='all'} className={selected==='all'?'mt-8 border-t border-white/10 pt-6':''}><Suspense fallback={<p className="text-white/50 text-sm">Loading building projects…</p>}><GarageBuildingProjects key={actor} embedded/></Suspense></div>}
+    {tracking.refreshing&&<p role="status" className="text-white/40 text-xs mb-2">Updating work orders…</p>}
+    {vehicleTabs.map(tab=><div key={actor+':'+tab.key} hidden={selected!==tab.key}><GarageServiceWorkOrders embedded serviceKey={tab.key as 'all'|'tinted'|'coating'|'ppf'|'spray'} tracking={tracking}/></div>)}
+    {(!tracking.loading&&(visited.includes('building')||visited.includes('all')||selected==='building'||selected==='all'))&&<div hidden={selected!=='building'&&selected!=='all'} className={selected==='all'?'mt-8 border-t border-white/10 pt-6':''}><Suspense fallback={<p className="text-white/50 text-sm">Loading building projects…</p>}><GarageBuildingProjects key={actor} embedded/></Suspense></div>}
    </div>
   </div>
  </GarageShell>;

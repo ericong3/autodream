@@ -24,6 +24,16 @@ export function supabaseRepo(config) {
   const check = ({ data, error }) => { if (error) throw error; return data; };
 
   return {
+    async trackingOrders(user) {
+      if(!['director','shareholder','garage_head'].includes(user.role)||!['garage','both'].includes(user.business_access))throw Error('NOT_ALLOWED');
+      const rows=[];
+      for(let from=0;;from+=200){
+        const data=check(await sb.from('garage_invoices').select('*,vehicle:garage_vehicles(*),customer:garage_customers(id,name),jobs:garage_installer_jobs(*),glass:garage_tint_installation_pieces(*)')
+          .in('service',['tinted','coating','ppf','spray']).order('created_at',{ascending:false}).order('id').range(from,from+199));
+        rows.push(...data);
+        if(data.length<200)return rows;
+      }
+    },
     async homeOrders(user) {
       const worker=['garage_installer','garage_detailer','garage_spray'].includes(user.role);
       const manager=['director','shareholder','garage_head'].includes(user.role);

@@ -9,7 +9,7 @@ import { generateId } from '../utils/format';
 // inspection, overall remark, ETA — while each glass piece has its own
 // installer (see garageTint). accepted_by / accepted_at / assigned_by are
 // legacy history from the old one-installer-per-car model.
-function rowToJob(r: any): GarageInstallerJob {
+export function rowToJob(r: any): GarageInstallerJob {
   return {
     id: r.id,
     invoiceId: r.invoice_id,

@@ -14,6 +14,28 @@ function fixture(role='garage_salesman',access='garage'){
  return {user,repo,deps,calls,req,login};
 }
 const payload={action:'confirm',jobId:'test-job',revision:2,requestId:'sample-request-00001'};
+
+test('tracking returns one combined read only for verified Garage managers',async()=>{
+ for(const role of ['director','shareholder','garage_head']){
+  const w=fixture(role,'both'),cookie=await w.login();let reads=0;
+  w.repo.trackingOrders=async actor=>{assert.equal(actor.id,w.user.id);reads++;return [{id:'sample-order',customer:{id:'sample-customer',name:'Sample'}}];};
+  w.repo.throttleHit=async key=>{assert.match(key,/^[a-z]{1,8}:[A-Za-z0-9_-]{16,128}$/);return {allowed:true};};
+  const r=await handleInstallation(w.req({action:'tracking'},cookie),w.deps);
+  assert.equal(r.status,200);assert.equal(JSON.parse(r.body).orders.length,1);assert.equal(reads,1);assert.equal(w.calls.length,0);
+  assert.equal((await handleInstallation(w.req({action:'tracking',actorId:'someone-else'},cookie),w.deps)).status,400);
+ }
+ for(const role of ['garage_salesman','garage_installer','garage_detailer','garage_spray','admin']){
+  const w=fixture(role,'both'),cookie=await w.login();w.repo.trackingOrders=async()=>{throw Error('Should not read');};
+  assert.equal((await handleInstallation(w.req({action:'tracking'},cookie),w.deps)).status,403);
+ }
+});
+
+test('tracking keeps internal read errors private and requires its session',async()=>{
+ const w=fixture('garage_head'),cookie=await w.login();w.repo.trackingOrders=async()=>{throw Error('private database detail');};
+ assert.equal((await handleInstallation(w.req({action:'tracking'}),w.deps)).status,401);
+ const result=await handleInstallation(w.req({action:'tracking'},cookie),w.deps);
+ assert.equal(result.status,503);assert.ok(!result.body.includes('private database detail'));
+});
 test('notification and installation requests respect the production throttle contract for every staff ID',async()=>{
  for(const id of ['a','staff.with-punctuation@example.test','x'.repeat(180)]){
   const w=fixture('garage_head');w.user.id=id;const cookie=await w.login(),keys=[];

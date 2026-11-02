@@ -85,7 +85,7 @@ export async function createTintOrder(input: {
 
 // Tint work-order items live in garage_tint_installation_pieces (the table
 // predates the item model — `position` is the item's glass position).
-function rowToItem(r: any): GarageTintWorkOrderItem {
+export function rowToItem(r: any): GarageTintWorkOrderItem {
   return {
     id: r.id,
     invoiceId: r.invoice_id,

@@ -6,7 +6,16 @@ export async function handleInstallation(req,deps){
  return respond(req,deps,['POST'],async(ctx,res)=>{
   const {user}=await authenticate(req,ctx,res,canUseApp);
   if(!['garage','both'].includes(user.business_access)||!ROLES.includes(user.role))throw new ApiError(403,'FORBIDDEN','Garage access is required.');
-  const data=readJson(req,16000);onlyKeys(data,['action','jobId','itemId','invoiceId','revision','requestId','value','reason','itemIds']);
+  const data=readJson(req,16000);
+  if(data.action==='tracking'){
+   onlyKeys(data,['action']);
+   if(!['director','shareholder','garage_head'].includes(user.role))throw new ApiError(403,'FORBIDDEN','Garage management access is required.');
+   const rate=await ctx.repo.throttleHit('track:'+createHash('sha256').update(user.id).digest('hex'),180,900);
+   if(!rate.allowed)throw new ApiError(429,'RATE_LIMITED','Wait a moment before refreshing.');
+   try{return {status:200,body:{orders:await ctx.repo.trackingOrders(user)}};}
+   catch{throw new ApiError(503,'UNAVAILABLE','Could not load work orders. Try again.');}
+  }
+  onlyKeys(data,['action','jobId','itemId','invoiceId','revision','requestId','value','reason','itemIds']);
   if(!ACTIONS.includes(data.action))throw new ApiError(400,'INVALID','Choose a valid workshop action.');
   if(['pay','deliver','warranty','receipt'].includes(data.action)&&!['garage_salesman','garage_head','director','shareholder'].includes(user.role))throw new ApiError(403,'FORBIDDEN','Workshop staff cannot perform sales actions.');
   const reading=['snapshot','notices'].includes(data.action);

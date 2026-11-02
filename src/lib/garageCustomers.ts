@@ -20,7 +20,7 @@ function rowToCustomer(r: any): GarageCustomer {
   };
 }
 
-function rowToVehicle(r: any): GarageVehicle {
+export function rowToVehicle(r: any): GarageVehicle {
   return {
     id: r.id,
     customerId: r.customer_id,
