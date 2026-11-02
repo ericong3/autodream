@@ -9,6 +9,9 @@ import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import MyPayslipCard from '../components/MyPayslipCard';
 import { formatRM, generateId } from '../utils/format';
 import { verifyPassword } from '../utils/password';
+import { confirmOwnSessionPassword } from '../lib/garageSession';
+import { ownPayrollProfile } from '../utils/ownPayrollProfile';
+import { campaignBonusFor } from '../utils/campaignPayroll';
 import { effectiveMonthlyBasic, basicPayLabel, getCommissionMonth, getDeliveryDate, getProrationFactor } from '../utils/generatePayments';
 import { RepairJob } from '../types';
 
@@ -16,6 +19,8 @@ export default function SalesDashboard() {
   const cars = useStore((s) => s.cars);
   const repairs = useStore((s) => s.repairs);
   const currentUser = useStore((s) => s.currentUser);
+  const users = useStore((s) => s.users);
+  const payrollUser = ownPayrollProfile(currentUser, users);
   const phase2Loaded = useStore((s) => s.phase2Loaded);
   const customers = useStore((s) => s.customers);
   const testDrives = useStore((s) => s.testDrives);
@@ -51,6 +56,10 @@ export default function SalesDashboard() {
   const [showPinModal, setShowPinModal] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
+  const [checkingPassword, setCheckingPassword] = useState(false);
+  useEffect(() => {
+    setSalaryVisible(false); setPinVerified(false); setShowPinModal(false); setPinInput(''); setPinError('');
+  }, [currentUser?.id]);
 
   const handleEyeToggle = () => {
     if (salaryVisible) {
@@ -66,14 +75,20 @@ export default function SalesDashboard() {
   };
 
   const handlePinSubmit = async () => {
-    if (currentUser?.password && await verifyPassword(pinInput, currentUser.password)) {
-      setPinVerified(true);
-      setSalaryVisible(true);
-      setShowPinModal(false);
-      setPinError('');
-    } else {
-      setPinError('Incorrect password');
-    }
+    if (!currentUser || checkingPassword || !pinInput) return;
+    const actorId = currentUser.id;
+    setCheckingPassword(true);
+    setPinError('');
+    try {
+      const confirmed = currentUser.authSource === 'server'
+        ? await confirmOwnSessionPassword(pinInput) === actorId
+        : !!currentUser.password && await verifyPassword(pinInput, currentUser.password);
+      if (useStore.getState().currentUser?.id !== actorId) return;
+      if (!confirmed) throw new Error('Incorrect password');
+      setPinVerified(true); setSalaryVisible(true); setShowPinModal(false); setPinInput('');
+    } catch (error) {
+      if (useStore.getState().currentUser?.id === actorId) setPinError(error instanceof Error ? error.message : 'Could not confirm your password.');
+    } finally { setCheckingPassword(false); }
   };
 
   const prevMonth = () => setMonthFilter(m => {
@@ -170,18 +185,19 @@ export default function SalesDashboard() {
   // no recorded payment yet falls back to a live preview from the current
   // rate — otherwise setting an allowance today would silently appear on
   // every past month you scroll back to, even ones from before it existed.
-  const isFullTime = currentUser?.employmentType === 'full_time';
+  const isFullTime = payrollUser?.employmentType === 'full_time';
   const monthBasicPayment = payments.find(p => p.recipientId === currentUser?.id && p.type === 'salary' && p.description?.endsWith(monthLabel));
   const monthAllowancePayment = payments.find(p => p.recipientId === currentUser?.id && p.type === 'allowance' && p.description?.endsWith(monthLabel));
   const wasRun = !!monthBasicPayment || !!monthAllowancePayment;
   const monthBasic = wasRun
     ? (monthBasicPayment?.amount ?? 0)
-    : (isFullTime && currentUser ? effectiveMonthlyBasic(currentUser, monthFilter) : 0);
+    : (isFullTime && payrollUser ? effectiveMonthlyBasic(payrollUser, monthFilter) : 0);
   const monthAllowance = wasRun
     ? (monthAllowancePayment?.amount ?? 0)
-    : (isFullTime && currentUser ? Math.round((currentUser.allowance ?? 0) * getProrationFactor(currentUser, monthFilter) * 100) / 100 : 0);
+    : (isFullTime && payrollUser ? Math.round((payrollUser.allowance ?? 0) * getProrationFactor(payrollUser, monthFilter) * 100) / 100 : 0);
 
-  const totalMonthSalary = monthCommission + monthSourcingComm + monthIntakeComm + monthBasic + monthAllowance;
+  const monthBonus = campaignBonusFor(payments, myId, monthFilter);
+  const totalMonthSalary = monthCommission + monthSourcingComm + monthIntakeComm + monthBasic + monthAllowance + monthBonus;
   const totalAllTime = totalCommission + totalSourcingComm + totalIntakeComm;
 
   const myReminders = useMemo(() => personalReminders.filter(r => r.userId === myId), [personalReminders, myId]);
@@ -329,6 +345,7 @@ export default function SalesDashboard() {
               </span>
               <button
                 onClick={handleEyeToggle}
+                aria-label={salaryVisible ? 'Hide my salary' : 'Show my salary'}
                 className="w-8 h-8 rounded-full bg-obsidian-600/60 border border-obsidian-400/40 flex items-center justify-center text-gray-400 hover:text-white hover:border-obsidian-300/60 transition-all"
               >
                 {salaryVisible ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -345,6 +362,7 @@ export default function SalesDashboard() {
           </div>
 
           {/* Divider */}
+          {monthBonus > 0 && <p className="text-emerald-400 text-xs mt-3">Bonus: {mask(formatRM(monthBonus))}</p>}
           <div className="border-t border-obsidian-500/40 my-4" />
 
           {/* Breakdown pills */}
@@ -743,10 +761,10 @@ export default function SalesDashboard() {
           {pinError && <p className="text-red-400 text-xs">{pinError}</p>}
           <button
             onClick={handlePinSubmit}
-            disabled={!pinInput}
+            disabled={!pinInput || checkingPassword}
             className="w-full btn-gold py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40"
           >
-            Reveal
+            {checkingPassword ? 'Checking…' : 'Reveal'}
           </button>
         </div>
       </Modal>

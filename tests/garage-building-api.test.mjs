@@ -83,6 +83,34 @@ function project(id = 'bld_1', revision = 0, ownerId = 'u1') {
   return { schema: 1, id, ownerId, customerName: '', phone: '', title: 'Shop', address: '', floors: [{ id: 'fl1', name: 'L1' }], rooms: [], windows: [], versions: [], revision, createdAt: 'x', updatedAt: 'x' };
 }
 
+test('salary password confirmation uses the cookie actor and keeps the existing session', async () => {
+  const w=world();
+  const login=parse(await handleAppSession(req({method:'POST',body:{username:'cara',password:'cara-pass'}}),w.deps));
+  const token=cookieFrom(login);
+  const out=parse(await handleAppSession(req({method:'POST',cookie:token,body:{action:'confirm_password',password:'cara-pass'}}),w.deps));
+  assert.equal(out.status,200);
+  assert.deepEqual(out.json,{confirmed:true,userId:'c1'});
+  assert.equal(w.state.sessions.size,1);
+  assert.equal(cookieFrom(out),undefined,'confirmation must not rotate or switch the session');
+  assert.ok(!out.body.includes('cara-pass'));
+  const wrong=await handleAppSession(req({method:'POST',cookie:token,body:{action:'confirm_password',password:'right-pass'}}),w.deps);
+  assert.equal(wrong.status,401,'another staff password cannot reveal this salary');
+  const injected=await handleAppSession(req({method:'POST',cookie:token,body:{action:'confirm_password',password:'cara-pass',userId:'u1'}}),w.deps);
+  assert.equal(injected.status,400);
+});
+
+test('salary password confirmation requires an active same-origin session and limits guesses', async () => {
+  const w=world();const {token}=await signIn(w);
+  const attempt=overrides=>handleAppSession(req({method:'POST',cookie:token,body:{action:'confirm_password',password:'wrong'},...overrides}),w.deps);
+  assert.equal((await attempt({cookie:undefined})).status,401);
+  assert.equal((await attempt({headers:{origin:'https://untrusted.example'}})).status,403);
+  for(let i=0;i<LIMITS.userAttempts;i++)assert.equal((await attempt()).status,401);
+  const blocked=await attempt();assert.equal(blocked.status,429);assert.ok(blocked.headers['Retry-After']);
+  w.advance((LIMITS.throttleWindowSeconds+1)*1000);
+  w.state.users.get('u1').enabled=false;
+  assert.equal((await attempt({body:{action:'confirm_password',password:'right-pass'}})).status,403);
+});
+
 test('sign-in sets a hardened HttpOnly cookie and stores only a token hash', async () => {
   const w = world();
   const { out, token } = await signIn(w);

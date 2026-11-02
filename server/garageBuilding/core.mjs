@@ -316,7 +316,25 @@ export async function handleGarageSession(req, deps) {
 // Shared AutoDream login. Only the private account determines role/business access.
 export async function handleAppSession(req, deps) {
   return respond(req,deps,['GET','POST','DELETE'],async(ctx,res)=>{
-    if(req.method==='POST')return login(req,ctx,res,canUseApp);
+    if(req.method==='POST'){
+      const body=readJson(req,LIMITS.maxLoginBodyBytes);
+      if(body.action!=='confirm_password')return login(req,ctx,res,canUseApp);
+      onlyKeys(body,['action','password']);
+      if(typeof body.password!=='string'||!body.password||body.password.length>LIMITS.maxPassword)throw new ApiError(400,'INVALID','Enter your password.');
+      const {user}=await authenticate(req,ctx,res,canUseApp);
+      const userKey=`u:${hmac(ctx.config.secret,`user:${user.username.toLowerCase()}`)}`;
+      const ipKey=`ip:${hmac(ctx.config.secret,`ip:${clientIp(req)}`)}`;
+      const ip=await db(ctx.repo.throttleHit(ipKey,LIMITS.ipAttempts,LIMITS.throttleWindowSeconds));
+      const u=ip.allowed?await db(ctx.repo.throttleHit(userKey,LIMITS.userAttempts,LIMITS.throttleWindowSeconds)):{allowed:true,retryAfter:0};
+      if(!u.allowed||!ip.allowed){
+        const retryAfter=Math.max(1,Math.ceil(Math.max(u.allowed?0:u.retryAfter,ip.allowed?0:ip.retryAfter)));
+        res.headers['Retry-After']=String(retryAfter);
+        throw new ApiError(429,'RATE_LIMITED','Too many password attempts. Wait and try again.',{retryAfter});
+      }
+      if(!(await verifyPassword(ctx.bcrypt,body.password,user.password)))throw authError('Incorrect password.');
+      await db(ctx.repo.throttleClear(userKey));
+      return {status:200,body:{confirmed:true,userId:user.id}};
+    }
     if(req.method==='DELETE'){
       const token=parseCookies(header(req,'cookie'))[COOKIE_NAME];
       if(token&&TOKEN_RE.test(token))await db(ctx.repo.deleteSession(sha256(token)));

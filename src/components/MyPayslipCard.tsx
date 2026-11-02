@@ -8,6 +8,7 @@ import { generateId } from '../utils/format';
 import { PAYROLL_ELIGIBLE_ROLES, getCommissionMonth } from '../utils/generatePayments';
 import { generatePayslipNo, findExistingPayslip, computePayslipDraft, computeYtdForPayslip } from '../utils/payslip';
 import { Payslip } from '../types';
+import { ownPayrollProfile } from '../utils/ownPayrollProfile';
 
 // Self-service payslip generation — everyone can pull their own instead of
 // waiting on a director. Deliberately not editable here (unlike the
@@ -16,7 +17,9 @@ import { Payslip } from '../types';
 // hand. "Generate" is idempotent (see findExistingPayslip) — clicking it
 // again for a month that already has one just reopens that same payslip.
 export default function MyPayslipCard() {
-  const currentUser = useStore((s) => s.currentUser);
+  const identity = useStore((s) => s.currentUser);
+  const users = useStore((s) => s.users);
+  const currentUser = ownPayrollProfile(identity, users);
   const cars = useStore((s) => s.cars);
   const customers = useStore((s) => s.customers);
   const payments = useStore(s=>s.payments);
@@ -71,6 +74,8 @@ export default function MyPayslipCard() {
       };
       await addPayslip(payslip);
       setPreview(payslip);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not open your payslip. Please try again.');
     } finally {
       setGenerating(false);
     }
