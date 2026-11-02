@@ -1,4 +1,4 @@
-# Garage referral settlement — prepared, not installed
+# Garage referral settlement
 
 Owner decisions confirmed 2 November 2026:
 
@@ -38,9 +38,9 @@ Unrelated warranty approval, cancellation/refund, replacement-lineage and other 
 
 ## Validation
 
-- 250 automated tests, including the four new API tests: session actor, forged identity, admin exclusion, validation, role restrictions, separate partner cookie and rollout-off behaviour.
+- 252 automated tests, including the new API tests: session actor, forged identity, admin exclusion, validation, role restrictions, separate partner cookie and rollout-off behaviour.
 - Disposable PostgreSQL rehearsal runs the exact activation bundle (fixture-only baseline substitution), rejects drift and repeat installation, and exercises actual installation/inspection, damage block, exact-deal release, post-delivery split receipts, duplicate transfer protection, partial payout limits, monthly actual payment dates, accountless history and browser-role denial.
 - Production build passes. Sample-only browser trial verifies transfer acceptance, commission eligibility, partial payout and partner income. No real data was written.
 - Local preview: `node tests/referral-settlement-ui/server.mjs`, then `http://localhost:5206/tests/referral-settlement-ui/index.html`.
 
-This document does not constitute installation approval. The new database update and matching live rollout are still awaiting the owner.
+Owner approval was received on 3 November 2026. The exact database transaction is installed, its privacy/readiness checks passed, and the matching application is live. Runtime revision: `78c35cc`; Vercel deployment: `dpl_9E54yQR6hWs3CiDcQVNwWsALmkam`; canonical asset: `/assets/index-BJf0ef08.js`. The production flag `GARAGE_REFERRAL_SETTLEMENT_ONLINE=1` is enabled. Both settlement and existing referrer selection now use the installed private request-limiter contract. No production transfer, release or payout was created during rollout. Authenticated staff/partner acceptance with real data remains an owner test.
