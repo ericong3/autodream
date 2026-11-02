@@ -15,6 +15,13 @@ function fixture(role='garage_salesman',access='garage'){
 }
 
 const body=(action,extra={})=>({scope:'referral_settlement',action,...extra});
+test('staff and partner settlement use the installed private throttle key format',async()=>{
+ const w=fixture('director','both'),cookie=await w.login();const keys=[];
+ w.repo.throttleHit=async(key)=>{assert.match(key,/^[a-z]{1,8}:[A-Za-z0-9_-]{16,128}$/);keys.push(key);return {allowed:true};};
+ assert.equal((await handleSales(w.req(body('month',{month:'2026-11'}),cookie),w.deps)).status,200);
+ assert.equal((await handleSales(w.req(body('partner_month',{month:'2026-11'}),'autodream_referral_session='+'a'.repeat(64)),w.deps)).status,200);
+ assert.equal(keys.length,2);assert.notEqual(keys[0],keys[1]);
+});
 test('settlement derives the actor from the private session and is inactive without its rollout flag',async()=>{
  const w=fixture(),cookie=await w.login();
  assert.equal((await handleSales(w.req(body('month',{month:'2026-11'})),w.deps)).status,401);

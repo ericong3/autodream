@@ -27,7 +27,7 @@ export async function handleReferralSettlement(req,deps){return respond(req,deps
   if(['month','partner_month','snapshot'].includes(b.action))return {status:200,body:{enabled:false,orders:[]}};
   throw new ApiError(503,'SETUP','Referral settlement has not been activated yet.');
  }
- const throttle=await ctx.repo.throttleHit('referral-settle:'+hash(user?.id??tokenHash),180,900);
+ const throttle=await ctx.repo.throttleHit('referral:'+hash('settlement:'+(user?.id??tokenHash)),180,900);
  if(!throttle.allowed)throw new ApiError(429,'RATE_LIMITED','Try again shortly.');
  const {scope,action,...data}=b;
  const r=partner?await ctx.repo.rpc('garage_referral_partner_income',{p_token_hash:tokenHash,p_month:b.month}):await ctx.repo.rpc('garage_referral_settlement',{p_actor:user.id,p_action:action,p_data:data});
