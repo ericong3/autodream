@@ -1,4 +1,5 @@
 import { salesCommission } from '../utils/salesCommission';
+import { RECON_COMMISSION_DEFAULT, registrationCommission } from '../utils/carRegistration';
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { createPortal } from 'react-dom';
@@ -90,6 +91,8 @@ const CAR_MAKES = ['All', 'Perodua', 'Proton', 'Honda', 'Toyota', 'Nissan', 'Oth
 
 
 const emptyForm: Omit<Car, 'id' | 'dateAdded'> = {
+  isRecon: false,
+  salesCommission: undefined,
   make: '',
   model: '',
   variant: '',
@@ -592,6 +595,9 @@ export default function Inventory() {
 
   const handleSubmit = async () => {
     const newErrors: Record<string, string> = {};
+    let reconCommission: number | undefined;
+    try { reconCommission = registrationCommission(!!form.isRecon, form.salesCommission, isDirector); }
+    catch (e) { newErrors.salesCommission = (e as Error).message; }
 
     if (!form.make.trim()) newErrors.make = 'Make is required';
     if (!form.model.trim()) newErrors.model = 'Model is required';
@@ -609,6 +615,7 @@ export default function Inventory() {
     const today = new Date().toISOString().split('T')[0];
     const newCar: Car = {
       ...form,
+      salesCommission: reconCommission,
       id: generateId(),
       dateAdded: today,
       // Cars added directly (not through Coming Soon) skip the "Car In" click
@@ -1922,6 +1929,16 @@ export default function Inventory() {
       {/* Add Car Modal */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Add New Car" maxWidth="max-w-2xl">
         <div className="grid grid-cols-2 gap-4">
+          <FormField label="Vehicle type" className={form.isRecon ? '' : 'col-span-2'}>
+            <select aria-label="Vehicle type" className={inputCls()} value={form.isRecon ? 'recon' : 'used'} onChange={e => setForm({ ...form, isRecon: e.target.value === 'recon', salesCommission: e.target.value === 'recon' ? RECON_COMMISSION_DEFAULT : undefined })}>
+              <option value="used">Used</option>
+              <option value="recon">Recon</option>
+            </select>
+          </FormField>
+          {form.isRecon && <FormField label="Sales commission per unit (RM)" error={errors.salesCommission}>
+            <input aria-label="Sales commission per unit (RM)" type="number" min="0" max="100000" step="0.01" className={inputCls(errors.salesCommission)} value={form.salesCommission ?? ''} readOnly={!isDirector} onChange={e => isDirector && setForm({ ...form, salesCommission: e.target.value === '' ? undefined : Number(e.target.value) })} />
+            <p className="text-gray-500 text-xs mt-1">Default RM2,000. Director can adjust.</p>
+          </FormField>}
           <FormField label="Make" error={errors.make}>
             <input
               className={inputCls(errors.make)}
@@ -2045,7 +2062,7 @@ export default function Inventory() {
                 onChange={(e) => setForm({ ...form, priceFloor: e.target.value ? Number(e.target.value) : undefined })}
                 placeholder="e.g. 55800"
               />
-              <p className="text-gray-600 text-xs mt-1">Deal ≥ floor → 1.5k commission · Deal below floor → 1k commission</p>
+              <p className="text-gray-600 text-xs mt-1">{form.isRecon ? 'Recon uses the commission per unit set above.' : 'Deal ≥ floor → 1.5k commission · Deal below floor → 1k commission'}</p>
             </FormField>
           )}
           <FormField label="Transmission">
