@@ -3,7 +3,7 @@ import { useStore } from '../store';
 import ApplyTradeInFunding from './ApplyTradeInFunding';
 import { tradeInRequest as request } from '../lib/tradeInFunding';
 import { investorRequest, InvestorFinanceError, formatCents, parsePercentToBasisPoints, useInvestorQuery, type ProfileList } from '../lib/investorFinance';
-type Choice = { id: string; fundingKind: 'company' | 'investor'; potName: string; selectedBy: string; selectedAt: string; revision: number; financiallyApplied: boolean; valuationChanged: boolean; grossCents: number; lenderCents: number; appliedBy?: string; appliedAt?: string; reason?: string };
+type Choice = { id: string; fundingKind: 'company' | 'investor'; potName: string; selectedBy: string; selectedAt: string; revision: number; financiallyApplied: boolean; valuationChanged: boolean; grossCents: number; lenderCents: number; lenderPaidCents?: number; appliedBy?: string; appliedAt?: string; reason?: string };
 type Pending = { requestId: string; data: Record<string, unknown> };
 export default function TradeInFundingChoice({ incomingCarId }: { incomingCarId: string }) {
   const actor = useStore((s) => s.currentUser);
@@ -35,7 +35,7 @@ export default function TradeInFundingChoice({ incomingCarId }: { incomingCarId:
   if (actor?.role !== 'director') return null;
   return <section className="rounded-xl border border-gold-400/20 p-4 space-y-3">
     <div className="flex justify-between"><h3 className="text-sm font-semibold text-white">Trade-in funding</h3><button type="button" className="text-xs text-gold-400" disabled={busy || query.loading} onClick={() => void query.reload()}>Refresh</button></div>
-    {choice && <div className="text-xs"><p className="text-gold-300">{choice.potName} · {choice.financiallyApplied ? 'Funded' : 'Awaiting funding'}</p><p className="text-gray-400">Trade-in value {formatCents(choice.grossCents)} · Lender balance {formatCents(choice.lenderCents)}</p><p className="text-gray-500">Chosen by {choice.selectedBy} · {new Date(choice.selectedAt).toLocaleString('en-MY')}</p></div>}
+    {choice && <div className="text-xs"><p className="text-gold-300">{choice.potName} · {choice.financiallyApplied ? choice.lenderCents > (choice.lenderPaidCents ?? 0) ? 'Lender payment pending' : 'Funded' : 'Awaiting funding'}</p><p className="text-gray-400">Trade-in value {formatCents(choice.grossCents)} · Lender balance {formatCents(choice.lenderCents)}</p><p className="text-gray-500">Chosen by {choice.selectedBy} · {new Date(choice.selectedAt).toLocaleString('en-MY')}</p></div>}
     {choice?.valuationChanged && <p className="text-xs text-amber-300">The trade-in value changed. Review this funding choice again.</p>}
     {(error || query.error) && <p role="alert" className="text-xs text-red-400">{error || query.error?.message}</p>}
     {query.loading && <p className="text-xs text-gray-500">Loading funding choice…</p>}
@@ -48,8 +48,8 @@ export default function TradeInFundingChoice({ incomingCarId }: { incomingCarId:
     </div>}
     {choice && !choice.financiallyApplied && !editing && <button className="text-xs text-gray-400" onClick={() => setEditing(true)}>Change choice</button>}
     {choice?.financiallyApplied && <p className="text-xs text-green-400">Funded by {choice.appliedBy} · {choice.appliedAt && new Date(choice.appliedAt).toLocaleString('en-MY')}</p>}
-    {choice && !choice.financiallyApplied && !choice.valuationChanged && !editing && choice.fundingKind === 'investor' && choice.lenderCents === 0 && <ApplyTradeInFunding key={actor.id + ':' + choice.id} choiceId={choice.id} actorId={actor.id} amountCents={choice.grossCents} potName={choice.potName} onChanged={query.reload} />}
-    {choice && !choice.financiallyApplied && !editing && (choice.fundingKind === 'company' || choice.lenderCents > 0) && <p className="text-xs text-amber-300">{choice.fundingKind === 'company' ? 'Company-bank funding setup is still required.' : 'Lender payment setup is still required.'} This car has not been funded.</p>}
+    {choice && !choice.financiallyApplied && !choice.valuationChanged && !editing && choice.fundingKind === 'investor' && <ApplyTradeInFunding key={actor.id + ':' + choice.id} choiceId={choice.id} actorId={actor.id} amountCents={choice.grossCents} lenderCents={choice.lenderCents} potName={choice.potName} onChanged={query.reload} />}
+    {choice && !choice.financiallyApplied && !editing && choice.fundingKind === 'company' && <p className="text-xs text-amber-300">Company-bank funding setup is still required. This car has not been funded.</p>}
     {pending && <button disabled={busy} className="block text-xs text-gold-400" onClick={() => void save(true)}>Retry original save</button>}
     {(query.data?.history?.length ?? 0) > 1 && <details className="text-xs text-gray-400"><summary className="cursor-pointer">Funding history</summary><div className="mt-2 space-y-2">{query.data?.history?.map((h) => <p key={h.id}>{h.potName} · {h.selectedBy} · {new Date(h.selectedAt).toLocaleString('en-MY')}{h.reason && <span className="block text-gray-500">{h.reason}</span>}</p>)}</div></details>}
   </section>;

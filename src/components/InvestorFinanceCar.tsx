@@ -1,3 +1,4 @@
+import TradeInLenderPayment from './TradeInLenderPayment';
 import { TradeInInvoiceLink } from './ApplyTradeInFunding';
 import { useState, type ReactNode } from 'react';
 import { Car as CarIcon, ChevronDown, AlertTriangle, RotateCw, Paperclip, Loader2, CheckCircle2 } from 'lucide-react';
@@ -224,7 +225,7 @@ export default function InvestorFinanceCar({ carId, actorId, mode, banks = [], o
               <PendingSaves pending={act.pending.filter((p) => p.slot.endsWith(`:${carId}`) || p.slot.includes(`:${carId}:`))} busy={act.busy} onRetry={(s) => void retry(s)} onDiscard={act.discard} />
             </div>
 
-            {director && car.state === 'reserved' && (
+            {director && car.state === 'reserved' && !car.tradeInApplicationId && (
               <Section title="Purchase payment" hint="Not recorded" defaultOpen>
                 <PurchasePaid car={car} banks={banks} busy={act.busy} onSubmit={(pay) => setConfirm({
                   title: 'Record purchase payment?', label: 'Record payment',
@@ -235,7 +236,8 @@ export default function InvestorFinanceCar({ carId, actorId, mode, banks = [], o
               </Section>
             )}
 
-            {(director || mode === 'investor') && car.state !== 'reserved' && (car.tradeInDocumentId ? <TradeInInvoiceLink key={actorId + ':' + car.tradeInDocumentId} documentId={car.tradeInDocumentId} /> : <InvestorMoneyDocuments source={{ target: 'purchase', carId }} amountCents={car.purchaseCents ?? 0} />)}
+            {(director || mode === 'investor') && car.tradeInApplicationId && (car.lenderCents ?? 0) > 0 && <TradeInLenderPayment key={actorId + ':' + car.tradeInApplicationId} applicationId={car.tradeInApplicationId} actorId={actorId} director={director} banks={banks} onChanged={query.reload} />}
+            {(director || mode === 'investor') && (car.state !== 'reserved' || car.tradeInDocumentId) && (car.tradeInDocumentId ? <TradeInInvoiceLink key={actorId + ':' + car.tradeInDocumentId} documentId={car.tradeInDocumentId} /> : <InvestorMoneyDocuments source={{ target: 'purchase', carId }} amountCents={car.purchaseCents ?? 0} />)}
             <Section title="Bills" hint={`${car.bills.filter((b) => b.state !== 'voided').length}`} defaultOpen={mode === 'admin'}>
               {car.bills.length === 0 && <p className="text-gray-500 text-xs">No bills recorded for this car.</p>}
               {car.bills.map((bill) => (

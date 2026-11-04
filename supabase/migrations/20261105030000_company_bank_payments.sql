@@ -70,6 +70,9 @@ create trigger uc_company_bank_payment_guard before insert or update or delete o
 create function public.uc_company_bank_journal_guard() returns trigger language plpgsql security definer set search_path=public,pg_temp as $$
 begin
  if tg_op<>'INSERT' and old.id like 'company-bank:%' then raise exception 'BANK_PAYMENT_IMMUTABLE';end if;
+ if tg_op<>'DELETE' and exists(select 1 from jsonb_array_elements(new.lines) l where l->>'accountId' like 'acct-bank-uc-%')
+  and not coalesce(new.source_type='investor_finance' and current_setting('autodream.uc_posting',true)='on',false)
+  and current_setting('autodream.company_bank_payment',true) is distinct from txid_current()::text||':'||coalesce(new.source_id,'') then raise exception 'USE_COMPANY_BANK_PAYMENT';end if;
  if tg_op<>'INSERT' and exists(select 1 from uc_company_bank_allocations a join payments p on p.id=a.payment_id
   where old.source_type=case p.type when 'expense_claim' then 'expense_claim_confirmed' when 'customer_refund' then 'car_sold' when 'purchase_settlement' then 'car_purchased' else p.type end
    and old.source_id=case when p.type in ('salesman_commission','intake_bonus','source_commission','customer_refund','purchase_settlement') then p.car_id else p.id end) then raise exception 'BANK_PAYMENT_IMMUTABLE';end if;

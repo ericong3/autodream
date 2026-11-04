@@ -106,6 +106,17 @@ create or replace function public.uc_investor_position(p_pot uuid) returns jsonb
  'availableCents',cash-withdrawals-purchases-bills-profit,'purchaseReservedCents',purchases,'billReservedCents',bills,'profitHeldCents',profit,'investedCents',invested) from amounts;
 $$;
 
+-- Prepared-chain helper: a later trade-in application supplies the noncash
+-- acquisition. Before that table is installed, linked trade-ins stay blocked.
+create function public.uc_applied_trade_in_matches(p_car text,p_outgoing text) returns boolean language plpgsql stable security definer set search_path=public,pg_temp as $$
+begin
+ if to_regclass('public.uc_trade_in_applications') is null then return false;end if;
+ return exists(select 1 from uc_trade_in_applications a join uc_investor_cars funded on funded.car_id=a.incoming_car_id
+  where a.incoming_car_id=p_car and a.outgoing_car_id=p_outgoing and a.incoming_pot_id=funded.pot_id
+   and a.amount_cents+coalesce((to_jsonb(a)->>'lender_cents')::bigint,0)=funded.purchase_cents);
+end $$;
+revoke all on function public.uc_applied_trade_in_matches(text,text) from public,anon,authenticated,service_role;
+
 alter function public.uc_investor_capital(text,text,jsonb) rename to uc_investor_capital_base;
 revoke all on function public.uc_investor_capital_base(text,text,jsonb) from public,anon,authenticated,service_role;
 
@@ -186,7 +197,7 @@ begin
   if p_action in ('purchase_paid','agree_sale','settle_car') then
    select * into source from cars where id=car.car_id for update;
    if source.purchase_price*100 is distinct from car.purchase_cents::numeric then raise exception 'PURCHASE_PRICE_CHANGED';end if;
-   if source.investor_id is not null or source.investor_split is not null or source.trade_in_source_car_id is not null or
+   if source.investor_id is not null or source.investor_split is not null or (source.trade_in_source_car_id is not null and not uc_applied_trade_in_matches(source.id,source.trade_in_source_car_id)) or
     (source.consignment is not null and source.consignment<>'null'::jsonb) or (source.outgoing_consignment is not null and source.outgoing_consignment<>'null'::jsonb) or
     coalesce(to_jsonb(source)->>'investor_tagged','false')='true' then raise exception 'CAR_NOT_ELIGIBLE';end if;
    if p_action='purchase_paid' and coalesce(source.status,'') not in ('available','coming_soon','in_workshop','ready','photo_complete','submitted') then raise exception 'CAR_NOT_ELIGIBLE';end if;

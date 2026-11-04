@@ -104,5 +104,7 @@ try{
  assert.equal((await db.query("select bank_paid_cents from uc_private_payment_rows where id='bill-1'")).rows[0].bank_paid_cents,100000);
  assert.equal((await db.query("select count(*) n from journal_entries j where (select sum((l->>'debit')::numeric-(l->>'credit')::numeric) from jsonb_array_elements(j.lines) l)<>0")).rows[0].n,0);
  assert.equal((await db.query("select has_function_privilege('anon','uc_company_bank_money(text,text,jsonb)','execute') allowed")).rows[0].allowed,false);
+ const bankLedger='acct-bank-uc-'+(await db.query("select md5('bank:'||$1) value",[bank.id])).rows[0].value;
+ await assert.rejects(()=>db.query("insert into journal_entries(id,date,description,lines) values('manual-bank',current_date,'Manual bank change',$1)",[JSON.stringify([{accountId:bankLedger,debit:100,credit:0},{accountId:'acct-equity',debit:0,credit:100}])]),/USE_COMPANY_BANK_PAYMENT/);
  console.log('PASS company-bank payments: proof/invoice/accrual gates, partial balance, atomic journal and status, registered bank, replay, cross-payment reference, rollback and ACL');
 }finally{await db.close();}
