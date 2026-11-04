@@ -47,6 +47,7 @@ try{
 
  await db.exec(migration('20261105010000_investor_sale_recoveries.sql'));
  await db.exec("alter table customers add column name text;update cars set waive_commission=true;insert into customers(id,interested_car_id,assigned_sales_id,commission,cash_work_order,name) values('buyer','car-own','s',0,'{}','Buyer')");
+ if(process.argv.includes('--with-trade-ins')){await db.exec(migration('20261105000000_trade_in_funding_choices.sql'));await db.exec(migration('20261105020000_investor_trade_in_application.sql'));}
  let n=0;const req=()=> 'recovery_test_'+String(++n).padStart(8,'0');
  const call=async(fn,actor,action,data={})=>(await db.query('select '+fn+'($1,$2,$3) result',[actor,action,data])).rows[0].result;
  const cap=(action,data={})=>call('uc_investor_capital','d',action,{...data,requestId:req()});

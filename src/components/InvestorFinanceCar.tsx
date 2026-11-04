@@ -1,3 +1,4 @@
+import { TradeInInvoiceLink } from './ApplyTradeInFunding';
 import { useState, type ReactNode } from 'react';
 import { Car as CarIcon, ChevronDown, AlertTriangle, RotateCw, Paperclip, Loader2, CheckCircle2 } from 'lucide-react';
 import ConfirmSheet from './ConfirmSheet';
@@ -234,7 +235,7 @@ export default function InvestorFinanceCar({ carId, actorId, mode, banks = [], o
               </Section>
             )}
 
-            {(director || mode === 'investor') && car.state !== 'reserved' && <InvestorMoneyDocuments source={{ target: 'purchase', carId }} amountCents={car.purchaseCents ?? 0} />}
+            {(director || mode === 'investor') && car.state !== 'reserved' && (car.tradeInDocumentId ? <TradeInInvoiceLink key={actorId + ':' + car.tradeInDocumentId} documentId={car.tradeInDocumentId} /> : <InvestorMoneyDocuments source={{ target: 'purchase', carId }} amountCents={car.purchaseCents ?? 0} />)}
             <Section title="Bills" hint={`${car.bills.filter((b) => b.state !== 'voided').length}`} defaultOpen={mode === 'admin'}>
               {car.bills.length === 0 && <p className="text-gray-500 text-xs">No bills recorded for this car.</p>}
               {car.bills.map((bill) => (
@@ -263,6 +264,7 @@ export default function InvestorFinanceCar({ carId, actorId, mode, banks = [], o
                   <div className="grid grid-cols-2 gap-3">
                     <Figure label="Agreed sale price" value={formatCents(car.saleCents)} />
                     <Figure label="Sale price covered" value={formatCents(car.receivedCents ?? 0)} tone={(car.receivedCents ?? 0) >= car.saleCents ? 'text-emerald-400' : 'text-amber-300'} note={(car.receivedCents ?? 0) < car.saleCents ? `${formatCents(car.saleCents - (car.receivedCents ?? 0))} still to cover` : 'Fully covered'} />
+                    {(car.tradeInReceivedCents ?? 0) > 0 && <Figure label="Trade-in value received" value={formatCents(car.tradeInReceivedCents)} />}
                     <Figure label="Actual bank receipts" value={formatCents(car.actualReceivedCents ?? car.receivedCents ?? 0)} />
                   </div>
                 ) : <p className="text-gray-500 text-xs">{car.state === 'reserved' ? 'The purchase payment must be recorded first.' : 'No sale price agreed yet.'}</p>}

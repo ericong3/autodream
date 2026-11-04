@@ -1,16 +1,10 @@
 import { useState } from 'react';
 import { useStore } from '../store';
+import ApplyTradeInFunding from './ApplyTradeInFunding';
+import { tradeInRequest as request } from '../lib/tradeInFunding';
 import { investorRequest, InvestorFinanceError, formatCents, parsePercentToBasisPoints, useInvestorQuery, type ProfileList } from '../lib/investorFinance';
-type Choice = { id: string; fundingKind: 'company' | 'investor'; potName: string; selectedBy: string; selectedAt: string; revision: number; financiallyApplied: boolean; valuationChanged: boolean; grossCents: number; lenderCents: number; reason?: string };
+type Choice = { id: string; fundingKind: 'company' | 'investor'; potName: string; selectedBy: string; selectedAt: string; revision: number; financiallyApplied: boolean; valuationChanged: boolean; grossCents: number; lenderCents: number; appliedBy?: string; appliedAt?: string; reason?: string };
 type Pending = { requestId: string; data: Record<string, unknown> };
-async function request<T>(action: string, data: Record<string, unknown>): Promise<T> {
-  let response: Response;
-  try { response = await fetch('/api/garage/sales', { method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { 'Content-Type': 'application/json', 'X-Garage-Building': '1' }, body: JSON.stringify({ scope: 'trade_in_funding', action, ...data }) }); }
-  catch { throw new InvestorFinanceError('Connection lost. Retry the original funding choice.', 'NETWORK', 0, true); }
-  const r = await response.json().catch(() => null);
-  if (!response.ok || !r || typeof r !== 'object') throw new InvestorFinanceError(r?.error?.message || 'Could not confirm the funding choice.', r?.error?.code || 'UNAVAILABLE', response.status, response.status >= 500 || response.ok || response.status === 429);
-  return r;
-}
 export default function TradeInFundingChoice({ incomingCarId }: { incomingCarId: string }) {
   const actor = useStore((s) => s.currentUser);
   const [kind, setKind] = useState(''), [potId, setPotId] = useState(''), [share, setShare] = useState('40'), [reason, setReason] = useState('');
@@ -52,7 +46,10 @@ export default function TradeInFundingChoice({ incomingCarId }: { incomingCarId:
       {choice && <input aria-label="Reason for changing funding" className="input rounded-lg w-full px-3 py-2 text-sm" placeholder="Reason for changing funding" value={reason} onChange={(e) => setReason(e.target.value)} disabled={busy} />}
       <button type="button" disabled={!ready || busy} className="btn-gold rounded-lg px-4 py-2 text-xs disabled:opacity-40" onClick={() => void save()}>{busy ? 'Saving…' : 'Save funding choice'}</button>
     </div>}
-    {choice && !editing && <button className="text-xs text-gray-400" onClick={() => setEditing(true)}>Change choice</button>}
+    {choice && !choice.financiallyApplied && !editing && <button className="text-xs text-gray-400" onClick={() => setEditing(true)}>Change choice</button>}
+    {choice?.financiallyApplied && <p className="text-xs text-green-400">Funded by {choice.appliedBy} · {choice.appliedAt && new Date(choice.appliedAt).toLocaleString('en-MY')}</p>}
+    {choice && !choice.financiallyApplied && !choice.valuationChanged && !editing && choice.fundingKind === 'investor' && choice.lenderCents === 0 && <ApplyTradeInFunding key={actor.id + ':' + choice.id} choiceId={choice.id} actorId={actor.id} amountCents={choice.grossCents} potName={choice.potName} onChanged={query.reload} />}
+    {choice && !choice.financiallyApplied && !editing && (choice.fundingKind === 'company' || choice.lenderCents > 0) && <p className="text-xs text-amber-300">{choice.fundingKind === 'company' ? 'Company-bank funding setup is still required.' : 'Lender payment setup is still required.'} This car has not been funded.</p>}
     {pending && <button disabled={busy} className="block text-xs text-gold-400" onClick={() => void save(true)}>Retry original save</button>}
     {(query.data?.history?.length ?? 0) > 1 && <details className="text-xs text-gray-400"><summary className="cursor-pointer">Funding history</summary><div className="mt-2 space-y-2">{query.data?.history?.map((h) => <p key={h.id}>{h.potName} · {h.selectedBy} · {new Date(h.selectedAt).toLocaleString('en-MY')}{h.reason && <span className="block text-gray-500">{h.reason}</span>}</p>)}</div></details>}
   </section>;

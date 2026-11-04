@@ -14,6 +14,7 @@ import {handleInvestorMoneyEvidence} from '../usedCar/investorMoneyEvidence.mjs'
 import {handleInvestorClaims} from '../usedCar/investorClaims.mjs';
 import {handleTradeInFunding} from '../usedCar/tradeInFunding.mjs';
 import {handleInvestorRecoveries,RECOVERY_ACTIONS} from '../usedCar/investorRecoveries.mjs';
+import {handleInvestorTradeInApplication} from '../usedCar/investorTradeInApplication.mjs';
 export async function handleSales(req,deps){
  let scope,action;try{const body=typeof req.body==='string'?JSON.parse(req.body):req.body;scope=body?.scope;action=body?.action;}catch{}
  if(scope==='investor_finance'&&action==='complete_repair')return handleInvestorRepairCompletion(req,deps);
@@ -22,6 +23,7 @@ export async function handleSales(req,deps){
  if(scope==='investor_money_evidence')return handleInvestorMoneyEvidence(req,deps);
  if(scope==='investor_claims')return handleInvestorClaims(req,deps);
  if(scope==='trade_in_funding')return handleTradeInFunding(req,deps);
+ if(scope==='trade_in_application')return handleInvestorTradeInApplication(req,deps);
  if(scope==='investor_recoveries'||scope==='investor_finance'&&RECOVERY_ACTIONS.has(action))return handleInvestorRecoveries(req,deps);
  if(scope==='investor_finance'&&action==='record_misc')return handleInvestorMiscCost(req,deps);
  if(scope==='investor_finance')return handleInvestorCapital(req,deps);
