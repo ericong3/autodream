@@ -1740,7 +1740,7 @@ export default function Payments({ embedded }: PaymentsProps) {
       {/* Transfer modal */}
       {tab === 'expense_claims' && import.meta.env.VITE_INVESTOR_FINANCE === '1' && (isDirectorView || isAdmin) && <InvestorClaimsPanel />}
       {documentPaymentId && <CompanyPaymentDocuments paymentId={documentPaymentId} onClose={() => setDocumentPaymentId(null)} />}
-      {transferTarget && (companyBankPaymentsEnabled && currentUser && transferPayments.length > 0 && transferPayments.every(p => !INBOUND_TYPES.has(p.type)) ? <CompanyBankPaymentDialog key={currentUser.id} actorId={currentUser.id} payments={transferPayments} onClose={() => { setTransferTarget(null); setSingleId(null); setSelected(new Set()); }} /> : <TransferModal
+      {transferTarget && (companyBankPaymentsEnabled && currentUser && transferPayments.length > 0 && transferPayments.every(p => !INBOUND_TYPES.has(p.type)) ? <CompanyBankPaymentDialog key={currentUser.id + ":" + transferPayments.map(p => p.id).sort().join(",")} actorId={currentUser.id} payments={transferPayments} onClose={() => { setTransferTarget(null); setSingleId(null); setSelected(new Set()); }} /> : <TransferModal
           paymentIds={transferPayments.map((p) => p.id)}
           count={transferPayments.length}
           totalAmount={transferTotal}

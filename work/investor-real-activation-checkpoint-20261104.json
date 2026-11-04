@@ -87,7 +87,9 @@
       "work/investor-trade-in-lenders-tests-20261105.log",
       "work/investor-trade-in-lenders-build-20261105.log"
     ],
-    "all_database_rehearsals_passed": 13
+    "all_database_rehearsals_passed": 13,
+    "final_build_log": "work/finance-bank-lender-final-build-20261105.log",
+    "payroll_compatibility": "Company bank route preserves full confirmed salary/allowance/bonus payouts; partial ordinary bills remain supported. Actual existing bonus settlement function and guards exercised locally."
   },
   "blocking_access": "Resolved 2026-11-04: cua.getBrowser({url: Supabase SQL page}) reached the in-app browser. The earlier local-browser inventory error was mistakenly treated as blocking IAB. Browser binding supabaseBrowser (iab ID2), investorSupabaseTab ID2. Live read-only investor counts verified; new investor tables absent. Do not ask user to enable Work settings again unless a fresh interaction with this browser fails.",
   "required_before_activation": [
@@ -130,7 +132,7 @@
     "20261105040000_investor_trade_in_lenders.sql PREPARED ONLY. Requires 300 bank foundation. Extends application net credit, gross asset and lender liability, source-linked full lender payout, proof ownership and balanced journal. No live SQL run. 0100 prepared eligibility helper was updated so acquired trade-ins can be resold only when immutable application matches funding."
   ],
   "latest_live_preflight": "work/investor-browser-preflight-live-20261104.json",
-  "updated_at": "2026-11-04T21:30:41.983Z",
+  "updated_at": "2026-11-04T21:35:17.612Z",
   "user_documents_policy": "Every bill needs its invoice before approval/payment; every outgoing payment needs uploaded proof before completion. Salary documents remain restricted; investors see only their own car/pot documents.",
   "bank_matching_policy": "User changed sequencing: start new live transactions first; reconcile all January-2026 onward history later without duplicates. Do not represent unmatched balances as bank-reconciled.",
   "pending_user_decision": null,
@@ -149,5 +151,12 @@
     "Lender settlement records the full approved balance once; partial lender settlements are not supported",
     "Browser role verification and real PostgreSQL concurrency rehearsal remain",
     "No Supabase installation, GitHub push or production deployment"
-  ]
+  ],
+  "next_work": [
+    "Company inbound cash/loan collections through registered banks, without duplicate accruals or bill costs",
+    "Company-funded incoming trade-ins and reviewed main-pot openings/ownership allocation",
+    "Remaining withdrawal destination/correction/privacy checks, real role/browser and PostgreSQL concurrency verification",
+    "Guarded deployment and activation after the complete chain passes"
+  ],
+  "current_release_status": "Local commits only. Live website and production Supabase are unchanged."
 }

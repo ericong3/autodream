@@ -130,7 +130,7 @@ begin
    if pay.type not in ('salesman_commission','intake_bonus','source_commission','repair','misc_cost','expense_claim','purchase_settlement','salary','allowance','campaign_bonus','customer_refund') then raise exception 'PAYMENT_WORKFLOW_REQUIRED';end if;
    if exists(select 1 from uc_investor_cars where car_id=pay.car_id) or pay.id like 'uc_commission_%' then raise exception 'USE_INVESTOR_CAR_BILLS';end if;
    if pay.type='expense_claim' and pay.claim_confirmed_by is null then raise exception 'CLAIM_NOT_APPROVED';end if;
-   if pay.type='campaign_bonus' and v_amount<>owed then raise exception 'BONUS_FULL_PAYMENT_REQUIRED';end if;
+   if uc_company_payroll_type(pay.type) and v_amount<>owed-paid then raise exception 'PAYROLL_FULL_PAYMENT_REQUIRED';end if;
    if pay.type='purchase_settlement' and exists(select 1 from cars c where c.id=pay.car_id and (c.consignment is not null and c.consignment<>'null'::jsonb or c.outgoing_consignment is not null and c.outgoing_consignment<>'null'::jsonb)) then raise exception 'PAYMENT_WORKFLOW_REQUIRED';end if;
    select * into doc from uc_company_payment_documents where id=(item->>'documentId')::uuid and payment_id=pay.id and kind='payment' and state='confirmed';
    if doc.id is null then raise exception 'PAYMENT_RECEIPT_REQUIRED';end if;
