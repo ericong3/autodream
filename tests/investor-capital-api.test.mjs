@@ -6,7 +6,7 @@ function fixture(role='director'){
  const user={id:'private-user',username:'staff',name:'Sample',password:bcrypt.hashSync('sample-password',4),role,business_access:'both',enabled:true,registration_status:'active'};
  const sessions=new Map(),calls=[];
  const repo={findUserByUsername:async()=>user,findUserById:async()=>user,createSession:async s=>sessions.set(s.tokenHash,s),findSession:async h=>sessions.get(h),touchSession:async()=>{},deleteSession:async h=>sessions.delete(h),deleteExpiredSessions:async()=>{},throttleHit:async()=>({allowed:true}),throttleClear:async()=>{},rpc:async(fn,args)=>{calls.push({fn,args});return {data:{position:{cashCents:0}}};}};
- const deps={env:{USED_CAR_INVESTOR_CAPITAL_ONLINE:'1',GARAGE_BUILDING_ONLINE:'1',SUPABASE_URL:'https://example.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'not-real-service-key-123456789',GARAGE_SESSION_SECRET:'not-real-session-secret-123456789012345',GARAGE_ALLOWED_ORIGINS:origin},bcrypt,repo:()=>repo};
+ const deps={env:{USED_CAR_INVESTOR_CAPITAL_ONLINE:'1',USED_CAR_INVESTOR_CARS_ONLINE:'1',GARAGE_BUILDING_ONLINE:'1',SUPABASE_URL:'https://example.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'not-real-service-key-123456789',GARAGE_SESSION_SECRET:'not-real-session-secret-123456789012345',GARAGE_ALLOWED_ORIGINS:origin},bcrypt,repo:()=>repo};
  const req=(body,cookie)=>({method:'POST',headers:{origin,'x-garage-building':'1','content-type':'application/json',...(cookie?{cookie}:{})},body:JSON.stringify(body)});
  const login=async()=>{const result=await handleAppSession(req({username:'staff',password:'sample-password'}),deps);assert.equal(result.status,200);return [].concat(result.headers['Set-Cookie']).find(c=>c.startsWith(COOKIE_NAME+'=')&&!c.includes('Max-Age=0')).split(';')[0];};
  return {repo,deps,calls,req,login,user};
@@ -35,4 +35,21 @@ test('amount errors, cross-origin calls and private database failures stay safe'
  assert.equal((await handleInvestorCapital(w.req({...body,amountCents:1.5},cookie),w.deps)).status,400);
  const req=w.req(body,cookie);req.headers.origin='https://elsewhere.example';assert.equal((await handleInvestorCapital(req,w.deps)).status,403);
  w.repo.rpc=async()=>({error:{message:'secret database diagnostic'}});const result=await handleInvestorCapital(w.req(body,cookie),w.deps);assert.equal(result.status,503);assert.ok(!JSON.stringify(result.body).includes('secret database'));
+});
+test('car reads use the private investor actor and admin can submit bills only',async()=>{
+ const investor=fixture('investor'),cookie=await investor.login();
+ assert.equal((await handleInvestorCapital(investor.req({action:'car_snapshot',carId:'sample-car'},cookie),investor.deps)).status,200);
+ assert.equal(investor.calls[0].args.p_actor,'private-user');
+ assert.equal((await handleInvestorCapital(investor.req({action:'settle_car',carId:'sample-car',confirmCosts:true,requestId:'sample_settle_001'},cookie),investor.deps)).status,403);
+ const admin=fixture('admin'),adminCookie=await admin.login();
+ const bill={action:'add_car_bill',carId:'sample-car',category:'repair',purpose:'Repair',payee:'Workshop',amountCents:350000,requestId:'sample_car_bill_001'};
+ assert.equal((await handleInvestorCapital(admin.req(bill,adminCookie),admin.deps)).status,200);
+ for(const action of ['pay_car_bill','settle_car','agree_sale'])assert.equal((await handleInvestorCapital(admin.req({...bill,action},adminCookie),admin.deps)).status,403);
+ assert.equal(admin.calls.length,1);
+});
+test('car rollout and exact inputs block premature writes',async()=>{
+ const w=fixture(),cookie=await w.login(),body={action:'fund_car',carId:'sample-car',potId,purchaseCents:5000000,requestId:'sample_funding_001'};
+ assert.equal((await handleInvestorCapital(w.req({...body,investorBasisPoints:'4000'},cookie),w.deps)).status,400);
+ assert.equal((await handleInvestorCapital(w.req({...body,actor:'forged'},cookie),w.deps)).status,400);
+ w.deps.env.USED_CAR_INVESTOR_CARS_ONLINE='0';assert.equal((await handleInvestorCapital(w.req(body,cookie),w.deps)).status,503);assert.equal(w.calls.length,0);
 });

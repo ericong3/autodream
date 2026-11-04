@@ -2065,7 +2065,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       // reappearing after the refetch above.
       throw new Error(
         error.code === '23503'
-          ? "This car still has linked records (repairs, payments, or ledger entries) and can't be deleted while they exist."
+          ? "This car has linked records, such as investor funding, repairs or payments. Keep the car to preserve those records."
           : error.message
       );
     } else {
