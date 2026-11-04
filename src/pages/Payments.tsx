@@ -1,3 +1,5 @@
+import CompanyBankPaymentDialog from '../components/CompanyBankPaymentDialog';
+import { companyBankPaymentsEnabled, paymentBalanceCents } from '../lib/companyBankPayments';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Wallet, CheckCircle2, X, Search, CreditCard, Camera,
@@ -503,7 +505,7 @@ export default function Payments({ embedded }: PaymentsProps) {
   const pendingInbound = pendingPayments.filter(p => INBOUND_TYPES.has(p.type));
   const pendingRefundClaims = pendingPayments.filter(p => p.type === 'customer_refund');
   const pendingExpenseClaims = pendingPayments.filter(p => p.type === 'expense_claim');
-  const pendingTotal = pendingOutbound.reduce((s, p) => s + p.amount, 0);
+  const pendingTotal = pendingOutbound.reduce((s, p) => s + (companyBankPaymentsEnabled ? paymentBalanceCents(p) / 100 : p.amount), 0);
   const toCollectTotal = pendingInbound.reduce((s, p) => s + p.amount, 0);
   const thisMonth = new Date().toISOString().slice(0, 7);
   const monthTransferred = payments
@@ -553,7 +555,7 @@ export default function Payments({ embedded }: PaymentsProps) {
   };
 
   const selectedPending = filtered.filter(p => p.status === 'pending' && !isInvestorCommission(p) && selected.has(p.id));
-  const selectedTotal = selectedPending.reduce((s, p) => s + p.amount, 0);
+  const selectedTotal = selectedPending.reduce((s, p) => s + (companyBankPaymentsEnabled ? paymentBalanceCents(p) / 100 : p.amount), 0);
 
   // ── Transfer / Collect ────────────────────────────────────────────────────────
   const handleTransfer = async (date: string, notes: string, actualReceived?: number, receiptUrl?: string) => {
@@ -842,6 +844,7 @@ export default function Payments({ embedded }: PaymentsProps) {
 
         {/* Info */}
         <div className="flex-1 min-w-0">
+          {companyBankPaymentsEnabled && p.status === 'pending' && !!p.bankPaidCents && <p className="text-[11px] text-amber-300 mb-1">Paid {formatRM(p.bankPaidCents / 100)} · unpaid {formatRM(paymentBalanceCents(p) / 100)}</p>}
           {isInvestorCommission(p) && <a className="text-[11px] text-gold-400" href={`#/investor-finance?carId=${encodeURIComponent(p.carId || '')}`}>Open car bill</a>}
           {privateCompanyEvidence && !isInvestorCommission(p) && <button className="text-[11px] text-gold-400 mb-1" onClick={() => setDocumentPaymentId(p.id)}>Invoices & receipts</button>}
           <div className="flex items-center gap-2 flex-wrap">
@@ -1737,8 +1740,7 @@ export default function Payments({ embedded }: PaymentsProps) {
       {/* Transfer modal */}
       {tab === 'expense_claims' && import.meta.env.VITE_INVESTOR_FINANCE === '1' && (isDirectorView || isAdmin) && <InvestorClaimsPanel />}
       {documentPaymentId && <CompanyPaymentDocuments paymentId={documentPaymentId} onClose={() => setDocumentPaymentId(null)} />}
-      {transferTarget && (
-        <TransferModal
+      {transferTarget && (companyBankPaymentsEnabled && currentUser && transferPayments.length > 0 && transferPayments.every(p => !INBOUND_TYPES.has(p.type)) ? <CompanyBankPaymentDialog key={currentUser.id} actorId={currentUser.id} payments={transferPayments} onClose={() => { setTransferTarget(null); setSingleId(null); setSelected(new Set()); }} /> : <TransferModal
           paymentIds={transferPayments.map((p) => p.id)}
           count={transferPayments.length}
           totalAmount={transferTotal}

@@ -26,10 +26,11 @@
     "Director-only trade-in funding-choice API and car-page selector, explicit company/investor choice, optional investor profit split, immutable revisions and reasons, original-request retry and valuation-change warning. Choice status remains Awaiting funding; it does not apply financing or post sale recovery.",
     "Pure tested plans for net bank receipts, approved invoice-backed withheld car costs, customer overloan reserve, partial refunds, and same/cross-pot trade-in funding with no invented bank movement.",
     "Actual proof-backed sale receipt and customer-refund API/UI, immutable records and balanced journals. Bank deductions clear invoiced bills without fake cash; excess money stays reserved. Tests cover loss, zero bank receipt, partial refunds, cancellation, replay, failed upload, role access and masked recipient details.",
-    "Debt-free investor trade-in application: uploaded purchase document, Director confirmation, same-pot stock rotation or cross-pot ownership movements, one balanced noncash acquisition/recovery, source sale coverage and incoming stock read models, transparent pot history, own-investor invoice reads, immutable audit and exact retry. Company/lender-backed applications remain explicitly blocked."
+    "Debt-free investor trade-in application: uploaded purchase document, Director confirmation, same-pot stock rotation or cross-pot ownership movements, one balanced noncash acquisition/recovery, source sale coverage and incoming stock read models, transparent pot history, own-investor invoice reads, immutable audit and exact retry. Company/lender-backed applications remain explicitly blocked.",
+    "Atomic company outgoing bank-payment API and dialog: registered bank/date/reference, invoice/accrual/proof checks, partial balances, grouped payouts, exact replay, bank registry shared with investor cash, journal/status saved together, admin non-payroll history, salary batch separation and actual existing bonus settlement integration. Private payment projection includes paid cents."
   ],
   "validation": {
-    "unit_tests": 401,
+    "unit_tests": 405,
     "build": "passed",
     "local_database_rehearsals": [
       "investor-capital-db.integration.mjs",
@@ -44,7 +45,8 @@
       "trade-in-funding-db.integration.mjs",
       "investor-recoveries-db.integration.mjs",
       "investor-trade-in-application-db.integration.mjs",
-      "investor-recoveries-db.integration.mjs --with-trade-ins"
+      "investor-recoveries-db.integration.mjs --with-trade-ins",
+      "company-bank-payments-db.integration.mjs"
     ],
     "production_ui_verified": false,
     "real_postgres_multiconnection_concurrency_verified": false,
@@ -72,6 +74,11 @@
       "work/investor-recoveries-with-trade-ins-db-20261105.log",
       "work/investor-trade-in-tests-20261105.log",
       "work/investor-trade-in-build-20261105.log"
+    ],
+    "company_bank_logs": [
+      "work/company-bank-payments-db-20261105.log",
+      "work/company-bank-payments-tests-20261105.log",
+      "work/company-bank-payments-build-20261105.log"
     ]
   },
   "blocking_access": "Resolved 2026-11-04: cua.getBrowser({url: Supabase SQL page}) reached the in-app browser. The earlier local-browser inventory error was mistakenly treated as blocking IAB. Browser binding supabaseBrowser (iab ID2), investorSupabaseTab ID2. Live read-only investor counts verified; new investor tables absent. Do not ask user to enable Work settings again unless a fresh interaction with this browser fails.",
@@ -84,14 +91,18 @@
     "Prepare exact guarded installation order, apply approved migrations only after preflight/rehearsal, deploy private bridge before ACL lockdown, enable feature only after all checks, verify canonical production URL",
     "Extend actual trade-in application to company-funded incoming cars and cars with lender balances. Debt-free investor-funded applications now post noncash acquisition/recovery locally; company and lender paths are explicitly blocked.",
     "Check role screens for the newly integrated Claims panel and commission payroll rows; helper/API/database tests are local, not live browser verification.",
-    "Browser verification and multi-connection PostgreSQL rehearsal of new sale receipt/refund module and full previous purchase/withdrawal/claims regression."
+    "Browser verification and multi-connection PostgreSQL rehearsal of new sale receipt/refund module and full previous purchase/withdrawal/claims regression.",
+    "Finish company inbound cash/loan collection and other specialised settlement paths before installing 20261105030000; its payment status guard intentionally requires the new route, so installing before all callers are ready would block old collection workflows.",
+    "Review company registered-bank openings and existing investor ownership allocation; current position is opening plus new recorded cash, not historical bank matching."
   ],
   "flags_not_set_in_production": [
     "USED_CAR_INVESTOR_CAPITAL_ONLINE",
     "USED_CAR_INVESTOR_CARS_ONLINE",
     "USED_CAR_PRIVATE_FINANCE_ONLINE",
     "VITE_USED_CAR_PRIVATE_FINANCE",
-    "VITE_INVESTOR_FINANCE"
+    "VITE_INVESTOR_FINANCE",
+    "USED_CAR_BANK_PAYMENTS_ONLINE",
+    "VITE_USED_CAR_BANK_PAYMENTS"
   ],
   "migration_notes": [
     "0000/0100/0200/0300/0400/0500/0600 are prepared only and transaction wrapped",
@@ -106,10 +117,11 @@
     "Private finance reads uc_private_payment_rows only when investor-cars flag is on; install/rehearse 1300 before enabling that flag.",
     "20261105000000_trade_in_funding_choices.sql is prepared and rehearsed only. Stores choice/history only; no bank, cash, car funding, purchase journal or sale-recovery posting. Depends on commission cents helper from 1300.",
     "20261105010000_investor_sale_recoveries.sql PREPARED ONLY. Install after 1300 and matching API/UI before enabling flags; old sale_received now requires proof-backed receipt workflow.",
-    "20261105020000_investor_trade_in_application.sql PREPARED ONLY. Requires choices and sale recoveries installed first. Applies only debt-free investor-funded incoming cars from investor-funded sales. Does not move bank money or support company/lender funding yet."
+    "20261105020000_investor_trade_in_application.sql PREPARED ONLY. Requires choices and sale recoveries installed first. Applies only debt-free investor-funded incoming cars from investor-funded sales. Does not move bank money or support company/lender funding yet.",
+    "20261105030000_company_bank_payments.sql PREPARED ONLY. Depends on trade-in application and company evidence. Does not reconcile old statements. Current API supports reviewed AP-backed outgoing payments and existing bonus settlement, not company inbound collections, consignment/panel/legacy investor payouts or all legacy correction paths. Do not activate this migration alone."
   ],
   "latest_live_preflight": "work/investor-browser-preflight-live-20261104.json",
-  "updated_at": "2026-11-04T20:33:40.211Z",
+  "updated_at": "2026-11-04T21:13:53.537Z",
   "user_documents_policy": "Every bill needs its invoice before approval/payment; every outgoing payment needs uploaded proof before completion. Salary documents remain restricted; investors see only their own car/pot documents.",
   "bank_matching_policy": "User changed sequencing: start new live transactions first; reconcile all January-2026 onward history later without duplicates. Do not represent unmatched balances as bank-reconciled.",
   "pending_user_decision": null,

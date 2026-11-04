@@ -1,3 +1,4 @@
+import type { CompanyBankSave } from '../lib/companyBankPayments';
 import { garageSessionRequest, secureGarageLoginEnabled } from '../lib/garageSession';
 import { mergeLegacyIdentity } from '../utils/garageIdentity';
 import { mergeBonusRows, type BonusPayrollSnapshot } from '../utils/campaignPayroll';
@@ -216,6 +217,7 @@ interface StoreState {
   addPayment: (payment: Payment) => Promise<void>;
   batchAddPayments: (payments: Payment[]) => Promise<void>;
   applyBonusPayrollPosting: (actor: string, snapshot: BonusPayrollSnapshot) => void;
+  applyCompanyBankPayment: (actor: string, saved: CompanyBankSave) => void;
   updatePayment: (id: string, updates: Partial<Payment>) => Promise<void>;
   deletePayment: (id: string) => Promise<void>;
 
@@ -1035,6 +1037,7 @@ function rowToPayment(r: any): Payment {
   return {
     bonusCampaignId: r.bonus_campaign_id ?? undefined,
     bonusMonth: r.bonus_month ?? undefined,
+    bankPaidCents: r.bank_paid_cents ?? undefined,
     id: r.id,
     type: r.type,
     carId: r.car_id ?? undefined,
@@ -2661,6 +2664,11 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     await confirmFinanceWrite(financeFrom('payments').insert(newPayments.map(paymentToRow)));
     if(get().currentUser?.id!==savingActor)return;
     set((s) => ({ payments: [...newPayments, ...s.payments] }));
+  },
+  applyCompanyBankPayment: (actor, saved) => {
+    if (get().currentUser?.id !== actor) return;
+    const rows = saved.payments.map(rowToPayment), journals = saved.journals.map(rowToJournalEntry);
+    set(s => ({ payments: s.payments.map(p => rows.find(r => r.id === p.id) ?? p), journalEntries: [...journals, ...s.journalEntries.filter(j => !journals.some(r => r.id === j.id))] }));
   },
   updatePayment: async (id, updates) => {
     if (get().payments.find(p => p.id === id)?.type === 'campaign_bonus') {

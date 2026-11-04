@@ -2,10 +2,17 @@ import { useEffect, useState } from 'react';
 import Modal from './Modal';
 import { companyEvidence, uploadCompanyEvidence, type CompanyDocument } from '../lib/companyEvidence';
 import { useStore } from '../store';
+import { companyBankPaymentsEnabled, companyBankRequest } from '../lib/companyBankPayments';
+import { useInvestorQuery, formatCents } from '../lib/investorFinance';
 
 type DocumentList = { documents: CompanyDocument[]; invoiceRequired?: boolean; invoiceConfirmed?: boolean; receiptConfirmed?: boolean };
 
-export default function CompanyPaymentDocuments({ paymentId, onClose }: { paymentId: string; onClose: () => void }) {
+export default function CompanyPaymentDocuments(props: { paymentId: string; onClose: () => void }) {
+  const actorId = useStore((s) => s.currentUser?.id);
+  return <CompanyPaymentDocumentsBody key={actorId + ':' + props.paymentId} {...props} />;
+}
+
+function CompanyPaymentDocumentsBody({ paymentId, onClose }: { paymentId: string; onClose: () => void }) {
   const [documents, setDocuments] = useState<CompanyDocument[]>([]);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState('');
@@ -37,6 +44,7 @@ export default function CompanyPaymentDocuments({ paymentId, onClose }: { paymen
     </label>)}</div>
     {busy && <p className="text-xs text-gray-400">Please wait…</p>}
     {!busy && documents.length === 0 && <p className="text-xs text-amber-300">No documents uploaded yet.</p>}
+    {companyBankPaymentsEnabled && <CompanyBankHistory paymentId={paymentId} />}
     <div className="space-y-3">{documents.map((d) => <div key={d.documentId} className="rounded-lg border border-white/10 p-3">
       <p className="text-xs text-gray-400">{d.kind === 'invoice' ? 'Invoice / bill' : 'Payment receipt'}</p>
       <p className="text-sm text-white break-words">{d.name || d.fileName || 'Document'}</p>
@@ -44,4 +52,12 @@ export default function CompanyPaymentDocuments({ paymentId, onClose }: { paymen
       {link?.id === d.documentId ? <a className="text-xs text-gold-400 underline" href={link.url} target="_blank" rel="noopener noreferrer">Open document</a> : <button className="text-xs text-gold-400 mt-1" disabled={busy} onClick={async () => { setBusy(true); setError(''); try { const r = await companyEvidence<{ url: string }>('open', { documentId: d.documentId }); if (!r.url?.startsWith('https://')) throw new Error('Could not open the document.'); setLink({ id: d.documentId, url: r.url }); } catch (e) { setError(e instanceof Error ? e.message : 'Could not open this file.'); } finally { setBusy(false); } }}>View document</button>}
     </div>)}</div>
   </Modal>;
+}
+
+function CompanyBankHistory({ paymentId }: { paymentId: string }) {
+  const actor = useStore((s) => s.currentUser);
+  const permitted = !!actor && ['director', 'admin'].includes(actor.role);
+  const history = useInvestorQuery<{ entries: { id: string; amountCents: number; paidOn: string; bankName: string; reference: string; recordedBy: string; recordedAt: string }[] }>(permitted ? `company-bank-history:${actor.id}:${paymentId}` : null, () => companyBankRequest('history', { paymentId }));
+  if (!permitted) return null;
+  return <div className="space-y-2 mb-4">{history.error && <p role="alert" className="text-xs text-red-400">{history.error.message}</p>}{history.data?.entries.map((e) => <div key={e.id} className="border-l-2 border-gold-400/30 pl-3 text-xs"><p className="text-white">{formatCents(e.amountCents)} paid · {e.paidOn}</p><p className="text-gray-400">{e.bankName} · {e.reference}</p><p className="text-gray-500">Recorded by {e.recordedBy} · {new Date(e.recordedAt).toLocaleString('en-MY')}</p></div>)}</div>;
 }

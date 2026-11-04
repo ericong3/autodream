@@ -1180,6 +1180,7 @@ export interface Shipment {
 export interface Payment {
   bonusCampaignId?: string;
   bonusMonth?: string;
+  bankPaidCents?: number;
   id: string;
   type: PaymentType;
   // Source references
