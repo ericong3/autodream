@@ -6,9 +6,11 @@ import {handleBonusCampaigns,isBonusCampaignRequest} from '../usedCar/bonusCampa
 import {handleReferralSettlement,isReferralSettlementRequest} from '../referrals/settlement.mjs';
 import {handlePrivateFinance,isPrivateFinanceRequest} from '../usedCar/privateFinance.mjs';
 import {handleInvestorCapital} from '../usedCar/investorCapital.mjs';
+import {handleInvestorRepairCompletion} from '../usedCar/investorRepair.mjs';
 import {handleInvestorCarRegistration} from '../usedCar/investorCarRegistration.mjs';
 export async function handleSales(req,deps){
  let scope,action;try{const body=typeof req.body==='string'?JSON.parse(req.body):req.body;scope=body?.scope;action=body?.action;}catch{}
+ if(scope==='investor_finance'&&action==='complete_repair')return handleInvestorRepairCompletion(req,deps);
  if(scope==='investor_finance'&&action==='register_car')return handleInvestorCarRegistration(req,deps);
  if(scope==='investor_finance')return handleInvestorCapital(req,deps);
  if(isPrivateFinanceRequest(req))return handlePrivateFinance(req,deps);

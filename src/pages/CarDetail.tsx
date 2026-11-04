@@ -1,3 +1,4 @@
+import { readPending } from '../lib/investorFinance';
 import { salesCommission } from '../utils/salesCommission';
 import { deliveredDealPrice } from '../utils/deliveredDealPrice';
 import React, { useState, useRef, useEffect } from 'react';
@@ -254,6 +255,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   });
   const [repairErrors, setRepairErrors] = useState<Record<string, string>>({});
   const [completeForm, setCompleteForm] = useState({ actualCost: 0, receiptPhoto: '' });
+  const [repairSaving,setRepairSaving]=useState(false),[repairSaveError,setRepairSaveError]=useState('');
+
 
 
   // ── Delete confirmation ──
@@ -681,18 +684,19 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const openCompleteRepair = (r: RepairJob) => {
     setTargetRepair(r);
     setCompleteForm({ actualCost: r.totalCost, receiptPhoto: r.collectedPhoto ?? '' });
-    setShowCompleteModal(true);
+    setRepairSaveError('');setShowCompleteModal(true);
   };
 
-  const handleCompleteRepair = async () => {
-    if (!targetRepair || !currentUser) return;
-    setShowCompleteModal(false);
-    const repair = targetRepair;
-    setTargetRepair(null);
-    await completeRepairJob({
-      repair, car, actualCost: completeForm.actualCost, receiptPhoto: completeForm.receiptPhoto,
-      currentUserId: currentUser.id, payments, workshops, addPayment, updateRepair, addJournalEntry,
-    });
+  const handleCompleteRepair = async (retryOriginal=false) => {
+    if (!targetRepair || !currentUser || repairSaving) return;
+    if(car.investorFunded&&completeForm.actualCost===0&&!retryOriginal&&!window.confirm('Confirm this repair has no cost? No bill or payment will be created.'))return;
+    setRepairSaving(true);setRepairSaveError('');
+    try{
+      await completeRepairJob({repair:targetRepair,car,actualCost:completeForm.actualCost,receiptPhoto:completeForm.receiptPhoto,
+        currentUserId:currentUser.id,payments,workshops,addPayment,updateRepair,addJournalEntry,retryOriginal,applySavedRepair:useStore.getState().applySavedInvestorRepair});
+      setShowCompleteModal(false);setTargetRepair(null);
+    }catch(error){setRepairSaveError(error instanceof Error?error.message:'Could not confirm this repair. Retry the original save.');}
+    finally{setRepairSaving(false);}
   };
 
   // ── Checklist ──
@@ -3235,9 +3239,11 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             }} />
           </div>
         </div>
+        {repairSaveError&&<p role="alert" className="text-red-300 text-xs mt-3">{repairSaveError}</p>}
+        {targetRepair&&currentUser&&readPending(currentUser.id).some(p=>p.slot==='repair-complete:'+targetRepair.id)&&<button disabled={repairSaving} onClick={()=>void handleCompleteRepair(true)} className="text-gold-400 text-xs mt-3">Retry original save</button>}
         <div className="flex gap-3 mt-5">
           <button onClick={() => setShowCompleteModal(false)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
-          <button onClick={handleCompleteRepair} className="flex-1 bg-green-500 hover:bg-green-400 px-4 py-2.5 rounded-lg text-sm">Confirm Done</button>
+          <button disabled={repairSaving} onClick={()=>void handleCompleteRepair()} className="flex-1 bg-green-500 hover:bg-green-400 px-4 py-2.5 rounded-lg text-sm">Confirm Done</button>
         </div>
       </Modal>
 

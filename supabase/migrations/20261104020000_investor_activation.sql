@@ -187,7 +187,7 @@ begin
    ) order by b.ordinality) from jsonb_array_elements(result->'bills') with ordinality b),'[]'::jsonb),
   'activity',coalesce((select jsonb_agg(jsonb_build_object('id',a.id,'action',a.action,'actorName',coalesce(nullif(trim(s.name),''),'Staff'),'createdAt',a.created_at) order by a.created_at desc,a.sequence desc)
    from (select * from uc_investor_audit x where x.detail ? 'carId' and x.detail->>'carId'=car
-    and (actor.role<>'admin' or x.action in ('add_car_bill','approve_car_bill','void_car_bill','proof_upload')) order by x.created_at desc,x.sequence desc limit 100) a
+    and (actor.role<>'admin' or x.action in ('add_car_bill','approve_car_bill','void_car_bill','proof_upload','complete_repair')) order by x.created_at desc,x.sequence desc limit 100) a
    left join garage_building_staff s on s.id=a.actor_id),'[]'::jsonb));
 end $$;
 
@@ -271,6 +271,9 @@ begin
     and (c.consignment is null or c.consignment='null'::jsonb) and (c.outgoing_consignment is null or c.outgoing_consignment='null'::jsonb)
     and c.purchase_price>0 and c.purchase_price*100=trunc(c.purchase_price*100) and c.purchase_price*100<=1000000000000
     and not exists(select 1 from uc_investor_cars a where a.car_id=c.id)
+    and not exists(select 1 from journal_entries j where j.car_id=c.id and not coalesce(j.voided,false))
+    and not exists(select 1 from payments p where p.car_id=c.id)
+    and not exists(select 1 from repairs r where r.car_id=c.id and (r.status='done' or r.completed_at is not null or coalesce(r.actual_cost,0)<>0))
    order by c.make,c.model,c.id limit 51 offset page*50)
   select jsonb_build_object('cars',coalesce(jsonb_agg(jsonb_build_object('id',r.id,'make',r.make,'model',r.model,'year',r.year,'car_plate',r.car_plate,'photo',r.photo,'purchase_price',r.purchase_price) order by r.n) filter(where r.n<=page*50+50),'[]'::jsonb),
    'page',page,'hasMore',count(*)>50) into result from page_rows r;

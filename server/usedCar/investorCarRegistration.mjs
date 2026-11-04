@@ -62,6 +62,8 @@ export function validateRegistration(body){
 }
 
 const ERRORS={
+ REPAIR_BUSY:[409,'This car is being updated. Retry the original save.'],
+ CAR_REPAIR_HISTORY_REVIEW_REQUIRED:[409,'Review the completed repair costs before investor funding.'],
  NOT_ALLOWED:[403,'Only an active Director can register an investor-funded car.'],
  REQUEST_CHANGED:[409,'Retry the original save before changing it.'],
  CAR_EXISTS:[409,'This car is already registered. Open it from the stock list instead of registering it again.'],

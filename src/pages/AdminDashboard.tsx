@@ -6,6 +6,7 @@ import MyPayslipCard from '../components/MyPayslipCard';
 import Modal from '../components/Modal';
 import { formatRM } from '../utils/format';
 import { supabase } from '../lib/supabase';
+import { readPending } from '../lib/investorFinance';
 import { completeRepairJob } from '../utils/completeRepair';
 import { RepairJob } from '../types';
 
@@ -55,6 +56,7 @@ export default function AdminDashboard() {
   const [billTarget, setBillTarget] = useState<RepairJob | null>(null);
   const [billForm, setBillForm] = useState<{ parts: { name: string; cost: number }[]; labourCost: number; receiptPhoto: string }>({ parts: [{ name: '', cost: 0 }], labourCost: 0, receiptPhoto: '' });
   const [billSubmitting, setBillSubmitting] = useState(false);
+  const [billSaveError,setBillSaveError]=useState('');
   const [billUploading, setBillUploading] = useState(false);
   const billPhotoRef = useRef<HTMLInputElement>(null);
   const [intakeFilter, setIntakeFilter] = useState<'pending' | 'done'>('pending');
@@ -150,6 +152,7 @@ export default function AdminDashboard() {
   );
 
   const openBillModal = (r: RepairJob) => {
+    setBillSaveError('');
     setBillTarget(r);
     setBillForm({ parts: [{ name: '', cost: 0 }], labourCost: 0, receiptPhoto: r.collectedPhoto ?? '' });
   };
@@ -163,22 +166,24 @@ export default function AdminDashboard() {
   };
   const removeBillPart = (idx: number) => setBillForm(f => ({ ...f, parts: f.parts.filter((_, i) => i !== idx) }));
 
-  const handleBillSubmit = async () => {
+  const handleBillSubmit = async (retryOriginal=false) => {
     if (!billTarget) return;
     const car = cars.find(c => c.id === billTarget.carId);
     if (!car) return;
     setBillSubmitting(true);
+    setBillSaveError('');
     try {
       const validParts = billForm.parts.filter(p => p.name.trim());
       const actualCost = validParts.reduce((s, p) => s + p.cost, 0) + billForm.labourCost;
-      await updateRepair(billTarget.id, { parts: validParts, labourCost: billForm.labourCost, totalCost: actualCost });
+      if(!car.investorFunded)await updateRepair(billTarget.id, { parts: validParts, labourCost: billForm.labourCost, totalCost: actualCost });
       await completeRepairJob({
         repair: { ...billTarget, parts: validParts, labourCost: billForm.labourCost },
         car, actualCost, receiptPhoto: billForm.receiptPhoto,
+        billDetails:{parts:validParts,labourCost:billForm.labourCost},retryOriginal,applySavedRepair:useStore.getState().applySavedInvestorRepair,
         currentUserId: currentUser.id, payments, workshops, addPayment, updateRepair, addJournalEntry,
       });
       setBillTarget(null);
-    } finally {
+    } catch(error) {setBillSaveError(error instanceof Error?error.message:'Could not confirm this repair. Retry the original save.');} finally {
       setBillSubmitting(false);
     }
   };
@@ -713,13 +718,15 @@ export default function AdminDashboard() {
               </div>
 
               <div className="flex gap-3">
+                {billSaveError&&<p role="alert" className="text-red-300 text-xs">{billSaveError}</p>}
+                {readPending(currentUser.id).some(p=>p.slot==='repair-complete:'+billTarget.id)&&<button disabled={billSubmitting} onClick={()=>void handleBillSubmit(true)} className="text-gold-400 text-xs">Retry original save</button>}
                 <button onClick={() => setBillTarget(null)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
                 <button
-                  onClick={handleBillSubmit}
+                  onClick={()=>void handleBillSubmit()}
                   disabled={total <= 0 || billSubmitting}
                   className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  {billSubmitting ? 'Saving…' : 'Save & Generate Payment'}
+                  {billSubmitting ? 'Saving…' : cars.find(c=>c.id===billTarget.carId)?.investorFunded?'Save repair bill':'Save & Generate Payment'}
                 </button>
               </div>
             </div>

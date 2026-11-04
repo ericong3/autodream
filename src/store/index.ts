@@ -137,6 +137,7 @@ interface StoreState {
   // Repairs
   addRepair: (repair: RepairJob) => Promise<void>;
   updateRepair: (id: string, repair: Partial<RepairJob>) => Promise<void>;
+  applySavedInvestorRepair: (actorId:string,row:any)=>void;
   deleteRepair: (id: string) => Promise<void>;
 
   // Quotations
@@ -2118,11 +2119,17 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       sendPush(dirIds(get().users), '🔧 Car in workshop', `${carName} moved to workshop`, '/inventory', repair.carId);
     }
   },
+  applySavedInvestorRepair: (actorId,row) => {
+    if(get().currentUser?.id!==actorId)return;
+    const saved=rowToRepair(row),previous=get().repairs.find(r=>r.id===saved.id);
+    if(saved.status==='done'&&previous?.status!=='done')sendPush(dirIds(get().users),'✅ Repair completed',`${saved.typeOfRepair} completed`,'/inventory',saved.carId);
+    set(s=>({repairs:s.repairs.map(r=>r.id===saved.id?saved:r),cars:s.currentUser?.role==='admin'?s.cars:s.cars.map(c=>c.id===saved.carId?{...c,currentLocation:'Showroom'}:c)}));
+  },
   updateRepair: async (id, repair) => {
     const actorIsAdmin = get().currentUser?.role === 'admin';
     const existing = get().repairs.find((r) => r.id === id);
     const { error: repErr } = await supabase.from('repairs').update(repairToRow(repair)).eq('id', id);
-    if (repErr) console.error('updateRepair failed:', repErr.message);
+    if (repErr) throw new Error(repErr.message);
     // #24 Repair job completed
     if (repair.status === 'done' && existing?.status !== 'done') {
       const car = get().cars.find(c => c.id === existing?.carId);

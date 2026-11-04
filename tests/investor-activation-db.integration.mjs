@@ -8,6 +8,7 @@ try{
  create table garage_building_sessions(user_id text);
  create table users(id text primary key,name text,username text,password text,role text,business_access text,phone text,monthly_target numeric,cars_in_month integer);
  create table cars(id text primary key,make text,model text,year integer,car_plate text,photo text,status text,investor_id text,investor_split numeric,trade_in_source_car_id text,purchase_price numeric,consignment jsonb,outgoing_consignment jsonb);
+ create table repairs(id text primary key,car_id text references cars(id),type_of_repair text,parts jsonb default '[]',labour_cost numeric default 0,total_cost numeric default 0,status text,location text,receipt_photo text,actual_cost numeric,completed_at timestamptz,notes text);
  create table payments(id text primary key,car_id text,type text,status text,amount numeric,claim_confirmed_by text,claim_confirmed_at timestamptz,description text,recipient_name text);
  create table payslips(id text primary key,user_id text);
  create table investor_transactions(id text primary key);
@@ -15,7 +16,7 @@ try{
  create table bank_statement_uploads(id text primary key);
  insert into garage_building_staff(id,name,username,password,role,business_access) values('d','Director','director','discarded','director','both'),('a','Admin','admin','discarded','admin','used_car'),('i','Investor','investor','discarded','investor','used_car'),('other','Other','other','discarded','investor','used_car');
  insert into cars(id,make,model,status,purchase_price) select 'car-'||lpad(n::text,3,'0'),'Toyota','Vios','available',50000 from generate_series(1,70) n;`);
- for(const file of ['20260720_ledger_accounts.sql','20260720_journal_entries.sql','20261021010000_autodream_staff_invitations.sql','20261104000000_investor_capital_foundation.sql','20261104010000_investor_car_expenses.sql','20261104020000_investor_activation.sql','20261104030000_investor_journal_integration.sql','20261104040000_private_claim_posting.sql','20261104060000_investor_car_registration.sql'])await db.exec(migration(file));
+ for(const file of ['20260720_ledger_accounts.sql','20260720_journal_entries.sql','20261021010000_autodream_staff_invitations.sql','20261104000000_investor_capital_foundation.sql','20261104010000_investor_car_expenses.sql','20261104020000_investor_activation.sql','20261104030000_investor_journal_integration.sql','20261104040000_private_claim_posting.sql','20261104060000_investor_car_registration.sql','20261104070000_investor_repair_bills.sql'])await db.exec(migration(file));
  await assert.rejects(()=>db.exec(migration('20261104050000_private_finance_lockdown.sql')),/PRIVATE_FINANCE_RELEASE_NOT_REVIEWED/);
  await db.exec("rollback;select set_config('autodream.private_finance_ready','reviewed-20261104',false)");
  await db.exec(migration('20261104050000_private_finance_lockdown.sql'));
@@ -60,6 +61,28 @@ try{
  assert.deepEqual((await db.query('select uc_register_investor_car($1,$2) result',['d',registration])).rows[0].result,registered);
  assert.equal((await db.query("select count(*)::int n from uc_investor_cash_entries where car_id='registered-new'")).rows[0].n,0);
  await assert.rejects(()=>db.query('select uc_register_investor_car($1,$2)',['d',{...registration,car:{...registration.car,model:'Changed'}}]),/REQUEST_CHANGED/);
+ // Repair completion and its pending cost must commit together, without
+ // creating a legacy payment or recording money as paid.
+ await cmd('d','fund_car',{potId,carId:'car-002',purchaseCents:5000000});
+ await db.exec("insert into repairs(id,car_id,type_of_repair,status,location) values('repair-1','car-002','Brake repair','awaiting_bill','Workshop'),('free','car-002','Inspection','pending',null),('normal','car-069','Company repair','pending','Workshop')");
+ const repairData={repairId:'repair-1',amountCents:105000,billDetails:{parts:[{name:'Parts',cost:1000}],labourCostCents:5000},requestId:req()};
+ const finishRepair=async(actor,data)=>(await db.query('select uc_complete_investor_repair($1,$2) result',[actor,data])).rows[0].result;
+ const repairResult=await finishRepair('a',repairData);assert.equal(repairResult.repair.status,'done');assert.equal(repairResult.repair.actual_cost,1050);
+ assert.equal((await db.query('select state from uc_investor_car_bills where id=$1',[repairResult.billId])).rows[0].state,'pending');
+ const retryRepair=await finishRepair('a',repairData);assert.equal(retryRepair.billId,repairResult.billId);assert.equal(retryRepair.alreadyRecorded,true);
+ assert.equal((await finishRepair('d',{...repairData,requestId:req()})).billId,repairResult.billId);
+ await assert.rejects(()=>finishRepair('a',{...repairData,amountCents:105001}),/REQUEST_CHANGED/);
+ await assert.rejects(()=>finishRepair('a',{...repairData,amountCents:105001,billDetails:{parts:[],labourCostCents:105001},requestId:req()}),/REPAIR_CHANGED_REVIEW_REQUIRED/);
+ await assert.rejects(()=>finishRepair('i',{...repairData,requestId:req()}),/NOT_ALLOWED/);
+ assert.equal((await db.query("select count(*)::int n from payments where car_id='car-002'")).rows[0].n,0);
+ assert.equal((await db.query("select count(*)::int n from uc_investor_cash_entries where car_id='car-002'")).rows[0].n,0);
+ assert.equal((await db.query("select count(*)::int n from journal_entries where car_id='car-002'")).rows[0].n,0);
+ await assert.rejects(()=>db.exec("update repairs set actual_cost=1 where id='repair-1'"),/REPAIR_COMPLETION_REQUIRED/);
+ await assert.rejects(()=>db.exec("delete from repairs where id='repair-1'"),/IMMUTABLE_HISTORY/);
+ await db.exec("update repairs set notes='Keep this note' where id='repair-1';update repairs set status='done',actual_cost=10 where id='normal'");
+ const free=await finishRepair('a',{repairId:'free',amountCents:0,requestId:req()});assert.equal(free.billId,null);assert.equal(free.repair.status,'done');
+ await assert.rejects(()=>cmd('d','fund_car',{potId,carId:'car-069',purchaseCents:5000000}),/CAR_REPAIR_HISTORY_REVIEW_REQUIRED/);
+ await db.exec("set role anon");await assert.rejects(()=>db.exec('select * from uc_investor_repair_bills'),/permission denied/);await db.exec('reset role');
  // Invitation attaches to an existing account with financial history only
  // when the real existing email-verification function activates its staff row.
  const waiting=await cmd('d','create_profile',{name:'Waiting investor'});

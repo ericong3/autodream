@@ -13,10 +13,11 @@
     "Registered bank selection, private bill/payment receipt uploads, HMAC invitation links to stable investor profiles linked by existing email verification",
     "Atomic new-car registration and one-pot funding before legacy purchase postings",
     "Balanced journal postings for capital, purchase, approved bills, partial payments, sale receipts, profit and losses; no fake bank movement for profit allocation",
-    "Guarded finance ACL lockdown and canonical server-derived expense-claim posting"
+    "Guarded finance ACL lockdown and canonical server-derived expense-claim posting",
+    "Atomic investor repair completion: one pending bill per repair, replay safety, original-save retry UI, zero-cost completion without payment, immutable linked history and funding-history guard. Database rehearsal extended for repair capture."
   ],
   "validation": {
-    "unit_tests": 310,
+    "unit_tests": 321,
     "build": "passed",
     "local_database_rehearsals": [
       "investor-capital-db.integration.mjs",
@@ -30,7 +31,7 @@
   "blocking_access": "Browser control reports disabled in Work settings. Vercel CLI is authenticated, but no direct Supabase SQL connection found. Need live read-only preflight via existing Supabase project ayvbagxashasdqgwncbf.",
   "required_before_activation": [
     "Read live schema types, current object/migration status, public definer functions and grants using prepared read-only preflight; do not assume earlier prepared SQL was installed",
-    "Finish canonical capture from existing repairs, misc costs, staff claims and commission/payroll; old completion/disbursement paths can half-save then hit investor journal/payment guards",
+    "Finish canonical capture from misc costs, staff claims and commission/payroll; repair capture is implemented locally, existing disbursement paths still need integration.",
     "Handle loan net disbursement deductions without inventing bank receipts or leaving sale settlement blocked",
     "Finish bank statement import/matching, company main-pot view and opening investor money already in bank (must not double count as a new deposit)",
     "Finish withdrawal bank destination audit, generic non-salary payment receipt access (purchase/withdrawal as well as car bills), authorised late-cost/refund/return corrections",
@@ -50,6 +51,7 @@
     "0400 creates canonical claim posting before bridge rollout; 0500 revokes public finance grants only with reviewed readiness marker",
     "0200 refuses any nonempty investor table; requires a data-preserving migration instead if live data now exists",
     "0300 refuses nonzero legacy investor ledger balances or cars with prior posted/payment history; no silent opening conversion",
-    "0600 registers/funds a new car atomically; forces old investor fields null even if live column defaults differ"
+    "0600 registers/funds a new car atomically; forces old investor fields null even if live column defaults differ",
+    "0700 captures completed repairs and one pending investor bill atomically; free repairs have no bill, financial posting or payment. No live SQL run."
   ]
 }
