@@ -68,6 +68,7 @@ import { formatRM, formatMileage, generateId, shortName } from '../utils/format'
 import { generateDeliveryPayments, generateMiscCostPayment, generatePanelChargePayment, calcConsignmentPayoutAmount } from '../utils/generatePayments';
 import { completeRepairJob } from '../utils/completeRepair';
 import { recordInvestorMiscCost } from '../utils/completeInvestorMisc';
+import TradeInFundingChoice from '../components/TradeInFundingChoice';
 import { buildCarSaleEntry, buildPayableRecognizedEntry, buildCarCostRecognizedEntry, buildSettlementRecognizedEntry, buildTradeInAcquiredEntry, LEDGER_ACCOUNTS } from '../utils/generateJournalEntries';
 import { getCaseCompletion } from '../utils/caseCompletion';
 import { buildDealReceiptPdf, uploadDealReceipt } from '../utils/generateDealReceipt';
@@ -914,6 +915,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       </nav>
 
       {car.investorFunded && (isDirector || isAdmin) && <button className="w-full rounded-xl border border-gold-400/30 bg-gold-400/10 px-4 py-3 text-left text-gold-400" onClick={() => navigate('/investor-finance?carId='+encodeURIComponent(car.id))}>Investor-funded car · Open car bills and payments →</button>}
+      {car.tradeInSourceCarId && isDirector && import.meta.env.VITE_INVESTOR_FINANCE === '1' && <TradeInFundingChoice key={car.id + ':' + currentUser?.id} incomingCarId={car.id} />}
       {/* Back + actions */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <button
