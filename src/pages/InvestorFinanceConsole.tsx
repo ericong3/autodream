@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Plus, Link2, Copy, Landmark, Users, ChevronLeft } from 'lucide-react';
 import { useStore } from '../store';
+import InvestorMoneyDocuments, { type MoneyProofSelection } from '../components/InvestorMoneyDocuments';
 import InvestorFinanceCar, {
   ActionErrorBox, BankPaymentFields, CarCard, CarPhoto, CashConfirm, CASH_NOTE, Field, Figure, LoadState, PendingSaves, Section,
   bankPaymentReady, emptyBankPayment, type BankPayment, type PendingConfirm,
@@ -336,6 +337,7 @@ function WithdrawalRow({ w, potId, name, act, run, canWrite, banks, setConfirm, 
   const [panel, setPanel] = useState<null | 'reject' | 'cancel' | 'paid'>(null);
   const [note, setNote] = useState('');
   const [pay, setPay] = useState<BankPayment>(emptyBankPayment);
+  const [proof, setProof] = useState<MoneyProofSelection>({});
   const slot = (kind: string) => `${kind}:${potId}:${w.id}`;
   const label = `${formatCents(w.amountCents)} · ${name}`;
   const noteForm = (kind: 'reject' | 'cancel') => (
@@ -364,15 +366,17 @@ function WithdrawalRow({ w, potId, name, act, run, canWrite, banks, setConfirm, 
       {panel === 'cancel' && noteForm('cancel')}
       {panel === 'paid' && (
         <form className="space-y-2" onSubmit={(e) => {
-          e.preventDefault(); if (!bankPaymentReady(pay)) return;
+          e.preventDefault(); if (!bankPaymentReady(pay) || !proof.receiptDocumentId) return;
           setConfirm({ title: 'Record withdrawal paid?', label: 'Record payment', message: `Record that ${formatCents(w.amountCents)} was paid to ${name} on ${formatDay(pay.paidOn)}. ${CASH_NOTE}`,
-            go: async () => { if (await run(slot('paid'), 'withdrawal_paid', { potId, withdrawalId: w.id, ...pay, bankReference: pay.bankReference.trim() }, `Withdrawal paid ${label}`)) setPanel(null); } });
+            go: async () => { if (await run(slot('paid'), 'withdrawal_paid', { potId, withdrawalId: w.id, ...pay, receiptDocumentId: proof.receiptDocumentId, bankReference: pay.bankReference.trim() }, `Withdrawal paid ${label}`)) setPanel(null); } });
         }}>
           <BankPaymentFields banks={banks} value={pay} onChange={setPay} />
-          <button type="submit" disabled={!bankPaymentReady(pay) || act.busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40">Record withdrawal paid</button>
+          <InvestorMoneyDocuments source={{ target: 'withdrawal', withdrawalId: w.id }} amountCents={w.amountCents} editable onChoose={setProof} />
+          <button type="submit" disabled={!bankPaymentReady(pay) || !proof.receiptDocumentId || act.busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40">Record withdrawal paid</button>
         </form>
       )}
       {errorBox(slot('approve'))}{errorBox(slot('reject'))}{errorBox(slot('cancel'))}{errorBox(slot('paid'))}
+      {w.state === 'paid' && <InvestorMoneyDocuments source={{ target: 'withdrawal', withdrawalId: w.id }} amountCents={w.amountCents} />}
     </div>
   );
 }

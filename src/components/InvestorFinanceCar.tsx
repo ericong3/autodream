@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Car as CarIcon, ChevronDown, AlertTriangle, RotateCw, Paperclip, Loader2, CheckCircle2 } from 'lucide-react';
 import ConfirmSheet from './ConfirmSheet';
+import InvestorMoneyDocuments, { type MoneyProofSelection } from './InvestorMoneyDocuments';
 import {
   BILL_CATEGORIES, CAR_STATE_LABEL, carTitle, formatCents, formatDay, investorRequest, investorShare, basisPointsLabel,
   malaysiaToday, parseRinggit, prepareProof, useInvestorAction, useInvestorQuery, InvestorFinanceError,
@@ -176,7 +177,7 @@ export function CarCard({ car, onOpen }: { car: CarSummary; onOpen: () => void }
 const categoryLabel = (c: BillCategory) => BILL_CATEGORIES.find((x) => x.value === c)?.label ?? c;
 const ACTIVITY_LABEL: Record<string, string> = {
   fund_car: 'Car allocated to account', purchase_paid: 'Purchase payment recorded', add_car_bill: 'Bill added', approve_car_bill: 'Bill approved',
-  void_car_bill: 'Bill voided', pay_car_bill: 'Bill payment recorded', agree_sale: 'Sale price agreed', sale_received: 'Sale money recorded', settle_car: 'Profit confirmed', proof_upload: 'Receipt attached',
+  void_car_bill: 'Bill voided', pay_car_bill: 'Bill payment recorded', agree_sale: 'Sale price agreed', sale_received: 'Sale money recorded', settle_car: 'Profit confirmed', proof_upload: 'Document uploaded', payment_receipt_linked: 'Payment receipt attached',
 };
 const activityLabel = (a: string) => ACTIVITY_LABEL[a] ?? a.replace(/_/g, ' ');
 
@@ -186,7 +187,7 @@ export default function InvestorFinanceCar({ carId, actorId, mode, banks = [], o
   const query = useInvestorQuery<CarDetail>(`${actorId}:${carId}`, () => investorRequest<CarDetail>('car_snapshot', { carId }));
   const act = useInvestorAction(actorId);
   const [confirm, setConfirm] = useState<PendingConfirm | null>(null);
-  const director = mode === 'director', canAddBill = mode === 'director' || mode === 'admin', seesProof = mode === 'director' || mode === 'admin';
+  const director = mode === 'director', canAddBill = mode === 'director' || mode === 'admin', seesProof = true;
   const car = query.data;
 
   const after = async (result: unknown) => { if (!result) return false; await query.reload(); onChanged?.(); return true; };
@@ -231,6 +232,7 @@ export default function InvestorFinanceCar({ carId, actorId, mode, banks = [], o
               </Section>
             )}
 
+            {(director || mode === 'investor') && car.state !== 'reserved' && <InvestorMoneyDocuments source={{ target: 'purchase', carId }} amountCents={car.purchaseCents ?? 0} />}
             <Section title="Bills" hint={`${car.bills.filter((b) => b.state !== 'voided').length}`} defaultOpen={mode === 'admin'}>
               {car.bills.length === 0 && <p className="text-gray-500 text-xs">No bills recorded for this car.</p>}
               {car.bills.map((bill) => (
@@ -337,13 +339,16 @@ export default function InvestorFinanceCar({ carId, actorId, mode, banks = [], o
 }
 
 // ── Forms ────────────────────────────────────────────────────────────────────
-function PurchasePaid({ car, banks, busy, onSubmit }: { car: CarSummary; banks: Bank[]; busy: string | null; onSubmit: (p: BankPayment) => void }) {
+function PurchasePaid({ car, banks, busy, onSubmit }: { car: CarSummary; banks: Bank[]; busy: string | null; onSubmit: (p: BankPayment & MoneyProofSelection) => void }) {
   const [pay, setPay] = useState(emptyBankPayment);
+  const [proof, setProof] = useState<MoneyProofSelection>({});
+  const ready = bankPaymentReady(pay) && !!proof.invoiceDocumentId && !!proof.receiptDocumentId;
   return (
-    <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); if (bankPaymentReady(pay)) onSubmit(pay); }}>
+    <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); if (ready) onSubmit({ ...pay, ...proof }); }}>
       <p className="text-gray-400 text-xs">Amount: <span className="text-white font-medium">{formatCents(car.purchaseCents)}</span> (the allocated purchase price)</p>
       <BankPaymentFields banks={banks} value={pay} onChange={setPay} />
-      <button type="submit" disabled={!bankPaymentReady(pay) || busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40">Record purchase payment</button>
+      <InvestorMoneyDocuments key={car.carId} source={{ target: 'purchase', carId: car.carId }} amountCents={car.purchaseCents ?? 0} editable onChoose={setProof} />
+      <button type="submit" disabled={!ready || busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40">Record purchase payment</button>
     </form>
   );
 }
@@ -396,7 +401,7 @@ function AddBill({ busy, onSubmit }: { busy: boolean; onSubmit: (b: { category: 
         <Field label="What it was for"><input className="input w-full px-3 py-2 rounded-lg text-sm" maxLength={120} value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="e.g. Front brake pads" /></Field>
         <Field label="Paid to / supplier"><input className="input w-full px-3 py-2 rounded-lg text-sm" maxLength={120} value={payee} onChange={(e) => setPayee(e.target.value)} /></Field>
       </div>
-      <p className="text-gray-600 text-[10px]">The Director checks and approves every bill before it counts as a car cost. Attach the receipt after saving.</p>
+      <p className="text-gray-600 text-[10px]">Save the bill, then upload the supplier invoice. The Director can approve it once the invoice is attached.</p>
       <div className="flex gap-2">
         <button type="submit" disabled={!ok || busy} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40">{busy ? 'Saving…' : 'Save bill'}</button>
         <button type="button" onClick={() => setOpen(false)} className="text-xs px-3 py-2 rounded-lg text-gray-400 border border-obsidian-400/60">Cancel</button>
@@ -409,15 +414,18 @@ const BILL_STATE: Record<CarBill['state'], [string, string]> = { pending: ['Wait
 
 function BillRow({ bill, carId, mode, banks, busy, seesProof, onApprove, onVoid, onPay, onUploaded, errorBox }: {
   bill: CarBill; carId: string; mode: CarMode; banks: Bank[]; busy: string | null; seesProof: boolean;
-  onApprove: () => void; onVoid: (note: string) => void; onPay: (cents: number, p: BankPayment) => void; onUploaded: () => void; errorBox: (slot: string) => ReactNode;
+  onApprove: () => void; onVoid: (note: string) => void; onPay: (cents: number, p: BankPayment & { receiptDocumentId: string }) => void; onUploaded: () => void; errorBox: (slot: string) => ReactNode;
 }) {
   const [panel, setPanel] = useState<null | 'void' | 'pay'>(null);
   const [note, setNote] = useState('');
   const [amount, setAmount] = useState('');
   const [pay, setPay] = useState(emptyBankPayment);
   const director = mode === 'director', remaining = bill.amountCents - bill.paidCents;
-  const cents = parseRinggit(amount), payOk = !!cents && cents <= remaining && bankPaymentReady(pay);
+  const [receiptId, setReceiptId] = useState('');
+  const receipts = (bill.documents ?? []).filter((d) => d.kind === 'receipt' && !d.used);
+  const cents = parseRinggit(amount), payOk = !!cents && cents <= remaining && bankPaymentReady(pay) && receipts.some((d) => d.id === receiptId);
   const [label, tone] = BILL_STATE[bill.state];
+  const hasInvoice = (bill.documents ?? []).some((d) => d.kind === 'bill');
   return (
     <div className={`rounded-lg border border-obsidian-400/50 p-3 space-y-2 ${bill.state === 'voided' ? 'opacity-60' : ''}`}>
       <div className="flex items-start justify-between gap-2">
@@ -430,6 +438,7 @@ function BillRow({ bill, carId, mode, banks, busy, seesProof, onApprove, onVoid,
           <p className={`text-[10px] ${tone}`}>{label}</p>
         </div>
       </div>
+      {bill.state !== 'voided' && !hasInvoice && <p className="text-[11px] text-amber-300">Invoice needed</p>}
       {bill.state === 'approved' && (
         <p className="text-[11px] text-gray-400">Paid {formatCents(bill.paidCents)}{remaining > 0 ? <span className="text-amber-300"> · {formatCents(remaining)} still owing</span> : ' · fully paid'}</p>
       )}
@@ -438,7 +447,8 @@ function BillRow({ bill, carId, mode, banks, busy, seesProof, onApprove, onVoid,
           {bill.payments.map((p) => (
             <li key={p.id} className="flex items-center justify-between gap-2">
               <span>{formatCents(p.amountCents)} paid {formatDay(p.paidOn)}</span>
-              {seesProof && (director || mode === 'admin') && <ProofUpload billId={bill.id} entryId={p.id} kind="payment" onUploaded={onUploaded} />}
+              {!p.receiptDocumentId && !(bill.documents ?? []).some((d) => d.entryId === p.id && d.kind === 'payment') && <span className="text-amber-300">Payment receipt needed</span>}
+              {!p.receiptDocumentId && seesProof && (director || mode === 'admin') && <ProofUpload billId={bill.id} entryId={p.id} kind="payment" onUploaded={onUploaded} />}
             </li>
           ))}
         </ul>
@@ -446,12 +456,12 @@ function BillRow({ bill, carId, mode, banks, busy, seesProof, onApprove, onVoid,
       {seesProof && (
         <div className="flex flex-wrap items-center gap-2">
           {(bill.documents ?? []).map((d) => <ProofLink key={d.id} documentId={d.id} name={d.name} />)}
-          {bill.state !== 'voided' && <ProofUpload billId={bill.id} kind="bill" onUploaded={onUploaded} />}
+          {(director || mode === 'admin') && bill.state !== 'voided' && <ProofUpload billId={bill.id} kind="bill" onUploaded={onUploaded} />}
         </div>
       )}
       {director && bill.state !== 'voided' && (
         <div className="flex flex-wrap gap-2">
-          {bill.state === 'pending' && <button type="button" disabled={busy !== null} onClick={onApprove} className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 disabled:opacity-40">{busy === `approve:${carId}:${bill.id}` ? 'Approving…' : 'Approve'}</button>}
+          {bill.state === 'pending' && <button type="button" disabled={busy !== null || !hasInvoice} title={hasInvoice ? 'Approve bill' : 'Upload the supplier invoice first'} onClick={onApprove} className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 disabled:opacity-40">{busy === `approve:${carId}:${bill.id}` ? 'Approving…' : 'Approve'}</button>}
           {bill.state === 'approved' && remaining > 0 && <button type="button" onClick={() => setPanel(panel === 'pay' ? null : 'pay')} className="text-xs px-3 py-1.5 rounded-lg bg-gold-500/15 text-gold-300 border border-gold-500/30">Record payment</button>}
           {bill.paidCents === 0 && <button type="button" onClick={() => setPanel(panel === 'void' ? null : 'void')} className="text-xs px-3 py-1.5 rounded-lg text-gray-400 border border-obsidian-400/60">Void</button>}
         </div>
@@ -463,9 +473,12 @@ function BillRow({ bill, carId, mode, banks, busy, seesProof, onApprove, onVoid,
         </form>
       )}
       {panel === 'pay' && (
-        <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); if (payOk && cents) { onPay(cents, pay); setPanel(null); } }}>
+        <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); if (payOk && cents) { onPay(cents, { ...pay, receiptDocumentId: receiptId }); setPanel(null); } }}>
           <Field label="Amount paid (RM)" hint={`Up to ${formatCents(remaining)}`}><input inputMode="decimal" className="input w-full px-3 py-2 rounded-lg text-sm" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" /></Field>
           <BankPaymentFields banks={banks} value={pay} onChange={setPay} />
+          <ProofUpload billId={bill.id} kind="receipt" onUploaded={(id) => { setReceiptId(id); onUploaded(); }} />
+          <Field label="Payment receipt"><select className="input w-full px-3 py-2 rounded-lg text-sm" value={receiptId} onChange={(e) => setReceiptId(e.target.value)}><option value="">Choose the uploaded receipt</option>{receipts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
+          {!receiptId && <p className="text-[11px] text-amber-300">Payment receipt needed</p>}
           <button type="submit" disabled={!payOk || busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40">Record bill payment</button>
         </form>
       )}
@@ -474,15 +487,15 @@ function BillRow({ bill, carId, mode, banks, busy, seesProof, onApprove, onVoid,
   );
 }
 
-function ProofUpload({ billId, entryId, kind, onUploaded }: { billId: string; entryId?: string; kind: 'bill' | 'payment'; onUploaded: () => void }) {
+function ProofUpload({ billId, entryId, kind, onUploaded }: { billId: string; entryId?: string; kind: 'bill' | 'payment' | 'receipt'; onUploaded: (documentId: string) => void }) {
   const [state, setState] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
   const upload = async (file: File | undefined) => {
     if (!file) return;
     setState({ busy: true, error: null });
     try {
       const proof = await prepareProof(file);
-      await investorRequest<{ documentId: string }>('proof_upload', { billId, ...(entryId ? { entryId } : {}), kind, ...proof });
-      setState({ busy: false, error: null }); onUploaded();
+      const saved = await investorRequest<{ documentId: string }>('proof_upload', { billId, ...(entryId ? { entryId } : {}), kind, ...proof });
+      setState({ busy: false, error: null }); onUploaded(saved.documentId);
     } catch (e) {
       setState({ busy: false, error: e instanceof Error ? e.message : 'Upload failed. Try again.' });
     }
@@ -490,7 +503,7 @@ function ProofUpload({ billId, entryId, kind, onUploaded }: { billId: string; en
   return (
     <span className="inline-flex flex-col">
       <label className={`text-[11px] px-2.5 py-1 rounded-lg border border-obsidian-400/60 text-gray-300 inline-flex items-center gap-1 cursor-pointer ${state.busy ? 'opacity-50 pointer-events-none' : ''}`}>
-        <Paperclip size={11} /> {state.busy ? 'Uploading…' : kind === 'bill' ? 'Attach receipt' : 'Attach payment slip'}
+        <Paperclip size={11} /> {state.busy ? 'Uploading…' : kind === 'bill' ? 'Upload invoice' : 'Upload payment receipt'}
         <input type="file" accept="image/png,image/jpeg,application/pdf" className="hidden" onChange={(e) => { void upload(e.target.files?.[0]); e.target.value = ''; }} />
       </label>
       {state.error && <span className="text-red-400 text-[10px] mt-0.5">{state.error}</span>}

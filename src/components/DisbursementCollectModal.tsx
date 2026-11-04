@@ -3,6 +3,7 @@ import { X, Landmark, Car as CarIcon } from 'lucide-react';
 import { Car, Payment, JournalEntry, LedgerAccount } from '../types';
 import { formatRM } from '../utils/format';
 import { recordDisbursement } from '../utils/recordDisbursement';
+import { privateCompanyEvidence, prepareDisbursementEvidence } from '../lib/companyEvidence';
 
 interface DealInfo {
   bank: string;
@@ -49,6 +50,8 @@ export default function DisbursementCollectModal({
     (car.disbursementCharges ?? []).map(c => ({ label: c.label, amount: String(c.amount) }))
   );
   const [saving, setSaving] = useState(false);
+  const [receipt, setReceipt] = useState<File | null>(null);
+  const [error, setError] = useState('');
 
   const expectedNum = Number(expected || 0);
   const actualNum = Number(actual || 0);
@@ -56,22 +59,26 @@ export default function DisbursementCollectModal({
   const chargesTotal = charges.reduce((s, c) => s + Number(c.amount || 0), 0);
   const allocationDiff = remaining - chargesTotal;
   const isBalanced = expectedNum > 0 ? Math.abs(allocationDiff) < 0.5 : true;
-  const canConfirm = !!actual && isBalanced && !saving;
+  const canConfirm = !!actual && isBalanced && !saving && (!privateCompanyEvidence || !!receipt);
 
   const photo = car.photos?.[0] || car.photo;
 
   const handleConfirm = async () => {
     if (!canConfirm) return;
     setSaving(true);
+    setError('');
     try {
+      const confirmedPayments = privateCompanyEvidence && receipt ? await prepareDisbursementEvidence({ car, amount: expectedNum || actualNum, payments, file: receipt, addPayment, updatePayment }) : payments;
       const chargeItems = charges
         .map(c => ({ label: c.label.trim(), amount: Number(c.amount || 0) }))
         .filter(c => c.label && c.amount > 0);
       await recordDisbursement(
         { car, grossAmount: expectedNum || actualNum, netAmount: actualNum, charges: chargeItems, date, currentUserId },
-        { updateCar, payments, addPayment, updatePayment, ledgerAccounts, addLedgerAccount, journalEntries, addJournalEntry, voidJournalEntry },
+        { updateCar, payments: confirmedPayments, addPayment, updatePayment, ledgerAccounts, addLedgerAccount, journalEntries, addJournalEntry, voidJournalEntry },
       );
       onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not record this collection. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -232,6 +239,8 @@ export default function DisbursementCollectModal({
           >
             {saving ? 'Confirming…' : `Confirm Collection · ${formatRM(actualNum || payment.amount)}`}
           </button>
+          {privateCompanyEvidence && <label className="block text-xs text-gray-400 mt-3">Payment receipt (required)<input type="file" accept="image/png,image/jpeg,application/pdf" disabled={saving} className="block mt-2 text-xs" onChange={(e) => setReceipt(e.target.files?.[0] ?? null)} /></label>}
+          {error && <p role="alert" className="text-xs text-red-400 mt-3">{error}</p>}
         </div>
       </div>
     </div>

@@ -17,8 +17,8 @@ export type CarSummary = {
   costCents?: number; unpaidBillCents?: number; pendingBills?: number; profitCents?: number | null; settledAt?: string | null;
   state?: CarState; settlement?: Settlement | null;
 };
-export type BillPayment = { id: string; amountCents: number; paidOn: string };
-export type BillDocument = { id: string; name: string; kind: 'bill' | 'payment'; entryId?: string };
+export type BillPayment = { id: string; amountCents: number; paidOn: string; receiptDocumentId?: string | null };
+export type BillDocument = { id: string; name: string; kind: 'bill' | 'payment' | 'receipt'; entryId?: string; used?: boolean };
 export type CarBill = { id: string; category: BillCategory; purpose: string; payee: string; amountCents: number; paidCents: number; state: 'pending' | 'approved' | 'voided'; createdAt: string; reviewedAt: string | null; payments?: BillPayment[]; documents?: BillDocument[] };
 export type CarActivity = { id: string; actorName: string; action: string; createdAt: string };
 export type CarDetail = CarSummary & { bills: CarBill[]; activity?: CarActivity[] };

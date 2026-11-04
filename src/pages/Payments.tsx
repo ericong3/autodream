@@ -14,6 +14,8 @@ import { buildClaimConfirmedEntry, buildClaimPaidEntry, buildPayablePaidEntry, L
 import { supabase } from '../lib/supabase';
 import Modal from '../components/Modal';
 import DisbursementCollectModal from '../components/DisbursementCollectModal';
+import CompanyPaymentDocuments from '../components/CompanyPaymentDocuments';
+import { privateCompanyEvidence, uploadCompanyEvidence } from '../lib/companyEvidence';
 
 async function uploadReceipt(file: File): Promise<string> {
   const ext = file.type === 'application/pdf' ? 'pdf' : 'jpg';
@@ -118,6 +120,7 @@ const EMPTY_ADD = {
 
 // ── Transfer / Collect modal ──────────────────────────────────────────────────
 export interface TransferModalProps {
+  paymentIds?: string[];
   count: number;
   totalAmount: number;
   isCollect?: boolean;
@@ -125,7 +128,7 @@ export interface TransferModalProps {
   onClose: () => void;
 }
 
-export function TransferModal({ count, totalAmount, isCollect, onConfirm, onClose }: TransferModalProps) {
+export function TransferModal({ count, totalAmount, isCollect, onConfirm, onClose, paymentIds }: TransferModalProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState('');
@@ -133,6 +136,7 @@ export function TransferModal({ count, totalAmount, isCollect, onConfirm, onClos
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   const actual = parseFloat(actualStr) || 0;
   const overpaid = isCollect && actual > 0 && actual > totalAmount ? actual - totalAmount : 0;
@@ -148,13 +152,19 @@ export function TransferModal({ count, totalAmount, isCollect, onConfirm, onClos
   const isPdfReceipt = receiptFile?.type === 'application/pdf';
 
   const handleConfirm = async () => {
+    if (saving) return;
+    if (privateCompanyEvidence && (!receiptFile || !paymentIds?.length)) { setSaveError('Upload the payment receipt first.'); return; }
     setSaving(true);
-    let receiptUrl: string | undefined;
-    if (receiptFile) {
-      try { receiptUrl = await uploadReceipt(receiptFile); } catch { /* ignore upload error */ }
-    }
-    await onConfirm(date, notes, isCollect && actual > 0 ? actual : undefined, receiptUrl);
-    setSaving(false);
+    setSaveError('');
+    try {
+      let receiptUrl: string | undefined;
+      if (receiptFile) {
+        if (privateCompanyEvidence) { for (const paymentId of paymentIds ?? []) await uploadCompanyEvidence(paymentId, 'payment', receiptFile); }
+        else receiptUrl = await uploadReceipt(receiptFile);
+      }
+      await onConfirm(date, notes, isCollect && actual > 0 ? actual : undefined, receiptUrl);
+    } catch (e) { setSaveError(e instanceof Error ? e.message : 'Could not record payment. Please try again.'); }
+    finally { setSaving(false); }
   };
 
   const title = isCollect ? 'Mark as Collected' : 'Mark as Transferred';
@@ -267,11 +277,12 @@ export function TransferModal({ count, totalAmount, isCollect, onConfirm, onClos
           </div>
           <button
             onClick={handleConfirm}
-            disabled={saving}
+            disabled={saving || (privateCompanyEvidence && !receiptFile)}
             className="w-full py-2.5 rounded-lg bg-gold-gradient text-obsidian-950 text-sm font-bold shadow-gold-sm hover:opacity-90 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {saving ? 'Saving...' : btnLabel}
           </button>
+          {saveError && <p role="alert" className="text-xs text-red-400">{saveError}</p>}
         </div>
       </div>
     </div>
@@ -438,6 +449,8 @@ export default function Payments({ embedded }: PaymentsProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showBulkAttach, setShowBulkAttach] = useState(false);
   const [transferTarget, setTransferTarget] = useState<'single' | 'batch' | null>(null);
+  const [documentPaymentId, setDocumentPaymentId] = useState<string | null>(null);
+  const [financeError, setFinanceError] = useState('');
   const [singleId, setSingleId] = useState<string | null>(null);
   // Loan disbursements collect through their own deal-summary modal instead
   // of the generic transfer flow — see DisbursementCollectModal.
@@ -631,6 +644,7 @@ export default function Payments({ embedded }: PaymentsProps) {
   // so it works whether done before or after marking payments paid. ──
   const handleBulkAttach = async (assignments: { paymentId: string; file: File }[]) => {
     await Promise.all(assignments.map(async ({ paymentId, file }) => {
+      if (privateCompanyEvidence) { await uploadCompanyEvidence(paymentId, 'invoice', file); return; }
       const receiptUrl = await uploadReceipt(file);
       await updatePayment(paymentId, { receiptUrl });
     }));
@@ -825,6 +839,7 @@ export default function Payments({ embedded }: PaymentsProps) {
 
         {/* Info */}
         <div className="flex-1 min-w-0">
+          {privateCompanyEvidence && <button className="text-[11px] text-gold-400 mb-1" onClick={() => setDocumentPaymentId(p.id)}>Invoices & receipts</button>}
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm text-white font-medium truncate">{p.recipientName}</span>
             <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${TYPE_COLORS[p.type]}`}>
@@ -900,7 +915,7 @@ export default function Payments({ embedded }: PaymentsProps) {
             ) : unconfirmedClaim ? (
               (isDirectorView || isAdmin) ? (
                 <button
-                  onClick={() => handleConfirmClaim(p.id)}
+                  onClick={() => { setFinanceError(''); void handleConfirmClaim(p.id).catch((e) => setFinanceError(e instanceof Error ? e.message : 'Could not approve this claim.')); }}
                   title="Check the receipt matches the amount, then confirm"
                   className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg border transition-colors whitespace-nowrap bg-sky-500/20 text-sky-300 border-sky-500/20 hover:bg-sky-500/30"
                 >
@@ -1102,6 +1117,7 @@ export default function Payments({ embedded }: PaymentsProps) {
           </div>
           <div className="min-w-0">
             <p className="text-[13px] text-white font-medium truncate">{p.recipientName}</p>
+            {privateCompanyEvidence && <button className="text-[11px] text-gold-400" onClick={() => setDocumentPaymentId(p.id)}>Invoices & receipts</button>}
             <p className="text-[11px] text-white/35 truncate">
               {car ? `${car.make} ${car.model}` : p.bankName ?? ''}
               {!isPending && p.transferredAt && ` · Collected ${new Date(p.transferredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}`}
@@ -1303,6 +1319,7 @@ export default function Payments({ embedded }: PaymentsProps) {
           </div>
           <div className="min-w-0">
             <p className="text-[13px] text-white font-medium truncate">{p.recipientName}</p>
+            {privateCompanyEvidence && <button className="text-[11px] text-gold-400" onClick={() => setDocumentPaymentId(p.id)}>Invoices & receipts</button>}
             <p className="text-[11px] text-white/35 truncate">
               {RECIPIENT_TYPE_LABELS[p.recipientType]}
               {p.description && ` · ${p.description}`}
@@ -1362,7 +1379,7 @@ export default function Payments({ embedded }: PaymentsProps) {
           ) : unconfirmedClaim ? (
             (isDirectorView || isAdmin) ? (
               <button
-                onClick={() => handleConfirmClaim(p.id)}
+                onClick={() => { setFinanceError(''); void handleConfirmClaim(p.id).catch((e) => setFinanceError(e instanceof Error ? e.message : 'Could not approve this claim.')); }}
                 title="Check the receipt matches the amount, then confirm"
                 className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full text-sky-200 bg-sky-500/20 border border-sky-500/30 hover:bg-sky-500/30 transition-colors whitespace-nowrap"
               >
@@ -1437,6 +1454,7 @@ export default function Payments({ embedded }: PaymentsProps) {
 
   return (
     <div className={embedded ? 'pb-10' : 'min-h-screen bg-obsidian-950 pb-32'}>
+      {financeError && <p role="alert" className="text-sm text-red-400 p-4">{financeError}</p>}
       {/* Header */}
       <div className={embedded ? 'mb-1' : 'sticky top-0 z-30 bg-obsidian-950/95 backdrop-blur-sm border-b border-white/[0.06]'}>
         <div className={embedded ? 'pb-3' : 'px-4 pt-4 pb-3'}>
@@ -1711,8 +1729,10 @@ export default function Payments({ embedded }: PaymentsProps) {
       )}
 
       {/* Transfer modal */}
+      {documentPaymentId && <CompanyPaymentDocuments paymentId={documentPaymentId} onClose={() => setDocumentPaymentId(null)} />}
       {transferTarget && (
         <TransferModal
+          paymentIds={transferPayments.map((p) => p.id)}
           count={transferPayments.length}
           totalAmount={transferTotal}
           isCollect={transferTarget === 'single' && singleId ? INBOUND_TYPES.has(payments.find(p => p.id === singleId)?.type ?? 'repair') : false}

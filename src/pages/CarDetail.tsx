@@ -67,6 +67,7 @@ import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, formatMileage, generateId, shortName } from '../utils/format';
 import { generateDeliveryPayments, generateMiscCostPayment, generatePanelChargePayment, calcConsignmentPayoutAmount } from '../utils/generatePayments';
 import { completeRepairJob } from '../utils/completeRepair';
+import { recordInvestorMiscCost } from '../utils/completeInvestorMisc';
 import { buildCarSaleEntry, buildPayableRecognizedEntry, buildCarCostRecognizedEntry, buildSettlementRecognizedEntry, buildTradeInAcquiredEntry, LEDGER_ACCOUNTS } from '../utils/generateJournalEntries';
 import { getCaseCompletion } from '../utils/caseCompletion';
 import { buildDealReceiptPdf, uploadDealReceipt } from '../utils/generateDealReceipt';
@@ -1676,7 +1677,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="text-purple-400 font-semibold text-sm">{formatRM(m.amount)}</span>
-                        {(isAdmin || isDirector) && (
+                        {(isAdmin || isDirector) && !car.investorFunded && (
                           <button
                             onClick={() => setDeleteTarget({ label: `misc cost "${m.description}"`, action: () => deleteMiscCost(car.id, m.id) })}
                             className="text-red-400 hover:text-red-300 transition-colors"
@@ -3085,6 +3086,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               const errs: Record<string, string> = {};
               const amt = parseFloat(miscForm.amount);
               if (!miscForm.amount || isNaN(amt) || amt <= 0) errs.amount = 'Enter a valid amount';
+              if (car?.investorFunded && !miscForm.merchantName.trim()) errs.merchantName = 'Choose the supplier';
               if (Object.keys(errs).length) { setMiscErrors(errs); return; }
               const miscEntry = {
                 id: generateId(),
@@ -3095,6 +3097,19 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 createdAt: new Date().toISOString(),
                 createdBy: currentUser?.id,
               };
+              if (car!.investorFunded) {
+                if (!currentUser) return;
+                try {
+                  await recordInvestorMiscCost({ car: car!, miscId: miscEntry.id, amount: amt, purpose: miscEntry.description, payee: miscForm.merchantName, category: miscEntry.category, currentUserId: currentUser.id,
+                    applySaved: (actorId, saved) => {
+                      if (useStore.getState().currentUser?.id !== actorId) return;
+                      useStore.setState((s) => ({ cars: s.cars.map((c) => c.id === saved.carId ? { ...c, miscCosts: [...(c.miscCosts ?? []).filter((m) => m.id !== saved.misc.id), saved.misc] } : c) }));
+                    },
+                  });
+                  setShowMiscModal(false); setJobTab('misc');
+                } catch (e) { setMiscErrors({ amount: e instanceof Error ? e.message : 'Could not save. Try again.' }); }
+                return;
+              }
               await addMiscCost(car!.id, miscEntry);
               const miscPaymentId = await generateMiscCostPayment({ carId: car!.id, misc: miscEntry, payments, merchants, addPayment });
               if (miscPaymentId && currentUser) {
@@ -3112,6 +3127,17 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             Add Misc Cost
           </button>
         </div>
+        {car?.investorFunded && currentUser && readPending(currentUser.id).some((p) => p.slot === 'misc-record:' + car.id) && <button className="text-gold-400 text-xs mt-3" onClick={async () => {
+          try {
+            await recordInvestorMiscCost({ car, miscId: '', amount: 0, purpose: '', payee: '', currentUserId: currentUser.id, retryOriginal: true,
+              applySaved: (actorId, saved) => {
+                if (useStore.getState().currentUser?.id !== actorId) return;
+                useStore.setState((s) => ({ cars: s.cars.map((c) => c.id === saved.carId ? { ...c, miscCosts: [...(c.miscCosts ?? []).filter((m) => m.id !== saved.misc.id), saved.misc] } : c) }));
+              },
+            });
+            setShowMiscModal(false); setJobTab('misc');
+          } catch (e) { setMiscErrors({ amount: e instanceof Error ? e.message : 'Could not confirm this cost.' }); }
+        }}>Retry original cost save</button>}
       </Modal>
 
       {/* ── Add Repair Modal ── */}

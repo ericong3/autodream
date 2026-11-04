@@ -41,6 +41,16 @@ test('roles: investor, shareholder and salesperson cannot use activation; admin 
  assert.equal((await a.call({scope,action:'car_billing_list'},cookie)).status,200);
 });
 
+test('investor document links are authorised by the database without granting upload access',async()=>{
+ const w=fixture('investor'),cookie=await w.login();
+ assert.equal((await w.call({scope,action:'proof_url',documentId:docId},cookie)).status,200);
+ assert.equal(w.calls[0].args.p_actor,w.user.id);
+ assert.equal(w.calls[0].args.p_action,'proof_read');
+ assert.equal((await w.call(proof(),cookie)).status,403);
+ w.repo.rpc=async()=>({error:{message:'NOT_ALLOWED'}});
+ assert.equal((await w.call({scope,action:'proof_url',documentId:billId},cookie)).status,403);
+});
+
 test('scoped money actions use a registered bank ID and route to uc_investor_capital',async()=>{
  const w=fixture(),cookie=await w.login(),body={scope,action:'capital_received',potId,amountCents:10000,paidOn:'2026-01-02',bankReference:'ref-1',requestId:'request_sample_0002'};
  assert.equal((await w.call({...body,bankAccount:'Maybank'},cookie)).status,400);
@@ -91,6 +101,20 @@ test('proof uploads check signatures, use the server path and retry idempotently
  w.repo.uploadInvestorProof=async()=>{throw new Error('storage secret');};w.rpcResult.proof_prepare={...w.rpcResult.proof_prepare,state:'pending'};
  const failed=await w.call(proof(),cookie);assert.equal(failed.status,503);assert.ok(!JSON.stringify(failed.body).includes('storage secret'));
  delete w.repo.uploadInvestorProof;assert.equal((await w.call(proof(),cookie)).status,503);
+});
+
+test('bill payments require a receipt and accept a confirmed receipt reference',async()=>{
+ const w=fixture(),cookie=await w.login();
+ const body={scope,action:'pay_car_bill',carId:'car_1',billId,amountCents:100,bankAccountId:bankId,bankReference:'ref-123',paidOn:'2026-11-04',requestId:'request_receipt_001'};
+ assert.equal((await w.call(body,cookie)).status,400);assert.equal(w.calls.length,0);
+ const uploaded=await w.call(proof({kind:'receipt'}),cookie);
+ assert.equal(uploaded.status,200);
+ assert.equal(w.calls[0].args.p_data.kind,'receipt');assert.equal(w.calls[0].args.p_data.entryId,undefined);
+ assert.equal((await w.call({...body,receiptDocumentId:docId},cookie)).status,200);
+ assert.equal(w.calls.at(-1).args.p_data.receiptDocumentId,docId);
+ w.repo.rpc=async()=>({error:{message:'SUPPLIER_INVOICE_REQUIRED'}});
+ const refused=await w.call({...body,receiptDocumentId:docId},cookie);
+ assert.equal(refused.status,409);assert.match(refused.body.error.message,/supplier invoice/i);
 });
 
 test('proof URLs require https and owned documents',async()=>{

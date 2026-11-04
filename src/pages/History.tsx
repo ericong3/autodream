@@ -55,6 +55,7 @@ import { formatRM, formatMileage, shortName, generateId } from '../utils/format'
 import StatCard from '../components/StatCard';
 import { CarDetailContent } from './CarDetail';
 import { TransferModal } from './Payments';
+import { privateCompanyEvidence, prepareDisbursementEvidence } from '../lib/companyEvidence';
 import { SkeletonCard, SkeletonRow } from '../components/Skeleton';
 
 // ── Drag helpers ─────────────────────────────────────────────────────────────
@@ -206,6 +207,10 @@ export default function History() {
   };
   const [filterMake, setFilterMake] = useState('All');
   const [disbursalCarId, setDisbursalCarId] = useState<string | null>(null);
+  const [disbursalReceipt, setDisbursalReceipt] = useState<File | null>(null);
+  const [disbursalSaving, setDisbursalSaving] = useState(false);
+  const [disbursalError, setDisbursalError] = useState('');
+  useEffect(() => { setDisbursalReceipt(null); setDisbursalError(''); }, [disbursalCarId]);
   const [disbursalForm, setDisbursalForm] = useState({
     expected: '',   // Total Price — what the deal says the bank should pay out (prefilled from the loan work order, editable)
     actual: '',     // Amount Disbursed — the actual net amount that landed
@@ -967,7 +972,7 @@ export default function History() {
         const chargesTotal = disbursalForm.charges.reduce((s, c) => s + Number(c.amount || 0), 0);
         const allocationDiff = remaining - chargesTotal;
         const isBalanced = expectedNum > 0 ? Math.abs(allocationDiff) < 0.5 : true;
-        const canConfirm = !!disbursalForm.actual && isBalanced;
+        const canConfirm = !!disbursalForm.actual && isBalanced && !disbursalSaving && (!privateCompanyEvidence || !!disbursalReceipt);
 
         return (
           <Modal
@@ -1099,18 +1104,25 @@ export default function History() {
                       .map(c => ({ label: c.label.trim(), amount: Number(c.amount || 0) }))
                       .filter(c => c.label && c.amount > 0);
 
+                    setDisbursalSaving(true); setDisbursalError('');
+                    try {
+                    const confirmedPayments = privateCompanyEvidence && disbursalReceipt ? await prepareDisbursementEvidence({ car: disbCar, amount: grossAmt, payments, file: disbursalReceipt, addPayment, updatePayment }) : payments;
                     await recordDisbursement(
                       { car: disbCar, grossAmount: grossAmt, netAmount: actualNum, charges: chargeItems, date: disbursalForm.date, currentUserId: currentUser.id },
-                      { updateCar, payments, addPayment, updatePayment, ledgerAccounts, addLedgerAccount, journalEntries, addJournalEntry, voidJournalEntry },
+                      { updateCar, payments: confirmedPayments, addPayment, updatePayment, ledgerAccounts, addLedgerAccount, journalEntries, addJournalEntry, voidJournalEntry },
                     );
                     setDisbursalCarId(null);
                     setDisbursalDealInfo(null);
+                    } catch (e) { setDisbursalError(e instanceof Error ? e.message : 'Could not record this collection.'); }
+                    finally { setDisbursalSaving(false); }
                   }}
                   className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Confirm
+                  {disbursalSaving ? 'Saving…' : 'Confirm'}
                 </button>
               </div>
+              {privateCompanyEvidence && <label className="block text-xs text-gray-400">Payment receipt (required)<input type="file" accept="image/png,image/jpeg,application/pdf" disabled={disbursalSaving} className="block mt-2 text-xs" onChange={(e) => setDisbursalReceipt(e.target.files?.[0] ?? null)} /></label>}
+              {disbursalError && <p role="alert" className="text-xs text-red-400">{disbursalError}</p>}
             </div>
           </Modal>
         );
@@ -1124,6 +1136,7 @@ export default function History() {
         if (!payout) { setPayingConsignmentId(null); return null; }
         return (
           <TransferModal
+            paymentIds={[payout.id]}
             count={1}
             totalAmount={payout.amount}
             onClose={() => setPayingConsignmentId(null)}

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { ArrowUpCircle, Clock, Car as CarIcon } from 'lucide-react';
 import { useStore } from '../store';
 import Modal from '../components/Modal';
+import InvestorMoneyDocuments from '../components/InvestorMoneyDocuments';
 import InvestorFinanceCar, { ActionErrorBox, CarCard, Field, LoadState, PendingSaves, Section } from '../components/InvestorFinanceCar';
 import {
   earnedProfit, entryLabel, formatCents, formatDay, investorRequest, isInStock, parseRinggit, useInvestorAction, useInvestorQuery,
@@ -105,7 +106,7 @@ export default function InvestorAccountPortal() {
               <Section title="Withdrawals" hint={`${snap.withdrawals.length}`}>
                 {snap.withdrawals.length === 0 ? <p className="text-gray-500 text-xs">No withdrawals yet.</p> : snap.withdrawals.map((w) => (
                   <div key={w.id} className="flex justify-between gap-3 text-xs">
-                    <span className="text-gray-300">{WITHDRAWAL_LABEL[w.state]} <span className="text-gray-600">· {formatDay(w.requestedAt)}</span>{w.note && <span className="block text-gray-500">{w.note}</span>}</span>
+                    <div className="text-gray-300">{WITHDRAWAL_LABEL[w.state]} <span className="text-gray-600">· {formatDay(w.requestedAt)}</span>{w.note && <span className="block text-gray-500">{w.note}</span>}{w.state === 'paid' && <InvestorMoneyDocuments source={{ target: 'withdrawal', withdrawalId: w.id }} amountCents={w.amountCents} />}</div>
                     <span className="text-white font-medium shrink-0">{formatCents(w.amountCents)}</span>
                   </div>
                 ))}

@@ -61,7 +61,11 @@ export async function handlePrivateFinance(req,deps){return respond(req,deps,['P
   out={...saved,data:saved.data?[saved.data]:[]};
  }else out=await ctx.repo.privateFinance({table:b.table,operation:b.operation,data:b.data,filters,orders,range,policy});
  if(!out.error&&write&&['update','delete'].includes(b.operation)&&Array.isArray(out.data)&&!out.data.length)throw new ApiError(409,'CHANGED','This record is unavailable or has changed. Reload it first.');
- if(out.error)throw new ApiError(out.error.code==='23503'?409:503,'UNAVAILABLE',out.error.code==='23503'?'Keep this record because it has linked history.':'Could not confirm this finance change. Refresh before trying again.');
+ if(out.error){
+  const documentErrors={EVIDENCE_REVIEW_REQUIRED:'This payment has confirmed documents. Ask the Director to review a correction.',SUPPLIER_INVOICE_REQUIRED:'Upload the supplier invoice in Invoices & receipts first.',PAYMENT_RECEIPT_REQUIRED:'Upload proof of payment in Invoices & receipts first.',INVOICE_REQUIRED:'Upload the invoice in Invoices & receipts first.',PAYMENT_DOCUMENTS_REQUIRED:'Upload the bill and payment receipt before completing this payment.',PAYMENT_DETAILS_LOCKED:'This payment has uploaded documents. Ask the Director to review a correction.'};
+  for(const [code,message] of Object.entries(documentErrors))if(out.error.message?.includes(code))throw new ApiError(409,code,message);
+  throw new ApiError(out.error.code==='23503'?409:503,'UNAVAILABLE',out.error.code==='23503'?'Keep this record because it has linked history.':'Could not confirm this finance change. Refresh before trying again.');
+ }
  let rows=out.data??[];
  if(!Array.isArray(rows))rows=[rows];
  if(b.table==='users')rows=rows.map(r=>{const safe={...r};delete safe.password;if(!manager&&!(r.id===user.id&&!admin))for(const k of salaryFields)delete safe[k];return safe;});

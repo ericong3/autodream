@@ -152,7 +152,7 @@ begin
  insert into uc_investor_repair_bills(repair_id,bill_id,completion_payload,actor_id) values(rep.id,v_bill,completion,p_actor);
 
  perform set_config('autodream.uc_repair_complete','on:'||txid_current()::text,true);
- update repairs set status='done',actual_cost=amount::numeric/100,completed_at=now(),
+ update repairs set status='done',actual_cost=amount::numeric/100,completed_at=to_char(now() at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
   receipt_photo=case when p_data ? 'receiptPhoto' then p_data->>'receiptPhoto' else receipt_photo end,
   parts=case when p_data ? 'billDetails' then parts_out else parts end,
   labour_cost=case when p_data ? 'billDetails' then labour::numeric/100 else labour_cost end,

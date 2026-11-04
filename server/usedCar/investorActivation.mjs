@@ -15,7 +15,7 @@ export const ACTIVATION_FIELDS={
  proof_upload:['billId','entryId','kind','fileName','mimeType','base64','requestId'],proof_url:['documentId'],
 };
 // Shareholder read-only access is not vetted yet and stays refused.
-const ROLE_ACTIONS={director:new Set(Object.keys(ACTIVATION_FIELDS)),admin:new Set(['car_billing_list','proof_upload','proof_url'])};
+const ROLE_ACTIONS={director:new Set(Object.keys(ACTIVATION_FIELDS)),admin:new Set(['car_billing_list','proof_upload','proof_url']),investor:new Set(['proof_url'])};
 export const ADMIN_ACTIONS=new Set(['add_car_bill','car_snapshot',...ROLE_ACTIONS.admin]);
 const uuid=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 const REQUEST=/^[A-Za-z0-9_-]{16,80}$/;
@@ -90,7 +90,7 @@ export function validateActivation(user,action,data){
  if(action==='invite_investor'&&!uuid(data.potId))throw invalid('Open the account again.');
  if(action==='proof_url'&&!uuid(data.documentId))throw invalid('Open the document again.');
  if(action==='proof_upload'){
-  if(!uuid(data.billId)||!['bill','payment'].includes(data.kind)||(data.kind==='payment')!==(data.entryId!==undefined)||(data.entryId!==undefined&&!uuid(data.entryId)))throw invalid('Open the bill again.');
+  if(!uuid(data.billId)||!['bill','payment','receipt'].includes(data.kind)||(data.kind==='payment')!==(data.entryId!==undefined)||(data.entryId!==undefined&&!uuid(data.entryId)))throw invalid('Open the bill again.');
   if(data.requestId!==undefined&&(typeof data.requestId!=='string'||!REQUEST.test(data.requestId)))throw invalid('A save reference is required.');
   return {...data,fileName:cleanFileName(data.fileName)};
  }
@@ -98,6 +98,13 @@ export function validateActivation(user,action,data){
 }
 
 const ERRORS={
+ SUPPLIER_INVOICE_REQUIRED:[409,'Upload the supplier invoice before approving this bill.'],
+ PAYMENT_RECEIPT_REQUIRED:[409,'Upload the payment receipt before recording payment.'],
+ RECEIPT_NOT_FOR_BILL:[409,'Choose a payment receipt uploaded for this bill.'],
+ RECEIPT_ALREADY_USED:[409,'This receipt is already linked to a payment. Upload proof for this payment.'],
+ RECEIPT_NOT_CONFIRMED:[409,'The receipt upload is not complete. Upload it again before recording payment.'],
+ BILL_REVIEW_REQUIRED:[409,'Save the bill for review, upload its invoice, then ask the Director to approve it.'],
+ RECEIPT_SAME_AS_INVOICE:[409,'Upload proof of payment, separately from the supplier invoice.'],
  INVALID_BANK:[400,'Choose a registered company bank account.'],
  BEFORE_BANK_OPENING:[400,'The payment date is before this bank account\'s opening balance date.'],
  REGISTERED_BANK_REQUIRED:[400,'Choose a registered company bank account.'],
