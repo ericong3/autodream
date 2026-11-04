@@ -19,10 +19,13 @@
     "Required confirmed supplier invoice before investor bill approval and payment receipt before bill payment; immutable receipt links, private own-investor reads.",
     "Private company bill/payment evidence API and payment-screen documents, claim invoice checks, receipts required on new transfers/collections, salary access blocked for admin. Failed uploads no longer silently complete payments.",
     "Investor purchase invoice + receipt and withdrawal receipt, proof before cash posting, immutable links and exact retry. Investor can read own purchase and withdrawal documents.",
-    "Whole-business pure bank matching rules and tests are prepared; statement history reconciliation remains deferred by user."
+    "Whole-business pure bank matching rules and tests are prepared; statement history reconciliation remains deferred by user.",
+    "Private investor staff claims: one canonical pending bill, own-invoice uploads, Director approval after invoice, admin rejection, audited immutable history and no second legacy repair/misc/payment.",
+    "Investor salesman/intake/source commissions automatically create pending car bills when sale agreed. Recon/default/override/waiver rules preserved. Unreviewed or changed commission source blocks settlement.",
+    "Read-only private payroll payment projection shows approved and delivered/early-credited investor commissions, with actual payment status derived from bill cash entries; writes and payouts route to the car bill rather than duplicate legacy payments."
   ],
   "validation": {
-    "unit_tests": 376,
+    "unit_tests": 383,
     "build": "passed",
     "local_database_rehearsals": [
       "investor-capital-db.integration.mjs",
@@ -31,7 +34,9 @@
       "investor-activation-db.integration.mjs",
       "investor-required-documents-db.integration.mjs",
       "company-evidence-db.integration.mjs",
-      "investor-money-evidence-db.integration.mjs"
+      "investor-money-evidence-db.integration.mjs",
+      "investor-claims-db.integration.mjs",
+      "investor-commissions-db.integration.mjs"
     ],
     "production_ui_verified": false,
     "real_postgres_multiconnection_concurrency_verified": false,
@@ -40,19 +45,24 @@
       "work/finance-documents-build-20261104.log",
       "work/investor-required-documents-db-full-20261104.log",
       "work/company-evidence-db-20261104.log",
-      "work/investor-money-evidence-db-20261104.log"
+      "work/investor-money-evidence-db-20261104.log",
+      "work/investor-claims-db-20261104.log",
+      "work/investor-commissions-db-20261104.log",
+      "work/investor-claims-commissions-tests-20261104.log",
+      "work/investor-claims-commissions-build-20261104.log"
     ]
   },
   "blocking_access": "Resolved 2026-11-04: cua.getBrowser({url: Supabase SQL page}) reached the in-app browser. The earlier local-browser inventory error was mistakenly treated as blocking IAB. Browser binding supabaseBrowser (iab ID2), investorSupabaseTab ID2. Live read-only investor counts verified; new investor tables absent. Do not ask user to enable Work settings again unless a fresh interaction with this browser fails.",
   "required_before_activation": [
     "Read live schema types, current object/migration status, public definer functions and grants using prepared read-only preflight; do not assume earlier prepared SQL was installed",
-    "Finish investor staff claim and commission/payroll capture; repair and misc capture are implemented locally.",
     "Handle loan net disbursement deductions without inventing bank receipts or leaving sale settlement blocked",
     "Finish company main-pot and reviewed opening ownership allocation without recording existing bank money as a new deposit; historical statement matching is deferred by user.",
     "Finish withdrawal bank destination audit and authorised late-cost/refund/return corrections. Required purchase/withdrawal/car-bill documents are now implemented locally.",
     "Review whole-app inventory data access and cross-tab identity changes; legacy public cars remain publicly queryable, and private pending intent storage needs final privacy review",
     "Real browser role tests and real PostgreSQL concurrent transaction rehearsal",
-    "Prepare exact guarded installation order, apply approved migrations only after preflight/rehearsal, deploy private bridge before ACL lockdown, enable feature only after all checks, verify canonical production URL"
+    "Prepare exact guarded installation order, apply approved migrations only after preflight/rehearsal, deploy private bridge before ACL lockdown, enable feature only after all checks, verify canonical production URL",
+    "Complete trade-in handling after the pending user funding-pot choice; do not assume the incoming car belongs to the same pot.",
+    "Check role screens for the newly integrated Claims panel and commission payroll rows; helper/API/database tests are local, not live browser verification."
   ],
   "flags_not_set_in_production": [
     "USED_CAR_INVESTOR_CAPITAL_ONLINE",
@@ -69,10 +79,14 @@
     "0600 registers/funds a new car atomically; forces old investor fields null even if live column defaults differ",
     "0700 captures completed repairs and one pending investor bill atomically; free repairs have no bill, financial posting or payment. No live SQL run.",
     "0800 misc capture, 0900 investor bill documents, 1000 company payment documents and 1100 investor purchase/withdrawal documents are PREPARED ONLY. 1000/1100 require reviewed private release marker and verified API rollout before enforcing document triggers.",
-    "0700 repair completion now writes explicit UTC ISO text matching the live completed_at TEXT column. Disposable database fixtures use the actual type."
+    "0700 repair completion now writes explicit UTC ISO text matching the live completed_at TEXT column. Disposable database fixtures use the actual type.",
+    "1200 staff claims, 121000 own-claim invoice ACL, and 1300 commission bills/payroll read projection are prepared only. No production installation or deployment this phase.",
+    "Private finance reads uc_private_payment_rows only when investor-cars flag is on; install/rehearse 1300 before enabling that flag."
   ],
   "latest_live_preflight": "work/investor-browser-preflight-live-20261104.json",
-  "updated_at": "2026-11-04T12:51:14.586Z",
+  "updated_at": "2026-11-04T14:58:36.816Z",
   "user_documents_policy": "Every bill needs its invoice before approval/payment; every outgoing payment needs uploaded proof before completion. Salary documents remain restricted; investors see only their own car/pot documents.",
-  "bank_matching_policy": "User changed sequencing: start new live transactions first; reconcile all January-2026 onward history later without duplicates. Do not represent unmatched balances as bank-reconciled."
+  "bank_matching_policy": "User changed sequencing: start new live transactions first; reconcile all January-2026 onward history later without duplicates. Do not represent unmatched balances as bank-reconciled.",
+  "pending_user_decision": "Trade-in on an investor car sale: Director chooses funding pot each time, or same investor pot by default. Asked asynchronously; no answer yet.",
+  "claude_status": "Claude wrote the initial staff-claim SQL, then reached its session limit; Codex completed API/UI/invoice ACL, commissions and tests. No claim of completed Claude audit."
 }

@@ -178,6 +178,7 @@ const categoryLabel = (c: BillCategory) => BILL_CATEGORIES.find((x) => x.value =
 const ACTIVITY_LABEL: Record<string, string> = {
   fund_car: 'Car allocated to account', purchase_paid: 'Purchase payment recorded', add_car_bill: 'Bill added', approve_car_bill: 'Bill approved',
   void_car_bill: 'Bill voided', pay_car_bill: 'Bill payment recorded', agree_sale: 'Sale price agreed', sale_received: 'Sale money recorded', settle_car: 'Profit confirmed', proof_upload: 'Document uploaded', payment_receipt_linked: 'Payment receipt attached',
+  claim_submit: 'Staff claim submitted', claim_approve: 'Staff claim approved', claim_reject: 'Staff claim rejected', commission_bills_created: 'Commission bills added', record_misc: 'Car cost recorded',
 };
 const activityLabel = (a: string) => ACTIVITY_LABEL[a] ?? a.replace(/_/g, ' ');
 

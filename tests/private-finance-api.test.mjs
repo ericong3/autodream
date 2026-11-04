@@ -55,6 +55,10 @@ test('production query applies ownership and salary filters before pagination an
  assert.deepEqual(calls,[]);
  await privateFinanceQuery(sb,{table:'payslips',operation:'select',filters:[],orders:[],range:[0,10],policy});
  assert.ok(calls.findIndex(c=>c[0]==='eq'&&c[1]==='user_id')<calls.findIndex(c=>c[0]==='range'));
+ calls.length=0;
+ await privateFinanceQuery(sb,{table:'payments',operation:'select',filters:[],orders:[],range:[0,10],policy:{...policy,investorCommissions:true}});
+ assert.ok(calls.some(c=>c[0]==='from'&&c[1]==='uc_private_payment_rows'));
+ assert.ok(calls.findIndex(c=>c[0]==='eq'&&c[1]==='recipient_id')<calls.findIndex(c=>c[0]==='range'));
 });
 
 test('garage-only sessions cannot query Used Car finance or investor ledger data',async()=>{const g=await fixture('admin','garage');assert.equal((await g.run({table:'users',operation:'select'})).status,403);assert.equal(g.calls.length,0);const a=await fixture('admin');a.repo.privateFinance=async()=>({data:[{id:'private',source_type:'investor_finance',lines:[]},{id:'withdrawal',source_type:null,lines:[{accountId:'acct-investor-payable'}]},{id:'ordinary',source_type:null,lines:[{accountId:'acct-exp-general'}]}]});assert.deepEqual((await a.run({table:'journal_entries',operation:'select'})).body.data.map(r=>r.id),['ordinary']);});

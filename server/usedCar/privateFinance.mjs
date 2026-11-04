@@ -19,6 +19,7 @@ export async function handlePrivateFinance(req,deps){return respond(req,deps,['P
  if(!Array.isArray(filters)||filters.length>10||filters.some(f=>!f||!['eq','in'].includes(f.op)||!['id','user_id','recipient_id','type','status','source_type','source_id','car_id','username'].includes(f.column)||f.op==='eq'&&!(typeof f.value==='string'||typeof f.value==='number'||typeof f.value==='boolean')||f.op==='in'&&(!Array.isArray(f.value)||f.value.length>200||f.value.some(v=>typeof v!=='string'))) || !Array.isArray(orders)||orders.length>3||orders.some(o=>!['id','date','created_at','uploaded_at','name'].includes(o.column)||typeof o.ascending!=='boolean') || !Array.isArray(range)||range.length!==2||range.some(n=>!Number.isInteger(n)||n<0)||range[1]<range[0]||range[1]-range[0]>999||range[1]>1000000)throw new ApiError(400,'INVALID','Reload the finance records.');
  const manager=['director','shareholder'].includes(user.role),director=user.role==='director',admin=user.role==='admin';
  const write=b.operation!=='select';
+ if(write&&b.table==='payments'&&(filters.some(f=>f.column==='id'&&typeof f.value==='string'&&f.value.startsWith('uc_commission_'))||(Array.isArray(b.data)?b.data:[b.data]).some(r=>typeof r?.id==='string'&&r.id.startsWith('uc_commission_'))))throw new ApiError(409,'INVESTOR_BILL','Open the investor car bill to review or pay this commission.');
  if(write){
   if(b.operation!=='delete'&&(!b.data||typeof b.data!=='object'||Array.isArray(b.data)&&(b.data.length===0||b.data.length>500||b.data.some(r=>!r||typeof r!=='object'||Array.isArray(r)))))throw new ApiError(400,'INVALID','Choose valid records to save.');
   if(user.role==='shareholder'||user.role==='banker'||user.business_access==='garage')throw new ApiError(403,'FORBIDDEN','A Director must make this finance change.');
@@ -52,7 +53,7 @@ export async function handlePrivateFinance(req,deps){return respond(req,deps,['P
  if(!rate.allowed)throw new ApiError(429,'RATE_LIMITED','Wait a moment and try again.');
  // The production repo applies these capabilities to the query before any rows
  // are returned or updated; browser filters can only narrow that scope.
- const policy={actorId:user.id,manager,director,admin,readBank:director,readPayroll:manager,ownPayroll:!admin,write};
+ const policy={actorId:user.id,manager,director,admin,readBank:director,readPayroll:manager,ownPayroll:!admin,write,investorCommissions:deps.env.USED_CAR_INVESTOR_CARS_ONLINE==='1'};
  let out;
  if(admin&&b.table==='journal_entries'&&write){
   const row=Array.isArray(b.data)?b.data.length===1?b.data[0]:null:b.data;

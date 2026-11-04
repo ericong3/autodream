@@ -77,7 +77,9 @@ const page=value=>value===undefined||(Number.isInteger(value)&&value>=0&&value<=
 
 /** Input checks for scoped activation actions, before rollout flags and rate limits. Returns cleaned data. */
 export function validateActivation(user,action,data){
- if(!ROLE_ACTIONS[user.role]?.has(action))throw new ApiError(403,'FORBIDDEN',user.role==='admin'?'This account can record and view car expenses only.':'Only the Director can do this.');
+ const ownClaimProof=['salesperson','mechanic'].includes(user.role)&&['proof_upload','proof_url'].includes(action);
+ if(!ROLE_ACTIONS[user.role]?.has(action)&&!ownClaimProof)throw new ApiError(403,'FORBIDDEN',user.role==='admin'?'This account can record and view car expenses only.':'Only the Director can do this.');
+ if(ownClaimProof&&action==='proof_upload'&&(data.kind!=='bill'||data.entryId!==undefined))throw new ApiError(403,'FORBIDDEN','You can upload the invoice for your own claim only.');
  if(['save_bank','invite_investor'].includes(action)&&(typeof data.requestId!=='string'||!REQUEST.test(data.requestId)))throw invalid('A save reference is required.');
  if(action==='save_bank'){
   const name=typeof data.name==='string'?data.name.trim().replace(/\s+/g,' '):'';
@@ -98,6 +100,11 @@ export function validateActivation(user,action,data){
 }
 
 const ERRORS={
+ COMMISSION_NOT_PAYABLE:[409,'Deliver this car or approve early commission credit before paying commission.'],
+ COMMISSION_RECIPIENT_REQUIRED:[409,'Choose the salesman and any commission recipients on the car before agreeing the sale.'],
+ COMMISSION_DETAILS_INVALID:[400,'Check commission amounts on this car. Use no more than 2 decimal places.'],
+ COMMISSION_REVIEW_REQUIRED:[409,'Review all commission bills and any changed commission details before confirming profit.'],
+ CLAIM_LOCKED:[409,'This claim has already been reviewed. Ask the Director to review an additional document.'],
  SUPPLIER_INVOICE_REQUIRED:[409,'Upload the supplier invoice before approving this bill.'],
  PAYMENT_RECEIPT_REQUIRED:[409,'Upload the payment receipt before recording payment.'],
  RECEIPT_NOT_FOR_BILL:[409,'Choose a payment receipt uploaded for this bill.'],
@@ -122,8 +129,8 @@ export function activationError(error){
  return null;
 }
 
-async function call(ctx,actor,action,data){
- const out=await ctx.repo.rpc('uc_investor_activation',{p_actor:actor,p_action:action,p_data:data});
+async function call(ctx,actor,action,data,rpc='uc_investor_activation'){
+ const out=await ctx.repo.rpc(rpc,{p_actor:actor,p_action:action,p_data:data});
  if(!out.error)return out.data;
  const known=activationError(out.error);
  if(known)throw known;
@@ -144,6 +151,7 @@ async function limit(ctx,kind,actorId,count,windowSeconds){
 
 /** Runs a validated scoped activation action for the authenticated actor. */
 export async function runInvestorActivation(ctx,deps,user,action,data){
+ const proofRpc=['salesperson','mechanic'].includes(user.role)?'uc_staff_claim_proof':'uc_investor_activation';
  if(action==='invite_investor'){
   // Refuse before creating anything when invitation links cannot be served.
   const config=accountConfig(deps.env,ctx.config.origins,{mail:false});
@@ -159,17 +167,17 @@ export async function runInvestorActivation(ctx,deps,user,action,data){
   const {bytes,digest}=decodeProof(data.mimeType,data.base64);
   // Without a client reference the same file on the same bill retries as one save.
   const requestId=data.requestId??'proof_'+sha([data.billId,data.entryId??'',data.kind,data.fileName,data.mimeType,digest].join('\n')).slice(0,40);
-  const prepared=await call(ctx,user.id,'proof_prepare',{billId:data.billId,...(data.entryId?{entryId:data.entryId}:{}),kind:data.kind,fileName:data.fileName,mimeType:data.mimeType,sha256:digest,sizeBytes:bytes.length,requestId});
+  const prepared=await call(ctx,user.id,'proof_prepare',{billId:data.billId,...(data.entryId?{entryId:data.entryId}:{}),kind:data.kind,fileName:data.fileName,mimeType:data.mimeType,sha256:digest,sizeBytes:bytes.length,requestId},proofRpc);
   if(prepared.state!=='confirmed'){
    try{await ctx.repo.uploadInvestorProof(prepared.path,bytes,data.mimeType);}
    catch{throw new ApiError(503,'UNAVAILABLE','The file could not be stored. Retry the same file.');}
-   await call(ctx,user.id,'proof_confirm',{documentId:prepared.documentId});
+   await call(ctx,user.id,'proof_confirm',{documentId:prepared.documentId},proofRpc);
   }
   return {status:200,body:{documentId:prepared.documentId}};
  }
  if(action==='proof_url'){
   if(typeof ctx.repo.investorProofUrl!=='function')throw new ApiError(503,'SETUP','Receipt storage is not activated yet.');
-  const out=await call(ctx,user.id,'proof_read',{documentId:data.documentId});
+  const out=await call(ctx,user.id,'proof_read',{documentId:data.documentId},proofRpc);
   let url;
   try{url=await ctx.repo.investorProofUrl(out.path);}catch{throw new ApiError(503,'UNAVAILABLE','Could not open the file. Try again.');}
   if(typeof url!=='string'||!url.startsWith('https://'))throw new ApiError(503,'UNAVAILABLE','Could not open the file. Try again.');

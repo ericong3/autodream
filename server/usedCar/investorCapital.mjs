@@ -23,9 +23,10 @@ const carActions=new Set(['fund_car','car_snapshot','purchase_paid','add_car_bil
 const uuid=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 export async function handleInvestorCapital(req,deps){return respond(req,deps,['POST'],async(ctx,res)=>{
  const {user}=await authenticate(req,ctx,res,canUseApp);
- if(!['director','investor','admin'].includes(user.role)||!['used_car','both'].includes(user.business_access))throw new ApiError(403,'FORBIDDEN','This account cannot open investor records.');
  const raw=readJson(req,PROOF_BODY_MAX);
  const {scoped,body}=readScope(raw);
+ const ownClaimProof=scoped&&['proof_upload','proof_url'].includes(body.action)&&['salesperson','mechanic'].includes(user.role);
+ if((!['director','investor','admin'].includes(user.role)&&!ownClaimProof)||!['used_car','both'].includes(user.business_access))throw new ApiError(403,'FORBIDDEN','This account cannot open investor records.');
  // Only a scoped proof upload may exceed the normal body size.
  if(!(scoped&&body.action==='proof_upload')&&Buffer.byteLength(typeof req.body==='string'?req.body:JSON.stringify(raw))>BODY_MAX)throw new ApiError(413,'INVALID','Request is too large.');
  const allowed=scoped?scopedFields(body.action,fields):Object.hasOwn(fields,body.action)?fields[body.action]:null;

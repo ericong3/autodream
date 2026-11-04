@@ -11,12 +11,14 @@ import {handleInvestorCarRegistration} from '../usedCar/investorCarRegistration.
 import {handleInvestorMiscCost} from '../usedCar/investorMisc.mjs';
 import {handleCompanyEvidence} from '../usedCar/companyEvidence.mjs';
 import {handleInvestorMoneyEvidence} from '../usedCar/investorMoneyEvidence.mjs';
+import {handleInvestorClaims} from '../usedCar/investorClaims.mjs';
 export async function handleSales(req,deps){
  let scope,action;try{const body=typeof req.body==='string'?JSON.parse(req.body):req.body;scope=body?.scope;action=body?.action;}catch{}
  if(scope==='investor_finance'&&action==='complete_repair')return handleInvestorRepairCompletion(req,deps);
  if(scope==='investor_finance'&&action==='register_car')return handleInvestorCarRegistration(req,deps);
  if(scope==='company_evidence')return handleCompanyEvidence(req,deps);
  if(scope==='investor_money_evidence')return handleInvestorMoneyEvidence(req,deps);
+ if(scope==='investor_claims')return handleInvestorClaims(req,deps);
  if(scope==='investor_finance'&&action==='record_misc')return handleInvestorMiscCost(req,deps);
  if(scope==='investor_finance')return handleInvestorCapital(req,deps);
  if(isPrivateFinanceRequest(req))return handlePrivateFinance(req,deps);

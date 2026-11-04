@@ -9,6 +9,12 @@ import StatCard from '../components/StatCard';
 import ProfileModal from '../components/ProfileModal';
 import Lightbox from '../components/Lightbox';
 import { toast } from '../utils/toast';
+import InvestorClaimsPanel from '../components/InvestorClaimsPanel';
+import { saveClaimCommand, readClaimIntent, finishClaimIntent, type InvestorClaim } from '../lib/investorClaims';
+import { investorRequest, prepareProof } from '../lib/investorFinance';
+import { privateCompanyEvidence, uploadCompanyEvidence } from '../lib/companyEvidence';
+import { financeFrom } from '../lib/privateFinance';
+import CompanyPaymentDocuments from '../components/CompanyPaymentDocuments';
 
 async function uploadClaimReceipt(file: File): Promise<string> {
   const path = `receipts/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
@@ -71,6 +77,10 @@ export default function Claims() {
   const [submitting, setSubmitting] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [previewReceipt, setPreviewReceipt] = useState<string | null>(null);
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [claimsRefresh, setClaimsRefresh] = useState(0);
+  const [companyClaimId, setCompanyClaimId] = useState(generateId);
+  const [documentsId, setDocumentsId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [carQuery, setCarQuery] = useState('');
@@ -161,7 +171,11 @@ export default function Claims() {
     (form.recipientChoice === 'self' || !!form.vendorName.trim()) &&
     !submitting;
 
-  const openModal = () => { setForm(EMPTY_FORM); setCarQuery(''); setShowCarDropdown(false); setShowVendorDropdown(false); setCategoryQuery(''); setShowCategoryDropdown(false); setShowModal(true); };
+  const openModal = () => {
+    const draft = currentUser ? readClaimIntent(currentUser.id, 'submit') : null;
+    setForm(draft ? { ...EMPTY_FORM, carId: String(draft.data.carId || ''), category: String(draft.data.category || ''), amount: String(Number(draft.data.amountCents) / 100), description: String(draft.data.purpose || ''), recipientChoice: draft.data.payee === currentUser?.name ? 'self' : 'vendor', vendorName: String(draft.data.payee || '') } : EMPTY_FORM);
+    setCompanyClaimId(generateId()); setReceiptFile(null); setCarQuery(''); setShowCarDropdown(false); setShowVendorDropdown(false); setCategoryQuery(''); setShowCategoryDropdown(false); setShowModal(true);
+  };
 
   const handleSubmit = async () => {
     if (!currentUser || !canSubmit) return;
@@ -170,8 +184,20 @@ export default function Claims() {
       const isSelf = form.recipientChoice === 'self';
       const vendor = vendorOptions.find((v) => v.id === form.vendorId);
       const kind = categoryKindByName[form.category] ?? 'misc';
-      await addPayment({
-        id: generateId(),
+      const draft = readClaimIntent(currentUser.id, 'submit');
+      if (draft && draft.data.carId !== form.carId) throw new Error('Finish the earlier investor claim and its invoice first.');
+      if (privateCompanyEvidence && Math.abs(Number(form.amount) * 100 - Math.round(Number(form.amount) * 100)) > 0.000001) throw new Error('Enter an amount with no more than 2 decimal places.');
+      if (selectedCar?.investorFunded) {
+        if (!receiptFile) throw new Error('Choose the invoice file first.');
+        const data = { carId: selectedCar.id, claimKind: kind, category: form.category.trim(), purpose: form.description.trim() || form.category.trim(), payee: isSelf ? currentUser.name : form.vendorName.trim(), amountCents: Math.round(Number(form.amount) * 100) };
+        const saved = await saveClaimCommand<{ claim: InvestorClaim }>(currentUser.id, 'submit', 'submit', data, true);
+        await investorRequest('proof_upload', { billId: saved.claim.billId, kind: 'bill', ...await prepareProof(receiptFile) });
+        finishClaimIntent(currentUser.id, 'submit');
+        setClaimsRefresh((n) => n + 1); setShowModal(false); setForm(EMPTY_FORM); setReceiptFile(null); toast.success('Claim and invoice submitted'); return;
+      }
+      const claimId = companyClaimId;
+      const payment: Payment = {
+        id: claimId,
         type: 'expense_claim',
         carId: form.carId || undefined,
         recipientType: isSelf ? 'user' : (form.vendorKind || (kind === 'repair' ? 'workshop' : 'merchant')),
@@ -184,13 +210,24 @@ export default function Claims() {
         description: form.description.trim(),
         claimKind: kind,
         claimCategory: form.category,
-        receiptUrl: form.receiptUrl,
+        receiptUrl: privateCompanyEvidence ? undefined : form.receiptUrl,
         status: 'pending',
         createdAt: new Date().toISOString(),
-      });
+      };
+      const existing = privateCompanyEvidence ? (await financeFrom('payments').select('*').eq('id', claimId)).data?.[0] : undefined;
+      if (existing) {
+        if (existing.type !== 'expense_claim' || existing.amount !== payment.amount || existing.recipient_id !== payment.recipientId || (existing.car_id || '') !== (payment.carId || '') || existing.description !== payment.description) throw new Error('This claim was already saved with different details. Open its documents before making a correction.');
+      } else await addPayment(payment);
+      setShowModal(false);
+      if (privateCompanyEvidence && receiptFile) {
+        try { await uploadCompanyEvidence(claimId, 'invoice', receiptFile); }
+        catch (e) { setDocumentsId(claimId); throw new Error('Claim saved. Its invoice still needs uploading in Invoices & receipts.'); }
+      }
       setShowModal(false);
       setForm(EMPTY_FORM);
       toast.success('Claim submitted');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not submit this claim.');
     } finally {
       setSubmitting(false);
     }
@@ -205,6 +242,7 @@ export default function Claims() {
   return (
     <div className="space-y-6">
       {/* Stat cards */}
+      {documentsId && <CompanyPaymentDocuments paymentId={documentsId} onClose={() => setDocumentsId(null)} />}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard title="Pending Claims" value={pendingCount} icon={Clock} borderColor="border-l-amber-400" iconColor="text-amber-400" />
         <StatCard title="Total Paid" value={formatRM(paidTotal)} icon={CreditCard} borderColor="border-l-green-400" iconColor="text-green-400" />
@@ -212,6 +250,7 @@ export default function Claims() {
       </div>
 
       {/* Header + submit */}
+      {import.meta.env.VITE_INVESTOR_FINANCE === '1' && <InvestorClaimsPanel mine refresh={claimsRefresh} />}
       <div className="flex items-center justify-between">
         <p className="text-gray-400 text-sm">
           <span className="text-white font-medium">{myClaims.length}</span> claim{myClaims.length !== 1 ? 's' : ''} submitted
@@ -265,6 +304,7 @@ export default function Claims() {
                     {claimCar && <span> · {claimCar.year} {claimCar.make} {claimCar.model}</span>}
                   </p>
                 </div>
+                {privateCompanyEvidence && <button className="text-xs text-gold-400" onClick={() => setDocumentsId(c.id)}>Invoices & receipts</button>}
                 {c.receiptUrl ? (
                   <button
                     type="button"
@@ -471,10 +511,10 @@ export default function Claims() {
           </div>
 
           <div>
-            <label className="block text-gray-400 text-xs mb-1">Receipt Photo *</label>
+            <label className="block text-gray-400 text-xs mb-1">Invoice / receipt *</label>
             {form.receiptUrl ? (
               <div className="flex items-center gap-3">
-                <img src={form.receiptUrl} alt="Receipt" className="w-16 h-16 object-cover rounded-lg border border-obsidian-400/60" />
+                {receiptFile?.type === 'application/pdf' ? <span className="text-xs text-gray-300">{receiptFile.name}</span> : <img src={form.receiptUrl} alt="Receipt" className="w-16 h-16 object-cover rounded-lg border border-obsidian-400/60" />}
                 <button onClick={() => setForm((f) => ({ ...f, receiptUrl: '' }))} className="text-xs text-gray-500 hover:text-red-400 transition-colors">Remove</button>
               </div>
             ) : (
@@ -491,12 +531,12 @@ export default function Claims() {
             <input
               ref={fileRef}
               type="file"
-              accept="image/*"
-              capture="environment"
+              accept="image/png,image/jpeg,application/pdf"
               className="hidden"
               onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
+                if (privateCompanyEvidence || selectedCar?.investorFunded) { setReceiptFile(file); setForm((f) => ({ ...f, receiptUrl: URL.createObjectURL(file) })); e.target.value = ''; return; }
                 setUploading(true);
                 try {
                   const url = await uploadClaimReceipt(file);

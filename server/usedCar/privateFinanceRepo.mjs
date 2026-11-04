@@ -5,7 +5,7 @@ const accounts=['acct-exp-salary','acct-exp-allowance','acct-exp-director-fee','
 export async function privateFinanceQuery(sb,{table,operation,data,filters,orders,range,policy:p}){
  const bank=['bank_transactions','bank_statement_uploads'].includes(table);
  if(operation==='select'&&((bank&&!p.director)||(table==='investor_transactions'&&!p.director)||(table==='payslips'&&!p.manager&&!p.ownPayroll)||(table==='journal_entries'&&!p.manager&&!p.admin)))return {data:[],error:null};
- let q=sb.from(table);
+ let q=sb.from(table==='payments'&&operation==='select'&&p.investorCommissions?'uc_private_payment_rows':table);
  if(operation==='select')q=q.select('*');
  else if(operation==='insert')q=q.insert(data).select('*');
  else if(operation==='update')q=q.update(data).select('*');

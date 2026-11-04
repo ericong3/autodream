@@ -51,6 +51,18 @@ test('investor document links are authorised by the database without granting up
  assert.equal((await w.call({scope,action:'proof_url',documentId:billId},cookie)).status,403);
 });
 
+test('staff claim invoices use the narrow ownership RPC and never grant payment proof access',async()=>{
+ const w=fixture('salesperson'),cookie=await w.login();
+ assert.equal((await w.call(proof(),cookie)).status,200);
+ assert.ok(w.calls.every((c)=>c.fn==='uc_staff_claim_proof'));
+ w.calls.length=0;
+ assert.equal((await w.call(proof({kind:'receipt'}),cookie)).status,403);
+ assert.equal((await w.call(proof({kind:'payment',entryId:billId}),cookie)).status,403);
+ assert.equal(w.calls.length,0);
+ w.repo.rpc=async()=>({error:{message:'NOT_ALLOWED'}});
+ assert.equal((await w.call({scope,action:'proof_url',documentId:docId},cookie)).status,403);
+});
+
 test('scoped money actions use a registered bank ID and route to uc_investor_capital',async()=>{
  const w=fixture(),cookie=await w.login(),body={scope,action:'capital_received',potId,amountCents:10000,paidOn:'2026-01-02',bankReference:'ref-1',requestId:'request_sample_0002'};
  assert.equal((await w.call({...body,bankAccount:'Maybank'},cookie)).status,400);

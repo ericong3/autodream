@@ -16,6 +16,9 @@ import Modal from '../components/Modal';
 import DisbursementCollectModal from '../components/DisbursementCollectModal';
 import CompanyPaymentDocuments from '../components/CompanyPaymentDocuments';
 import { privateCompanyEvidence, uploadCompanyEvidence } from '../lib/companyEvidence';
+import InvestorClaimsPanel from '../components/InvestorClaimsPanel';
+
+const isInvestorCommission = (p: Payment) => p.id.startsWith('uc_commission_');
 
 async function uploadReceipt(file: File): Promise<string> {
   const ext = file.type === 'application/pdf' ? 'pdf' : 'jpg';
@@ -544,12 +547,12 @@ export default function Payments({ embedded }: PaymentsProps) {
 
   const selectAll = () => {
     const pendingIds = filtered
-      .filter(p => p.status === 'pending' && !(p.type === 'customer_refund' && !p.bankName) && !(p.type === 'expense_claim' && (!p.claimConfirmedBy || (p.recipientType !== 'user' && !p.recipientId))))
+      .filter(p => p.status === 'pending' && !isInvestorCommission(p) && !(p.type === 'customer_refund' && !p.bankName) && !(p.type === 'expense_claim' && (!p.claimConfirmedBy || (p.recipientType !== 'user' && !p.recipientId))))
       .map(p => p.id);
     setSelected(prev => pendingIds.length === prev.size && pendingIds.every(id => prev.has(id)) ? new Set() : new Set(pendingIds));
   };
 
-  const selectedPending = filtered.filter(p => p.status === 'pending' && selected.has(p.id));
+  const selectedPending = filtered.filter(p => p.status === 'pending' && !isInvestorCommission(p) && selected.has(p.id));
   const selectedTotal = selectedPending.reduce((s, p) => s + p.amount, 0);
 
   // ── Transfer / Collect ────────────────────────────────────────────────────────
@@ -821,7 +824,7 @@ export default function Payments({ embedded }: PaymentsProps) {
     return (
       <div className={`flex items-center gap-3 px-4 py-3 border-b border-white/[0.04] last:border-0 transition-colors ${hasDeleteRequest && isDirectorView ? 'bg-red-500/5 border-l-2 border-l-red-500/40' : isChecked ? 'bg-gold-500/5' : 'hover:bg-white/[0.02]'}`}>
         {/* Checkbox — only for pending, not for claims that still need review */}
-        {isPending && !refundMissingBankDetails && !unconfirmedClaim && !claimNeedsVendor ? (
+        {isPending && !isInvestorCommission(p) && !refundMissingBankDetails && !unconfirmedClaim && !claimNeedsVendor ? (
           <button
             onClick={() => toggleSelect(p.id)}
             className={`shrink-0 w-4 h-4 rounded border transition-colors ${isChecked ? 'bg-gold-500 border-gold-500' : 'border-white/20 hover:border-gold-400/50'}`}
@@ -839,7 +842,8 @@ export default function Payments({ embedded }: PaymentsProps) {
 
         {/* Info */}
         <div className="flex-1 min-w-0">
-          {privateCompanyEvidence && <button className="text-[11px] text-gold-400 mb-1" onClick={() => setDocumentPaymentId(p.id)}>Invoices & receipts</button>}
+          {isInvestorCommission(p) && <a className="text-[11px] text-gold-400" href={`#/investor-finance?carId=${encodeURIComponent(p.carId || '')}`}>Open car bill</a>}
+          {privateCompanyEvidence && !isInvestorCommission(p) && <button className="text-[11px] text-gold-400 mb-1" onClick={() => setDocumentPaymentId(p.id)}>Invoices & receipts</button>}
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm text-white font-medium truncate">{p.recipientName}</span>
             <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${TYPE_COLORS[p.type]}`}>
@@ -931,21 +935,21 @@ export default function Payments({ embedded }: PaymentsProps) {
               )
             ) : (
               <button
-                onClick={() => { setSingleId(p.id); setTransferTarget('single'); }}
+                onClick={() => { if (isInvestorCommission(p)) { window.location.hash = '/investor-finance?carId=' + encodeURIComponent(p.carId || ''); return; } setSingleId(p.id); setTransferTarget('single'); }}
                 className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors whitespace-nowrap ${
                   isInbound
                     ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/20 hover:bg-emerald-500/30'
                     : 'bg-gold-500/20 text-gold-300 border-gold-500/20 hover:bg-gold-500/30'
                 }`}
               >
-                {isInbound ? 'Collect' : 'Transfer'}
+                {isInvestorCommission(p) ? 'Open car bill' : isInbound ? 'Collect' : 'Transfer'}
               </button>
             )
           ) : (
             <CheckCircle2 size={14} className="text-green-400 opacity-60" />
           )}
           {/* Delete / Request Delete */}
-          {p.type === 'campaign_bonus' ? null : isDirectorView && p.deleteRequestedBy ? (
+          {p.type === 'campaign_bonus' || isInvestorCommission(p) ? null : isDirectorView && p.deleteRequestedBy ? (
             <div className="flex items-center gap-1">
               <button
                 onClick={() => handleApproveDelete(p.id)}
@@ -1117,7 +1121,8 @@ export default function Payments({ embedded }: PaymentsProps) {
           </div>
           <div className="min-w-0">
             <p className="text-[13px] text-white font-medium truncate">{p.recipientName}</p>
-            {privateCompanyEvidence && <button className="text-[11px] text-gold-400" onClick={() => setDocumentPaymentId(p.id)}>Invoices & receipts</button>}
+            {isInvestorCommission(p) && <a className="text-[11px] text-gold-400" href={`#/investor-finance?carId=${encodeURIComponent(p.carId || '')}`}>Open car bill</a>}
+          {privateCompanyEvidence && !isInvestorCommission(p) && <button className="text-[11px] text-gold-400" onClick={() => setDocumentPaymentId(p.id)}>Invoices & receipts</button>}
             <p className="text-[11px] text-white/35 truncate">
               {car ? `${car.make} ${car.model}` : p.bankName ?? ''}
               {!isPending && p.transferredAt && ` · Collected ${new Date(p.transferredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}`}
@@ -1164,7 +1169,7 @@ export default function Payments({ embedded }: PaymentsProps) {
               <CheckCircle2 size={12} className="inline -mt-0.5 mr-1" />Done
             </span>
           )}
-          {p.type !== 'campaign_bonus' && isDirectorView && (
+          {p.type !== 'campaign_bonus' && !isInvestorCommission(p) && isDirectorView && (
             p.deleteRequestedBy ? (
               <div className="flex items-center gap-1">
                 <button onClick={() => handleApproveDelete(p.id)} title="Approve deletion" className="p-1 rounded text-red-400 hover:bg-red-500/20 transition-colors"><Check size={12} /></button>
@@ -1291,7 +1296,7 @@ export default function Payments({ embedded }: PaymentsProps) {
     const refundMissingBankDetails = p.type === 'customer_refund' && !p.bankName;
     const claimNeedsVendor = p.type === 'expense_claim' && p.recipientType !== 'user' && !p.recipientId;
     const unconfirmedClaim = p.type === 'expense_claim' && !p.claimConfirmedBy;
-    const selectable = isPending && !refundMissingBankDetails && !unconfirmedClaim && !claimNeedsVendor;
+    const selectable = isPending && !isInvestorCommission(p) && !refundMissingBankDetails && !unconfirmedClaim && !claimNeedsVendor;
     const reference = (p.carId && carMap[p.carId]) || p.referenceNumber || p.bankName || '—';
     const menuOpen = openRowMenuId === p.id;
 
@@ -1319,7 +1324,8 @@ export default function Payments({ embedded }: PaymentsProps) {
           </div>
           <div className="min-w-0">
             <p className="text-[13px] text-white font-medium truncate">{p.recipientName}</p>
-            {privateCompanyEvidence && <button className="text-[11px] text-gold-400" onClick={() => setDocumentPaymentId(p.id)}>Invoices & receipts</button>}
+            {isInvestorCommission(p) && <a className="text-[11px] text-gold-400" href={`#/investor-finance?carId=${encodeURIComponent(p.carId || '')}`}>Open car bill</a>}
+          {privateCompanyEvidence && !isInvestorCommission(p) && <button className="text-[11px] text-gold-400" onClick={() => setDocumentPaymentId(p.id)}>Invoices & receipts</button>}
             <p className="text-[11px] text-white/35 truncate">
               {RECIPIENT_TYPE_LABELS[p.recipientType]}
               {p.description && ` · ${p.description}`}
@@ -1390,18 +1396,18 @@ export default function Payments({ embedded }: PaymentsProps) {
             )
           ) : isPending ? (
             <button
-              onClick={() => { setSingleId(p.id); setTransferTarget('single'); }}
+              onClick={() => { if (isInvestorCommission(p)) { window.location.hash = '/investor-finance?carId=' + encodeURIComponent(p.carId || ''); return; } setSingleId(p.id); setTransferTarget('single'); }}
               className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full text-obsidian-950 transition-all hover:scale-[1.03] active:scale-95 whitespace-nowrap"
               style={{ background: 'linear-gradient(135deg, #F7D96A 0%, #EAB820 45%, #C99A16 100%)', boxShadow: '0 4px 16px rgba(234,184,32,0.32)' }}
             >
-              <ArrowUpRight size={12} /> Transfer
+              <ArrowUpRight size={12} /> {isInvestorCommission(p) ? 'Open car bill' : 'Transfer'}
             </button>
           ) : (
             <span className="text-xs font-medium px-3.5 py-2 text-white/20 whitespace-nowrap">
               <CheckCircle2 size={12} className="inline -mt-0.5 mr-1" />Done
             </span>
           )}
-          {p.type !== 'campaign_bonus' && isDirectorView && (
+          {p.type !== 'campaign_bonus' && !isInvestorCommission(p) && isDirectorView && (
             p.deleteRequestedBy ? (
               <div className="flex items-center gap-1">
                 <button onClick={() => handleApproveDelete(p.id)} title="Approve deletion" className="p-1 rounded text-red-400 hover:bg-red-500/20 transition-colors"><Check size={12} /></button>
@@ -1416,7 +1422,7 @@ export default function Payments({ embedded }: PaymentsProps) {
               </button>
             )
           )}
-          {p.type !== 'campaign_bonus' && isAdmin && !isDirectorView && (
+          {p.type !== 'campaign_bonus' && !isInvestorCommission(p) && isAdmin && !isDirectorView && (
             p.deleteRequestedBy ? (
               <span title="Pending director approval" className="flex items-center gap-1 text-[10px] text-amber-400 px-1.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20">
                 <Clock size={10} /> Pending
@@ -1729,6 +1735,7 @@ export default function Payments({ embedded }: PaymentsProps) {
       )}
 
       {/* Transfer modal */}
+      {tab === 'expense_claims' && import.meta.env.VITE_INVESTOR_FINANCE === '1' && (isDirectorView || isAdmin) && <InvestorClaimsPanel />}
       {documentPaymentId && <CompanyPaymentDocuments paymentId={documentPaymentId} onClose={() => setDocumentPaymentId(null)} />}
       {transferTarget && (
         <TransferModal
