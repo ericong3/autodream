@@ -5,6 +5,8 @@ import { bonusCampaignRequest } from '../lib/bonusCampaigns';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
+import { financeFrom } from '../lib/privateFinance';
+import { privateFinanceCacheJson } from '../utils/privateFinanceCache';
 import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, ClaimCategory, LedgerAccount, JournalEntry, JournalLine, MiscCost, ExternalSalesman, Banker, LoanCase, LoanCaseDocument, LoanCaseActivity, Payment, AppNotification, InvestorTransaction, Shipment, CarMovement, KanbanColumn, Payslip, BankStatementUpload, BankTransaction } from '../types';
 import { sendPush } from '../utils/sendPush';
 import { hashPassword, verifyPassword } from '../utils/password';
@@ -28,6 +30,12 @@ function scheduledNotifAllowed(): boolean {
   if (localStorage.getItem(SCHED_KEY) === today) return false;
   localStorage.setItem(SCHED_KEY, today);
   return true;
+}
+
+async function confirmFinanceWrite(query: PromiseLike<any>): Promise<any> {
+  const result=await query;
+  if(result.error)throw new Error(result.error.message || 'The finance change was not saved.');
+  return result;
 }
 
 // Runs query-producing thunks with at most `concurrency` in flight at once, instead of
@@ -279,6 +287,7 @@ function parseJsonField<T>(v: any): T | undefined {
 function rowToCar(r: any): Car {
   return {
     isRecon: r.is_recon ?? false,
+    investorFunded: r.investor_funded === true,
     salesCommission: r.sales_commission ?? undefined,
     id: r.id,
     make: r.make ?? '',
@@ -539,7 +548,7 @@ function shipmentToRow(s: Partial<Shipment>) {
   return row;
 }
 
-function carToRow(c: Partial<Car>) {
+export function carToRow(c: Partial<Car>) {
   const row: any = {};
   if (c.isRecon !== undefined) row.is_recon = c.isRecon;
   if ('salesCommission' in c) row.sales_commission = c.salesCommission ?? null;
@@ -1305,6 +1314,8 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   lastFetched: null,
 
   loadAll: async (force = false) => {
+    // Investor pages fetch only their private account; never load the staff dataset.
+    if (get().currentUser?.role === 'investor') { set({loaded:true,phase2Loaded:true}); return; }
     const { lastFetched, loaded } = get();
     const TTL = 5 * 60 * 1000; // 5 minutes
     if (!force && loaded && lastFetched && (Date.now() - lastFetched) < TTL) return;
@@ -1332,7 +1343,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       try {
         const [users, cars, repairs, customers, externalSalesmenResult, bankersResult, loanCasesResult] =
           await runBatched([
-            () => fetchAllRows((from, to) => supabase.from('users').select('*').order('id').range(from, to)),
+            () => fetchAllRows((from, to) => financeFrom('users').select('*').order('id').range(from, to)),
             () => fetchAllRows((from, to) => supabase.from('cars').select('*').neq('status', 'delivered').order('id').range(from, to)),
             () => fetchAllRows((from, to) => supabase.from('repairs').select('*').order('id').range(from, to)),
             () => fetchAllRows((from, to) => supabase.from('customers').select('*').order('id').range(from, to)),
@@ -1451,17 +1462,17 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       () => fetchAllRows((from, to) => supabase.from('suppliers').select('*').order('id').range(from, to)),
       () => fetchAllRows((from, to) => supabase.from('merchants').select('*').order('id').range(from, to)),
       () => fetchAllRows((from, to) => supabase.from('claim_categories').select('*').order('id').range(from, to)),
-      () => fetchAllRows((from, to) => supabase.from('ledger_accounts').select('*').order('id').range(from, to)),
-      () => fetchAllRows((from, to) => supabase.from('journal_entries').select('*').order('date', { ascending: false }).order('id').range(from, to)),
+      () => fetchAllRows((from, to) => financeFrom('ledger_accounts').select('*').order('id').range(from, to)),
+      () => fetchAllRows((from, to) => financeFrom('journal_entries').select('*').order('date', { ascending: false }).order('id').range(from, to)),
       () => fetchAllRows((from, to) => supabase.from('loan_case_documents').select('*').order('id').range(from, to)),
       () => fetchAllRows((from, to) => supabase.from('loan_case_activity').select('*').order('id').range(from, to)),
-      () => fetchAllRows((from, to) => supabase.from('payments').select('*').order('created_at', { ascending: false }).order('id').range(from, to)),
-      () => fetchAllRows((from, to) => supabase.from('investor_transactions').select('*').order('created_at', { ascending: true }).order('id').range(from, to)),
+      () => fetchAllRows((from, to) => financeFrom('payments').select('*').order('created_at', { ascending: false }).order('id').range(from, to)),
+      () => fetchAllRows((from, to) => financeFrom('investor_transactions').select('*').order('created_at', { ascending: true }).order('id').range(from, to)),
       () => fetchAllRows((from, to) => supabase.from('shipments').select('*').order('eta', { ascending: true }).order('id').range(from, to)),
       () => fetchAllRows((from, to) => supabase.from('car_movements').select('*').order('created_at', { ascending: false }).order('id').range(from, to)),
-      () => fetchAllRows((from, to) => supabase.from('payslips').select('*').order('created_at', { ascending: false }).order('id').range(from, to)),
-      () => fetchAllRows((from, to) => supabase.from('bank_statement_uploads').select('*').order('uploaded_at', { ascending: false }).order('id').range(from, to)),
-      () => fetchAllRows((from, to) => supabase.from('bank_transactions').select('*').order('created_at', { ascending: false }).order('id').range(from, to)),
+      () => fetchAllRows((from, to) => financeFrom('payslips').select('*').order('created_at', { ascending: false }).order('id').range(from, to)),
+      () => fetchAllRows((from, to) => financeFrom('bank_statement_uploads').select('*').order('uploaded_at', { ascending: false }).order('id').range(from, to)),
+      () => fetchAllRows((from, to) => financeFrom('bank_transactions').select('*').order('created_at', { ascending: false }).order('id').range(from, to)),
     ], 5).then(async ([deliveredCarsResult, closedCasesResult, quotations, instructions, testDrives, reminders, dealers, workshops, suppliers, merchants, claimCategories, ledgerAccounts, journalEntries, loanCaseDocsResult, loanCaseActivitiesResult, paymentsResult, investorTxnsResult, shipmentsResult, carMovementsResult, payslipsResult, bankUploadsResult, bankTxnsResult]) => {
       if(!loadCurrent())return;
       const allQuotations  = (quotations.data ?? []).map(rowToQuotation);
@@ -1641,7 +1652,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       })
       .subscribe();
 
-    supabase.channel('realtime-users')
+    if(import.meta.env.VITE_USED_CAR_PRIVATE_FINANCE!=='1')supabase.channel('realtime-users')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, (payload) => {
         if (payload.eventType === 'INSERT') {
           setForActor((s) => ({
@@ -1858,7 +1869,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       })
       .subscribe();
 
-    supabase.channel('realtime-investor-transactions')
+    if(import.meta.env.VITE_USED_CAR_PRIVATE_FINANCE!=='1')supabase.channel('realtime-investor-transactions')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'investor_transactions' }, (payload) => {
         if (payload.eventType === 'INSERT') {
           setForActor((s) => ({
@@ -2213,25 +2224,28 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     if (secureGarageLoginEnabled()) throw new Error('Use the director invitation flow to create accounts.');
     const stored = { ...user, password: await hashPassword(user.password) };
     set((s) => ({ users: [...s.users, stored] }));
-    const { error } = await supabase.from('users').insert(userToRow(stored));
+    const { error } = await financeFrom('users').insert(userToRow(stored));
     if (error) {
       set((s) => ({ users: s.users.filter((u) => u.id !== user.id) }));
       throw new Error(error.message);
     }
   },
   updateUser: async (id, user) => {
+    const savingActor=get().currentUser?.id;
     if (secureGarageLoginEnabled() && ['role','businessAccess','password','username','authSource'].some(k => k in user)) throw new Error('Manage account permissions in Staff access. Passwords are reset by email.');
     const patch = user.password ? { ...user, password: await hashPassword(user.password) } : user;
+
+    await confirmFinanceWrite(financeFrom('users').update(userToRow(patch)).eq('id', id));
+    if(get().currentUser?.id!==savingActor)return;
     set((s) => ({
       users: s.users.map((u) => (u.id === id ? { ...u, ...patch } : u)),
       currentUser: mergeLegacyIdentity(s.currentUser, id, patch),
     }));
-    await supabase.from('users').update(userToRow(patch)).eq('id', id);
   },
   deleteUser: async (id) => {
     if (secureGarageLoginEnabled()) throw new Error('Disable the account in Staff access instead.');
     set((s) => ({ users: s.users.filter((u) => u.id !== id) }));
-    await supabase.from('users').delete().eq('id', id);
+    await financeFrom('users').delete().eq('id', id);
   },
 
   // Customers
@@ -2563,46 +2577,56 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   },
 
   addLedgerAccount: async (account) => {
+    const savingActor=get().currentUser?.id;
+
+    await confirmFinanceWrite(financeFrom('ledger_accounts').insert(ledgerAccountToRow(account)));
+    if(get().currentUser?.id!==savingActor)return;
     set((s) => ({ ledgerAccounts: [...s.ledgerAccounts, account] }));
-    const { error } = await supabase.from('ledger_accounts').insert(ledgerAccountToRow(account));
-    if (error) {
-      set((s) => ({ ledgerAccounts: s.ledgerAccounts.filter((a) => a.id !== account.id) }));
-      throw new Error(error.message);
-    }
+
   },
   deleteLedgerAccount: async (id) => {
+    const savingActor=get().currentUser?.id;
+
+    await confirmFinanceWrite(financeFrom('ledger_accounts').delete().eq('id', id));
+    if(get().currentUser?.id!==savingActor)return;
     set((s) => ({ ledgerAccounts: s.ledgerAccounts.filter((a) => a.id !== id) }));
-    await supabase.from('ledger_accounts').delete().eq('id', id);
   },
 
   addJournalEntry: async (entry) => {
-    set((s) => ({ journalEntries: [entry, ...s.journalEntries] }));
-    const { error } = await supabase.from('journal_entries').insert(journalEntryToRow(entry));
-    if (error) {
-      set((s) => ({ journalEntries: s.journalEntries.filter((e) => e.id !== entry.id) }));
-      throw new Error(error.message);
-    }
+    const savingActor=get().currentUser?.id;
+
+    const confirmed=await confirmFinanceWrite(financeFrom('journal_entries').insert(journalEntryToRow(entry)));
+    const saved=import.meta.env.VITE_USED_CAR_PRIVATE_FINANCE==='1'&&confirmed.data?.[0]?rowToJournalEntry(confirmed.data[0]):entry;
+    if(get().currentUser?.id!==savingActor)return;
+    set((s) => ({ journalEntries: [saved, ...s.journalEntries.filter(e=>e.id!==saved.id)] }));
+
   },
   batchAddJournalEntries: async (entries) => {
+    const savingActor=get().currentUser?.id;
     if (!entries.length) return;
+
+    await confirmFinanceWrite(financeFrom('journal_entries').insert(entries.map(journalEntryToRow)));
+    if(get().currentUser?.id!==savingActor)return;
     set((s) => ({ journalEntries: [...entries, ...s.journalEntries] }));
-    await supabase.from('journal_entries').insert(entries.map(journalEntryToRow));
   },
   // Corrections are voided, never deleted — the entry (and the mistake) stay
   // on record, just marked reversed, with who and why.
   voidJournalEntry: async (id, voidedBy, reason) => {
+    const savingActor=get().currentUser?.id;
     const patch = { voided: true, voidedBy, voidedAt: new Date().toISOString(), voidReason: reason };
+
+    await confirmFinanceWrite(financeFrom('journal_entries').update(journalEntryToRow(patch)).eq('id', id));
+    if(get().currentUser?.id!==savingActor)return;
     set((s) => ({ journalEntries: s.journalEntries.map((e) => e.id === id ? { ...e, ...patch } : e) }));
-    await supabase.from('journal_entries').update(journalEntryToRow(patch)).eq('id', id);
   },
 
   addPayment: async (payment) => {
+    const savingActor=get().currentUser?.id;
+
+    await confirmFinanceWrite(financeFrom('payments').insert(paymentToRow(payment)));
+    if(get().currentUser?.id!==savingActor)return;
     set((s) => ({ payments: [payment, ...s.payments] }));
-    const { error } = await supabase.from('payments').insert(paymentToRow(payment));
-    if (error) {
-      set((s) => ({ payments: s.payments.filter((p) => p.id !== payment.id) }));
-      throw new Error(error.message);
-    }
+
     const PAYMENT_TYPE_LABELS: Record<string, string> = {
       salesman_commission: 'Commission', intake_bonus: 'Intake Bonus',
       source_commission: 'Source Comm.', repair: 'Workshop', misc_cost: 'Misc Cost',
@@ -2624,9 +2648,12 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     set(s=>({payments:mergeBonusRows(payments,s.payments,p=>p.type==='campaign_bonus'||!payments.some(n=>n.id===p.id)),journalEntries:journal?[journal,...s.journalEntries.filter(j=>j.id!==journal.id)]:s.journalEntries,ledgerAccounts:account?[account,...s.ledgerAccounts.filter(a=>a.id!==account.id)]:s.ledgerAccounts}));
   },
   batchAddPayments: async (newPayments) => {
+    const savingActor=get().currentUser?.id;
     if (!newPayments.length) return;
+
+    await confirmFinanceWrite(financeFrom('payments').insert(newPayments.map(paymentToRow)));
+    if(get().currentUser?.id!==savingActor)return;
     set((s) => ({ payments: [...newPayments, ...s.payments] }));
-    await supabase.from('payments').insert(newPayments.map(paymentToRow));
   },
   updatePayment: async (id, updates) => {
     if (get().payments.find(p => p.id === id)?.type === 'campaign_bonus') {
@@ -2638,40 +2665,52 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       set(s=>({payments:s.payments.map(p=>p.id===id?payment:p),journalEntries:[journal,...s.journalEntries.filter(j=>j.id!==journal.id)]}));
       return;
     }
-    set((s) => ({ payments: s.payments.map((p) => p.id === id ? { ...p, ...updates } : p) }));
-    await supabase.from('payments').update(paymentToRow(updates)).eq('id', id);
+
+    const savingActor=get().currentUser?.id;
+    const confirmed=await confirmFinanceWrite(financeFrom('payments').update(paymentToRow(updates)).eq('id', id));
+    const saved=import.meta.env.VITE_USED_CAR_PRIVATE_FINANCE==='1'&&confirmed.data?.[0]?rowToPayment(confirmed.data[0]):updates;
+    if(get().currentUser?.id!==savingActor)return;
+    set((s) => ({ payments: s.payments.map((p) => p.id === id ? { ...p, ...saved } : p) }));
   },
   deletePayment: async (id) => {
+    const savingActor=get().currentUser?.id;
     if (get().payments.find(p => p.id === id)?.type === 'campaign_bonus') throw new Error('Use a separate adjustment for confirmed campaign bonuses.');
+
+    await confirmFinanceWrite(financeFrom('payments').delete().eq('id', id));
+    if(get().currentUser?.id!==savingActor)return;
     set((s) => ({ payments: s.payments.filter((p) => p.id !== id) }));
-    await supabase.from('payments').delete().eq('id', id);
   },
 
   addBankStatementUpload: async (upload) => {
+    const savingActor=get().currentUser?.id;
+
+    await confirmFinanceWrite(financeFrom('bank_statement_uploads').insert(bankStatementUploadToRow(upload)));
+    if(get().currentUser?.id!==savingActor)return;
     set((s) => ({ bankStatementUploads: [upload, ...s.bankStatementUploads] }));
-    const { error } = await supabase.from('bank_statement_uploads').insert(bankStatementUploadToRow(upload));
-    if (error) {
-      set((s) => ({ bankStatementUploads: s.bankStatementUploads.filter((u) => u.id !== upload.id) }));
-      throw new Error(error.message);
-    }
+
   },
   updateBankStatementUpload: async (id, updates) => {
+    const savingActor=get().currentUser?.id;
+
+    await confirmFinanceWrite(financeFrom('bank_statement_uploads').update(bankStatementUploadToRow(updates)).eq('id', id));
+    if(get().currentUser?.id!==savingActor)return;
     set((s) => ({ bankStatementUploads: s.bankStatementUploads.map((u) => u.id === id ? { ...u, ...updates } : u) }));
-    await supabase.from('bank_statement_uploads').update(bankStatementUploadToRow(updates)).eq('id', id);
   },
   addBankTransactions: async (txns) => {
+    const savingActor=get().currentUser?.id;
     if (!txns.length) return;
+
+    await confirmFinanceWrite(financeFrom('bank_transactions').insert(txns.map(bankTransactionToRow)));
+    if(get().currentUser?.id!==savingActor)return;
     set((s) => ({ bankTransactions: [...txns, ...s.bankTransactions] }));
-    const { error } = await supabase.from('bank_transactions').insert(txns.map(bankTransactionToRow));
-    if (error) {
-      const ids = new Set(txns.map((t) => t.id));
-      set((s) => ({ bankTransactions: s.bankTransactions.filter((t) => !ids.has(t.id)) }));
-      throw new Error(error.message);
-    }
+
   },
   updateBankTransaction: async (id, updates) => {
+    const savingActor=get().currentUser?.id;
+
+    await confirmFinanceWrite(financeFrom('bank_transactions').update(bankTransactionToRow(updates)).eq('id', id));
+    if(get().currentUser?.id!==savingActor)return;
     set((s) => ({ bankTransactions: s.bankTransactions.map((t) => t.id === id ? { ...t, ...updates } : t) }));
-    await supabase.from('bank_transactions').update(bankTransactionToRow(updates)).eq('id', id);
   },
 
   addExternalSalesman: async (s) => {
@@ -2944,7 +2983,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   // Investor Transactions
   addInvestorTransaction: async (txn) => {
     set((s) => ({ investorTransactions: [...s.investorTransactions, txn] }));
-    const { error } = await supabase.from('investor_transactions').insert(investorTxnToRow(txn));
+    const { error } = await financeFrom('investor_transactions').insert(investorTxnToRow(txn));
     if (error) {
       set((s) => ({ investorTransactions: s.investorTransactions.filter((t) => t.id !== txn.id) }));
       throw new Error(error.message);
@@ -2963,7 +3002,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   updateInvestorTransaction: async (id, updates) => {
     const prev = get().investorTransactions.find(t => t.id === id);
     set((s) => ({ investorTransactions: s.investorTransactions.map((t) => t.id === id ? { ...t, ...updates } : t) }));
-    const { error } = await supabase.from('investor_transactions').update(investorTxnToRow(updates)).eq('id', id);
+    const { error } = await financeFrom('investor_transactions').update(investorTxnToRow(updates)).eq('id', id);
     if (error) {
       if (prev) set((s) => ({ investorTransactions: s.investorTransactions.map((t) => t.id === id ? prev : t) }));
       throw new Error(error.message);
@@ -2983,12 +3022,12 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   },
 
   addPayslip: async (p) => {
+    const savingActor=get().currentUser?.id;
+
+    await confirmFinanceWrite(financeFrom('payslips').insert(payslipToRow(p)));
+    if(get().currentUser?.id!==savingActor)return;
     set((s) => ({ payslips: [p, ...s.payslips] }));
-    const { error } = await supabase.from('payslips').insert(payslipToRow(p));
-    if (error) {
-      set((s) => ({ payslips: s.payslips.filter((x) => x.id !== p.id) }));
-      throw new Error(error.message);
-    }
+
     sendPush([p.userId], '🧾 Payslip issued', `${p.payslipNo} is ready to view`, '/payroll', p.id);
   },
 
@@ -3021,10 +3060,16 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   // Wrapped so a full localStorage quota (large dataset on a device already near its
   // limit) degrades to "no cache, always fetch fresh" instead of crashing the app.
   storage: createJSONStorage(() => ({
-    getItem: (name) => localStorage.getItem(name),
+    getItem: (name) => {
+      const raw=localStorage.getItem(name);
+      if(import.meta.env.VITE_USED_CAR_PRIVATE_FINANCE!=='1')return raw;
+      const safe=privateFinanceCacheJson(raw);
+      try{if(safe===null)localStorage.removeItem(name);else localStorage.setItem(name,safe);}catch{}
+      return safe;
+    },
     setItem: (name, value) => {
       try {
-        localStorage.setItem(name, value);
+        localStorage.setItem(name, import.meta.env.VITE_USED_CAR_PRIVATE_FINANCE==='1'?(privateFinanceCacheJson(value)??'{}'):value);
       } catch (e) {
         console.warn('Caching app data locally failed (storage full?) — will reload from network next time.', e);
       }

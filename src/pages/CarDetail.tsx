@@ -616,7 +616,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
         }
       }
     }
-    if (newlyAddedSettlement && currentUser) {
+    if (newlyAddedSettlement && currentUser && !car.investorFunded) {
       await addPayment({
         id: generateId(), type: 'purchase_settlement', carId: car.id,
         recipientType: 'merchant', recipientId: editForm.settlementRecipient || 'Settlement', recipientName: editForm.settlementRecipient || 'Settlement',
@@ -834,7 +834,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       }
     }
 
-    if (!car.consignment && !car.outgoingConsignment && currentUser) {
+    if (!car.investorFunded && !car.consignment && !car.outgoingConsignment && currentUser) {
       const dealPrice = _dealPriceAtDelivery;
       const cost = (car.purchasePrice ?? 0) + totalRepairCost + totalMiscCost;
       const loanAmount = dealIsLoan ? (car.disbursementExpectedAmount ?? car.disbursementAmount ?? dealCustomer?.loanWorkOrder?.loanAmount ?? 0) : 0;
@@ -908,6 +908,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
         </span>
       </nav>
 
+      {car.investorFunded && (isDirector || isAdmin) && <button className="w-full rounded-xl border border-gold-400/30 bg-gold-400/10 px-4 py-3 text-left text-gold-400" onClick={() => navigate('/investor-finance?carId='+encodeURIComponent(car.id))}>Investor-funded car · Open car bills and payments →</button>}
       {/* Back + actions */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <button

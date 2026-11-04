@@ -47,7 +47,7 @@ export default function Investors() {
   const updateInvestorTransaction = useStore((s) => s.updateInvestorTransaction);
   const currentUser = useStore((s) => s.currentUser);
 
-  const [activeTab, setActiveTab] = useState<'investors' | 'consignment'>('investors');
+  const [activeTab, setActiveTab] = useState<'investors' | 'consignment'>(import.meta.env.VITE_INVESTOR_FINANCE==='1'?'consignment':'investors');
   const [investorView, setInvestorView] = useState<'all' | 'by_investor'>('all');
   const [consignView, setConsignView] = useState<'all' | 'by_dealer'>('all');
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -453,7 +453,7 @@ export default function Investors() {
       {/* Tabs */}
       <div className="flex gap-1 bg-obsidian-800/60 border border-obsidian-400/40 rounded-xl p-1 w-fit">
         <button
-          onClick={() => setActiveTab('investors')}
+          onClick={() => { if(import.meta.env.VITE_INVESTOR_FINANCE==='1')window.location.hash='/investor-finance';else setActiveTab('investors'); }}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
             activeTab === 'investors' ? 'bg-gold-500/20 text-gold-300 border border-gold-500/30' : 'text-gray-400 hover:text-white'
           }`}

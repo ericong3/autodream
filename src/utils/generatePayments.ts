@@ -145,6 +145,7 @@ export async function generateDeliveryPayments(opts: {
   addPayment: AddPayment;
 }) {
   const { car, payments, users, externalSalesmen, dealers, customers, repairs, addPayment } = opts;
+  if (car.investorFunded) return; // Private approved bills are the only payment source.
   const now = new Date().toISOString();
   const label = `${car.make} ${car.model}${car.carPlate ? ` (${car.carPlate})` : ''}`;
 
@@ -423,6 +424,7 @@ export function collectMissingPayments(data: {
     exists([...payments, ...result], type, opts);
 
   for (const car of cars) {
+    if (car.investorFunded) continue;
     if (car.status !== 'delivered') continue;
     const label = `${car.make} ${car.model}${car.carPlate ? ` (${car.carPlate})` : ''}`;
     const dealCustomer = customers.find(c =>
@@ -585,6 +587,7 @@ export function collectMissingPayments(data: {
 
   // Done repairs — skip ones a claim already paid for (linked via repairJobId, any payment type)
   for (const repair of repairs) {
+    if (cars.some(c => c.id === repair.carId && c.investorFunded)) continue;
     if (repair.status !== 'done' || !repair.location) continue;
     if (alreadyExists('repair', { repairJobId: repair.id })) continue;
     if (payments.some(p => p.repairJobId === repair.id)) continue;
@@ -700,6 +703,7 @@ export function collectMonthlyPayroll(opts: {
     (c.status === 'delivered' || c.commissionCreditedEarly) && getCommissionMonth(c, customers) === month
   );
   for (const car of monthCars) {
+    if (car.investorFunded) continue; // Commission must be an approved car bill before payout.
     if (car.outgoingConsignment || car.isStaffSale || car.waiveCommission || hasCommissionPayment(car.id)) continue;
     const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
     const spId = car.assignedSalesperson || dealCustomer?.assignedSalesId;

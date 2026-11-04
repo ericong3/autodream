@@ -1,6 +1,7 @@
 -- PREPARED ONLY. Not installed. First local phase: investor profiles, capital
 -- history and withdrawal approvals. No car funding, bills, salary, settlement,
 -- bank import, public signup or legacy-table permission changes in this phase.
+begin;
 create table public.uc_investor_profiles (
  id uuid primary key default gen_random_uuid(), name text not null check(length(trim(name)) between 1 and 150),
  linked_staff_id text unique references public.garage_building_staff(id),
@@ -191,3 +192,4 @@ revoke all on function public.uc_investor_withdrawal_guard() from public,anon,au
 revoke all on function public.uc_investor_position(uuid) from public,anon,authenticated,service_role;
 revoke all on function public.uc_investor_capital(text,text,jsonb) from public,anon,authenticated,service_role;
 grant execute on function public.uc_investor_capital(text,text,jsonb) to service_role;
+commit;

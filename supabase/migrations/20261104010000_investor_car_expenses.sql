@@ -3,6 +3,7 @@
 -- The car foreign key intentionally prevents deleting funded cars; the existing
 -- app's linked-record deletion message covers this. Live types must be checked
 -- before preparing an installation bundle.
+begin;
 alter table public.uc_investor_audit add column sequence bigint generated always as identity unique;
 revoke all on sequence public.uc_investor_audit_sequence_seq from public,anon,authenticated,service_role;
 create table public.uc_investor_cars (
@@ -269,3 +270,4 @@ revoke all on table public.uc_investor_cars,public.uc_investor_car_bills,public.
 revoke all on function public.uc_investor_car_summary(text) from public,anon,authenticated,service_role;
 revoke all on function public.uc_investor_capital(text,text,jsonb) from public,anon,authenticated,service_role;
 grant execute on function public.uc_investor_capital(text,text,jsonb) to service_role;
+commit;

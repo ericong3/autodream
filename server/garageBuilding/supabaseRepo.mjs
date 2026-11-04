@@ -5,6 +5,7 @@
 // 20261020010000_garage_building_online_sessions.sql.
 // First-time setup also uses 20261020020000_garage_building_activation.sql.
 import { createClient } from '@supabase/supabase-js';
+import {privateFinanceQuery} from '../usedCar/privateFinanceRepo.mjs';
 
 const SESSION_COLUMNS = 'user_id, credential_fingerprint, expires_at, last_seen_at';
 
@@ -24,6 +25,14 @@ export function supabaseRepo(config) {
   const check = ({ data, error }) => { if (error) throw error; return data; };
 
   return {
+    privateFinance(input) { return privateFinanceQuery(sb,input); },
+    async uploadInvestorProof(path,bytes,mime) {
+      const result=await sb.storage.from('finance-evidence').upload(path,bytes,{contentType:mime,upsert:false});
+      // Content-addressed, server-generated paths make an existing object the
+      // same immutable file when a save is retried after a lost response.
+      if(result.error&&String(result.error.statusCode)!=='409')throw result.error;
+    },
+    async investorProofUrl(path) {return check(await sb.storage.from('finance-evidence').createSignedUrl(path,60)).signedUrl;},
     async trackingOrders(user) {
       if(!['director','shareholder','garage_head'].includes(user.role)||!['garage','both'].includes(user.business_access))throw Error('NOT_ALLOWED');
       const rows=[];

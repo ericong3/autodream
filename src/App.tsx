@@ -6,6 +6,8 @@ import {
   Route,
   Navigate,
   useLocation,
+  useNavigate,
+  Outlet,
 } from 'react-router-dom';
 import { useStore } from './store';
 import Layout from './components/Layout';
@@ -20,7 +22,8 @@ import GarageReferralSettlement from './pages/GarageReferralSettlement';
 import GarageSessionGate from './components/GarageSessionGate';
 import { secureGarageLoginEnabled } from './lib/garageSession';
 import Dashboard from './pages/Dashboard';
-import Inventory from './pages/Inventory';
+const Inventory=lazy(()=>import('./pages/Inventory'));
+
 import CarDetail from './pages/CarDetail';
 import Quotations from './pages/Quotations';
 import Workshop from './pages/Workshop';
@@ -38,7 +41,8 @@ import SalesDashboard from './pages/SalesDashboard';
 import Calendar from './pages/Calendar';
 import Data from './pages/Data';
 import Investors from './pages/Investors';
-import InvestorPortal from './pages/InvestorPortal';
+const InvestorAccountPortal=lazy(()=>import('./pages/InvestorAccountPortal'));
+const InvestorFinanceConsole=lazy(()=>import('./pages/InvestorFinanceConsole'));
 import LoanCases from './pages/LoanCases';
 import BankerDashboard from './pages/BankerDashboard';
 import AdminDashboard from './pages/AdminDashboard';
@@ -155,9 +159,15 @@ function BankerLayout() {
 // Layout wrapper for investors
 function InvestorLayout() {
   const currentUser = useStore((s) => s.currentUser);
+  const logout=useStore(s=>s.logout),navigate=useNavigate();
+  const [leaving,setLeaving]=useState(false),[error,setError]=useState('');
   if (!currentUser) return <Navigate to="/login" replace />;
   if (currentUser.role !== 'investor') return <Navigate to="/inventory" replace />;
-  return <Layout />;
+  return <div className="min-h-screen bg-obsidian-900 text-white">
+    <header className="border-b border-white/10 px-5 py-4 flex items-center justify-between"><span className="font-display text-gold-400">AutoDream</span><button disabled={leaving} className="text-sm text-gray-400" onClick={async()=>{setLeaving(true);setError('');try{await logout();navigate('/login',{replace:true});}catch{setError('Could not sign out. Try again.');setLeaving(false);}}}>{leaving?'Signing out...':'Sign out'}</button></header>
+    {error&&<p role="alert" className="px-5 py-3 text-red-300">{error}</p>}
+    <main className="p-4 sm:p-6"><Outlet key={currentUser.id}/></main>
+  </div>;
 }
 
 // Role guards — wrap page elements only, not Layout
@@ -184,10 +194,16 @@ function RequireDataAccess({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function InvestorRouteBoundary({children}:{children:React.ReactNode}){
+ const user=useStore(s=>s.currentUser);const {pathname}=useLocation();
+ if(user?.role==='investor'&&pathname!=='/investor-portal'&&pathname!=='/login'&&!pathname.startsWith('/account/'))return <Navigate to="/investor-portal" replace/>;
+ return <>{children}</>;
+}
+
 function StartupDataGate({ready,children}:{ready:boolean;children:React.ReactNode}){
  const {pathname}=useLocation();
  const publicEntry=pathname==='/login'||pathname==='/garage/login'||/^\/account\/(register|verify|reset|forgot|resend|check)$/.test(pathname)||/^\/referral-account\/(register|verify|login|resend|forgot|reset|home)$/.test(pathname);
- const fastEntry=pathname==='/choose-business'||((pathname==='/garage'||pathname.startsWith('/garage/'))&&pathname!=='/garage/team'&&!pathname.startsWith('/garage/team/'));
+ const fastEntry=pathname==='/investor-portal'||pathname==='/choose-business'||((pathname==='/garage'||pathname.startsWith('/garage/'))&&pathname!=='/garage/team'&&!pathname.startsWith('/garage/team/'));
  if(!ready&&!publicEntry&&!fastEntry)return <div className="min-h-screen bg-black text-white/60 flex items-center justify-center">Loading...</div>;
  return <>{children}</>;
 }
@@ -217,18 +233,25 @@ export default function App() {
     let active=true;
     // Public partner pages authenticate independently and never load the staff directory.
     if(/^#\/referral-account\//.test(window.location.hash)){setFetchDone(true);return;}
-    if(!currentUser){setFetchDone(true);return;}
+    if(!currentUser||currentUser.role==='investor'){setFetchDone(true);return;}
     setFetchDone(false);
     loadAll().catch(()=>undefined).finally(() => {if(active)setFetchDone(true);});
     return()=>{active=false;};
-  }, [currentUser?.id]);
+  }, [currentUser?.id,currentUser?.role,currentUser?.businessAccess]);
+
+  useEffect(()=>{
+    if(import.meta.env.VITE_USED_CAR_PRIVATE_FINANCE!=='1'||!currentUser||currentUser.role==='investor'||currentUser.businessAccess==='garage')return;
+    const refresh=()=>{if(document.visibilityState==='visible'&&!window.location.hash.startsWith('#/garage'))void loadAll(true).catch(()=>undefined);};
+    window.addEventListener('focus',refresh);
+    return()=>window.removeEventListener('focus',refresh);
+  },[currentUser?.id]);
 
   const ready = hydrated && (storeLoaded || fetchDone);
 
   return (
     <HashRouter>
       <ToastContainer />
-      <GarageSessionGate><StartupDataGate ready={ready}><Routes>
+      <GarageSessionGate><InvestorRouteBoundary><StartupDataGate ready={ready}><Routes>
         {/* Car Movement — login-required but standalone (no Layout) */}
         <Route path="/movement" element={<CarMovement />} />
 
@@ -281,7 +304,7 @@ export default function App() {
 
         {/* Regular users — Layout mounts once, stays alive across all these routes */}
         <Route element={<AuthedLayout />}>
-          <Route path="/inventory" element={<Inventory />} />
+          <Route path="/inventory" element={<Suspense fallback={<p className="p-8 text-white/60">Loading stock...</p>}><Inventory /></Suspense>} />
           <Route path="/inventory/:id" element={<CarDetail />} />
           <Route path="/workshop" element={<Workshop />} />
           <Route path="/reminders" element={<Reminders />} />
@@ -302,6 +325,7 @@ export default function App() {
           <Route path="/payroll/bonus-campaigns" element={<RequireDirector><BonusCampaigns /></RequireDirector>} />
           <Route path="/team" element={<RequireDirector><TeamMembers /></RequireDirector>} />
           <Route path="/data" element={<RequireDataAccess><Data /></RequireDataAccess>} />
+          <Route path="/investor-finance" element={<RequireDataAccess><Suspense fallback={<p className="p-8 text-white/60">Loading investor accounts...</p>}><InvestorFinanceConsole /></Suspense></RequireDataAccess>} />
           <Route path="/investors" element={<RequireDirector><Investors /></RequireDirector>} />
           <Route path="/dashboard" element={<RequireDirector><Dashboard /></RequireDirector>} />
           <Route path="/history/:id?" element={<History />} />
@@ -315,11 +339,11 @@ export default function App() {
 
         {/* Investor — own Layout instance */}
         <Route element={<InvestorLayout />}>
-          <Route path="/investor-portal" element={<InvestorPortal />} />
+          <Route path="/investor-portal" element={<Suspense fallback={<p className="p-8 text-white/60">Loading your account...</p>}><InvestorAccountPortal /></Suspense>} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes></StartupDataGate></GarageSessionGate>
+      </Routes></StartupDataGate></InvestorRouteBoundary></GarageSessionGate>
     </HashRouter>
   );
 }

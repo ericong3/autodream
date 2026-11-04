@@ -4,7 +4,14 @@ import {handleReferralAccounts,isReferralAccountRequest} from '../referrals/acco
 import {handleSalesReferrals,isSalesReferralRequest,validateSalesAssignment} from '../referrals/sales.mjs';
 import {handleBonusCampaigns,isBonusCampaignRequest} from '../usedCar/bonusCampaigns.mjs';
 import {handleReferralSettlement,isReferralSettlementRequest} from '../referrals/settlement.mjs';
+import {handlePrivateFinance,isPrivateFinanceRequest} from '../usedCar/privateFinance.mjs';
+import {handleInvestorCapital} from '../usedCar/investorCapital.mjs';
+import {handleInvestorCarRegistration} from '../usedCar/investorCarRegistration.mjs';
 export async function handleSales(req,deps){
+ let scope,action;try{const body=typeof req.body==='string'?JSON.parse(req.body):req.body;scope=body?.scope;action=body?.action;}catch{}
+ if(scope==='investor_finance'&&action==='register_car')return handleInvestorCarRegistration(req,deps);
+ if(scope==='investor_finance')return handleInvestorCapital(req,deps);
+ if(isPrivateFinanceRequest(req))return handlePrivateFinance(req,deps);
  if(isReferralSettlementRequest(req))return handleReferralSettlement(req,deps);
  if(isBonusCampaignRequest(req))return handleBonusCampaigns(req,deps);
  if(isSalesReferralRequest(req))return handleSalesReferrals(req,deps);

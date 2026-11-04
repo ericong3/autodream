@@ -1,0 +1,55 @@
+{
+  "created_at": "2026-11-04T06:14:49.362681+00:00",
+  "branch": "codex/investor-ledger-foundation",
+  "ready_for_activation": false,
+  "pushed_to_github": false,
+  "deployed_to_vercel": false,
+  "supabase_investor_migrations_installed": false,
+  "warning": "RECOVERY CHECKPOINT ONLY. Not a ready production installation bundle. Do not run migrate-all or activate flags from this checkpoint.",
+  "user_authorization": "Complete and activate the real investor feature; no sample-only publication. Existing approval persists; obtain required access, not another general approval.",
+  "completed_locally": [
+    "Real private investor and Director/admin screens, isolated investor startup, safe pending request retries",
+    "Private session finance bridge and salary filtering, no protected-table realtime payloads in private mode, cache scrubbing",
+    "Registered bank selection, private bill/payment receipt uploads, HMAC invitation links to stable investor profiles linked by existing email verification",
+    "Atomic new-car registration and one-pot funding before legacy purchase postings",
+    "Balanced journal postings for capital, purchase, approved bills, partial payments, sale receipts, profit and losses; no fake bank movement for profit allocation",
+    "Guarded finance ACL lockdown and canonical server-derived expense-claim posting"
+  ],
+  "validation": {
+    "unit_tests": 310,
+    "build": "passed",
+    "local_database_rehearsals": [
+      "investor-capital-db.integration.mjs",
+      "investor-cars-db.integration.mjs",
+      "investor-journal-db.integration.mjs",
+      "investor-activation-db.integration.mjs"
+    ],
+    "production_ui_verified": false,
+    "real_postgres_multiconnection_concurrency_verified": false
+  },
+  "blocking_access": "Browser control reports disabled in Work settings. Vercel CLI is authenticated, but no direct Supabase SQL connection found. Need live read-only preflight via existing Supabase project ayvbagxashasdqgwncbf.",
+  "required_before_activation": [
+    "Read live schema types, current object/migration status, public definer functions and grants using prepared read-only preflight; do not assume earlier prepared SQL was installed",
+    "Finish canonical capture from existing repairs, misc costs, staff claims and commission/payroll; old completion/disbursement paths can half-save then hit investor journal/payment guards",
+    "Handle loan net disbursement deductions without inventing bank receipts or leaving sale settlement blocked",
+    "Finish bank statement import/matching, company main-pot view and opening investor money already in bank (must not double count as a new deposit)",
+    "Finish withdrawal bank destination audit, generic non-salary payment receipt access (purchase/withdrawal as well as car bills), authorised late-cost/refund/return corrections",
+    "Review whole-app inventory data access and cross-tab identity changes; legacy public cars remain publicly queryable, and private pending intent storage needs final privacy review",
+    "Real browser role tests and real PostgreSQL concurrent transaction rehearsal",
+    "Prepare exact guarded installation order, apply approved migrations only after preflight/rehearsal, deploy private bridge before ACL lockdown, enable feature only after all checks, verify canonical production URL"
+  ],
+  "flags_not_set_in_production": [
+    "USED_CAR_INVESTOR_CAPITAL_ONLINE",
+    "USED_CAR_INVESTOR_CARS_ONLINE",
+    "USED_CAR_PRIVATE_FINANCE_ONLINE",
+    "VITE_USED_CAR_PRIVATE_FINANCE",
+    "VITE_INVESTOR_FINANCE"
+  ],
+  "migration_notes": [
+    "0000/0100/0200/0300/0400/0500/0600 are prepared only and transaction wrapped",
+    "0400 creates canonical claim posting before bridge rollout; 0500 revokes public finance grants only with reviewed readiness marker",
+    "0200 refuses any nonempty investor table; requires a data-preserving migration instead if live data now exists",
+    "0300 refuses nonzero legacy investor ledger balances or cars with prior posted/payment history; no silent opening conversion",
+    "0600 registers/funds a new car atomically; forces old investor fields null even if live column defaults differ"
+  ]
+}

@@ -425,6 +425,7 @@ export function collectMissingJournalEntries(opts: {
     result.some(e => e.sourceType === sourceType && e.sourceId === sourceId);
 
   for (const car of cars) {
+    if (car.investorFunded) continue; // Server posts the private investor ledger atomically.
     // Dealer-consignment cars (in or out) are a separate, unrelated flow —
     // we never owned or paid for those, so nothing to book here.
     if (car.consignment || car.outgoingConsignment) continue;
@@ -594,7 +595,7 @@ export function collectMissingJournalEntries(opts: {
   for (const payment of payments) {
     if (payment.type !== 'repair' && payment.type !== 'misc_cost') continue;
     const car = cars.find(c => c.id === payment.carId);
-    if (!car) continue;
+    if (!car || car.investorFunded) continue;
     const label = payment.type === 'repair' ? 'Repair' : 'Misc cost';
     if (!hasEntry(payment.type, payment.id)) {
       result.push(buildCarCostRecognizedEntry({
@@ -644,6 +645,7 @@ export function findStaleLoanSaleEntries(opts: {
   const { journalEntries, cars, customers } = opts;
   const results: StaleLoanSale[] = [];
   for (const car of cars) {
+    if (car.investorFunded) continue; // Server posts the private investor ledger atomically.
     const carSoldEntries = journalEntries.filter((j) => j.sourceType === 'car_sold' && j.sourceId === car.id);
     if (carSoldEntries.length !== 1) continue;
     const entry = carSoldEntries[0];

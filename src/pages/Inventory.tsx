@@ -34,7 +34,9 @@ import {
   QrCode,
   LogOut,
 } from 'lucide-react';
-import { useStore } from '../store';
+import { useStore, carToRow } from '../store';
+import { investorRequest, useInvestorAction, useInvestorQuery, formatCents, parsePercentToBasisPoints, type ProfileList } from '../lib/investorFinance';
+import { PendingSaves } from '../components/InvestorFinanceCar';
 import { supabase } from '../lib/supabase';
 import { toast } from '../utils/toast';
 import { Car, Customer, LoanWorkOrder, CashWorkOrder, PostSaleChecklist } from '../types';
@@ -89,6 +91,13 @@ function getDealBadge(car: Car): DealBadge {
 
 const CAR_MAKES = ['All', 'Perodua', 'Proton', 'Honda', 'Toyota', 'Nissan', 'Other'];
 
+
+// Normal registration columns accepted by register_car (mirrors server/usedCar/investorCarRegistration.mjs).
+const INVESTOR_REGISTRATION_KEYS = new Set(['id', 'make', 'model', 'variant', 'car_plate', 'colour', 'condition', 'transmission', 'notes', 'current_location',
+  'assigned_salesperson', 'photo_taken_by', 'source_salesman', 'source_type', 'external_salesman_id', 'source_salesman_id', 'coming_soon_type',
+  'panel_dealer_id', 'shipment_id', 'year', 'mileage', 'purchase_price', 'selling_price', 'price_floor', 'sales_commission', 'source_commission',
+  'intake_commission', 'panel_charge_amount', 'green_card', 'thumbprint_done', 'intake_complete', 'is_recon', 'is_staff_sale', 'waive_commission',
+  'seller_thumbprint_saved', 'date_added', 'car_in_date', 'status', 'photo', 'photos', 'checklist_items']);
 
 const emptyForm: Omit<Car, 'id' | 'dateAdded'> = {
   isRecon: false,
@@ -203,6 +212,12 @@ export default function Inventory() {
   const isDirector = currentUser?.role === 'director';
   const isShareHolder = currentUser?.role === 'shareholder';
   const isDirectorView = isDirector || isShareHolder;
+  // New investor-funded registration. Off unless VITE_INVESTOR_FINANCE==='1'; the server gates it too.
+  const investorFinanceOn = import.meta.env.VITE_INVESTOR_FINANCE === '1' && isDirector;
+  const loadAll = useStore((s) => s.loadAll);
+  const [funding, setFunding] = useState<{ potId: string; percent: string }>({ potId: '', percent: '40' });
+  const investorAct = useInvestorAction(investorFinanceOn ? currentUser?.id : undefined);
+  const pendingRegistrations = investorAct.pending.filter((p) => p.slot.startsWith('car-registration:'));
   const canAddCar = currentUser?.role === 'director' || currentUser?.role === 'salesperson';
   const viewKey = `${currentUser?.id}-inventory`;
   const view = viewPreference[viewKey] ?? 'grid';
@@ -229,6 +244,7 @@ export default function Inventory() {
   const [filterComingSoonType, setFilterComingSoonType] = useState<string>('all');
   const [sortBy, setSortBy] = useState('dateAdded-desc');
   const [showModal, setShowModal] = useState(false);
+  const investorProfiles = useInvestorQuery<ProfileList>(investorFinanceOn && showModal ? `inventory-profiles:${currentUser?.id}` : null, () => investorRequest<ProfileList>('list_profiles', {}));
   const [deleteCarId, setDeleteCarId] = useState<string | null>(null);
   const [woViewCar, setWoViewCar] = useState<{ car: Car; buyer: Customer } | null>(null);
   const [reviewDealCar, setReviewDealCar] = useState<Car | null>(null);
@@ -593,6 +609,26 @@ export default function Inventory() {
 
   const isComingSoon = form.status === 'coming_soon';
 
+  const finishInvestorRegistration = async (carId: string) => {
+    setShowModal(false);
+    setForm(emptyForm);
+    setFunding({ potId: '', percent: '40' });
+    setErrors({});
+    navigate(`/investor-finance?carId=${encodeURIComponent(carId)}`);
+    void loadAll(true).catch(()=>toast.error('The car was saved. Refresh the stock list when your connection returns.'));
+  };
+
+  // Retries the stored original body (same car id and save reference) — never builds a new car.
+  const retryInvestorRegistration = async (slot: string) => {
+    setSubmitting(true);
+    try {
+      const result = await investorAct.retry<{ car: { id: string } }>(slot);
+      if (result) await finishInvestorRegistration(result.car.id);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleSubmit = async () => {
     const newErrors: Record<string, string> = {};
     let reconCommission: number | undefined;
@@ -626,6 +662,37 @@ export default function Inventory() {
         ? { ...form.consignment, fixedAmount: form.purchasePrice || 0 }
         : form.consignment,
     };
+
+    if (investorFinanceOn && funding.potId) {
+      // Investor-funded: one server transaction registers and funds the car.
+      // No addCar, legacy journal or payment here — the purchase payment is recorded later.
+      if (newCar.consignment || newCar.outgoingConsignment || newCar.tradeInSourceCarId || (newCar.settlementAmount ?? 0) > 0) {
+        setSubmitError('Investor funding cannot be used for consignment cars, trade-ins or cars with a settlement to pay. Choose company funding instead.');
+        return;
+      }
+      if (pendingRegistrations.length) {
+        setSubmitError('An earlier investor car save is still waiting to be confirmed. Retry it below before registering another car.');
+        return;
+      }
+      const basisPoints = parsePercentToBasisPoints(funding.percent);
+      const profile = investorProfiles.data?.profiles.find((p) => p.potId === funding.potId);
+      const purchaseCents = Math.round((newCar.purchasePrice ?? 0) * 100);
+      if (basisPoints === null) { setSubmitError('Enter an investor profit share between 0% and 100%.'); return; }
+      if (!profile) { setSubmitError('Choose an investor account from the list.'); return; }
+      if (purchaseCents <= 0) { setSubmitError('Enter the purchase price before funding from an investor account.'); return; }
+      if (profile.position.availableCents < purchaseCents) { setSubmitError(`${profile.name} has ${formatCents(profile.position.availableCents)} available, which is not enough for this purchase.`); return; }
+      const row = carToRow({ ...newCar, investorId: undefined, investorSplit: undefined }) as Record<string, unknown>;
+      const car = Object.fromEntries(Object.entries(row).filter(([k, v]) => INVESTOR_REGISTRATION_KEYS.has(k) && v !== undefined && v !== null));
+      setSubmitting(true);
+      setSubmitError('');
+      try {
+        const result = await investorAct.run<{ car: { id: string } }>(`car-registration:${newCar.id}`, 'register_car', { car, potId: funding.potId, investorBasisPoints: basisPoints }, `Register ${newCar.year} ${newCar.make} ${newCar.model}`);
+        if (result) await finishInvestorRegistration(result.car.id);
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
 
     setSubmitting(true);
     setSubmitError('');
@@ -2193,8 +2260,54 @@ export default function Inventory() {
           </div>
 
 
-          {/* Investor funding — director only */}
-          {isDirector && (() => {
+          {/* Investor-funded registration (new private accounts) — director only, behind VITE_INVESTOR_FINANCE */}
+          {investorFinanceOn && (
+            <div className="col-span-2 space-y-3">
+              <FormField label="Who pays for this car?">
+                <select
+                  className={inputCls()}
+                  value={funding.potId}
+                  onChange={(e) => setFunding({ ...funding, potId: e.target.value })}
+                >
+                  <option value="">Company (AutoDream pays)</option>
+                  {(investorProfiles.data?.profiles ?? []).map((p) => (
+                    <option key={p.potId} value={p.potId} disabled={p.position.availableCents < Math.round((form.purchasePrice || 0) * 100)}>
+                      {p.name} — {formatCents(p.position.availableCents)} available
+                    </option>
+                  ))}
+                </select>
+                {investorProfiles.loading && <p className="text-gray-500 text-xs mt-1">Loading investor accounts…</p>}
+                {investorProfiles.error && <p className="text-red-400 text-xs mt-1">{investorProfiles.error.message}</p>}
+              </FormField>
+              {funding.potId && (
+                <div className="pl-2 border-l-2 border-amber-500/30 space-y-2">
+                  {(form.consignment || form.outgoingConsignment || form.tradeInSourceCarId || (form.settlementAmount ?? 0) > 0) && (
+                    <p className="text-red-400 text-xs">Investor funding cannot be used for consignment cars, trade-ins or cars with a settlement to pay. Choose company funding instead.</p>
+                  )}
+                  <FormField label="Investor profit share (%)">
+                    <input
+                      type="number"
+                      className={inputCls()}
+                      value={funding.percent}
+                      min={0} max={100} step="0.01"
+                      onChange={(e) => setFunding({ ...funding, percent: e.target.value })}
+                    />
+                    <p className="text-gray-600 text-xs mt-1">AutoDream keeps the rest. The purchase price is reserved from this investor account; record the bank payment later on the investor car page.</p>
+                  </FormField>
+                </div>
+              )}
+              <PendingSaves pending={pendingRegistrations} busy={investorAct.busy} onRetry={(s) => void retryInvestorRegistration(s)} onDiscard={investorAct.discard} />
+              {investorAct.error?.slot.startsWith('car-registration:') && (
+                <p className="text-red-400 text-xs flex items-center gap-1.5">
+                  <AlertCircle size={13} /> {investorAct.error.message}
+                  {investorAct.error.retryable && ' Use Retry above — it resends the original car, never a new one.'}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Investor funding — director only (legacy tagging; hidden when the new investor accounts are on) */}
+          {isDirector && !investorFinanceOn && (() => {
             const investors = users.filter(u => u.role === 'investor');
             if (investors.length === 0) return null;
             return (
