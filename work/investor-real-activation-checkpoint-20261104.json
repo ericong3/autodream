@@ -24,10 +24,11 @@
     "Investor salesman/intake/source commissions automatically create pending car bills when sale agreed. Recon/default/override/waiver rules preserved. Unreviewed or changed commission source blocks settlement.",
     "Read-only private payroll payment projection shows approved and delivered/early-credited investor commissions, with actual payment status derived from bill cash entries; writes and payouts route to the car bill rather than duplicate legacy payments.",
     "Director-only trade-in funding-choice API and car-page selector, explicit company/investor choice, optional investor profit split, immutable revisions and reasons, original-request retry and valuation-change warning. Choice status remains Awaiting funding; it does not apply financing or post sale recovery.",
-    "Pure tested plans for net bank receipts, approved invoice-backed withheld car costs, customer overloan reserve, partial refunds, and same/cross-pot trade-in funding with no invented bank movement."
+    "Pure tested plans for net bank receipts, approved invoice-backed withheld car costs, customer overloan reserve, partial refunds, and same/cross-pot trade-in funding with no invented bank movement.",
+    "Actual proof-backed sale receipt and customer-refund API/UI, immutable records and balanced journals. Bank deductions clear invoiced bills without fake cash; excess money stays reserved. Tests cover loss, zero bank receipt, partial refunds, cancellation, replay, failed upload, role access and masked recipient details."
   ],
   "validation": {
-    "unit_tests": 392,
+    "unit_tests": 397,
     "build": "passed",
     "local_database_rehearsals": [
       "investor-capital-db.integration.mjs",
@@ -39,7 +40,8 @@
       "investor-money-evidence-db.integration.mjs",
       "investor-claims-db.integration.mjs",
       "investor-commissions-db.integration.mjs",
-      "trade-in-funding-db.integration.mjs"
+      "trade-in-funding-db.integration.mjs",
+      "investor-recoveries-db.integration.mjs"
     ],
     "production_ui_verified": false,
     "real_postgres_multiconnection_concurrency_verified": false,
@@ -56,12 +58,16 @@
       "work/trade-in-funding-tests-20261105.log",
       "work/trade-in-funding-build-20261105.log",
       "work/trade-in-funding-db-20261105.log"
+    ],
+    "recovery_logs": [
+      "work/investor-recoveries-db-20261105.log",
+      "work/investor-recoveries-tests-20261105.log",
+      "work/investor-recoveries-build-20261105.log"
     ]
   },
   "blocking_access": "Resolved 2026-11-04: cua.getBrowser({url: Supabase SQL page}) reached the in-app browser. The earlier local-browser inventory error was mistakenly treated as blocking IAB. Browser binding supabaseBrowser (iab ID2), investorSupabaseTab ID2. Live read-only investor counts verified; new investor tables absent. Do not ask user to enable Work settings again unless a fresh interaction with this browser fails.",
   "required_before_activation": [
     "Read live schema types, current object/migration status, public definer functions and grants using prepared read-only preflight; do not assume earlier prepared SQL was installed",
-    "Handle loan net disbursement deductions without inventing bank receipts or leaving sale settlement blocked",
     "Finish company main-pot and reviewed opening ownership allocation without recording existing bank money as a new deposit; historical statement matching is deferred by user.",
     "Finish withdrawal bank destination audit and authorised late-cost/refund/return corrections. Required purchase/withdrawal/car-bill documents are now implemented locally.",
     "Review whole-app inventory data access and cross-tab identity changes; legacy public cars remain publicly queryable, and private pending intent storage needs final privacy review",
@@ -69,7 +75,7 @@
     "Prepare exact guarded installation order, apply approved migrations only after preflight/rehearsal, deploy private bridge before ACL lockdown, enable feature only after all checks, verify canonical production URL",
     "Apply the saved trade-in funding choice through an atomic noncash intake/ownership and lender-settlement workflow. Selection is implemented but financiallyApplied=false; do not show the incoming car as funded or treat the credit as sale money yet.",
     "Check role screens for the newly integrated Claims panel and commission payroll rows; helper/API/database tests are local, not live browser verification.",
-    "Connect the tested bank-deduction/overloan/refund plans to immutable proof-backed actual ledger transactions and the Sale/refund UI; the pure rules are not a live receipt/refund backend."
+    "Browser verification and multi-connection PostgreSQL rehearsal of new sale receipt/refund module and full previous purchase/withdrawal/claims regression."
   ],
   "flags_not_set_in_production": [
     "USED_CAR_INVESTOR_CAPITAL_ONLINE",
@@ -89,20 +95,22 @@
     "0700 repair completion now writes explicit UTC ISO text matching the live completed_at TEXT column. Disposable database fixtures use the actual type.",
     "1200 staff claims, 121000 own-claim invoice ACL, and 1300 commission bills/payroll read projection are prepared only. No production installation or deployment this phase.",
     "Private finance reads uc_private_payment_rows only when investor-cars flag is on; install/rehearse 1300 before enabling that flag.",
-    "20261105000000_trade_in_funding_choices.sql is prepared and rehearsed only. Stores choice/history only; no bank, cash, car funding, purchase journal or sale-recovery posting. Depends on commission cents helper from 1300."
+    "20261105000000_trade_in_funding_choices.sql is prepared and rehearsed only. Stores choice/history only; no bank, cash, car funding, purchase journal or sale-recovery posting. Depends on commission cents helper from 1300.",
+    "20261105010000_investor_sale_recoveries.sql PREPARED ONLY. Install after 1300 and matching API/UI before enabling flags; old sale_received now requires proof-backed receipt workflow."
   ],
   "latest_live_preflight": "work/investor-browser-preflight-live-20261104.json",
-  "updated_at": "2026-11-04T16:31:28.004Z",
+  "updated_at": "2026-11-04T16:59:29.130Z",
   "user_documents_policy": "Every bill needs its invoice before approval/payment; every outgoing payment needs uploaded proof before completion. Salary documents remain restricted; investors see only their own car/pot documents.",
   "bank_matching_policy": "User changed sequencing: start new live transactions first; reconcile all January-2026 onward history later without duplicates. Do not represent unmatched balances as bank-reconciled.",
   "pending_user_decision": null,
-  "claude_status": "Claude remains session-limited on the 2026-11-05 recovery-module attempt. No investorRecoveries.mjs or sale-recoveries migration was produced. Current trade-in choices and transaction plans were implemented/tested by Codex.",
+  "claude_status": "Claude session quota prevented current review. Actual receipt/refund module implemented and tested by Codex.",
   "client_work_date": "2026-11-05",
   "trade_in_funding_policy": "User answered 2026-11-05: Director chooses the company pot or a specific investor pot for each incoming trade-in. No automatic inheritance from the outgoing car.",
   "recovery_posting_design": {
     "receipt": "sale recovery = actual bank received + approved invoice-backed withheld bill clearances - customer excess. Only actual bank amount is a bank movement. Withholding clears existing AP without recognising another expense or recording a fake bank payment.",
     "refund": "Excess customer money is a reserved liability. Actual receipt-backed customer refund reduces bank and liability equally, with zero car-profit effect. Need source-bound immutable documents and idempotent cash link.",
     "tradeIn": "Gross incoming value minus lender balance is the noncash sale credit. Same-pot re-investment has zero net ownership movement and needs liquidity for the lender settlement. A different investor/company pot needs full gross available funding; net credit moves ownership to the outgoing pot, lender balance remains payable. No fake bank transfer. Negative equity requires explicit review.",
-    "remaining": "Need a real company-main-pot/registered-bank cash opening and company payment-bank routing before applying company-funded trade-ins. Do not pretend the saved choice has funded anything. Sale summary/pot reserves must distinguish actual bank cash, economic gross sale recovery, cleared withholding bills and held customer refunds."
+    "remaining": "Need a real company-main-pot/registered-bank cash opening and company payment-bank routing before applying company-funded trade-ins. Do not pretend the saved choice has funded anything. Sale summary/pot reserves must distinguish actual bank cash, economic gross sale recovery, cleared withholding bills and held customer refunds.",
+    "status": "Receipt/refund SQL/API/UI implemented and rehearsed locally. Trade-in funding application and company-main-pot integration unfinished."
   }
 }

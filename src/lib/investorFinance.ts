@@ -9,17 +9,17 @@ export type CarState = 'reserved' | 'in_stock' | 'sold' | 'settled';
 export type BillCategory = 'repair' | 'petrol' | 'transport' | 'invoicing' | 'commission' | 'misc';
 export type WithdrawalState = 'requested' | 'approved' | 'rejected' | 'paid' | 'cancelled';
 
-export type Position = { potId?: string; cashCents: number; reservedCents: number; availableCents: number; investedCents: number; purchaseReservedCents?: number; billReservedCents?: number; profitHeldCents?: number };
+export type Position = { potId?: string; cashCents: number; reservedCents: number; availableCents: number; investedCents: number; purchaseReservedCents?: number; billReservedCents?: number; profitHeldCents?: number; customerRefundReservedCents?: number };
 export type Settlement = { investor_result_cents: number; company_profit_cents: number; profit_cents: number; cost_cents: number; approved_at: string };
 export type CarSummary = {
   carId: string; potId?: string; make: string; model: string; year: number | null; plate: string | null; photo: string | null;
-  purchaseCents?: number; purchasePaidCents?: number; investorBasisPoints?: number; saleCents?: number | null; receivedCents?: number;
+  purchaseCents?: number; purchasePaidCents?: number; investorBasisPoints?: number; saleCents?: number | null; receivedCents?: number; actualReceivedCents?: number; withheldCents?: number; refundOwingCents?: number;
   costCents?: number; unpaidBillCents?: number; pendingBills?: number; profitCents?: number | null; settledAt?: string | null;
   state?: CarState; settlement?: Settlement | null;
 };
 export type BillPayment = { id: string; amountCents: number; paidOn: string; receiptDocumentId?: string | null };
 export type BillDocument = { id: string; name: string; kind: 'bill' | 'payment' | 'receipt'; entryId?: string; used?: boolean };
-export type CarBill = { id: string; category: BillCategory; purpose: string; payee: string; amountCents: number; paidCents: number; state: 'pending' | 'approved' | 'voided'; createdAt: string; reviewedAt: string | null; payments?: BillPayment[]; documents?: BillDocument[] };
+export type CarBill = { id: string; category: BillCategory; purpose: string; payee: string; amountCents: number; paidCents: number; state: 'pending' | 'approved' | 'voided'; withheldCents?: number; createdAt: string; reviewedAt: string | null; payments?: BillPayment[]; documents?: BillDocument[] };
 export type CarActivity = { id: string; actorName: string; action: string; createdAt: string };
 export type CarDetail = CarSummary & { bills: CarBill[]; activity?: CarActivity[] };
 export type Withdrawal = { id: string; amountCents: number; state: WithdrawalState; requestedAt: string; reviewedAt: string | null; note: string | null };
@@ -202,7 +202,7 @@ export const BILL_CATEGORIES: { value: BillCategory; label: string }[] = [
 ];
 export const CAR_STATE_LABEL: Record<CarState, string> = { reserved: 'Waiting for purchase payment', in_stock: 'In stock', sold: 'Sold', settled: 'Profit confirmed' };
 export const WITHDRAWAL_LABEL: Record<WithdrawalState, string> = { requested: 'Waiting for Director', approved: 'Approved — payment not yet recorded', rejected: 'Not approved', paid: 'Paid', cancelled: 'Cancelled' };
-const ENTRY_LABEL: Record<string, string> = { capital_in: 'Capital received', withdrawal_out: 'Withdrawal paid', car_purchase: 'Car purchase paid', car_sale: 'Sale money received', car_expense: 'Car bill paid', profit_in: 'Profit confirmed', profit_out: 'Loss confirmed' };
+const ENTRY_LABEL: Record<string, string> = { capital_in: 'Capital received', customer_refund_out: 'Customer refund paid', withdrawal_out: 'Withdrawal paid', car_purchase: 'Car purchase paid', car_sale: 'Sale money received', car_expense: 'Car bill paid', profit_in: 'Profit confirmed', profit_out: 'Loss confirmed' };
 export const entryLabel = (kind: string) => ENTRY_LABEL[kind] ?? kind.replace(/_/g, ' ').replace(/^./, (s) => s.toUpperCase());
 
 // ── Proof files ──────────────────────────────────────────────────────────────

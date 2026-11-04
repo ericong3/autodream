@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Car as CarIcon, ChevronDown, AlertTriangle, RotateCw, Paperclip, Loader2, CheckCircle2 } from 'lucide-react';
 import ConfirmSheet from './ConfirmSheet';
 import InvestorMoneyDocuments, { type MoneyProofSelection } from './InvestorMoneyDocuments';
+import InvestorSaleMoney from './InvestorSaleMoney';
 import {
   BILL_CATEGORIES, CAR_STATE_LABEL, carTitle, formatCents, formatDay, investorRequest, investorShare, basisPointsLabel,
   malaysiaToday, parseRinggit, prepareProof, useInvestorAction, useInvestorQuery, InvestorFinanceError,
@@ -261,7 +262,8 @@ export default function InvestorFinanceCar({ carId, actorId, mode, banks = [], o
                 {car.saleCents ? (
                   <div className="grid grid-cols-2 gap-3">
                     <Figure label="Agreed sale price" value={formatCents(car.saleCents)} />
-                    <Figure label="Sale money received" value={formatCents(car.receivedCents ?? 0)} tone={(car.receivedCents ?? 0) >= car.saleCents ? 'text-emerald-400' : 'text-amber-300'} note={(car.receivedCents ?? 0) < car.saleCents ? `${formatCents(car.saleCents - (car.receivedCents ?? 0))} still to receive` : 'Fully received'} />
+                    <Figure label="Sale price covered" value={formatCents(car.receivedCents ?? 0)} tone={(car.receivedCents ?? 0) >= car.saleCents ? 'text-emerald-400' : 'text-amber-300'} note={(car.receivedCents ?? 0) < car.saleCents ? `${formatCents(car.saleCents - (car.receivedCents ?? 0))} still to cover` : 'Fully covered'} />
+                    <Figure label="Actual bank receipts" value={formatCents(car.actualReceivedCents ?? car.receivedCents ?? 0)} />
                   </div>
                 ) : <p className="text-gray-500 text-xs">{car.state === 'reserved' ? 'The purchase payment must be recorded first.' : 'No sale price agreed yet.'}</p>}
                 {director && car.state === 'in_stock' && !car.saleCents && (
@@ -272,14 +274,7 @@ export default function InvestorFinanceCar({ carId, actorId, mode, banks = [], o
                     {errorBox(`sale:${carId}`)}
                   </>
                 )}
-                {director && car.state === 'sold' && car.saleCents && (car.receivedCents ?? 0) < car.saleCents && (
-                  <>
-                    <SaleReceived banks={banks} maxCents={car.saleCents - (car.receivedCents ?? 0)} busy={act.busy === `received:${carId}`}
-                      onSubmit={(amountCents, pay) => setConfirm({ title: 'Record sale money received?', label: 'Record money', message: `Record ${formatCents(amountCents)} received from the buyer on ${formatDay(pay.paidOn)}. ${CASH_NOTE}`,
-                        go: () => void mutate(`received:${carId}`, 'sale_received', { carId, amountCents, ...pay, bankReference: pay.bankReference.trim() }, `Sale money · ${carTitle(car)}`) })} />
-                    {errorBox(`received:${carId}`)}
-                  </>
-                )}
+                {car.saleCents && (director || mode === 'investor') && <InvestorSaleMoney key={actorId + ':' + carId} car={car} actorId={actorId} banks={banks} director={director} onChanged={async () => { await query.reload(); onChanged?.(); }} />}
               </Section>
             )}
 
@@ -303,10 +298,11 @@ export default function InvestorFinanceCar({ carId, actorId, mode, banks = [], o
                   </div>
                 ) : <p className="text-gray-500 text-xs">Profit is worked out after the car is sold.</p>}
                 {director && car.state === 'sold' && (() => {
-                  const ready = (car.receivedCents ?? 0) >= (car.saleCents ?? Infinity) && !car.pendingBills && !car.unpaidBillCents;
+                  const ready = (car.receivedCents ?? 0) >= (car.saleCents ?? Infinity) && !car.pendingBills;
                   return (
                     <>
-                      {!ready && <p className="text-amber-300 text-[11px]">Before confirming: receive all sale money, approve or void every waiting bill, and record every bill payment.</p>}
+                      {!ready && <p className="text-amber-300 text-[11px]">Before confirming: cover the full sale price and review every waiting bill.</p>}
+                      {!!car.unpaidBillCents && <p className="text-gray-400 text-[11px]">{formatCents(car.unpaidBillCents)} of approved unpaid bills stays reserved after profit is confirmed.</p>}
                       <button type="button" disabled={!ready || act.busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40"
                         onClick={() => setConfirm({ title: 'Confirm final profit?', label: 'Confirm profit',
                           message: `Car profit ${formatCents(car.profitCents)} after ${formatCents(car.costCents)} of approved costs. Investor share ${basisPointsLabel(car.investorBasisPoints)} ≈ ${formatCents(investorShare(car.profitCents, car.investorBasisPoints))}. This cannot be undone without a Director correction.`,
@@ -363,21 +359,6 @@ export function AmountForm({ label, submitLabel, busy, maxCents, onSubmit }: { l
       <div className="flex-1 min-w-[160px]"><Field label={label}><input inputMode="decimal" className="input w-full px-3 py-2 rounded-lg text-sm" value={value} onChange={(e) => setValue(e.target.value)} placeholder="0.00" /></Field></div>
       <button type="submit" disabled={!cents || over || busy} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40">{busy ? 'Saving…' : submitLabel}</button>
       {over && <p className="w-full text-red-400 text-[11px]">More than {formatCents(maxCents)}.</p>}
-    </form>
-  );
-}
-
-function SaleReceived({ banks, maxCents, busy, onSubmit }: { banks: Bank[]; maxCents: number; busy: boolean; onSubmit: (cents: number, p: BankPayment) => void }) {
-  const [amount, setAmount] = useState('');
-  const [pay, setPay] = useState(emptyBankPayment);
-  const cents = parseRinggit(amount), ok = !!cents && cents <= maxCents && bankPaymentReady(pay);
-  return (
-    <form className="space-y-2 pt-1" onSubmit={(e) => { e.preventDefault(); if (ok && cents) onSubmit(cents, pay); }}>
-      <Field label="Amount received (RM)" hint={`Up to ${formatCents(maxCents)}. Part payments are fine.`}>
-        <input inputMode="decimal" className="input w-full px-3 py-2 rounded-lg text-sm" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
-      </Field>
-      <BankPaymentFields banks={banks} value={pay} onChange={setPay} dateLabel="Date received" />
-      <button type="submit" disabled={!ok || busy} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40">{busy ? 'Saving…' : 'Record sale money'}</button>
     </form>
   );
 }
@@ -443,6 +424,7 @@ function BillRow({ bill, carId, mode, banks, busy, seesProof, onApprove, onVoid,
       {bill.state === 'approved' && (
         <p className="text-[11px] text-gray-400">Paid {formatCents(bill.paidCents)}{remaining > 0 ? <span className="text-amber-300"> · {formatCents(remaining)} still owing</span> : ' · fully paid'}</p>
       )}
+      {!!bill.withheldCents && <p className="text-[11px] text-gray-400">Bank deducted {formatCents(bill.withheldCents)}. See the bank proof under Sale.</p>}
       {bill.payments && bill.payments.length > 0 && (
         <ul className="text-[11px] text-gray-500 space-y-0.5">
           {bill.payments.map((p) => (

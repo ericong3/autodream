@@ -100,6 +100,7 @@ export function validateActivation(user,action,data){
 }
 
 const ERRORS={
+ SALE_RECEIPT_REQUIRED:[409,'Use the sale receipts form and upload the actual bank proof before recording money.'],
  COMMISSION_NOT_PAYABLE:[409,'Deliver this car or approve early commission credit before paying commission.'],
  COMMISSION_RECIPIENT_REQUIRED:[409,'Choose the salesman and any commission recipients on the car before agreeing the sale.'],
  COMMISSION_DETAILS_INVALID:[400,'Check commission amounts on this car. Use no more than 2 decimal places.'],
