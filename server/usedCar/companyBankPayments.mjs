@@ -11,7 +11,7 @@ export async function handleCompanyBankPayments(req,deps){return respond(req,dep
  const {user}=await authenticate(req,ctx,res,canUseApp);
  const raw=readJson(req,20000);
  if(!(user.role==='director'||user.role==='admin'&&raw.action==='history')||user.registration_status!=='active'||!['used_car','both'].includes(user.business_access))throw new ApiError(403,'FORBIDDEN',errors.NOT_ALLOWED[1]);
- if(raw.scope!=='company_bank_payments'||!['banks','record','history'].includes(raw.action))throw new ApiError(400,'INVALID','Choose a valid payment action.');
+ if(raw.scope!=='company_bank_payments'||!['banks','record','history','month'].includes(raw.action))throw new ApiError(400,'INVALID','Choose a valid payment action.');
  onlyKeys(raw,['scope','action',...(raw.action==='record'?['bankAccountId','paidOn','bankReference','notes','allocations','requestId']:raw.action==='history'?['paymentId']:[])]);const {scope,action,...data}=raw;
  const invalid=()=>new ApiError(400,'INVALID','Check the bank payment details.');
  if(action==='history'&&!text(data.paymentId,180))throw invalid();
@@ -28,6 +28,7 @@ export async function handleCompanyBankPayments(req,deps){return respond(req,dep
  if(out?.error){for(const [code,[status,message]]of Object.entries(errors))if(out.error.message?.includes(code))throw new ApiError(status,code,message);if(out.error.code==='23505')throw new ApiError(409,'BANK_REFERENCE_USED','This bank reference was already recorded. Check the earlier transaction.');if(out.error.message?.includes('INVALID')||['22P02','22003','22007','23514'].includes(out.error.code))throw invalid();throw new ApiError(503,'UNAVAILABLE','Could not confirm this payment. Retry the original save.');}
  const r=out?.data;
  if(action==='banks'){if(!Array.isArray(r?.banks)||!r?.company)throw new ApiError(503,'UNAVAILABLE','Could not load company banks.');}
+ else if(action==='month'){if(!Number.isSafeInteger(r?.month?.receivedCents)||!Number.isSafeInteger(r?.month?.paidCents))throw new ApiError(503,'UNAVAILABLE','Could not load monthly bank movements.');}
  else if(action==='history'){if(r?.paymentId!==data.paymentId||!Array.isArray(r?.entries))throw new ApiError(503,'UNAVAILABLE','Could not load the payment history.');}
  else if(!uuid(r?.bankPaymentId)||!Array.isArray(r?.payments)||!Array.isArray(r?.journals)||r.journals.length!==data.allocations.length||r.payments.length!==data.allocations.length||r.payments.some(p=>!data.allocations.some(a=>a.paymentId===p.id)))throw new ApiError(503,'UNAVAILABLE','Could not confirm this payment. Retry the original save.');
  return {status:200,body:r};

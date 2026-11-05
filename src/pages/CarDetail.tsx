@@ -1,4 +1,6 @@
-import { readPending } from '../lib/investorFinance';
+import { companyBankPaymentsEnabled } from '../lib/companyBankPayments';
+import { readPending, useInvestorQuery } from '../lib/investorFinance';
+import { companyCollectionBalance } from '../lib/companyBankReceipts';
 import { salesCommission } from '../utils/salesCommission';
 import { deliveredDealPrice } from '../utils/deliveredDealPrice';
 import React, { useState, useRef, useEffect } from 'react';
@@ -296,12 +298,25 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const dealIsLoan = !!dealCustomer?.loanWorkOrder;
   const _loanAmount = dealIsLoan ? (car?.disbursementExpectedAmount ?? car?.disbursementAmount ?? dealCustomer?.loanWorkOrder?.loanAmount ?? 0) : 0;
 
+  const nativeCollection = !!(companyBankPaymentsEnabled && car && !car.investorFunded && !car.consignment && !car.outgoingConsignment);
+  const balanceKey = nativeCollection && currentUser && ['director','admin','shareholder','salesperson'].includes(currentUser.role) ? `${currentUser.id}:${currentUser.role}:${car!.id}` : null;
+  const collectionBalance = useInvestorQuery(balanceKey, () => companyCollectionBalance(car!.id));
+  useEffect(() => { if(balanceKey) void collectionBalance.reload(); }, [payments, balanceKey, collectionBalance.reload]);
+  const balanceUnavailable = nativeCollection && (!collectionBalance.data || collectionBalance.error !== null || collectionBalance.data.carId !== car?.id);
   // Customer balance: positive = customer still owes us, negative = we owe customer a refund
   const customerBalance = (() => {
     if (!dealCustomer || !car) return 0;
     const wo = dealCustomer.loanWorkOrder ?? dealCustomer.cashWorkOrder;
     if (!wo) return 0;
     const addItems = (wo.additionalItems ?? []).reduce((s: number, i: WorkOrderItem) => s + i.amount, 0);
+    if (companyBankPaymentsEnabled && !car.investorFunded && !car.consignment && !car.outgoingConsignment) {
+      const price = deliveredDealPrice(car, wo).netPrice + (wo.insurance ?? 0) + (wo.bankProduct ?? 0) + addItems;
+      const trade = wo.hasTradeIn ? Math.max(0, (wo.tradeInPrice ?? 0) - (wo.settlementFigure ?? 0)) : 0;
+      const loan = dealCustomer.loanWorkOrder ? (car.disbursementExpectedAmount ?? dealCustomer.loanWorkOrder.loanAmount ?? car.disbursementAmount ?? 0) : 0;
+      if (balanceUnavailable) return 0;
+      const customerCovered = collectionBalance.data!.customerCoveredCents / 100;
+      return Math.round((price - trade - loan - customerCovered) * 100) / 100;
+    }
     const total = (wo.sellingPrice - (wo.discount ?? 0)) + (wo.insurance ?? 0) + (wo.bankProduct ?? 0) + addItems - (wo.bookingFee ?? 0);
     if (dealCustomer.loanWorkOrder) {
       const loanAmt = car.disbursementExpectedAmount ?? car.disbursementAmount ?? dealCustomer.loanWorkOrder.loanAmount ?? 0;
@@ -726,6 +741,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   // ── Refund claim submit — just records bank details; director transfers, admin uploads the receipt in Payments ──
   const handleSubmitRefundClaim = async () => {
     if (!dealCustomer || !car) return;
+    if(balanceUnavailable){toast.error('Refresh the customer balance first.');return;}
     setSavingRefundClaim(true);
     try {
       const bankFields = {
@@ -757,6 +773,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
 
   // ── Delivery ──
   const handleDeliverySubmit = async () => {
+    if(balanceUnavailable){toast.error('Refresh the customer balance first.');return;}
     if (!deliveryPhoto || deliverySubmitting) return;
     setDeliverySubmitting(true);
     setShowDeliveryModal(false);
@@ -765,7 +782,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       deliveryPhoto,
       deliveryCollected: true,
     });
-    await generateDeliveryPayments({ car, payments, users, externalSalesmen, dealers, customers, repairs, addPayment });
+    await generateDeliveryPayments({ bankReceiptMode: companyBankPaymentsEnabled, car, payments, users, externalSalesmen, dealers, customers, repairs, addPayment });
 
     // Auto-generate the customer's delivery receipt — full deal breakdown,
     // same format as the manual Collection Receipt. Fires once, right when
@@ -841,12 +858,12 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     }
 
     if (!car.investorFunded && !car.consignment && !car.outgoingConsignment && currentUser) {
-      const dealPrice = _dealPriceAtDelivery;
+      const dealPrice = (companyBankPaymentsEnabled ? deliveredDealPrice(car, dealWo).netPrice : _dealPriceAtDelivery) + (companyBankPaymentsEnabled ? (dealWo?.insurance ?? 0) + (dealWo?.bankProduct ?? 0) + (dealWo?.additionalItems ?? []).reduce((sum, item) => sum + item.amount, 0) : 0);
       const cost = (car.purchasePrice ?? 0) + totalRepairCost + totalMiscCost;
       const loanAmount = dealIsLoan ? (car.disbursementExpectedAmount ?? car.disbursementAmount ?? dealCustomer?.loanWorkOrder?.loanAmount ?? 0) : 0;
       const bookingFee = dealWo?.bookingFee ?? 0;
       const tradeInValue = dealWo?.hasTradeIn ? Math.max(0, (dealWo.tradeInPrice ?? 0) - (dealWo.settlementFigure ?? 0)) : 0;
-      await addJournalEntry(buildCarSaleEntry({ car, dealPrice, cost, isLoan: dealIsLoan, loanAmount, bookingFee, tradeInValue, createdBy: currentUser.id }));
+      await addJournalEntry(buildCarSaleEntry({ bankReceiptMode: companyBankPaymentsEnabled, car, dealPrice, cost, isLoan: dealIsLoan, loanAmount, bookingFee, tradeInValue, createdBy: currentUser.id }));
 
       if (car.assignedSalesperson && !car.isStaffSale && !car.waiveCommission) {
         await addJournalEntry(buildPayableRecognizedEntry({
@@ -875,7 +892,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     }
 
     if (customerBalance < 0 && dealCustomer) {
-      const refundExists = payments.some(p => p.type === 'customer_refund' && p.carId === car.id);
+      const refundExists = payments.some(p => p.type === 'customer_refund' && p.carId === car.id && (!companyBankPaymentsEnabled || !p.id.startsWith('company-excess:')));
       if (!refundExists) {
         await addPayment({
           id: generateId(),
@@ -2329,7 +2346,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 <p className="text-gray-400 text-sm">Deal approved. Upload delivery photo and confirm final payment collected.</p>
 
                 {/* Customer Balance */}
-                {dealWo && customerBalance !== 0 && (
+                {balanceUnavailable && <p className="text-amber-400 text-sm">{collectionBalance.error ? 'Customer balance unavailable.' : 'Checking customer balance…'} <button onClick={() => void collectionBalance.reload()} className="underline">Refresh</button></p>}
+                {dealWo && !balanceUnavailable && customerBalance !== 0 && (
                   <div className={`rounded-lg p-4 border ${customerBalance > 0 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-blue-500/10 border-blue-500/30'}`}>
                     <p className={`text-sm font-semibold ${customerBalance > 0 ? 'text-amber-400' : 'text-blue-400'}`}>
                       {customerBalance > 0
@@ -2369,7 +2387,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   return (
                     <div className="space-y-1.5">
                       <button
-                        disabled={needsProof}
+                        disabled={needsProof || balanceUnavailable}
                         onClick={() => { setDeliveryPhoto(''); setShowDeliveryModal(true); }}
                         className="flex items-center gap-2 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-green-500/10"
                       >
@@ -3361,7 +3379,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                       deliveryCollected: updatedCar.deliveryCollected,
                       finalDeal: updatedCar.finalDeal,
                     });
-                    await generateDeliveryPayments({ car: updatedCar, payments, users, externalSalesmen, dealers, customers, repairs, addPayment });
+                    await generateDeliveryPayments({ bankReceiptMode: companyBankPaymentsEnabled, car: updatedCar, payments, users, externalSalesmen, dealers, customers, repairs, addPayment });
                     setOutgoingConsignModal(null);
                     setOutgoingConsignError(null);
                   } catch (e: any) {

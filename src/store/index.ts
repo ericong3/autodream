@@ -217,7 +217,7 @@ interface StoreState {
   addPayment: (payment: Payment) => Promise<void>;
   batchAddPayments: (payments: Payment[]) => Promise<void>;
   applyBonusPayrollPosting: (actor: string, snapshot: BonusPayrollSnapshot) => void;
-  applyCompanyBankPayment: (actor: string, saved: CompanyBankSave) => void;
+  applyCompanyBankPayment: (actor: string, saved: Pick<CompanyBankSave, 'payments' | 'journals'> & { car?: Record<string, unknown> }) => void;
   updatePayment: (id: string, updates: Partial<Payment>) => Promise<void>;
   deletePayment: (id: string) => Promise<void>;
 
@@ -2668,7 +2668,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   applyCompanyBankPayment: (actor, saved) => {
     if (get().currentUser?.id !== actor) return;
     const rows = saved.payments.map(rowToPayment), journals = saved.journals.map(rowToJournalEntry);
-    set(s => ({ payments: s.payments.map(p => rows.find(r => r.id === p.id) ?? p), journalEntries: [...journals, ...s.journalEntries.filter(j => !journals.some(r => r.id === j.id))] }));
+    set(s => ({ payments: [...rows, ...s.payments.filter(p => !rows.some(r => r.id === p.id))], journalEntries: [...journals, ...s.journalEntries.filter(j => !journals.some(r => r.id === j.id))], ...(saved.car ? { cars: s.cars.map(c => c.id === saved.car?.id ? rowToCar(saved.car) : c) } : {}) }));
   },
   updatePayment: async (id, updates) => {
     if (get().payments.find(p => p.id === id)?.type === 'campaign_bonus') {

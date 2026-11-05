@@ -12,6 +12,7 @@ create table public.uc_bank_movements (
  recorded_by text not null references garage_building_staff(id),recorded_at timestamptz not null default now(),unique(source_kind,source_id)
 );
 create unique index uc_bank_movement_reference on uc_bank_movements(bank_id,lower(trim(bank_reference)));
+create index uc_bank_movement_kind_date on uc_bank_movements(source_kind,paid_on);
 create table public.uc_company_bank_payments (
  id uuid primary key default gen_random_uuid(),bank_id uuid not null references uc_investor_banks(id),
  amount_cents bigint not null check(amount_cents between 1 and 1000000000000),paid_on date not null,bank_reference text not null,
@@ -23,6 +24,7 @@ create table public.uc_company_bank_allocations (
  amount_cents bigint not null check(amount_cents between 1 and 1000000000000),receipt_document_id uuid not null unique references uc_company_payment_documents(id),
  unique(bank_payment_id,payment_id)
 );
+create index uc_company_bank_allocation_payment on uc_company_bank_allocations(payment_id);
 do $$ declare t text;begin
  foreach t in array array['uc_bank_movements','uc_company_bank_payments','uc_company_bank_allocations'] loop
   execute format('create trigger %I before update or delete on %I for each row execute function uc_investor_immutable()',t||'_fixed',t);
@@ -46,6 +48,11 @@ create function public.uc_company_paid_cents(p_payment text) returns bigint lang
  select coalesce(sum(amount_cents),0)::bigint from uc_company_bank_allocations where payment_id=p_payment $$;
 create function public.uc_registered_bank_position(p_bank uuid) returns bigint language sql stable security definer set search_path=public,pg_temp as $$
  select b.opening_cents+coalesce((select sum(m.amount_cents) from uc_bank_movements m where m.bank_id=b.id),0)::bigint from uc_investor_banks b where b.id=p_bank $$;
+create function public.uc_company_refund_receipt_source(p_journal text,p_car text) returns boolean language plpgsql stable security definer set search_path=public,pg_temp as $$
+begin
+ if to_regclass('uc_company_bank_receipts') is null then return false;end if;
+ return exists(select 1 from uc_company_bank_receipts r where r.car_id=p_car and p_journal='company-receipt:'||r.id::text);
+end $$;
 create function public.uc_company_cash_position() returns jsonb language plpgsql stable security definer set search_path=public,pg_temp as $$
 declare physical bigint;investor bigint;reserved bigint;begin
  select coalesce(sum(uc_registered_bank_position(id)),0) into physical from uc_investor_banks;
@@ -128,7 +135,7 @@ begin
    if coalesce(owed,0)<=0 then raise exception 'INVALID';end if;
    if pay.status is distinct from 'pending' or v_amount>owed-paid then raise exception 'PAYMENT_EXCEEDS_BALANCE';end if;
    if pay.type not in ('salesman_commission','intake_bonus','source_commission','repair','misc_cost','expense_claim','purchase_settlement','salary','allowance','campaign_bonus','customer_refund') then raise exception 'PAYMENT_WORKFLOW_REQUIRED';end if;
-   if exists(select 1 from uc_investor_cars where car_id=pay.car_id) or pay.id like 'uc_commission_%' then raise exception 'USE_INVESTOR_CAR_BILLS';end if;
+   if exists(select 1 from uc_investor_cars where car_id=pay.car_id) or exists(select 1 from cars c where c.id=pay.car_id and (c.investor_id is not null or coalesce(to_jsonb(c)->>'investor_tagged','false')='true')) or pay.id like 'uc_commission_%' then raise exception 'USE_INVESTOR_CAR_BILLS';end if;
    if pay.type='expense_claim' and pay.claim_confirmed_by is null then raise exception 'CLAIM_NOT_APPROVED';end if;
    if uc_company_payroll_type(pay.type) and v_amount<>owed-paid then raise exception 'PAYROLL_FULL_PAYMENT_REQUIRED';end if;
    if pay.type='purchase_settlement' and exists(select 1 from cars c where c.id=pay.car_id and (c.consignment is not null and c.consignment<>'null'::jsonb or c.outgoing_consignment is not null and c.outgoing_consignment<>'null'::jsonb)) then raise exception 'PAYMENT_WORKFLOW_REQUIRED';end if;
@@ -142,9 +149,9 @@ begin
    -- Do not silently recognise another expense. Existing invoice/accrual is
    -- required; historical omissions are reviewed separately before payout.
    if pay.type<>'campaign_bonus' then
-    perform 1 from journal_entries j where j.source_type=v_source_type and j.source_id=v_source_id and not coalesce(j.voided,false) order by j.id for update;
+    perform 1 from journal_entries j where (j.source_type=v_source_type and j.source_id=v_source_id or pay.type='customer_refund' and uc_company_refund_receipt_source(j.id,pay.car_id)) and not coalesce(j.voided,false) order by j.id for update;
     select coalesce(sum((l->>'credit')::numeric-(l->>'debit')::numeric),0)*100 into source_credit from journal_entries j cross join lateral jsonb_array_elements(j.lines) l
-     where j.source_type=v_source_type and j.source_id=v_source_id and not coalesce(j.voided,false) and l->>'accountId'=counter;
+     where (j.source_type=v_source_type and j.source_id=v_source_id or pay.type='customer_refund' and uc_company_refund_receipt_source(j.id,pay.car_id)) and not coalesce(j.voided,false) and l->>'accountId'=counter;
     select coalesce(sum(a.amount_cents),0) into source_paid from uc_company_bank_allocations a join payments p on p.id=a.payment_id
      where p.type=pay.type and (case when p.type in ('salesman_commission','intake_bonus','source_commission','customer_refund','purchase_settlement') then p.car_id else p.id end)=v_source_id;
     source_paid:=source_paid+coalesce((select sum(((l->>'debit')::numeric-(l->>'credit')::numeric)*100) from payments p join journal_entries j on j.source_id=p.id and j.source_type=p.type||'_paid' cross join lateral jsonb_array_elements(j.lines) l
@@ -184,7 +191,7 @@ create or replace view public.uc_private_payment_rows as
  select p.*,case when p.status='transferred' then coalesce(uc_commission_cents(to_jsonb(p)->'amount'),0) else uc_company_paid_cents(p.id) end bank_paid_cents from payments p
  union all select (jsonb_populate_record(null::public.payments,r.row_data)).*,case when r.row_data->>'status'='transferred' then uc_commission_cents(r.row_data->'amount') else 0 end bank_paid_cents from uc_investor_commission_bills c
  cross join lateral(select uc_commission_payment_row(c.bill_id) row_data) r where r.row_data is not null;
-revoke all on function uc_investor_bank_movement(),uc_company_paid_cents(text),uc_registered_bank_position(uuid),uc_company_cash_position(),uc_company_bank_payment_guard(),uc_company_bank_journal_guard(),uc_company_bank_money(text,text,jsonb) from public,anon,authenticated,service_role;
+revoke all on function uc_company_refund_receipt_source(text,text),uc_investor_bank_movement(),uc_company_paid_cents(text),uc_registered_bank_position(uuid),uc_company_cash_position(),uc_company_bank_payment_guard(),uc_company_bank_journal_guard(),uc_company_bank_money(text,text,jsonb) from public,anon,authenticated,service_role;
 grant execute on function uc_company_bank_money(text,text,jsonb) to service_role;
 -- The protected view calls these helpers in its expressions.
 grant execute on function uc_company_paid_cents(text),uc_commission_cents(jsonb) to service_role;

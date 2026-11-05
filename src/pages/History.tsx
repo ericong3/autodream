@@ -1,3 +1,5 @@
+import CompanyLoanReceiptStart from '../components/CompanyLoanReceiptStart';
+import { companyBankPaymentsEnabled } from '../lib/companyBankPayments';
 import { salesCommission } from '../utils/salesCommission';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { thumbUrl } from '../utils/photoUrl';
@@ -966,6 +968,7 @@ export default function History() {
 
       {/* ── Disbursement Modal ── */}
       {(() => {
+        if (companyBankPaymentsEnabled) { const selected = cars.find(c => c.id === disbursalCarId); return selected && currentUser ? <CompanyLoanReceiptStart key={currentUser.id + ':' + selected.id} car={selected} actorId={currentUser.id} expectedAmount={Number(disbursalForm.expected) || undefined} onClose={() => { setDisbursalCarId(null); setDisbursalDealInfo(null); }} /> : null; }
         const expectedNum = Number(disbursalForm.expected || 0);
         const actualNum = Number(disbursalForm.actual || 0);
         const remaining = expectedNum > 0 ? expectedNum - actualNum : 0;

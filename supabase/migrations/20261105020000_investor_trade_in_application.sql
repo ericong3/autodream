@@ -21,6 +21,9 @@ create table public.uc_trade_in_applications (
  applied_by text not null references garage_building_staff(id),applied_at timestamptz not null default now(),
  request_id text not null check(request_id ~ '^[A-Za-z0-9_-]{16,80}$'),payload jsonb not null,unique(applied_by,request_id),check(incoming_car_id<>outgoing_car_id)
 );
+create index uc_trade_in_application_incoming_pot on uc_trade_in_applications(incoming_pot_id);
+create index uc_trade_in_application_outgoing_pot on uc_trade_in_applications(outgoing_pot_id);
+create index uc_trade_in_application_outgoing_car on uc_trade_in_applications(outgoing_car_id);
 create function public.uc_trade_in_document_guard() returns trigger language plpgsql set search_path=public,pg_temp as $$
 begin
  if tg_op='UPDATE' and old.confirmed_at is null and new.confirmed_at is not null and new.confirmed_by is not null

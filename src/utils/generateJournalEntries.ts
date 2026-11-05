@@ -1,5 +1,7 @@
+import { deliveredDealPrice } from './deliveredDealPrice';
 import { Car, Customer, JournalEntry, Payment, RepairJob, User } from '../types';
 import { generateId } from './format';
+import { companyReceiptParts } from './companyReceiptParts';
 
 // Seeded Chart of Accounts ids (see supabase/migrations/20260720_ledger_accounts.sql).
 // Referenced by id rather than looked up by name since these are the core
@@ -233,6 +235,7 @@ export function buildSettlementRecognizedEntry(opts: { car: Car; amount: number;
 // fee), the excess was never really "collected" — it's booked as Customer
 // Refunds Payable and gets transferred back to the customer after delivery.
 export function buildCarSaleEntry(opts: {
+  bankReceiptMode?: boolean;
   car: Car;
   dealPrice: number;
   cost: number;
@@ -252,15 +255,16 @@ export function buildCarSaleEntry(opts: {
   const bookingFee = opts.bookingFee ?? 0;
   const tradeInValue = opts.tradeInValue ?? 0;
   const isInvestorCar = !!car.investorId;
-  const bankAccount = isInvestorCar ? LEDGER_ACCOUNTS.bankInvestor : LEDGER_ACCOUNTS.bankOperating;
+  const bankAccount = isInvestorCar ? LEDGER_ACCOUNTS.bankInvestor : opts.bankReceiptMode ? LEDGER_ACCOUNTS.accountsReceivable : LEDGER_ACCOUNTS.bankOperating;
+  const receiptParts = opts.bankReceiptMode && !isInvestorCar ? companyReceiptParts({ dealPrice, isLoan, loanAmount, bookingFee, tradeInValue }) : null;
 
   // Amount still owed to the customer once the loan lands, beyond what the
   // deal actually calls for (net of the booking fee already collected).
-  const refundOwed = isLoan ? Math.max(loanAmount - (dealPrice - bookingFee), 0) : 0;
+  const refundOwed = receiptParts?.refundAmount ?? (isLoan ? Math.max(loanAmount - (dealPrice - bookingFee), 0) : 0);
   // Whatever was collected in cash before delivery — the whole price for a
   // cash deal, or booking fee + any customer-owed balance for a loan deal —
   // less whatever was instead paid for with a trade-in.
-  const bankAmount = Math.max(0,
+  const bankAmount = receiptParts?.customerAmount ?? Math.max(0,
     (isLoan ? bookingFee + Math.max((dealPrice - bookingFee) - loanAmount, 0) : dealPrice) - tradeInValue
   );
 
@@ -410,6 +414,7 @@ export function buildPayablePaidEntry(opts: {
 // sourceType+sourceId (matching what the live trigger points use) before
 // being generated again.
 export function collectMissingJournalEntries(opts: {
+  bankReceiptMode?: boolean;
   cars: Car[];
   customers: Customer[];
   repairs: RepairJob[];
@@ -447,14 +452,14 @@ export function collectMissingJournalEntries(opts: {
       const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
       if (wo) {
         const isLoan = !!dealCustomer!.loanWorkOrder;
-        const dealPrice = ((wo.sellingPrice ?? car.sellingPrice) - (wo.discount ?? 0)) || car.sellingPrice;
+        const dealPrice = (opts.bankReceiptMode ? deliveredDealPrice(car, wo).netPrice : (((wo.sellingPrice ?? car.sellingPrice) - (wo.discount ?? 0)) || car.sellingPrice)) + (opts.bankReceiptMode ? (wo.insurance ?? 0) + (wo.bankProduct ?? 0) + (wo.additionalItems ?? []).reduce((sum, item) => sum + item.amount, 0) : 0);
         const loanAmount = isLoan ? (car.disbursementExpectedAmount ?? car.disbursementAmount ?? dealCustomer!.loanWorkOrder!.loanAmount ?? 0) : 0;
         const bookingFee = wo.bookingFee ?? 0;
         const tradeInValue = wo.hasTradeIn ? Math.max(0, (wo.tradeInPrice ?? 0) - (wo.settlementFigure ?? 0)) : 0;
         const repairCost = repairs.filter(r => r.carId === car.id && r.status === 'done').reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
         const miscCost = (car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0);
         const cost = (car.purchasePrice ?? 0) + repairCost + miscCost;
-        result.push(buildCarSaleEntry({ car, dealPrice, cost, isLoan, loanAmount, bookingFee, tradeInValue, createdBy }));
+        result.push(buildCarSaleEntry({ car, dealPrice, cost, isLoan, loanAmount, bookingFee, tradeInValue, createdBy, bankReceiptMode: opts.bankReceiptMode }));
 
         if (isLoan && car.moneyReceived && (car.disbursementAmount ?? 0) > 0 && !hasEntry('disbursement_received', car.id)) {
           // No dynamic per-label ledger accounts available in this backfill

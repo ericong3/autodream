@@ -38,3 +38,9 @@ test('admin reads only source-authorised payment history and never bank balances
  assert.equal((await f.run({scope:'company_bank_payments',action:'history',paymentId:'bill-1'},c)).status,200);assert.equal(f.calls[0].args.p_action,'history');assert.equal((await f.run({scope:'company_bank_payments',action:'banks'},c)).status,403);
  f.setResult({error:{message:'NOT_ALLOWED'}});assert.equal((await f.run({scope:'company_bank_payments',action:'history',paymentId:'salary'},c)).status,403);
 });
+
+test('monthly bank summary uses actual server movements and stays Director-only',async()=>{
+ const f=enabled(fixture()),c=await f.login();f.setResult({data:{month:{receivedCents:7900000,paidCents:1000000}}});assert.equal((await f.run({scope:'company_bank_payments',action:'month'},c)).status,200);
+ f.setResult({data:{month:{receivedCents:'7900000',paidCents:0}}});assert.equal((await f.run({scope:'company_bank_payments',action:'month'},c)).status,503);
+ const a=enabled(fixture('admin')),ac=await a.login();assert.equal((await a.run({scope:'company_bank_payments',action:'month'},ac)).status,403);
+});

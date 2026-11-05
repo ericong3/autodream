@@ -1,9 +1,24 @@
+import { deliveredDealPrice } from './deliveredDealPrice';
 import { salesCommission } from './salesCommission';
 import { Car, Payment, RepairJob, MiscCost, User, ExternalSalesman, Workshop, Dealer, Merchant, Customer } from '../types';
 import { generateId } from './format';
+import { companyReceiptParts } from './companyReceiptParts';
 
 type AddPayment = (p: Payment) => Promise<void>;
 type UpdatePayment = (id: string, u: Partial<Payment>) => Promise<void>;
+
+function companyCashReceivable(car: Car, customer: Customer | undefined, payments: Payment[], createdAt: string): Payment | undefined {
+  const wo = customer?.loanWorkOrder ?? customer?.cashWorkOrder;
+  if (!customer || !wo || car.consignment || car.outgoingConsignment || car.investorFunded) return;
+  const additional = (wo.additionalItems ?? []).reduce((sum, item) => sum + item.amount, 0);
+  const total = deliveredDealPrice(car, wo).netPrice + (wo.insurance ?? 0) + (wo.bankProduct ?? 0) + additional;
+  const trade = wo.hasTradeIn ? Math.max(0, (wo.tradeInPrice ?? 0) - (wo.settlementFigure ?? 0)) : 0;
+  const expected = Math.round(companyReceiptParts({ dealPrice: total, isLoan: !!customer.loanWorkOrder, loanAmount: customer.loanWorkOrder?.loanAmount, bookingFee: wo.bookingFee, tradeInValue: trade }).customerAmount * 100);
+  const existing = payments.filter((p) => p.carId === car.id && p.type === 'customer_collection').reduce((sum, p) => sum + Math.round(p.amount * 100), 0);
+  if (expected <= existing) return;
+  return { id: `company-cash:${car.id}:${expected}:${existing}`, type: 'customer_collection', carId: car.id, recipientType: 'customer', recipientId: customer.id, recipientName: customer.name,
+    amount: (expected - existing) / 100, description: 'Customer payment — bank proof to be recorded', status: 'pending', createdAt };
+}
 
 // Single source of truth for "when did this car's sale actually complete" —
 // used by the Delivered (History) page's own display/grouping/sort AND
@@ -135,6 +150,7 @@ function exists(
 
 // ── Delivery payments ─────────────────────────────────────────────────────────
 export async function generateDeliveryPayments(opts: {
+  bankReceiptMode?: boolean;
   car: Car;
   payments: Payment[];
   users: User[];
@@ -259,7 +275,7 @@ export async function generateDeliveryPayments(opts: {
   }
 
   // Customer collection — cash deal (we need to collect from customer)
-  if (dealCustomer?.cashWorkOrder && !exists(payments, 'customer_collection', { carId: car.id })) {
+  if (!opts.bankReceiptMode && dealCustomer?.cashWorkOrder && !exists(payments, 'customer_collection', { carId: car.id })) {
     const cwo = dealCustomer.cashWorkOrder;
     const additionalTotal = cwo.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
     const tradeInCredit = cwo.hasTradeIn ? Math.max(0, (cwo.tradeInPrice ?? 0) - (cwo.settlementFigure ?? 0)) : 0;
@@ -278,6 +294,7 @@ export async function generateDeliveryPayments(opts: {
       });
     }
   }
+  if (opts.bankReceiptMode) { const pending = companyCashReceivable(car, dealCustomer, payments, now); if (pending) await addPayment(pending); }
 }
 
 // ── Repair payment ─────────────────────────────────────────────────────────────
@@ -407,6 +424,7 @@ export function findStaleDisbursements(cars: Car[], payments: Payment[]): { paym
 }
 // ── Backfill: collect all missing payment entries ─────────────────────────────
 export function collectMissingPayments(data: {
+  bankReceiptMode?: boolean;
   cars: Car[];
   customers: Customer[];
   repairs: RepairJob[];
@@ -525,7 +543,7 @@ export function collectMissingPayments(data: {
     }
 
     // Customer collection (cash deal)
-    if (dealCustomer?.cashWorkOrder && !alreadyExists('customer_collection', { carId: car.id })) {
+    if (!data.bankReceiptMode && dealCustomer?.cashWorkOrder && !alreadyExists('customer_collection', { carId: car.id })) {
       const cwo = dealCustomer.cashWorkOrder;
       const additionalTotal = cwo.additionalItems?.reduce((s, i) => s + i.amount, 0) ?? 0;
       const tradeInCredit = cwo.hasTradeIn ? Math.max(0, (cwo.tradeInPrice ?? 0) - (cwo.settlementFigure ?? 0)) : 0;
@@ -537,11 +555,13 @@ export function collectMissingPayments(data: {
       });
     }
 
+    if (data.bankReceiptMode) { const pending = companyCashReceivable(car, dealCustomer, payments, car.dateAdded); if (pending) result.push(pending); }
+
     // Loan disbursement — recorded amount, or pending from work order / final deal
     if (!alreadyExists('loan_disbursement', { carId: car.id })) {
       const lwo = dealCustomer?.loanWorkOrder;
       const finalBank = lwo?.bank ?? car.finalDeal?.bank;
-      if (car.disbursementAmount && car.disbursementAmount > 0) {
+      if (car.disbursementAmount && car.disbursementAmount > 0 && !data.bankReceiptMode) {
         // Already recorded
         result.push({
           id: generateId(), type: 'loan_disbursement', carId: car.id,
@@ -551,7 +571,7 @@ export function collectMissingPayments(data: {
           transferredAt: car.disbursementDate,
           createdAt: car.disbursementDate ?? car.dateAdded,
         });
-      } else if (lwo && (lwo.loanAmount ?? 0) > 0) {
+      } else if ((!data.bankReceiptMode || !car.moneyReceived) && lwo && (lwo.loanAmount ?? 0) > 0) {
         // Loan deal with work order but disbursement not yet recorded
         result.push({
           id: generateId(), type: 'loan_disbursement', carId: car.id,
@@ -559,7 +579,7 @@ export function collectMissingPayments(data: {
           amount: lwo.loanAmount, description: `Loan disbursement (pending) — ${label}`,
           status: 'pending', createdAt: car.dateAdded,
         });
-      } else if (finalBank && (dealCustomer?.dealType === 'loan' || car.finalDeal?.bank)) {
+      } else if ((!data.bankReceiptMode || !car.moneyReceived) && finalBank && (dealCustomer?.dealType === 'loan' || car.finalDeal?.bank)) {
         // Loan deal detected via finalDeal but no work order — amount unknown, create placeholder
         const estAmount = car.finalDeal?.dealPrice ?? 0;
         if (estAmount > 0) result.push({

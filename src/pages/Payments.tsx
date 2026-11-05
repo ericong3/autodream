@@ -1,3 +1,5 @@
+import CompanyBankMonth from '../components/CompanyBankMonth';
+import CompanyBankReceiptDialog from '../components/CompanyBankReceiptDialog';
 import CompanyBankPaymentDialog from '../components/CompanyBankPaymentDialog';
 import { companyBankPaymentsEnabled, paymentBalanceCents } from '../lib/companyBankPayments';
 import { useState, useMemo, useEffect, useRef } from 'react';
@@ -477,7 +479,7 @@ export default function Payments({ embedded }: PaymentsProps) {
     if (!loaded) return;
     if (localStorage.getItem(BACKFILL_KEY)) return;
     localStorage.setItem(BACKFILL_KEY, 'done');
-    const missing = collectMissingPayments({ cars, customers, repairs, users, externalSalesmen, dealers, workshops, merchants, payments });
+    const missing = collectMissingPayments({ bankReceiptMode: companyBankPaymentsEnabled, cars, customers, repairs, users, externalSalesmen, dealers, workshops, merchants, payments });
     if (missing.length > 0) batchAddPayments(missing);
   }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -506,7 +508,7 @@ export default function Payments({ embedded }: PaymentsProps) {
   const pendingRefundClaims = pendingPayments.filter(p => p.type === 'customer_refund');
   const pendingExpenseClaims = pendingPayments.filter(p => p.type === 'expense_claim');
   const pendingTotal = pendingOutbound.reduce((s, p) => s + (companyBankPaymentsEnabled ? paymentBalanceCents(p) / 100 : p.amount), 0);
-  const toCollectTotal = pendingInbound.reduce((s, p) => s + p.amount, 0);
+  const toCollectTotal = pendingInbound.reduce((s, p) => s + (companyBankPaymentsEnabled ? paymentBalanceCents(p) / 100 : p.amount), 0);
   const thisMonth = new Date().toISOString().slice(0, 7);
   const monthTransferred = payments
     .filter(p => p.status === 'transferred' && p.transferredAt?.startsWith(thisMonth))
@@ -514,7 +516,7 @@ export default function Payments({ embedded }: PaymentsProps) {
 
   // Loan disbursements the car already shows as received, but whose payment
   // record never got flipped to collected — see generateLoanDisbursement.
-  const staleDisbursements = useMemo(() => findStaleDisbursements(cars, payments), [cars, payments]);
+  const staleDisbursements = useMemo(() => companyBankPaymentsEnabled ? [] : findStaleDisbursements(cars, payments), [cars, payments]);
   const [syncingDisbursements, setSyncingDisbursements] = useState(false);
   const handleSyncDisbursements = async () => {
     setSyncingDisbursements(true);
@@ -844,7 +846,7 @@ export default function Payments({ embedded }: PaymentsProps) {
 
         {/* Info */}
         <div className="flex-1 min-w-0">
-          {companyBankPaymentsEnabled && p.status === 'pending' && !!p.bankPaidCents && <p className="text-[11px] text-amber-300 mb-1">Paid {formatRM(p.bankPaidCents / 100)} · unpaid {formatRM(paymentBalanceCents(p) / 100)}</p>}
+          {companyBankPaymentsEnabled && p.status === 'pending' && !!p.bankPaidCents && <p className="text-[11px] text-amber-300 mb-1">{INBOUND_TYPES.has(p.type) ? 'Covered' : 'Paid'} {formatRM(p.bankPaidCents / 100)} · unpaid {formatRM(paymentBalanceCents(p) / 100)}</p>}
           {isInvestorCommission(p) && <a className="text-[11px] text-gold-400" href={`#/investor-finance?carId=${encodeURIComponent(p.carId || '')}`}>Open car bill</a>}
           {privateCompanyEvidence && !isInvestorCommission(p) && <button className="text-[11px] text-gold-400 mb-1" onClick={() => setDocumentPaymentId(p.id)}>Invoices & receipts</button>}
           <div className="flex items-center gap-2 flex-wrap">
@@ -1495,11 +1497,11 @@ export default function Payments({ embedded }: PaymentsProps) {
               <p className="text-sm font-bold text-emerald-300 tabular-nums">{formatRM(toCollectTotal)}</p>
               <p className="text-[10px] text-gray-600">{pendingInbound.length} pending</p>
             </div>
-            <div className="rounded-xl bg-obsidian-800/60 border border-white/[0.06] px-3 py-2.5">
+            {companyBankPaymentsEnabled && currentUser?.role === 'director' ? <CompanyBankMonth key={currentUser.id} actorId={currentUser.id} payments={payments} /> : (<div className="rounded-xl bg-obsidian-800/60 border border-white/[0.06] px-3 py-2.5">
               <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">This Month</p>
               <p className="text-sm font-bold text-green-400 tabular-nums">{formatRM(monthTransferred)}</p>
               <p className="text-[10px] text-gray-600">transferred / collected</p>
-            </div>
+            </div>)}
             <div className="rounded-xl bg-obsidian-800/60 border border-white/[0.06] px-3 py-2.5 flex items-center justify-between">
               <div>
                 <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">Backfill</p>
@@ -1740,7 +1742,7 @@ export default function Payments({ embedded }: PaymentsProps) {
       {/* Transfer modal */}
       {tab === 'expense_claims' && import.meta.env.VITE_INVESTOR_FINANCE === '1' && (isDirectorView || isAdmin) && <InvestorClaimsPanel />}
       {documentPaymentId && <CompanyPaymentDocuments paymentId={documentPaymentId} onClose={() => setDocumentPaymentId(null)} />}
-      {transferTarget && (companyBankPaymentsEnabled && currentUser && transferPayments.length > 0 && transferPayments.every(p => !INBOUND_TYPES.has(p.type)) ? <CompanyBankPaymentDialog key={currentUser.id + ":" + transferPayments.map(p => p.id).sort().join(",")} actorId={currentUser.id} payments={transferPayments} onClose={() => { setTransferTarget(null); setSingleId(null); setSelected(new Set()); }} /> : <TransferModal
+      {transferTarget && (companyBankPaymentsEnabled && currentUser && transferPayments.length > 0 && transferPayments.every(p => !INBOUND_TYPES.has(p.type)) ? <CompanyBankPaymentDialog key={currentUser.id + ":" + transferPayments.map(p => p.id).sort().join(",")} actorId={currentUser.id} payments={transferPayments} onClose={() => { setTransferTarget(null); setSingleId(null); setSelected(new Set()); }} /> : companyBankPaymentsEnabled && currentUser && transferPayments.length === 1 && ['customer_collection', 'loan_disbursement'].includes(transferPayments[0].type) ? <CompanyBankReceiptDialog key={currentUser.id + ':' + transferPayments[0].id} actorId={currentUser.id} payment={transferPayments[0]} onClose={() => { setTransferTarget(null); setSingleId(null); setSelected(new Set()); }} /> : companyBankPaymentsEnabled && transferPayments.some(p => INBOUND_TYPES.has(p.type)) ? <Modal isOpen title="Record money received" onClose={() => { setTransferTarget(null); setSingleId(null); }}><p className="text-sm text-gray-300">{transferPayments.some(p => p.type === 'consignment_collection') ? 'This dealer collection needs its separate settlement workflow.' : 'Choose one cash or bank-loan receipt at a time.'}</p></Modal> : <TransferModal
           paymentIds={transferPayments.map((p) => p.id)}
           count={transferPayments.length}
           totalAmount={transferTotal}
@@ -1755,6 +1757,7 @@ export default function Payments({ embedded }: PaymentsProps) {
         const payment = payments.find(p => p.id === collectingDisbursementId);
         const car = payment?.carId ? cars.find(c => c.id === payment.carId) : undefined;
         if (!payment || !car || !currentUser) { setCollectingDisbursementId(null); return null; }
+        if (companyBankPaymentsEnabled && !car.investorFunded && !car.consignment && !car.outgoingConsignment) return <CompanyBankReceiptDialog key={currentUser.id + ':' + payment.id} payment={payment} actorId={currentUser.id} onClose={() => setCollectingDisbursementId(null)} />;
         const wo = customers.find(c => c.interestedCarId === car.id && c.loanWorkOrder)?.loanWorkOrder;
         const dealInfo = wo ? {
           bank: wo.bank,

@@ -1,3 +1,4 @@
+import { companyBankPaymentsEnabled } from '../lib/companyBankPayments';
 import { salesCommission } from '../utils/salesCommission';
 import { useMemo, useState } from 'react';
 import { DollarSign, TrendingUp, Car, Wrench, Award, ChevronLeft, ChevronRight, Wallet, BookOpen, Plus, Trash2, ScrollText, Ban, Scale, Landmark } from 'lucide-react';
@@ -455,7 +456,7 @@ export default function Finance() {
                 if (!currentUser) return;
                 setBackfilling(true);
                 try {
-                  const missing = collectMissingJournalEntries({ cars, customers, repairs, payments, journalEntries, users, createdBy: currentUser.id });
+                  const missing = collectMissingJournalEntries({ bankReceiptMode: companyBankPaymentsEnabled, cars, customers, repairs, payments, journalEntries, users, createdBy: currentUser.id });
                   if (missing.length > 0) await batchAddJournalEntries(missing);
                   setBackfillResult(missing.length);
                 } finally {
