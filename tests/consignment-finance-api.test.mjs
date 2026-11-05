@@ -39,3 +39,11 @@ test('private agreement upload failure cannot confirm proof or approve a settlem
 test('agreement links require authorised source and never expose private storage paths',async()=>{
  const f=enabled(fixture('shareholder')),c=await f.login();f.setResult({data:{path:'private-case-document'}});f.repo.investorProofUrl=async()=> 'https://storage.example/signed/private';const r=await f.run({scope:'consignment_finance',action:'open_document',documentId:choiceId},c);assert.deepEqual(r.body,{url:'https://storage.example/signed/private'});f.setResult({error:{message:'NOT_ALLOWED'}});assert.equal((await f.run({scope:'consignment_finance',action:'open_document',documentId:choiceId},c)).status,403);
 });
+
+test('terms corrections require Director, source revision and reason; approved changes never become retryable saves',async()=>{
+ const body={scope:'consignment_finance',action:'correct_terms',carId:'consign',dealerBasisPoints:4000,reason:'Correct agreed share',expectedRevision:'a'.repeat(32),requestId:'correction_request_01'};
+ const f=enabled(fixture()),c=await f.login();f.setResult(saved());assert.equal((await f.run(body,c)).status,200);assert.equal(f.calls[0].args.p_actor,'real-director');
+ for(const changes of [{reason:'bad'},{reason:'Reason with\u0000null'},{fixedAmountCents:-1},{expectedRevision:'bad'},{dealerBasisPoints:10001},{amount:1}])assert.equal((await f.run({...body,...changes},c)).status,400);
+ for(const role of ['admin','shareholder','salesperson','investor']){const g=enabled(fixture(role)),cookie=await g.login();assert.equal((await g.run(body,cookie)).status,403);assert.equal(g.calls.length,0);}
+ for(const code of ['CONSIGNMENT_APPROVED_CORRECTION_REQUIRED','NO_CORRECTION_CHANGE','CORRECTION_REASON_REQUIRED']){f.setResult({error:{message:code}});const r=await f.run(body,c);assert.equal(r.status,409);assert.equal(r.body.error.code,code);}
+});

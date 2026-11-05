@@ -8,7 +8,7 @@ const server=await createServer({root:fileURLToPath(new URL('../',import.meta.ur
 let browser;
 const review=(revision='a')=>({sourceRevision:revision.repeat(32),costCents:350000,companyResultCents:1155000,dealerPayableCents:5495000,dealerOwesCompanyCents:0});
 const isolate=page=>page.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
-const snapshot=(approved=false)=>({carId:'test-car',case:{car_id:'test-car',dealer:{name:'Dealer',bankName:'Bank',accountNumber:'123456',accountHolder:'Dealer'},terms:'profit_split',dealer_basis_points:3000,opened_at:'2026-11-05T00:00:00Z',approved_at:approved?'2026-11-05T01:00:00Z':null,settlement:approved?review():null},review:approved?null:review(),documents:[{id:'proof',name:'Agreement.pdf'}],payments:[]});
+const snapshot=(approved=false)=>({carId:'test-car',termsRevision:'d'.repeat(32),case:{car_id:'test-car',dealer:{name:'Dealer',bankName:'Bank',accountNumber:'123456',accountHolder:'Dealer'},terms:'profit_split',dealer_basis_points:3000,opened_at:'2026-11-05T00:00:00Z',approved_at:approved?'2026-11-05T01:00:00Z':null,settlement:approved?review():null},review:approved?null:review(),documents:[{id:'proof',name:'Agreement.pdf'}],payments:[]});
 try{
  await server.listen();const base=server.resolvedUrls.local[0];browser=await chromium.launch({headless:true,...(process.env.CONSIGNMENT_BROWSER_PATH?{executablePath:process.env.CONSIGNMENT_BROWSER_PATH}:existsSync('C:/Program Files/Google/Chrome/Application/chrome.exe')?{executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'}:{})});
  for(const role of ['director','admin','shareholder']){
@@ -20,6 +20,7 @@ try{
   assert.equal(await page.getByText('Dealer agreement or statement',{exact:true}).count(),role==='shareholder'?0:1);
   if(role==='director'){
    const approve=page.getByRole('button',{name:'Approve dealer amount',exact:true});assert.equal(await approve.isDisabled(),true);
+   await page.getByRole('button',{name:'Correct dealer terms',exact:true}).click();await page.getByLabel('Reason',{exact:true}).fill('Correct agreed percentage');await page.getByLabel('Dealer share (%)',{exact:true}).fill('101');assert.equal(await page.getByRole('button',{name:'Review correction',exact:true}).isDisabled(),true);await page.getByLabel('Dealer share (%)',{exact:true}).fill('40');await page.getByRole('button',{name:'Review correction',exact:true}).click();await page.getByRole('button',{name:'Cancel',exact:true}).click();assert.equal(calls.filter(c=>c.action==='correct_terms').length,0);
    await page.getByRole('checkbox').check();await approve.click();await page.getByRole('button',{name:'Cancel',exact:true}).click();assert.equal(calls.filter(c=>c.action==='approve').length,0);
    state={...snapshot(),review:review('b')};await page.getByRole('button',{name:'Refresh',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('input[type=checkbox]')?.checked);assert.equal(await approve.isDisabled(),true);
    await page.getByRole('checkbox').check();await approve.click();await page.getByRole('button',{name:'Approve settlement',exact:true}).click();await page.getByText('Dealer amount approved by',{exact:false}).waitFor();

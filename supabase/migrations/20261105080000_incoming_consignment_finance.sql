@@ -17,22 +17,26 @@ create table uc_consignment_cases (
 );
 create table uc_consignment_documents (
  id uuid primary key default gen_random_uuid(),car_id text not null references uc_consignment_cases(car_id),file_name text not null,mime_type text not null,sha256 text not null,size_bytes integer not null,
- storage_path text not null unique,created_by text not null references garage_building_staff(id),created_at timestamptz not null default now(),confirmed_by text references garage_building_staff(id),confirmed_at timestamptz,
+ terms_revision text not null,storage_path text not null unique,created_by text not null references garage_building_staff(id),created_at timestamptz not null default now(),confirmed_by text references garage_building_staff(id),confirmed_at timestamptz,
  check(mime_type in ('image/png','image/jpeg','application/pdf')),check(sha256~'^[0-9a-f]{64}$'),check(size_bytes between 1 and 1400000),check(length(file_name) between 1 and 120),check((confirmed_at is null)=(confirmed_by is null))
 );
 create table uc_consignment_bill_sources(payment_id text primary key references payments(id),car_id text not null references uc_consignment_cases(car_id),source_journal_id text not null references journal_entries(id),amount_cents bigint not null check(amount_cents>0));
+create table uc_consignment_corrections(id uuid primary key default gen_random_uuid(),car_id text not null references uc_consignment_cases(car_id),actor_id text not null references garage_building_staff(id),request_id text not null,expected_revision text not null check(expected_revision~'^[0-9a-f]{32}$'),transaction_id bigint not null default txid_current(),reason text not null check(length(reason) between 5 and 1000),before_terms jsonb not null,after_terms jsonb not null,created_at timestamptz not null default clock_timestamp(),unique(actor_id,request_id));
 create table uc_consignment_commands(actor_id text not null references garage_building_staff(id),request_id text not null,payload jsonb not null,car_id text not null references uc_consignment_cases(car_id),recorded_at timestamptz not null default now(),primary key(actor_id,request_id));
-do $$ declare t text;begin foreach t in array array['uc_consignment_cases','uc_consignment_documents','uc_consignment_bill_sources','uc_consignment_commands'] loop
+alter table uc_consignment_corrections add foreign key(actor_id,request_id) references uc_consignment_commands(actor_id,request_id) deferrable initially deferred;
+do $$ declare t text;begin foreach t in array array['uc_consignment_cases','uc_consignment_documents','uc_consignment_bill_sources','uc_consignment_commands','uc_consignment_corrections'] loop
  execute format('alter table %I enable row level security',t);execute format('revoke all on %I from public,anon,authenticated,service_role',t);
  execute format('create trigger %I before truncate on %I execute function uc_investor_immutable()',t||'_no_truncate',t);
 end loop;end $$;
 create trigger uc_consignment_docs_fixed before update or delete on uc_consignment_documents for each row execute function uc_trade_in_document_guard();
 create trigger uc_consignment_sources_fixed before update or delete on uc_consignment_bill_sources for each row execute function uc_investor_immutable();
+create trigger uc_consignment_corrections_fixed before update or delete on uc_consignment_corrections for each row execute function uc_investor_immutable();
 create trigger uc_consignment_commands_fixed before update or delete on uc_consignment_commands for each row execute function uc_investor_immutable();
 create function uc_consignment_case_fixed() returns trigger language plpgsql set search_path=public,pg_temp as $$ begin
  if tg_op='UPDATE' and old.approved_at is null and new.approved_at is null and old.customer_payment_id is null and old.loan_payment_id is null and old.lender_payment_id is null
   and current_setting('autodream.consignment_write',true)=txid_current()::text||':'||old.car_id and to_jsonb(old)-array['customer_payment_id','loan_payment_id','lender_payment_id']=to_jsonb(new)-array['customer_payment_id','loan_payment_id','lender_payment_id'] then return new;end if;
  if tg_op='UPDATE' and old.approved_at is null and new.approved_at is not null and new.approved_by is not null and current_setting('autodream.consignment_write',true)=txid_current()::text||':'||old.car_id and to_jsonb(old)-array['approved_at','approved_by','settlement','dealer_payment_id','recovery_payment_id']=to_jsonb(new)-array['approved_at','approved_by','settlement','dealer_payment_id','recovery_payment_id'] then return new;end if;
+ if tg_op='UPDATE' and old.approved_at is null and new.approved_at is null and current_setting('autodream.consignment_write',true)=txid_current()::text||':'||old.car_id and to_jsonb(old)-array['dealer_basis_points','fixed_cents']=to_jsonb(new)-array['dealer_basis_points','fixed_cents'] and (old.terms='profit_split' and new.fixed_cents=old.fixed_cents or old.terms='fixed_amount' and new.dealer_basis_points is not distinct from old.dealer_basis_points) and exists(select 1 from uc_consignment_corrections x where x.car_id=old.car_id and x.transaction_id=txid_current() and x.before_terms=jsonb_build_object('dealerBasisPoints',old.dealer_basis_points,'fixedAmountCents',old.fixed_cents) and x.after_terms=jsonb_build_object('dealerBasisPoints',new.dealer_basis_points,'fixedAmountCents',new.fixed_cents)) then return new;end if;
  raise exception 'IMMUTABLE_HISTORY';end $$;
 create trigger uc_consignment_case_fixed before update or delete on uc_consignment_cases for each row execute function uc_consignment_case_fixed();
 
@@ -121,12 +125,18 @@ begin
  return jsonb_build_object('contractDocumentIds',source->'contracts','costCents',total,'bills',costs,'netProfitCents',net,'dealerProfitCents',share,'dealerLossCents',loss,'dealerBalanceCents',balance,'dealerPayableCents',greatest(0,balance),'dealerOwesCompanyCents',greatest(0,-balance),'companyResultCents',company,'sourceRevision',md5(source::text));
 end $$;
 
+create function uc_consignment_terms_key(p_car text) returns text language sql stable security definer set search_path=public,pg_temp as $$
+ select md5(jsonb_build_object('terms',k.terms,'dealerBasisPoints',k.dealer_basis_points,'fixedAmountCents',k.fixed_cents,'correction',(select id from uc_consignment_corrections where car_id=p_car order by created_at desc,id desc limit 1))::text) from uc_consignment_cases k where car_id=p_car
+$$;
+create function uc_consignment_contract_current(p_car text) returns boolean language sql stable security definer set search_path=public,pg_temp as $$
+ select exists(select 1 from uc_consignment_documents d where d.car_id=p_car and d.confirmed_at is not null and d.terms_revision=uc_consignment_terms_key(p_car))
+$$;
 create function uc_consignment_view(p_car text) returns jsonb language plpgsql stable security definer set search_path=public,pg_temp as $$
 declare k uc_consignment_cases;plan jsonb;issue text;begin
  select * into k from uc_consignment_cases where car_id=p_car;
  if k.car_id is null then return jsonb_build_object('carId',p_car,'case',null);end if;
  if k.approved_at is null then begin plan:=uc_consignment_cost_plan(p_car);exception when others then issue:=sqlerrm;end;end if;
- return jsonb_build_object('carId',p_car,'case',to_jsonb(k),'openedByName',(select name from garage_building_staff where id=k.opened_by),'approvedByName',(select name from garage_building_staff where id=k.approved_by),'review',plan,'reviewIssue',issue,'documents',coalesce((select jsonb_agg(jsonb_build_object('id',id,'name',file_name,'confirmedAt',confirmed_at) order by created_at,id) from uc_consignment_documents where car_id=p_car and confirmed_at is not null),'[]'::jsonb),
+ return jsonb_build_object('carId',p_car,'case',to_jsonb(k),'termsRevision',md5((to_jsonb(k)||(select jsonb_build_object('car',to_jsonb(c)) from cars c where c.id=p_car))::text),'agreementReviewRequired',not uc_consignment_contract_current(p_car),'corrections',coalesce((select jsonb_agg(to_jsonb(x)||jsonb_build_object('actorName',(select name from garage_building_staff where id=x.actor_id)) order by x.created_at,x.id) from uc_consignment_corrections x where x.car_id=p_car),'[]'::jsonb),'openedByName',(select name from garage_building_staff where id=k.opened_by),'approvedByName',(select name from garage_building_staff where id=k.approved_by),'review',plan,'reviewIssue',issue,'documents',coalesce((select jsonb_agg(jsonb_build_object('id',id,'name',file_name,'confirmedAt',confirmed_at,'currentTerms',terms_revision=uc_consignment_terms_key(p_car)) order by created_at,id) from uc_consignment_documents where car_id=p_car and confirmed_at is not null),'[]'::jsonb),
   'payments',coalesce((select jsonb_agg(to_jsonb(p)||jsonb_build_object('bank_paid_cents',uc_company_paid_cents(p.id)) order by p.created_at,p.id) from payments p where p.car_id=p_car and p.type in ('customer_collection','loan_disbursement','consignment_payout','consignment_collection','purchase_settlement','repair','misc_cost','panel_charge','salesman_commission','intake_bonus','source_commission','expense_claim','customer_refund')),'[]'::jsonb));
 end $$;
 
@@ -135,14 +145,14 @@ declare actor garage_building_staff;k uc_consignment_cases;cmd uc_consignment_co
 begin
  select * into actor from garage_building_staff where id=p_actor for share;
  if actor.id is null or not coalesce(actor.enabled and actor.registration_status='active' and actor.business_access in ('used_car','both') and (actor.role='director' or actor.role in ('admin','shareholder') and p_action in ('snapshot','proof_read') or actor.role='admin' and p_action in ('proof_prepare','proof_confirm')),false) then raise exception 'NOT_ALLOWED';end if;
- allowed:=case p_action when 'preview_open' then array['carId','dealerBasisPoints'] when 'open' then array['carId','dealerBasisPoints','expectedRevision','requestId'] when 'snapshot' then array['carId'] when 'approve' then array['carId','expectedRevision','costsConfirmed','requestId'] when 'proof_prepare' then array['carId','fileName','mimeType','sizeBytes','sha256'] when 'proof_confirm' then array['documentId'] when 'proof_read' then array['documentId'] end;
+ allowed:=case p_action when 'preview_open' then array['carId','dealerBasisPoints'] when 'open' then array['carId','dealerBasisPoints','expectedRevision','requestId'] when 'snapshot' then array['carId'] when 'approve' then array['carId','expectedRevision','costsConfirmed','requestId'] when 'correct_terms' then array['carId','expectedRevision','dealerBasisPoints','fixedAmountCents','reason','requestId'] when 'proof_prepare' then array['carId','fileName','mimeType','sizeBytes','sha256'] when 'proof_confirm' then array['documentId'] when 'proof_read' then array['documentId'] end;
  if jsonb_typeof(p_data) is distinct from 'object' or allowed is null or exists(select 1 from jsonb_object_keys(p_data) x where not(x=any(allowed))) then raise exception 'INVALID';end if;
  if p_data?'dealerBasisPoints' and (jsonb_typeof(p_data->'dealerBasisPoints')<>'number' or (p_data->>'dealerBasisPoints')!~'^\d{1,5}$' or (p_data->>'dealerBasisPoints')::integer>10000) then raise exception 'CONSIGNMENT_PERCENT_REQUIRED';end if;
  if p_action in ('proof_read','proof_confirm') then select * into doc from uc_consignment_documents where id=(p_data->>'documentId')::uuid;cid:=doc.car_id;else cid:=p_data->>'carId';end if;
  if coalesce(cid,'')!~'^[A-Za-z0-9_-]{1,100}$' then raise exception 'INVALID';end if;
  if p_action='preview_open' then return jsonb_build_object('preview',uc_consignment_open_plan(cid,(p_data->>'dealerBasisPoints')::integer));end if;
  if p_action='snapshot' then return uc_consignment_view(cid);end if;
- if p_action in ('open','approve') then
+ if p_action in ('open','approve','correct_terms') then
   req:=p_data->>'requestId';if coalesce(req,'')!~'^[A-Za-z0-9_-]{16,80}$' then raise exception 'INVALID';end if;
   perform pg_advisory_xact_lock(hashtextextended('company-trade-in-funding',0));perform pg_advisory_xact_lock(hashtextextended('consignment:'||p_actor||':'||req,0));
   select * into cmd from uc_consignment_commands where actor_id=p_actor and request_id=req;
@@ -151,6 +161,7 @@ begin
   perform 1 from customers where interested_car_id=cid order by id for update;
   old_ctx:=current_setting('autodream.consignment_write',true);perform set_config('autodream.consignment_write',txid_current()::text||':'||cid,true);
  end if;
+ if p_action in ('proof_prepare','proof_confirm') then perform pg_advisory_xact_lock(hashtextextended('company-trade-in-funding',0));end if;
  select * into c from cars where id=cid;select * into k from uc_consignment_cases where car_id=cid;
  if p_action='open' then
   if k.car_id is not null then raise exception 'CONSIGNMENT_ALREADY_OPEN';end if;
@@ -191,10 +202,25 @@ begin
   jid:='uc:consign-open:'||cid;perform uc_post_journal('consign-open:'||cid,(now() at time zone 'Asia/Kuala_Lumpur')::date,'Consignment deal and lender obligation; no bank movement',cid,p_actor,lines);
   if k.lender_payment_id is not null then insert into uc_consignment_bill_sources values(k.lender_payment_id,cid,jid,k.lender_cents);end if;
   update cars set consignment_finance_open=true,consignment=case when k.terms='profit_split' then jsonb_set(consignment,'{splitPercent}',to_jsonb(k.dealer_basis_points::numeric/100)) else consignment end where id=cid;
+ elsif p_action='correct_terms' then
+  if k.car_id is null then raise exception 'CONSIGNMENT_CASE_REQUIRED';end if;
+  if k.approved_at is not null then raise exception 'CONSIGNMENT_APPROVED_CORRECTION_REQUIRED';end if;
+  if (uc_consignment_view(cid)->>'termsRevision') is distinct from p_data->>'expectedRevision' then raise exception 'SOURCE_CHANGED';end if;
+  if jsonb_typeof(p_data->'reason') is distinct from 'string' or length(trim(coalesce(p_data->>'reason',''))) not between 5 and 1000 then raise exception 'CORRECTION_REASON_REQUIRED';end if;
+  if k.terms='profit_split' then
+   if not(p_data?'dealerBasisPoints') or p_data?'fixedAmountCents' then raise exception 'INVALID';end if;
+   amount:=(p_data->>'dealerBasisPoints')::bigint;if amount=k.dealer_basis_points then raise exception 'NO_CORRECTION_CHANGE';end if;
+  else
+   if p_data?'dealerBasisPoints' or jsonb_typeof(p_data->'fixedAmountCents') is distinct from 'number' or coalesce(p_data->>'fixedAmountCents','')!~'^[1-9][0-9]{0,11}$' then raise exception 'INVALID';end if;
+   amount:=(p_data->>'fixedAmountCents')::bigint;if amount=k.fixed_cents then raise exception 'NO_CORRECTION_CHANGE';end if;
+  end if;
+  insert into uc_consignment_corrections(car_id,actor_id,request_id,expected_revision,reason,before_terms,after_terms) values(cid,p_actor,req,p_data->>'expectedRevision',trim(p_data->>'reason'),jsonb_build_object('dealerBasisPoints',k.dealer_basis_points,'fixedAmountCents',k.fixed_cents),jsonb_build_object('dealerBasisPoints',case when k.terms='profit_split' then amount else null end,'fixedAmountCents',case when k.terms='fixed_amount' then amount else k.fixed_cents end));
+  update uc_consignment_cases set dealer_basis_points=case when terms='profit_split' then amount::integer else dealer_basis_points end,fixed_cents=case when terms='fixed_amount' then amount else fixed_cents end where car_id=cid;
+  update cars set consignment=jsonb_set(consignment,case when k.terms='profit_split' then '{splitPercent}'::text[] else '{fixedAmount}'::text[] end,to_jsonb(amount::numeric/100)) where id=cid;
  elsif p_action='approve' then
   if k.car_id is null then raise exception 'CONSIGNMENT_CASE_REQUIRED';end if;if k.approved_at is not null then raise exception 'CONSIGNMENT_ALREADY_APPROVED';end if;
   if p_data->'costsConfirmed' is distinct from 'true'::jsonb then raise exception 'COST_CONFIRMATION_REQUIRED';end if;
-  if not exists(select 1 from uc_consignment_documents where car_id=cid and confirmed_at is not null) then raise exception 'CONSIGNMENT_CONTRACT_REQUIRED';end if;
+  if not uc_consignment_contract_current(cid) then raise exception 'CONSIGNMENT_CONTRACT_REQUIRED';end if;
   plan:=uc_consignment_cost_plan(cid);if plan->>'sourceRevision' is distinct from p_data->>'expectedRevision' then raise exception 'SOURCE_CHANGED';end if;
   -- Existing dealer payouts need explicit history review; never adopt unchecked beneficiaries.
   select count(*),min(id) into n,pid from payments where car_id=cid and type='consignment_payout';
@@ -221,13 +247,13 @@ begin
   if k.car_id is null then raise exception 'CONSIGNMENT_CASE_REQUIRED';end if;
   if p_action='proof_read' then if doc.confirmed_at is null then raise exception 'NOT_ALLOWED';end if;return jsonb_build_object('documentId',doc.id,'path',doc.storage_path);end if;
   if p_action='proof_confirm' then
-   select * into doc from uc_consignment_documents where id=doc.id for update;if doc.confirmed_at is not null then return jsonb_build_object('documentId',doc.id);end if;
+   select * into doc from uc_consignment_documents where id=doc.id for update;if doc.terms_revision is distinct from uc_consignment_terms_key(cid) then raise exception 'AGREEMENT_TERMS_CHANGED';end if;if doc.confirmed_at is not null then return jsonb_build_object('documentId',doc.id);end if;
    execute 'select exists(select 1 from storage.objects where bucket_id=$1 and name=$2)' into stored using 'finance-evidence',doc.storage_path;if not stored then raise exception 'UPLOAD_MISSING';end if;
    update uc_consignment_documents set confirmed_at=now(),confirmed_by=p_actor where id=doc.id;return jsonb_build_object('documentId',doc.id);
   end if;
   if coalesce(p_data->>'fileName','')='' or length(p_data->>'fileName')>120 or p_data->>'fileName'~'[[:cntrl:]/\\]' or coalesce(p_data->>'mimeType','') not in ('image/png','image/jpeg','application/pdf') or coalesce(p_data->>'sha256','')!~'^[0-9a-f]{64}$' or uc_recovery_cents(p_data->'sizeBytes') not between 1 and 1400000 then raise exception 'INVALID';end if;
-  path:='consignment/'||cid||'/'||(p_data->>'sha256')||case p_data->>'mimeType' when 'application/pdf' then '.pdf' when 'image/jpeg' then '.jpg' else '.png' end;
-  insert into uc_consignment_documents(car_id,file_name,mime_type,sha256,size_bytes,storage_path,created_by) values(cid,p_data->>'fileName',p_data->>'mimeType',p_data->>'sha256',(p_data->>'sizeBytes')::integer,path,p_actor) on conflict(storage_path) do nothing;
+  path:='consignment/'||cid||'/'||uc_consignment_terms_key(cid)||'/'||(p_data->>'sha256')||case p_data->>'mimeType' when 'application/pdf' then '.pdf' when 'image/jpeg' then '.jpg' else '.png' end;
+  insert into uc_consignment_documents(car_id,file_name,mime_type,sha256,size_bytes,storage_path,terms_revision,created_by) values(cid,p_data->>'fileName',p_data->>'mimeType',p_data->>'sha256',(p_data->>'sizeBytes')::integer,path,uc_consignment_terms_key(cid),p_actor) on conflict(storage_path) do nothing;
   select * into doc from uc_consignment_documents where storage_path=path;return jsonb_build_object('documentId',doc.id,'path',path,'confirmed',doc.confirmed_at is not null);
  end if;
  insert into uc_consignment_commands(actor_id,request_id,payload,car_id) values(p_actor,req,jsonb_build_object('action',p_action,'data',p_data),cid);
@@ -311,6 +337,6 @@ declare r jsonb;cid text;k uc_consignment_cases;old_ctx text;covered bigint;begi
  return r||jsonb_build_object('car',(select to_jsonb(c) from cars c where id=cid));
 end $$;
 create or replace function uc_company_invoice_type(p_type text) returns boolean language sql immutable set search_path=public,pg_temp as $$ select coalesce(p_type in ('repair','misc_cost','expense_claim','panel_charge','purchase_settlement','consignment_payout'),false) $$;
-revoke all on function uc_consignment_case_fixed(),uc_consignment_open_plan(text,integer),uc_consignment_cost_plan(text),uc_consignment_view(text),uc_consignment_finance(text,text,jsonb),uc_consignment_guard(),uc_company_position_before_consignments(),uc_company_cash_position(),uc_receipt_before_consignments(text,text,jsonb),uc_company_bank_receipt(text,text,jsonb) from public,anon,authenticated,service_role;
+revoke all on function uc_consignment_terms_key(text),uc_consignment_contract_current(text),uc_consignment_case_fixed(),uc_consignment_open_plan(text,integer),uc_consignment_cost_plan(text),uc_consignment_view(text),uc_consignment_finance(text,text,jsonb),uc_consignment_guard(),uc_company_position_before_consignments(),uc_company_cash_position(),uc_receipt_before_consignments(text,text,jsonb),uc_company_bank_receipt(text,text,jsonb) from public,anon,authenticated,service_role;
 grant execute on function uc_consignment_finance(text,text,jsonb),uc_company_bank_receipt(text,text,jsonb) to service_role;
 commit;

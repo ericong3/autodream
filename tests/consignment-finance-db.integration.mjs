@@ -139,6 +139,28 @@ try{
  }
  for(const actor of ['s','i','peer'])await assert.rejects(()=>call('uc_consignment_finance',actor,'snapshot',{carId:'consign-one'}),/NOT_ALLOWED/);
  await db.exec("update garage_building_staff set enabled=false where id='sh'");await assert.rejects(()=>call('uc_consignment_finance','sh','snapshot',{carId:'consign-one'}),/NOT_ALLOWED/);
+ // Director-only terms correction preserves history, requires fresh agreement and posts no cash/journal.
+ await makeCase('correction-case',{price:70000});const beforeCorrection=await cf('snapshot',{carId:'correction-case'});
+ const correction={carId:'correction-case',expectedRevision:beforeCorrection.termsRevision,dealerBasisPoints:4000,reason:'Agreed dealer share was entered wrongly',requestId:req()};
+ const journalBefore=Number((await db.query('select count(*) n from journal_entries')).rows[0].n),cashBefore=Number((await db.query('select count(*) n from uc_bank_movements')).rows[0].n);
+ await assert.rejects(()=>call('uc_consignment_finance','a','correct_terms',correction),/NOT_ALLOWED/);
+ await assert.rejects(()=>cf('correct_terms',{...correction,reason:'bad'}),/CORRECTION_REASON_REQUIRED/);
+ const pendingAgreement=await cf('proof_prepare',{carId:'correction-case',fileName:'pending-agreement.pdf',mimeType:'application/pdf',sizeBytes:100,sha256:(++n).toString(16).padStart(64,'0')});await db.query("insert into storage.objects values('finance-evidence',$1)",[pendingAgreement.path]);
+ await db.exec('BEGIN');await db.query("select set_config('autodream.consignment_write',txid_current()::text||':correction-case',true)");await assert.rejects(()=>db.exec("update uc_consignment_cases set dealer_basis_points=9000 where car_id='correction-case'"),/IMMUTABLE_HISTORY/);await db.exec('ROLLBACK');
+ const corrected=await cf('correct_terms',correction);assert.equal(corrected.case.dealer_basis_points,4000);assert.equal(corrected.corrections.length,1);assert.equal(corrected.corrections[0].before_terms.dealerBasisPoints,5725);assert.equal(corrected.corrections[0].actorName,'Director');assert.equal(corrected.agreementReviewRequired,true);
+ assert.equal((await cf('correct_terms',correction)).corrections.length,1);
+ await assert.rejects(()=>cf('proof_confirm',{documentId:pendingAgreement.documentId}),/AGREEMENT_TERMS_CHANGED/);
+ assert.equal(corrected.documents.every(d=>d.currentTerms===false),true);
+ assert.equal(corrected.corrections[0].expected_revision,beforeCorrection.termsRevision);
+ await assert.rejects(()=>cf('correct_terms',{...correction,reason:'Different retry payload'}),/REQUEST_CHANGED/);
+ await assert.rejects(()=>cf('correct_terms',{...correction,requestId:req()}),/SOURCE_CHANGED/);
+ await assert.rejects(()=>approve('correction-case'),/CONSIGNMENT_CONTRACT_REQUIRED/);
+ const fresh=await cf('proof_prepare',{carId:'correction-case',fileName:'corrected-agreement.pdf',mimeType:'application/pdf',sizeBytes:100,sha256:(++n).toString(16).padStart(64,'0')});await db.query("insert into storage.objects values('finance-evidence',$1)",[fresh.path]);await cf('proof_confirm',{documentId:fresh.documentId});
+ assert.equal(Number((await db.query('select count(*) n from journal_entries')).rows[0].n),journalBefore);assert.equal(Number((await db.query('select count(*) n from uc_bank_movements')).rows[0].n),cashBefore);
+ const correctionClosed=await approve('correction-case');assert.equal(correctionClosed.case.settlement.dealerProfitCents,800000);
+ await assert.rejects(()=>cf('correct_terms',{...correction,expectedRevision:correctionClosed.termsRevision,requestId:req()}),/CONSIGNMENT_APPROVED_CORRECTION_REQUIRED/);
+ await assert.rejects(()=>db.exec("delete from uc_consignment_corrections where car_id='correction-case'"),/IMMUTABLE_HISTORY/);
+ await makeCase('fixed-correction',{terms:'fixed_amount'});const fr=await cf('snapshot',{carId:'fixed-correction'});const fc=await cf('correct_terms',{carId:'fixed-correction',expectedRevision:fr.termsRevision,fixedAmountCents:4800000,reason:'Correct agreed fixed dealer amount',requestId:req()});assert.equal(fc.case.fixed_cents,4800000);assert.equal(fc.car.consignment.fixedAmount,48000);assert.equal(fc.review.companyResultCents,-300000);
  // Legacy purchase postings must be reviewed instead of accruing the car twice.
  // Approved beneficiaries and per-bill ceilings cannot borrow another bill's AP.
  await assert.rejects(()=>db.query("update payments set account_number='attacker' where id=$1",[dealerPay]),/CONSIGNMENT_HISTORY_LOCKED|BANK_PAYMENT_IMMUTABLE/);
