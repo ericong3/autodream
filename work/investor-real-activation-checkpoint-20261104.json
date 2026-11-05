@@ -152,7 +152,7 @@
     "20261105070000_company_car_purchases.sql PREPARED ONLY. Requires 600 and full evidence/bank/private finance chain. Adds private company-purchase source, read-only car marker, invoice/receipt-backed seller and lender obligations and source guards. No historical bank movement is inferred. New routes not production activated."
   ],
   "latest_live_preflight": "work/investor-browser-preflight-live-20261104.json",
-  "updated_at": "2026-11-05T05:31:16.820Z",
+  "updated_at": "2026-11-05T11:39:22.963Z",
   "user_documents_policy": "Every bill needs its invoice before approval/payment; every outgoing payment needs uploaded proof before completion. Salary documents remain restricted; investors see only their own car/pot documents.",
   "bank_matching_policy": "User changed sequencing: start new live transactions first; reconcile all January-2026 onward history later without duplicates. Do not represent unmatched balances as bank-reconciled.",
   "pending_user_decision": null,
@@ -207,6 +207,9 @@
       "Existing paid or purchase journal history requires review; no automatic conversion",
       "Wrong approved bill/contract requires correction workflow; deletion is blocked",
       "Insurance/bank-product amounts follow current invoice calculation; associated car bills must be entered before approval"
-    ]
+    ],
+    "browser": "PASS isolated Chrome against real React panel: adjustable percent, explicit open/approve confirmation, cancellation, current-source refresh invalidates checkbox, Director/admin/shareholder controls and mobile overflow; mocked finance API and blocked external network. Real production login/session integration not verified.",
+    "database_roles": "PASS real local SQL: admin/shareholder read only; salesperson/investor/mechanic denied; disabled shareholder denied; salary rows excluded.",
+    "concurrency": "Not run: no psql/postgres/pg_ctl/docker command available in this environment. PGlite is single-session and does not establish real concurrent transaction safety."
   }
 }

@@ -131,6 +131,14 @@ try{
  assert.equal(Number((await db.query("select sum((l->>'debit')::numeric-(l->>'credit')::numeric) amount from journal_entries j cross join lateral jsonb_array_elements(j.lines) l where j.car_id='withheld-case' and l->>'accountId'='acct-inv-own'")).rows[0].amount),0);
  assert.equal((await db.query("select count(*) n from journal_entries j where (select sum((l->>'debit')::numeric-(l->>'credit')::numeric) from jsonb_array_elements(j.lines) l)<>0")).rows[0].n,0);
 
+ // Exercise the real database permissions, not only the API's role switch.
+ await db.exec("insert into garage_building_staff(id,name,username,password,role,business_access,registration_status) values('sh','Shareholder','shareholder','discarded','shareholder','used_car','active')");
+ for(const actor of ['a','sh']){
+  const view=await call('uc_consignment_finance',actor,'snapshot',{carId:'consign-one'});assert.equal(view.case.car_id,'consign-one');assert.ok(view.payments.every(p=>!['salary','allowance','campaign_bonus'].includes(p.type)));
+  await assert.rejects(()=>call('uc_consignment_finance',actor,'approve',{carId:'consign-one',expectedRevision:'a'.repeat(32),costsConfirmed:true,requestId:req()}),/NOT_ALLOWED/);
+ }
+ for(const actor of ['s','i','peer'])await assert.rejects(()=>call('uc_consignment_finance',actor,'snapshot',{carId:'consign-one'}),/NOT_ALLOWED/);
+ await db.exec("update garage_building_staff set enabled=false where id='sh'");await assert.rejects(()=>call('uc_consignment_finance','sh','snapshot',{carId:'consign-one'}),/NOT_ALLOWED/);
  // Legacy purchase postings must be reviewed instead of accruing the car twice.
  // Approved beneficiaries and per-bill ceilings cannot borrow another bill's AP.
  await assert.rejects(()=>db.query("update payments set account_number='attacker' where id=$1",[dealerPay]),/CONSIGNMENT_HISTORY_LOCKED|BANK_PAYMENT_IMMUTABLE/);
