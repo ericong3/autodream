@@ -18,10 +18,12 @@ import {handleInvestorTradeInApplication} from '../usedCar/investorTradeInApplic
 import {handleCompanyBankPayments} from '../usedCar/companyBankPayments.mjs';
 import {handleInvestorTradeInLenders} from '../usedCar/investorTradeInLenders.mjs';
 import {handleCompanyBankReceipts} from '../usedCar/companyBankReceipts.mjs';
+import {handleCompanyCarPurchase} from '../usedCar/companyCarPurchases.mjs';
 export async function handleSales(req,deps){
  let scope,action;try{const body=typeof req.body==='string'?JSON.parse(req.body):req.body;scope=body?.scope;action=body?.action;}catch{}
  if(scope==='investor_finance'&&action==='complete_repair')return handleInvestorRepairCompletion(req,deps);
  if(scope==='investor_finance'&&action==='register_car')return handleInvestorCarRegistration(req,deps);
+ if(scope==='investor_finance'&&action==='register_company_car')return handleCompanyCarPurchase(req,deps);
  if(scope==='company_evidence')return handleCompanyEvidence(req,deps);
  if(scope==='investor_money_evidence')return handleInvestorMoneyEvidence(req,deps);
  if(scope==='investor_claims')return handleInvestorClaims(req,deps);

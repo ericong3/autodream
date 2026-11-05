@@ -291,6 +291,7 @@ function rowToCar(r: any): Car {
   return {
     isRecon: r.is_recon ?? false,
     investorFunded: r.investor_funded === true,
+    companyPurchaseRecorded: r.company_purchase_recorded === true,
     salesCommission: r.sales_commission ?? undefined,
     id: r.id,
     make: r.make ?? '',
@@ -2668,7 +2669,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   applyCompanyBankPayment: (actor, saved) => {
     if (get().currentUser?.id !== actor) return;
     const rows = saved.payments.map(rowToPayment), journals = saved.journals.map(rowToJournalEntry);
-    set(s => ({ payments: [...rows, ...s.payments.filter(p => !rows.some(r => r.id === p.id))], journalEntries: [...journals, ...s.journalEntries.filter(j => !journals.some(r => r.id === j.id))], ...(saved.car ? { cars: s.cars.map(c => c.id === saved.car?.id ? rowToCar(saved.car) : c) } : {}) }));
+    set(s => ({ payments: [...rows, ...s.payments.filter(p => !rows.some(r => r.id === p.id))], journalEntries: [...journals, ...s.journalEntries.filter(j => !journals.some(r => r.id === j.id))], ...(saved.car ? { cars: [rowToCar(saved.car), ...s.cars.filter(c => c.id !== saved.car?.id)] } : {}) }));
   },
   updatePayment: async (id, updates) => {
     if (get().payments.find(p => p.id === id)?.type === 'campaign_bonus') {

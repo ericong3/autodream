@@ -435,14 +435,16 @@ export function collectMissingJournalEntries(opts: {
     // we never owned or paid for those, so nothing to book here.
     if (car.consignment || car.outgoingConsignment) continue;
 
-    if (!hasEntry('car_purchased', car.id) && !hasEntry('trade_in_acquired', car.id) && (car.purchasePrice ?? 0) > 0) {
+    if (!car.companyPurchaseRecorded && !hasEntry('car_purchased', car.id) && !hasEntry('trade_in_acquired', car.id) && (car.purchasePrice ?? 0) > 0) {
       if (car.comingSoonType === 'trade_in' && car.tradeInSourceCarId) {
         const sourceDealCustomer = customers.find(c => c.interestedCarId === car.tradeInSourceCarId && (c.cashWorkOrder || c.loanWorkOrder));
         const sourceWo = sourceDealCustomer?.loanWorkOrder ?? sourceDealCustomer?.cashWorkOrder;
         if (sourceWo && sourceWo.hasTradeIn) {
           result.push(buildTradeInAcquiredEntry({ car, tradeInPrice: sourceWo.tradeInPrice, settlementFigure: sourceWo.settlementFigure, createdBy }));
         }
-      } else {
+      } else if (!opts.bankReceiptMode) {
+        // Old missing purchase records need review in the bank workflow.
+        // A registered car alone does not prove a historical bank payment.
         result.push(buildCarPurchaseEntry({ car, createdBy }));
       }
     }

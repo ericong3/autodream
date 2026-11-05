@@ -738,6 +738,7 @@ export interface Consignment {
 
 export interface Car {
   investorFunded?: boolean;
+  companyPurchaseRecorded?: boolean;
   isRecon?: boolean;
   salesCommission?: number;
   id: string;

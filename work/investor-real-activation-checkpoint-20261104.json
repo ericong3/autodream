@@ -30,10 +30,11 @@
     "Atomic company outgoing bank-payment API and dialog: registered bank/date/reference, invoice/accrual/proof checks, partial balances, grouped payouts, exact replay, bank registry shared with investor cash, journal/status saved together, admin non-payroll history, salary batch separation and actual existing bonus settlement integration. Private payment projection includes paid cents.",
     "Financed investor trade-ins: gross asset cost, net sale credit and reserved lender payable; private statement/receipt upload; immutable beneficiary snapshot; one full proof-backed lender payout clearing AP; own-investor document access and masked bank details. Covers same/cross-pot and zero-equity cases. Acquired trade-ins can now be resold using trusted funding agreement rather than rejecting their source link.",
     "Company cash and loan receipts: actual registered-bank money, partial customer balance, invoice-backed withheld bills without fake bank outflow, excess-customer liability and source-linked refund. Receipt uploads and audit, exact replay, immutable journals, actual monthly bank totals, assigned-salesperson minimal balance lookup without bank/salary access. Booking/downpayment metadata does not mark cash received in bank mode.",
-    "Company-funded incoming trade-ins from investor sales: explicit company ownership, gross inventory and net source-investor sale credit, no fake bank movement, source-bound lender AP handled by receipt/invoice-backed partial company payouts, protected purchase/funding basis and immutable application/replay. Company pot tab shows recorded balances, customer money held and company stock photos/details. Customer deposits do not become spendable stock funding. Delivery no longer overwrites investor trade-in purchase agreements or duplicates acquisitions."
+    "Company-funded incoming trade-ins from investor sales: explicit company ownership, gross inventory and net source-investor sale credit, no fake bank movement, source-bound lender AP handled by receipt/invoice-backed partial company payouts, protected purchase/funding basis and immutable application/replay. Company pot tab shows recorded balances, customer money held and company stock photos/details. Customer deposits do not become spendable stock funding. Delivery no longer overwrites investor trade-in purchase agreements or duplicates acquisitions.",
+    "Ordinary company car purchases: atomic car registration with separate named seller/lender AP bills, immutable basis and purchase markers, no assumed bank payment, existing invoice/receipt-backed partial payouts and current paid-balance replays. Existing Director/salesperson new-car registration roles preserved without returning private bills/journals to salespeople. Zero-price draft registration remains available; Director Record purchase completes a price-pending draft without overwriting its other car details. Finance catch-up no longer invents missing historical cash purchases in bank mode."
   ],
   "validation": {
-    "unit_tests": 420,
+    "unit_tests": 423,
     "build": "passed",
     "local_database_rehearsals": [
       "investor-capital-db.integration.mjs",
@@ -52,7 +53,8 @@
       "company-bank-payments-db.integration.mjs",
       "investor-trade-in-lenders-db.integration.mjs",
       "company-bank-receipts-db.integration.mjs",
-      "company-trade-in-db.integration.mjs"
+      "company-trade-in-db.integration.mjs",
+      "company-purchases-db.integration.mjs"
     ],
     "production_ui_verified": false,
     "real_postgres_multiconnection_concurrency_verified": false,
@@ -71,7 +73,10 @@
       "work/trade-in-funding-db-20261105.log",
       "work/company-trade-in-db-20261105.log",
       "work/company-trade-in-tests-20261105.log",
-      "work/company-trade-in-build-20261105.log"
+      "work/company-trade-in-build-20261105.log",
+      "work/company-purchases-db-20261105.log",
+      "work/company-purchases-tests-20261105.log",
+      "work/company-purchases-build-20261105.log"
     ],
     "recovery_logs": [
       "work/investor-recoveries-db-20261105.log",
@@ -138,10 +143,11 @@
     "20261105030000_company_bank_payments.sql PREPARED ONLY. Depends on trade-in application and company evidence. Does not reconcile old statements. Current API supports reviewed AP-backed outgoing payments and existing bonus settlement, not company inbound collections, consignment/panel/legacy investor payouts or all legacy correction paths. Do not activate this migration alone.",
     "20261105040000_investor_trade_in_lenders.sql PREPARED ONLY. Requires 300 bank foundation. Extends application net credit, gross asset and lender liability, source-linked full lender payout, proof ownership and balanced journal. No live SQL run. 0100 prepared eligibility helper was updated so acquired trade-ins can be resold only when immutable application matches funding.",
     "20261105050000_company_bank_receipts.sql PREPARED ONLY. Depends on lender/bank/evidence foundation. Includes record and minimal actor/source-authorised balance actions. No production SQL run. Does not enable unfinished consignment/legacy-investor incoming routes.",
-    "20261105060000_company_trade_in_application.sql PREPARED ONLY. Requires full receipts/bank/investor chain. Company-funded trade-in application and customer-money holds; shared company-allocation locks; private paginated Director-only company pot view. No production installation. 300 prepared payout source recognises the immutable company trade-in AP."
+    "20261105060000_company_trade_in_application.sql PREPARED ONLY. Requires full receipts/bank/investor chain. Company-funded trade-in application and customer-money holds; shared company-allocation locks; private paginated Director-only company pot view. No production installation. 300 prepared payout source recognises the immutable company trade-in AP.",
+    "20261105070000_company_car_purchases.sql PREPARED ONLY. Requires 600 and full evidence/bank/private finance chain. Adds private company-purchase source, read-only car marker, invoice/receipt-backed seller and lender obligations and source guards. No historical bank movement is inferred. New routes not production activated."
   ],
   "latest_live_preflight": "work/investor-browser-preflight-live-20261104.json",
-  "updated_at": "2026-11-05T02:44:47.983Z",
+  "updated_at": "2026-11-05T03:11:51.494Z",
   "user_documents_policy": "Every bill needs its invoice before approval/payment; every outgoing payment needs uploaded proof before completion. Salary documents remain restricted; investors see only their own car/pot documents.",
   "bank_matching_policy": "User changed sequencing: start new live transactions first; reconcile all January-2026 onward history later without duplicates. Do not represent unmatched balances as bank-reconciled.",
   "pending_user_decision": null,
@@ -152,7 +158,7 @@
     "receipt": "sale recovery = actual bank received + approved invoice-backed withheld bill clearances - customer excess. Only actual bank amount is a bank movement. Withholding clears existing AP without recognising another expense or recording a fake bank payment.",
     "refund": "Excess customer money is a reserved liability. Actual receipt-backed customer refund reduces bank and liability equally, with zero car-profit effect. Need source-bound immutable documents and idempotent cash link.",
     "tradeIn": "Gross incoming value minus lender balance is the noncash sale credit. Same-pot re-investment has zero net ownership movement and needs liquidity for the lender settlement. A different investor/company pot needs full gross available funding; net credit moves ownership to the outgoing pot, lender balance remains payable. No fake bank transfer. Negative equity requires explicit review.",
-    "remaining": "Review company normal-stock seller/lender purchase routing, remaining legacy consignment/panel/investor finance routes, withdrawal destinations/corrections, main-bank opening ownership, role/browser checks and real PostgreSQL concurrency before exact-chain deployment.",
+    "remaining": "Remaining legacy consignment/panel/legacy-investor finance routes, company ownership/consignment corrections, withdrawal destinations/corrections, reviewed main-bank opening ownership, real role/browser checks and multi-connection PostgreSQL rehearsal before exact-chain deployment.",
     "status": "Investor receipt/refund, investor/company trade-in funding, lender settlement, company outgoing/incoming modules and private company stock/balance view implemented locally. Activation remains blocked by remaining legacy route/privacy/correction and production rehearsal checks."
   },
   "trade_in_application_limitations": [
@@ -162,9 +168,9 @@
     "No Supabase installation, GitHub push or production deployment"
   ],
   "next_work": [
-    "Normal company-stock purchase seller/lender payable routing with invoice and actual-bank receipt; remaining legacy consignment/panel/investor finance routes before bank guards activate",
+    "Review remaining consignment/panel and legacy-investor finance routes before bank guards activate; define source-safe corrections and ownership transitions",
     "Remaining withdrawal destination/correction/privacy checks and reviewed bank opening ownership",
     "Real role/browser and PostgreSQL concurrency verification, then guarded exact-chain deployment and activation"
   ],
-  "current_release_status": "Local commits only. Live website and production Supabase are unchanged."
+  "current_release_status": "Local commits only. Live website and production Supabase are unchanged. New bank flags remain off and prepared migrations must not be installed alone."
 }

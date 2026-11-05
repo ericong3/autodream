@@ -15,6 +15,13 @@ function load(path){
 const {companyReceiptParts}=load('../src/utils/companyReceiptParts.ts');const {buildCarSaleEntry}=load('../src/utils/generateJournalEntries.ts');const {generateDeliveryPayments}=load('../src/utils/generatePayments.ts');
 const car={id:'car',make:'Toyota',model:'Vios',year:2022,status:'delivered',sellingPrice:70000,purchasePrice:50000,dateAdded:'2026-11-05'};
 const customer={id:'buyer',name:'Buyer',interestedCarId:'car',cashWorkOrder:{sellingPrice:70000,bookingFee:10000,downpayment:5000}};
+test('bank mode never invents a purchase payment from a missing historical journal',()=>{
+ const {collectMissingJournalEntries}=load('../src/utils/generateJournalEntries.ts');
+ const opts={cars:[{...car,status:'available'}],customers:[],repairs:[],payments:[],journalEntries:[],users:[],createdBy:'director'};
+ assert.equal(collectMissingJournalEntries({...opts,bankReceiptMode:true}).length,0);
+ assert.equal(collectMissingJournalEntries(opts).filter(j=>j.sourceType==='car_purchased').length,1);
+ assert.equal(collectMissingJournalEntries({...opts,cars:[{...car,status:'available',companyPurchaseRecorded:true}]}).filter(j=>j.sourceType==='car_purchased').length,0);
+});
 test('bank receipt mode keeps booking and downpayment in the receivable until actual proof',async()=>{
  const rows=[];const opts={car,payments:[],users:[],externalSalesmen:[],dealers:[],customers:[customer],repairs:[],addPayment:async p=>rows.push(p)};
  await generateDeliveryPayments({...opts,bankReceiptMode:true});const target=rows.find(p=>p.type==='customer_collection');assert.equal(target.amount,70000);assert.equal(target.status,'pending');

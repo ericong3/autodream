@@ -62,6 +62,8 @@ import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, formatMileage, generateId } from '../utils/format';
 import { buildCarPurchaseEntry } from '../utils/generateJournalEntries';
+import { companyBankPaymentsEnabled } from '../lib/companyBankPayments';
+import { REGISTRATION_KEYS as INVESTOR_REGISTRATION_KEYS } from '../lib/companyPurchases';
 import { SkeletonCard, SkeletonRow } from '../components/Skeleton';
 
 
@@ -92,12 +94,6 @@ function getDealBadge(car: Car): DealBadge {
 const CAR_MAKES = ['All', 'Perodua', 'Proton', 'Honda', 'Toyota', 'Nissan', 'Other'];
 
 
-// Normal registration columns accepted by register_car (mirrors server/usedCar/investorCarRegistration.mjs).
-const INVESTOR_REGISTRATION_KEYS = new Set(['id', 'make', 'model', 'variant', 'car_plate', 'colour', 'condition', 'transmission', 'notes', 'current_location',
-  'assigned_salesperson', 'photo_taken_by', 'source_salesman', 'source_type', 'external_salesman_id', 'source_salesman_id', 'coming_soon_type',
-  'panel_dealer_id', 'shipment_id', 'year', 'mileage', 'purchase_price', 'selling_price', 'price_floor', 'sales_commission', 'source_commission',
-  'intake_commission', 'panel_charge_amount', 'green_card', 'thumbprint_done', 'intake_complete', 'is_recon', 'is_staff_sale', 'waive_commission',
-  'seller_thumbprint_saved', 'date_added', 'car_in_date', 'status', 'photo', 'photos', 'checklist_items']);
 
 const emptyForm: Omit<Car, 'id' | 'dateAdded'> = {
   isRecon: false,
@@ -216,7 +212,8 @@ export default function Inventory() {
   const investorFinanceOn = import.meta.env.VITE_INVESTOR_FINANCE === '1' && isDirector;
   const loadAll = useStore((s) => s.loadAll);
   const [funding, setFunding] = useState<{ potId: string; percent: string }>({ potId: '', percent: '40' });
-  const investorAct = useInvestorAction(investorFinanceOn ? currentUser?.id : undefined);
+  const investorAct = useInvestorAction(investorFinanceOn || companyBankPaymentsEnabled ? currentUser?.id : undefined);
+  const [companySeller, setCompanySeller] = useState('');
   const pendingRegistrations = investorAct.pending.filter((p) => p.slot.startsWith('car-registration:'));
   const canAddCar = currentUser?.role === 'director' || currentUser?.role === 'salesperson';
   const viewKey = `${currentUser?.id}-inventory`;
@@ -622,8 +619,9 @@ export default function Inventory() {
   const retryInvestorRegistration = async (slot: string) => {
     setSubmitting(true);
     try {
-      const result = await investorAct.retry<{ car: { id: string } }>(slot);
-      if (result) await finishInvestorRegistration(result.car.id);
+      const result = await investorAct.retry<{ companyPurchase?: boolean; car: Record<string,unknown> & {id:string}; payments: Record<string,unknown>[]; journals: Record<string,unknown>[] }>(slot);
+      if (result?.companyPurchase && currentUser && useStore.getState().currentUser?.id===currentUser.id) {useStore.getState().applyCompanyBankPayment(currentUser.id,result);setShowModal(false);setForm(emptyForm);setCompanySeller('');navigate(`/inventory/${encodeURIComponent(result.car.id)}`);}
+      else if (result) await finishInvestorRegistration(result.car.id);
     } finally {
       setSubmitting(false);
     }
@@ -694,6 +692,19 @@ export default function Inventory() {
       return;
     }
 
+    if(companyBankPaymentsEnabled && (newCar.settlementAmount??0)>(newCar.purchasePrice??0)){setSubmitError('The lender balance cannot be higher than the purchase price.');return;}
+    if(companyBankPaymentsEnabled && (newCar.purchasePrice??0)>0 && !newCar.consignment && !newCar.outgoingConsignment && !newCar.tradeInSourceCarId && !newCar.investorId && currentUser){
+      if(!companySeller.trim()){setSubmitError('Enter the seller name.');return;}
+      if(pendingRegistrations.length){setSubmitError('Retry the earlier car save first.');return;}
+      const row=carToRow(newCar) as Record<string,unknown>;
+      const car=Object.fromEntries(Object.entries(row).filter(([k,v])=>INVESTOR_REGISTRATION_KEYS.has(k)&&v!==undefined&&v!==null));
+      setSubmitting(true);setSubmitError('');
+      try{
+        const result=await investorAct.run<{car:Record<string,unknown>&{id:string};payments:Record<string,unknown>[];journals:Record<string,unknown>[]}>(`car-registration:${newCar.id}`,'register_company_car',{car,sellerName:companySeller.trim(),lenderCents:Math.round((newCar.settlementAmount??0)*100),...((newCar.settlementAmount??0)>0?{lenderName:newCar.settlementRecipient??''}:{})},`Register ${newCar.make} ${newCar.model}`);
+        if(result && useStore.getState().currentUser?.id===currentUser.id){useStore.getState().applyCompanyBankPayment(currentUser.id,result);setShowModal(false);setForm(emptyForm);setCompanySeller('');setErrors({});navigate(`/inventory/${encodeURIComponent(result.car.id)}`);}
+      }finally{setSubmitting(false);}
+      return;
+    }
     setSubmitting(true);
     setSubmitError('');
     try {
@@ -2261,6 +2272,8 @@ export default function Inventory() {
 
 
           {/* Investor-funded registration (new private accounts) — director only, behind VITE_INVESTOR_FINANCE */}
+          {companyBankPaymentsEnabled && !funding.potId && !form.consignment && !form.outgoingConsignment && <FormField label="Seller name" className="col-span-2"><input className={inputCls()} value={companySeller} maxLength={150} onChange={e=>setCompanySeller(e.target.value)} /><p className="text-gray-400 text-xs mt-1">Seller and lender payments stay unpaid until the Director records the actual bank payment.</p></FormField>}
+          {companyBankPaymentsEnabled && !investorFinanceOn && <div className="col-span-2"><PendingSaves pending={pendingRegistrations} busy={investorAct.busy} onRetry={s=>void retryInvestorRegistration(s)} onDiscard={investorAct.discard}/>{investorAct.error && <p role="alert" className="text-red-400 text-sm">{investorAct.error.message}</p>}</div>}
           {investorFinanceOn && (
             <div className="col-span-2 space-y-3">
               <FormField label="Who pays for this car?">

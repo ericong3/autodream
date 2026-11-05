@@ -1,4 +1,4 @@
-import { companyBankPaymentsEnabled } from '../lib/companyBankPayments';
+import { companyBankPaymentsEnabled, paymentBalanceCents } from '../lib/companyBankPayments';
 import { readPending, useInvestorQuery } from '../lib/investorFinance';
 import { companyCollectionBalance } from '../lib/companyBankReceipts';
 import { salesCommission } from '../utils/salesCommission';
@@ -71,6 +71,7 @@ import { generateDeliveryPayments, generateMiscCostPayment, generatePanelChargeP
 import { completeRepairJob } from '../utils/completeRepair';
 import { recordInvestorMiscCost } from '../utils/completeInvestorMisc';
 import TradeInFundingChoice from '../components/TradeInFundingChoice';
+import CompanyPurchaseStart from '../components/CompanyPurchaseStart';
 import { buildCarSaleEntry, buildPayableRecognizedEntry, buildCarCostRecognizedEntry, buildSettlementRecognizedEntry, buildTradeInAcquiredEntry, LEDGER_ACCOUNTS } from '../utils/generateJournalEntries';
 import { getCaseCompletion } from '../utils/caseCompletion';
 import { buildDealReceiptPdf, uploadDealReceipt } from '../utils/generateDealReceipt';
@@ -931,6 +932,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       </nav>
 
       {car.investorFunded && (isDirector || isAdmin) && <button className="w-full rounded-xl border border-gold-400/30 bg-gold-400/10 px-4 py-3 text-left text-gold-400" onClick={() => navigate('/investor-finance?carId='+encodeURIComponent(car.id))}>Investor-funded car · Open car bills and payments →</button>}
+      {companyBankPaymentsEnabled && isDirector && !car.companyPurchaseRecorded && !car.investorFunded && !car.investorId && !car.consignment && !car.outgoingConsignment && !car.tradeInSourceCarId && !(car.purchasePrice>0) && ['coming_soon','available','in_workshop','ready','photo_complete','submitted'].includes(car.status) && <CompanyPurchaseStart key={currentUser.id+':'+car.id} car={car} actorId={currentUser.id}/>}
       {car.tradeInSourceCarId && isDirector && import.meta.env.VITE_INVESTOR_FINANCE === '1' && <TradeInFundingChoice key={car.id + ':' + currentUser?.id} incomingCarId={car.id} />}
       {/* Back + actions */}
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -1312,7 +1314,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   onClick={() => navigate('/payments')}
                   className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-orange-500/40 bg-orange-500/10 text-orange-300 text-xs font-bold hover:bg-orange-500/20 transition-colors"
                 >
-                  <Banknote size={12} /> Settle {formatRM(settlementPayment.amount)} to {settlementPayment.recipientName}
+                  <Banknote size={12} /> Settle {formatRM(companyBankPaymentsEnabled ? paymentBalanceCents(settlementPayment)/100 : settlementPayment.amount)} to {settlementPayment.recipientName}
                 </button>
               );
             })()}
@@ -2555,10 +2557,12 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             </select>
           </FormField>
           <FormField label="Purchase Price (RM)" error={editErrors.purchasePrice}>
-            <input type="number" className={inputCls(editErrors.purchasePrice)} value={editForm.purchasePrice ?? ''} onChange={(e) => setEditForm({ ...editForm, purchasePrice: Number(e.target.value) })} />
+            <input type="number" disabled={car.companyPurchaseRecorded || companyBankPaymentsEnabled && !(car.purchasePrice>0) && !car.consignment && !car.investorFunded && !car.tradeInSourceCarId} className={inputCls(editErrors.purchasePrice)} value={editForm.purchasePrice ?? ''} onChange={(e) => setEditForm({ ...editForm, purchasePrice: Number(e.target.value) })} />
+            {companyBankPaymentsEnabled && !(car.purchasePrice>0) && !car.companyPurchaseRecorded && <p className="text-gray-400 text-xs mt-1">Use Record purchase on the car page when the agreed price is known.</p>}
+            {car.companyPurchaseRecorded && <p className="text-gray-400 text-xs mt-1">The purchase and its bills are recorded. A price correction needs review.</p>}
           </FormField>
           {(() => {
-            const settlementLocked = payments.some(p => p.type === 'purchase_settlement' && p.carId === car.id);
+            const settlementLocked = car.companyPurchaseRecorded || payments.some(p => p.type === 'purchase_settlement' && p.carId === car.id);
             return (
               <div className="col-span-2">
                 <button
@@ -2577,7 +2581,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 </button>
                 {editForm.settlementAmount != null && (
                   <div className="mt-3 space-y-3 pl-2 border-l-2 border-orange-500/30">
-                    {settlementLocked && <p className="text-xs text-orange-400/80">Already recorded as a pending payment — edit the amount from Payments instead.</p>}
+                    {settlementLocked && <p className="text-xs text-orange-400/80">{car.companyPurchaseRecorded ? 'The agreed lender balance is recorded. Open Payments to record a payment.' : 'Already recorded as a pending payment — edit the amount from Payments instead.'}</p>}
                     <FormField label="Settle To (bank / lender)">
                       <input
                         className={inputCls()}
@@ -2848,6 +2852,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           <div className="col-span-2">
             <button
               type="button"
+              disabled={car.companyPurchaseRecorded}
               onClick={() => setEditForm({ ...editForm, consignment: editForm.consignment ? undefined : { dealer: '', terms: 'fixed_amount', fixedAmount: editForm.purchasePrice || 0 } })}
               className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${editForm.consignment ? 'bg-blue-500/10 border-blue-500/40 text-blue-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
             >
