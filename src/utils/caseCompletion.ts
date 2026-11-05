@@ -20,7 +20,7 @@ export function getCaseCompletion(opts: { car: Car; customers: Customer[]; payme
   // delivery so there's nothing pending here.
   const needsDisbursement = car.outgoingConsignment || isLoan || (!!car.finalDeal?.bank && car.finalDeal.bank.toLowerCase() !== 'cash');
   if (needsDisbursement && !car.moneyReceived) {
-    openItems.push(car.disbursementStatus === 'processing' ? 'Bank Processing' : 'Awaiting Disbursement');
+    openItems.push(car.outgoingConsignment?'Awaiting dealer payment':car.disbursementStatus === 'processing' ? 'Bank Processing' : 'Awaiting Disbursement');
   }
 
   // Money still owed on the customer side, either direction.

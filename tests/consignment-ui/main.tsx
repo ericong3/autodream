@@ -1,8 +1,10 @@
 import React from 'react';
+import {CarDetailContent} from '../../src/pages/CarDetail';
 import {HashRouter} from 'react-router-dom';
 import InvestorFinanceConsole from '../../src/pages/InvestorFinanceConsole';
 import {createRoot} from 'react-dom/client';
 import ConsignmentFinancePanel from '../../src/components/ConsignmentFinancePanel';
+import OutgoingCollectionApproval from '../../src/components/OutgoingCollectionApproval';
 import CompanyPanelApproval from '../../src/components/CompanyPanelApproval';
 import {useStore} from '../../src/store';
 import '../../src/index.css';
@@ -10,4 +12,5 @@ const role=new URLSearchParams(location.search).get('role')||'director';
 useStore.setState({currentUser:{id:'test-'+role,role,name:'Test '+role} as any});
 const car={id:'test-car',make:'Toyota',model:'Vios',purchasePrice:50000,consignment:{terms:'profit_split',splitPercent:30,dealer:'Dealer'}} as any;
 const screen=new URLSearchParams(location.search).get('screen');
-createRoot(document.getElementById('root')!).render(<main className="p-4 max-w-3xl mx-auto"><p>Isolated browser test — no real data</p><HashRouter>{screen==='panel'?<CompanyPanelApproval paymentId="panel-bill" actorId={'test-'+role} onApproved={()=>{}}/>:screen==='withdrawals'?<InvestorFinanceConsole/>:<ConsignmentFinancePanel key={role} car={car} actorId={'test-'+role} role={role}/>}</HashRouter></main>);
+if(screen==='car-detail')useStore.setState({cars:[{id:'test-car',make:'Toyota',model:'Vios',year:2026,carPlate:'TEST001',colour:'White',mileage:0,purchasePrice:50000,sellingPrice:70000,status:'available',companyPurchaseRecorded:true,condition:'used',transmission:'automatic',photos:[],miscCosts:[],dateAdded:'2026-11-05'} as any],payments:[],dealers:[{id:'dealer',name:'Dealer'} as any]});
+createRoot(document.getElementById('root')!).render(<main className="p-4 max-w-3xl mx-auto"><p>Isolated browser test — no real data</p><HashRouter>{screen==='car-detail'?<CarDetailContent id="test-car" onBack={()=>{}}/>:screen==='outgoing'?<OutgoingCollectionApproval paymentId="outgoing-bill" actorId={'test-'+role} onApproved={()=>{}}/>:screen==='panel'?<CompanyPanelApproval paymentId="panel-bill" actorId={'test-'+role} onApproved={()=>{}}/>:screen==='withdrawals'?<InvestorFinanceConsole/>:<ConsignmentFinancePanel key={role} car={car} actorId={'test-'+role} role={role}/>}</HashRouter></main>);

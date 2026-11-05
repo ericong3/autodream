@@ -1,5 +1,7 @@
 -- PREPARED ONLY. Explicit company funding for trade-ins from investor sales.
 begin;
+create function uc_company_outgoing_change_allowed(p_car text,p_before jsonb,p_after jsonb) returns boolean language sql stable security definer set search_path=public,pg_temp as $$select false$$;
+revoke all on function uc_company_outgoing_change_allowed(text,jsonb,jsonb) from public,anon,authenticated,service_role;
 do $$ begin
  if current_setting('autodream.private_finance_ready',true) is distinct from 'reviewed-20261104' or to_regclass('uc_company_bank_receipts') is null then raise exception 'COMPANY_RECEIPTS_REQUIRED';end if;
 end $$;
@@ -62,6 +64,7 @@ end $$;
 
 create function public.uc_company_trade_in_car_guard() returns trigger language plpgsql security definer set search_path=public,pg_temp as $$
 begin
+ if tg_op='UPDATE' and uc_company_outgoing_change_allowed(old.id,to_jsonb(old),to_jsonb(new)) then return new;end if;
  if exists(select 1 from uc_company_trade_in_applications where incoming_car_id=old.id) then
   if tg_op='DELETE' then raise exception 'TRADE_IN_FUNDING_LOCKED';end if;
   if (to_jsonb(new)-array['status','selling_price','final_deal','misc_costs']) is distinct from (to_jsonb(old)-array['status','selling_price','final_deal','misc_costs']) and

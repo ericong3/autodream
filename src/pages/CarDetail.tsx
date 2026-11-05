@@ -1,5 +1,6 @@
 import { companyBankPaymentsEnabled, paymentBalanceCents } from '../lib/companyBankPayments';
-import { readPending, useInvestorQuery } from '../lib/investorFinance';
+import OutgoingCollectionApproval from '../components/OutgoingCollectionApproval';
+import { readPending, useInvestorQuery, useInvestorAction, investorRequest } from '../lib/investorFinance';
 import { companyCollectionBalance } from '../lib/companyBankReceipts';
 import { salesCommission } from '../utils/salesCommission';
 import { deliveredDealPrice } from '../utils/deliveredDealPrice';
@@ -194,6 +195,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const dealers = useStore((s) => s.dealers);
   const externalSalesmen = useStore((s) => s.externalSalesmen);
   const currentUser = useStore((s) => s.currentUser);
+  const outgoingAction=useInvestorAction(currentUser?.id??'');
   const updateCar = useStore((s) => s.updateCar);
   const addCar = useStore((s) => s.addCar);
   const updateCustomer = useStore((s) => s.updateCustomer);
@@ -935,6 +937,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
 
       {car.investorFunded && (isDirector || isAdmin) && <button className="w-full rounded-xl border border-gold-400/30 bg-gold-400/10 px-4 py-3 text-left text-gold-400" onClick={() => navigate('/investor-finance?carId='+encodeURIComponent(car.id))}>Investor-funded car · Open car bills and payments →</button>}
       {companyBankPaymentsEnabled && car.consignment && !car.outgoingConsignment && currentUser && (isDirector||isAdmin||isShareHolder) && <ConsignmentFinancePanel key={currentUser.id+':'+currentUser.role+':'+car.id} car={car} actorId={currentUser.id} role={currentUser.role}/>}
+      {companyBankPaymentsEnabled && car.outgoingConsignment && isDirector && currentUser && payments.filter(p=>p.carId===car.id&&p.type==='consignment_collection'&&!p.obligationReplaced).map(p=><details key={p.id} className="rounded-xl border border-orange-500/30 p-4"><summary className="text-sm font-medium text-orange-300 cursor-pointer">Dealer collection &amp; car costs</summary><div className="mt-3"><OutgoingCollectionApproval paymentId={p.id} actorId={currentUser.id} onApproved={()=>{}}/></div></details>)}
+      {companyBankPaymentsEnabled&&currentUser&&outgoingAction.pending.filter(p=>p.slot==='outgoing-send:'+car.id).map(p=><button key={p.slot} type="button" disabled={!!outgoingAction.busy} className="text-amber-300 underline py-2 text-sm" onClick={()=>void outgoingAction.retry<{payments:Record<string,unknown>[];journals:Record<string,unknown>[];car:Record<string,unknown>}>(p.slot).then(saved=>{if(saved){useStore.getState().applyCompanyBankPayment(currentUser.id,saved);setOutgoingConsignModal(null);}})}>Retry original dealer sale</button>)}
+      {outgoingAction.error&&<p role="alert" className="text-red-400 text-sm">{outgoingAction.error.message}</p>}
       {companyBankPaymentsEnabled && isDirector && !car.companyPurchaseRecorded && !car.investorFunded && !car.investorId && !car.consignment && !car.outgoingConsignment && !car.tradeInSourceCarId && !(car.purchasePrice>0) && ['coming_soon','available','in_workshop','ready','photo_complete','submitted'].includes(car.status) && <CompanyPurchaseStart key={currentUser.id+':'+car.id} car={car} actorId={currentUser.id}/>}
       {car.tradeInSourceCarId && isDirector && import.meta.env.VITE_INVESTOR_FINANCE === '1' && <TradeInFundingChoice key={car.id + ':' + currentUser?.id} incomingCarId={car.id} />}
       {/* Back + actions */}
@@ -965,7 +970,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               Misc Cost
             </button>
           )}
-          {isDirector && (!car.outgoingConsignment || car.status !== 'delivered') && (
+          {isDirector && (!companyBankPaymentsEnabled||!car.investorFunded&&!car.investorId&&!car.consignment) && (!car.outgoingConsignment || car.status !== 'delivered') && (
             <button
               onClick={() => setOutgoingConsignModal({
                 dealer: car.outgoingConsignment?.dealer ?? '',
@@ -1157,7 +1162,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               </button>
               {car.status === 'delivered' ? (
                 <span className="flex items-center gap-1 text-green-400 text-xs font-semibold">
-                  <CheckCircle size={11} /> Sold via consignment — waiting to collect from dealer
+                  <CheckCircle size={11} /> {car.moneyReceived?'Dealer payment received':'Sold via consignment — waiting to collect from dealer'}
                 </span>
               ) : (
                 <span className="flex items-center gap-1 text-amber-400 text-xs font-semibold">
@@ -3390,6 +3395,13 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   setOutgoingConsignSaving(true);
                   setOutgoingConsignError(null);
                   try {
+                    if(companyBankPaymentsEnabled&&currentUser){
+                      const input={carId:car.id,dealer:outgoingConsignModal.dealer,amountCents:Math.round(outgoingConsignModal.fixedAmount*100),soldOn:outgoingConsignModal.soldDate};
+                      const review=await investorRequest<{sourceRevision:string}>('prepare_send',{scope:'outgoing_collections',...input});
+                      const saved=await outgoingAction.run<{payments:Record<string,unknown>[];journals:Record<string,unknown>[];car:Record<string,unknown>}>('outgoing-send:'+car.id,'send',{scope:'outgoing_collections',...input,expectedRevision:review.sourceRevision},'Save dealer sale');
+                      if(!saved){setOutgoingConsignError('The sale was not confirmed. Check the message and retry the original save if it is waiting.');return;}
+                      useStore.getState().applyCompanyBankPayment(currentUser.id,saved);setOutgoingConsignModal(null);setOutgoingConsignError(null);return;
+                    }
                     const updatedCar: Car = {
                       ...car,
                       outgoingConsignment: { dealer: outgoingConsignModal.dealer, terms: 'fixed_amount', fixedAmount: outgoingConsignModal.fixedAmount },

@@ -41,10 +41,13 @@
     "Bank opening clears legacy operating ledger exactly once, puts differences in named review balance rather than equity; later bank dates do not clear twice. Legacy-bank and investor-tag bypasses blocked.",
     "Approved consignment dealer settlement amendments preserve original case and bank records, use exact terms-bound new agreement, replace only outstanding obligations, post balanced noncash delta, reserve new AP, allow actual dealer debt refunds, lock replacement bank details and keep audit.",
     "Approved incoming-consignment supplier bill adjustments with fresh invoices, supplier refund or additional AP, preserved actual bank history, and revised dealer settlement.",
-    "Director approval of invoice-backed company-owned panel bills, saved recipient, single AP posting, partial payment and withheld settlement, production snake_case dealer fields supported."
+    "Director approval of invoice-backed company-owned panel bills, saved recipient, single AP posting, partial payment and withheld settlement, production snake_case dealer fields supported.",
+    "Outgoing fixed dealer collections: statement-backed Director approval, partial actual bank receipts, source history locks and no fake bank movement.",
+    "Outgoing sale cost review: purchase invoice, exact car-cost/AP checks, recorded stock reuse, explicit missing historical purchase acknowledgement, balanced sale/COGS and opening-review entry, no second payment, immutable closed costs.",
+    "New company stock and company-funded trade-ins can use the audited outgoing dealer sale route without changing ownership or losing original seller/lender payments; legacy loan backfill no longer invents outgoing loan receivables."
   ],
   "validation": {
-    "unit_tests": 453,
+    "unit_tests": 457,
     "build": "passed",
     "local_database_rehearsals": [
       "investor-capital-db.integration.mjs",
@@ -130,9 +133,8 @@
       "production_writes": false
     },
     "not_verified": [
-      "Exact full production-schema migration rehearsal and live login",
-      "Outgoing dealer collections compatibility before activation",
-      "General company/investor paid-bill correction paths"
+      "Exact full production-schema migration rehearsal and production private-session activation",
+      "General company/investor paid-bill correction paths and outgoing post-close cost amendments"
     ],
     "browser": "PASS isolated Chrome React consignment correction/approval, withdrawal destination confirmation and panel approval/cancel. APIs mocked; no production sessions tested.",
     "supplier_adjustments": "PASS disposable PostgreSQL17 partial/full payment, supplier credit note, real refund, additional invoice, remaining AP, original bank history, private source and invoice isolation.",
@@ -141,7 +143,10 @@
       "Production snake_case dealer bank columns supported",
       "Supplier refund payment type extends existing check",
       "Company trade-in lender uses allowed merchant recipient; production recipient constraint tested"
-    ]
+    ],
+    "outgoing_collections": "PASS disposable PostgreSQL: no statement/unapproved/stale writes blocked; partial receipts; exact replay; missing historical purchase acknowledged and retained in opening review; existing stock plus repair accrual reused; receipt after closing; final stock/receivable/review clearing zero and costs locked. Browser cost invoice/checkbox/cancel/finalise passed with mocked APIs.",
+    "claude": "Earlier panel and production-schema review completed. Claude reached session limit before reviewing the outgoing module; outgoing checks are independent local automated checks.",
+    "outgoing_review": "Independent Codex review found and verified fixes for the post-collection cost-review entry, duplicate car-scoped commissions, and stale retail work-order/final-deal overwrite. Actual CarDetail browser send path passes with mocked APIs. Real PostgreSQL send-vs-retail race permits exactly one deal."
   },
   "blocking_access": "Resolved 2026-11-04: cua.getBrowser({url: Supabase SQL page}) reached the in-app browser. The earlier local-browser inventory error was mistakenly treated as blocking IAB. Browser binding supabaseBrowser (iab ID2), investorSupabaseTab ID2. Live read-only investor counts verified; new investor tables absent. Do not ask user to enable Work settings again unless a fresh interaction with this browser fails.",
   "required_before_activation": [

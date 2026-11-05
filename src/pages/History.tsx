@@ -1,4 +1,5 @@
 import CompanyLoanReceiptStart from '../components/CompanyLoanReceiptStart';
+import CompanyBankReceiptDialog from '../components/CompanyBankReceiptDialog';
 import CompanyBankPaymentDialog from '../components/CompanyBankPaymentDialog';
 import { companyBankPaymentsEnabled } from '../lib/companyBankPayments';
 import { reviewConsignmentPayout } from '../../shared/consignmentRules.mjs';
@@ -983,7 +984,7 @@ export default function History() {
 
       {/* ── Disbursement Modal ── */}
       {(() => {
-        if (companyBankPaymentsEnabled) { const selected = cars.find(c => c.id === disbursalCarId); if(selected&&((selected.consignment&&!selected.consignmentFinanceOpen)||selected.outgoingConsignment||selected.investorFunded||selected.investorId))return <Modal isOpen title="Record money received" onClose={()=>setDisbursalCarId(null)}><p className="text-sm text-gray-300">Open this car’s investor or consignment settlement workflow to record the bank receipt. No collection has been recorded.</p></Modal>; return selected && currentUser ? <CompanyLoanReceiptStart key={currentUser.id + ':' + selected.id} car={selected} actorId={currentUser.id} expectedAmount={Number(disbursalForm.expected) || undefined} onClose={() => { setDisbursalCarId(null); setDisbursalDealInfo(null); }} /> : null; }
+        if (companyBankPaymentsEnabled) { const selected = cars.find(c => c.id === disbursalCarId); if(selected?.outgoingConsignment&&currentUser?.role==='director'){const dealerBill=payments.find(p=>p.carId===selected.id&&p.type==='consignment_collection'&&p.status==='pending'&&!p.obligationReplaced);if(dealerBill)return <CompanyBankReceiptDialog key={currentUser.id+':'+dealerBill.id} payment={dealerBill} actorId={currentUser.id} onClose={()=>setDisbursalCarId(null)}/>;} if(selected&&((selected.consignment&&!selected.consignmentFinanceOpen)||selected.outgoingConsignment||selected.investorFunded||selected.investorId))return <Modal isOpen title="Record money received" onClose={()=>setDisbursalCarId(null)}><p className="text-sm text-gray-300">Open this car’s investor or consignment settlement workflow to record the bank receipt. No collection has been recorded.</p></Modal>; return selected && currentUser ? <CompanyLoanReceiptStart key={currentUser.id + ':' + selected.id} car={selected} actorId={currentUser.id} expectedAmount={Number(disbursalForm.expected) || undefined} onClose={() => { setDisbursalCarId(null); setDisbursalDealInfo(null); }} /> : null; }
         const expectedNum = Number(disbursalForm.expected || 0);
         const actualNum = Number(disbursalForm.actual || 0);
         const remaining = expectedNum > 0 ? expectedNum - actualNum : 0;

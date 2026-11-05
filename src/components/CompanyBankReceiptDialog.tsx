@@ -9,6 +9,7 @@ import { BankPaymentFields, bankPaymentReady, emptyBankPayment, CashConfirm, typ
 import Modal from './Modal';
 import CompanyPaymentDocuments from './CompanyPaymentDocuments';
 import CompanyPanelApproval from './CompanyPanelApproval';
+import OutgoingCollectionApproval from './OutgoingCollectionApproval';
 
 type Intent = { requestId: string; paymentId: string; amountCents: number; excessCents: number; customerId?: string; bankAccountId: string; bankReference: string; paidOn: string; receiptDocumentId: string; withheldBills: { paymentId: string; amountCents: number; documentId: string }[] };
 export default function CompanyBankReceiptDialog({ payment: bill, actorId, onClose }: { payment: Payment; actorId: string; onClose: () => void }) {
@@ -17,6 +18,8 @@ export default function CompanyBankReceiptDialog({ payment: bill, actorId, onClo
   const [pending, setPending] = useState<Intent | null>(read), [payment, setPayment] = useState(emptyBankPayment), [amount, setAmount] = useState(''), [excess, setExcess] = useState('0'), [customerId, setCustomerId] = useState('');
   const [deductions, setDeductions] = useState<Record<string, string>>({}), [file, setFile] = useState<File | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState(''), [documents, setDocuments] = useState(false), [confirm, setConfirm] = useState<PendingConfirm | null>(null);
   const [approvedPanels,setApprovedPanels]=useState<Record<string,boolean>>({});
+  const [outgoingApproved,setOutgoingApproved]=useState(false);
+  const outgoing=useStore(s=>s.cars.some(c=>c.id===bill.carId&&!!c.outgoingConsignment))&&bill.type==='consignment_collection';
   const allPayments = useStore((s) => s.payments), customers = useStore((s) => s.customers);
   const recovery=['consignment_collection','supplier_credit_collection'].includes(bill.type);
   const banks = useInvestorQuery<{ banks: Bank[] }>(`company-banks:${actorId}`, () => companyBankRequest('banks'));
@@ -24,7 +27,7 @@ export default function CompanyBankReceiptDialog({ payment: bill, actorId, onClo
   const options = allPayments.filter((p) => p.id !== bill.id && p.carId === bill.carId && p.status === 'pending' && !p.obligationReplaced && ['repair', 'misc_cost','panel_charge'].includes(p.type));
   const selected = Object.entries(deductions).map(([paymentId, value]) => ({ paymentId, amountCents: parseRinggit(value) }));
   const fee = selected.reduce((s, p) => s + (p.amountCents ?? 0), 0), covered = actual === null || extra === null ? null : actual + fee - extra;
-  const ready = !!file && bankPaymentReady(payment) && covered !== null && covered > 0 && covered <= remaining && extra !== null && (extra === 0 || !!customerId) && selected.every((p) => p.amountCents !== null && p.amountCents > 0 && p.amountCents <= paymentBalanceCents(options.find((x) => x.id === p.paymentId) ?? { ...bill, amount: 0 }) && (options.find(x=>x.id===p.paymentId)?.type!=='panel_charge'||approvedPanels[p.paymentId]));
+  const ready = (!outgoing||outgoingApproved) && !!file && bankPaymentReady(payment) && covered !== null && covered > 0 && covered <= remaining && extra !== null && (extra === 0 || !!customerId) && selected.every((p) => p.amountCents !== null && p.amountCents > 0 && p.amountCents <= paymentBalanceCents(options.find((x) => x.id === p.paymentId) ?? { ...bill, amount: 0 }) && (options.find(x=>x.id===p.paymentId)?.type!=='panel_charge'||approvedPanels[p.paymentId]));
   const assertActor = () => { if (useStore.getState().currentUser?.id !== actorId) throw new Error('Your account changed. Reopen this receipt.'); };
   const save = async () => {
     setBusy(true); setError('');
@@ -44,6 +47,7 @@ export default function CompanyBankReceiptDialog({ payment: bill, actorId, onClo
   return <Modal isOpen title="Record money received" onClose={onClose}>
     <div className="space-y-3">
       <p className="text-sm text-white">{bill.recipientName} · {formatCents(remaining)} still to cover</p>
+      {outgoing&&<OutgoingCollectionApproval paymentId={bill.id} actorId={actorId} onApproved={()=>setOutgoingApproved(true)}/>}
       {(error || banks.error) && <p role="alert" className="text-xs text-red-400">{error || banks.error?.message}</p>}
       <button type="button" className="text-xs text-gold-400" onClick={() => setDocuments(true)}>Invoices & receipts</button>
       {pending ? <><p className="text-xs text-amber-300">An earlier receipt save is waiting. Retry it before adding another receipt.</p><p className="text-xs text-gray-400">{formatCents(pending.amountCents)} · {pending.paidOn} · {pending.bankReference}</p><button type="button" className="btn-gold px-4 py-2 rounded-lg text-xs" disabled={busy} onClick={() => void save()}>{busy ? 'Checking…' : 'Retry original receipt'}</button></> : remaining > 0 && <>

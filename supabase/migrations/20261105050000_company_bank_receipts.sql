@@ -1,5 +1,7 @@
 -- PREPARED ONLY. Company cash/loan receipts and invoiced withheld bills.
 begin;
+create function uc_outgoing_receipt_allowed(p_car text,p_payment text) returns boolean language sql stable security definer set search_path=public,pg_temp as $$select false$$;
+revoke all on function uc_outgoing_receipt_allowed(text,text) from public,anon,authenticated,service_role;
 do $$ begin
  if current_setting('autodream.private_finance_ready',true) is distinct from 'reviewed-20261104' or to_regclass('uc_trade_in_lender_payments') is null then raise exception 'BANK_LENDER_FOUNDATION_REQUIRED';end if;
 end $$;
@@ -99,7 +101,7 @@ begin
   if pay.id is null or pay.car_id is null or coalesce(pay.type,'') not in ('customer_collection','loan_disbursement','consignment_collection','supplier_credit_collection') or pay.type in ('consignment_collection','supplier_credit_collection') and not uc_consignment_receipt_allowed(pay.car_id,pay.id) then raise exception 'COLLECTION_WORKFLOW_REQUIRED';end if;
   select * into car from cars where id=pay.car_id for update;
   if car.id is null or car.investor_id is not null or coalesce(to_jsonb(car)->>'investor_tagged','false')='true' or exists(select 1 from uc_investor_cars where car_id=car.id) then raise exception 'USE_INVESTOR_CAR_BILLS';end if;
-  if car.consignment is not null and car.consignment<>'null'::jsonb and not uc_consignment_receipt_allowed(car.id,pay.id) or car.outgoing_consignment is not null and car.outgoing_consignment<>'null'::jsonb then raise exception 'COLLECTION_WORKFLOW_REQUIRED';end if;
+  if car.consignment is not null and car.consignment<>'null'::jsonb and not uc_consignment_receipt_allowed(car.id,pay.id) or car.outgoing_consignment is not null and car.outgoing_consignment<>'null'::jsonb and not uc_outgoing_receipt_allowed(car.id,pay.id) then raise exception 'COLLECTION_WORKFLOW_REQUIRED';end if;
   if coalesce((to_jsonb(pay)->>'obligation_replaced')::boolean,false) then raise exception 'PAYMENT_WORKFLOW_REQUIRED';end if;
  if pay.type in ('consignment_collection','supplier_credit_collection') and (fees<>0 or excess<>0) then raise exception 'COLLECTION_WORKFLOW_REQUIRED';end if;
   if pay.type='loan_disbursement' and (exists(select 1 from journal_entries where source_type='disbursement_received' and source_id=car.id and not coalesce(voided,false) and id not like 'company-receipt:%')

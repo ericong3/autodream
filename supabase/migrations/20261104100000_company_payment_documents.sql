@@ -92,6 +92,8 @@ create trigger uc_company_audit_fixed before update or delete on public.uc_compa
 create trigger uc_company_audit_no_truncate before truncate on public.uc_company_evidence_audit execute function public.uc_company_evidence_immutable();
 
 -- ── Policy helpers ───────────────────────────────────────────────────────
+create function uc_outgoing_invoice_allowed(p_payment text) returns boolean language sql stable security definer set search_path=public,pg_temp as $$select false$$;
+revoke all on function uc_outgoing_invoice_allowed(text) from public,anon,authenticated,service_role;
 create function public.uc_company_invoice_type(p_type text) returns boolean language sql immutable set search_path=public,pg_temp as $$
  select coalesce(p_type in ('repair','misc_cost','expense_claim','panel_charge','purchase_settlement'),false) $$;
 -- Payroll stays Director-only: the private finance bridge already hides it from admin.
@@ -168,7 +170,7 @@ begin
    return uc_company_evidence_doc(doc)||jsonb_build_object('path',doc.storage_path);
   end if;
   if pay.car_id is not null and exists(select 1 from uc_investor_cars where car_id=pay.car_id) then raise exception 'USE_INVESTOR_CAR_BILLS';end if;
-  if p_data->>'kind'='invoice' and not uc_company_invoice_type(pay.type) then raise exception 'INVOICE_NOT_REQUIRED';end if;
+  if p_data->>'kind'='invoice' and not uc_company_invoice_type(pay.type) and not uc_outgoing_invoice_allowed(pay.id) then raise exception 'INVOICE_NOT_REQUIRED';end if;
   if tier='staff' and (pay.status is distinct from 'pending' or pay.claim_confirmed_by is not null) then raise exception 'CLAIM_LOCKED';end if;
   -- Content-addressed and server-chosen: payment, kind and file digest.
   path:='company-payments/'||encode(sha256(convert_to(pay.id,'UTF8')),'hex')||'/'||(p_data->>'kind')||'-'||(p_data->>'sha256')||
@@ -194,7 +196,7 @@ begin
   select * into doc from uc_company_payment_documents where id=doc.id for update;
   if doc.state='confirmed' then return uc_company_evidence_doc(doc);end if;
   if pay.car_id is not null and exists(select 1 from uc_investor_cars where car_id=pay.car_id) then raise exception 'USE_INVESTOR_CAR_BILLS';end if;
-  if doc.kind='invoice' and not uc_company_invoice_type(pay.type) then raise exception 'INVOICE_NOT_REQUIRED';end if;
+  if doc.kind='invoice' and not uc_company_invoice_type(pay.type) and not uc_outgoing_invoice_allowed(pay.id) then raise exception 'INVOICE_NOT_REQUIRED';end if;
   if tier='staff' and (pay.status is distinct from 'pending' or pay.claim_confirmed_by is not null) then raise exception 'CLAIM_LOCKED';end if;
   if to_regclass('storage.objects') is not null then
    execute 'select exists(select 1 from storage.objects where bucket_id=$1 and name=$2)' into stored using 'finance-evidence',doc.storage_path;
@@ -211,7 +213,7 @@ begin
   select * into pay from payments where id=p_data->>'paymentId';
   if pay.id is null or not uc_company_evidence_allows(tier,actor.id,pay.type,pay.recipient_id,null) then raise exception 'NOT_ALLOWED';end if;
   return jsonb_strip_nulls(jsonb_build_object('paymentId',pay.id,
-   'invoiceRequired',uc_company_invoice_type(pay.type),
+   'invoiceRequired',uc_company_invoice_type(pay.type) or uc_outgoing_invoice_allowed(pay.id),
    'invoiceConfirmed',exists(select 1 from uc_company_payment_documents d where d.payment_id=pay.id and d.kind='invoice' and d.state='confirmed') or uc_supplier_adjustment_invoice(pay.id) is not null,
    'receiptConfirmed',case when tier<>'staff' then exists(select 1 from uc_company_payment_documents d where d.payment_id=pay.id and d.kind='payment' and d.state='confirmed') end))
    ||jsonb_build_object('documents',coalesce((select jsonb_agg(uc_company_evidence_doc(d) order by d.confirmed_at,d.id) from uc_company_payment_documents d

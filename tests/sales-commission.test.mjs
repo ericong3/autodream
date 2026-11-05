@@ -44,3 +44,9 @@ test('payroll and backfill use the per-unit rate without changing existing payme
  assert.equal(payments.collectMonthlyPayroll({...data,month:'2026-10',payments:[existing]}).filter(p=>p.type==='salesman_commission').length,0);
  assert.equal(payments.calcCarNetProfitBreakdown(unit,[customer],[]).commission,2000);
 });
+
+test('outgoing dealer sales never create a second loan receivable during backfill',()=>{
+ const unit={...car,status:'delivered',outgoingConsignment:{dealer:'Dealer',terms:'fixed_amount',fixedAmount:60000},finalDeal:{dealPrice:60000,bank:'Consignment — Dealer'}};
+ const result=payments.collectMissingPayments({bankReceiptMode:true,cars:[unit],customers:[],repairs:[],users:[],externalSalesmen:[],dealers:[{id:'dealer',name:'Dealer'}],workshops:[],merchants:[],payments:[]});
+ assert.equal(result.filter(p=>p.type==='loan_disbursement').length,0);assert.equal(result.filter(p=>p.type==='consignment_collection').length,1);
+});

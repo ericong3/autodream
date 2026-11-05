@@ -15,6 +15,28 @@ function fixture(role='director'){
 
 
 const enabled=f=>{f.deps.env.USED_CAR_BANK_PAYMENTS_ONLINE='1';f.deps.env.USED_CAR_PRIVATE_FINANCE_ONLINE='1';return f;};
+test('sending company stock to a dealer uses private session and current source, not supplied ownership fields',async()=>{
+ const f=enabled(fixture()),c=await f.login(),data={scope:'outgoing_collections',carId:'company-car',dealer:'Dealer',amountCents:6000000,soldOn:'2026-11-05'};
+ f.setResult({data:{carId:'company-car',sourceRevision:'a'.repeat(32)}});assert.equal((await f.run({...data,action:'prepare_send'},c)).status,200);assert.equal(f.calls[0].fn,'uc_outgoing_send');
+ const save={...data,action:'send',expectedRevision:'a'.repeat(32),requestId:'outgoing_send_0001'};f.setResult({data:{carId:'company-car',car:{id:'company-car'},payments:[],journals:[]}});assert.equal((await f.run(save,c)).status,200);assert.equal(f.calls[1].args.p_actor,'real-director');
+ for(const change of [{investorId:'other'},{amountCents:1.5},{soldOn:'2026-02-30'},{requestId:''}])assert.equal((await f.run({...save,...change},c)).status,400);
+ const a=enabled(fixture('admin')),ac=await a.login();assert.equal((await a.run(save,ac)).status,403);assert.equal(a.calls.length,0);
+ f.setResult({data:{carId:'other',car:{id:'other'},payments:[],journals:[]}});assert.equal((await f.run(save,c)).status,503);
+});
+test('outgoing collections require Director statement review without accepting supplied accounting totals',async()=>{
+ const f=enabled(fixture()),c=await f.login(),body={scope:'outgoing_collections',action:'approve',paymentId:'outgoing-bill',expectedRevision:'a'.repeat(32),reviewConfirmed:true,requestId:'outgoing_approval_01'};
+ f.setResult({data:{paymentId:'outgoing-bill',approved:true,costReviewPending:true,payments:[],journals:[]}});assert.equal((await f.run(body,c)).status,200);assert.equal(f.calls[0].fn,'uc_outgoing_collection');assert.equal(f.calls[0].args.p_actor,'real-director');
+ for(const change of [{reviewConfirmed:false},{sourceCostCents:1},{actor:'other'},{expectedRevision:'bad'}])assert.equal((await f.run({...body,...change},c)).status,400);
+ for(const role of ['admin','shareholder','salesperson','investor']){const g=enabled(fixture(role)),gc=await g.login();assert.equal((await g.run(body,gc)).status,403);assert.equal(g.calls.length,0);}
+ f.setResult({error:{message:'COLLECTION_HISTORY_REVIEW_REQUIRED'}});assert.equal((await f.run(body,c)).status,409);
+});
+test('outgoing final cost review validates invoice, source and explicit history acknowledgement',async()=>{
+ const f=enabled(fixture()),c=await f.login(),body={scope:'outgoing_collections',action:'close_costs',paymentId:'outgoing-bill',expectedRevision:'a'.repeat(32),purchaseInvoiceId:choiceId,reviewConfirmed:true,missingPurchaseAcknowledged:true,requestId:'outgoing_close_0001'};
+ f.setResult({data:{paymentId:'outgoing-bill',approved:true,costReviewPending:false,payments:[],journals:[]}});assert.equal((await f.run(body,c)).status,200);assert.equal(f.calls[0].args.p_action,'close_costs');
+ for(const change of [{purchaseInvoiceId:'bad'},{reviewConfirmed:false},{missingPurchaseAcknowledged:'yes'},{purchaseCents:1}])assert.equal((await f.run({...body,...change},c)).status,400);
+ f.setResult({data:{paymentId:'outgoing-bill',approved:true,costReviewPending:false}});assert.equal((await f.run(body,c)).status,503);
+ f.setResult({error:{message:'PURCHASE_HISTORY_ACKNOWLEDGEMENT_REQUIRED'}});assert.equal((await f.run(body,c)).status,409);
+});
 test('panel refresh throttling cannot consume the approval allowance',async()=>{
  const f=enabled(fixture()),c=await f.login(),hits=[];f.repo.throttleHit=async(key,limit,window)=>{hits.push({key,limit,window});return{allowed:true};};
  f.setResult({data:{paymentId:'panel-bill',approved:false}});assert.equal((await f.run({scope:'company_panel',action:'review',paymentId:'panel-bill'},c)).status,200);

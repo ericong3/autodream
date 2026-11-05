@@ -559,7 +559,7 @@ export function collectMissingPayments(data: {
     if (data.bankReceiptMode) { const pending = companyCashReceivable(car, dealCustomer, payments, car.dateAdded); if (pending) result.push(pending); }
 
     // Loan disbursement — recorded amount, or pending from work order / final deal
-    if (!alreadyExists('loan_disbursement', { carId: car.id })) {
+    if (!car.outgoingConsignment && !alreadyExists('loan_disbursement', { carId: car.id })) {
       const lwo = dealCustomer?.loanWorkOrder;
       const finalBank = lwo?.bank ?? car.finalDeal?.bank;
       if (car.disbursementAmount && car.disbursementAmount > 0 && !data.bankReceiptMode) {

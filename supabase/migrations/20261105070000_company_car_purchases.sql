@@ -17,6 +17,7 @@ alter table uc_company_car_purchases enable row level security;
 revoke all on uc_company_car_purchases from public,anon,authenticated,service_role;
 create function public.uc_company_purchase_car_guard() returns trigger language plpgsql security definer set search_path=public,pg_temp as $$
 declare recorded boolean;begin
+ if tg_op='UPDATE' and uc_company_outgoing_change_allowed(old.id,to_jsonb(old),to_jsonb(new)) then return new;end if;
  if tg_op='INSERT' then if new.company_purchase_recorded then raise exception 'USE_COMPANY_PURCHASE';end if;return new;end if;
  recorded:=exists(select 1 from uc_company_car_purchases where car_id=old.id) or exists(select 1 from uc_company_trade_in_applications where incoming_car_id=old.id);
  if tg_op='DELETE' then if recorded then raise exception 'COMPANY_PURCHASE_LOCKED';end if;return old;end if;
