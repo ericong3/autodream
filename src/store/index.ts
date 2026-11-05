@@ -292,6 +292,8 @@ function rowToCar(r: any): Car {
     isRecon: r.is_recon ?? false,
     investorFunded: r.investor_funded === true,
     companyPurchaseRecorded: r.company_purchase_recorded === true,
+    consignmentFinanceOpen: r.consignment_finance_open === true,
+    consignmentSettlement: r.consignment_settlement ?? undefined,
     salesCommission: r.sales_commission ?? undefined,
     id: r.id,
     make: r.make ?? '',
@@ -1034,7 +1036,7 @@ function kanbanColumnToRow(c: Partial<KanbanColumn>) {
   return row;
 }
 
-function rowToPayment(r: any): Payment {
+export function rowToPayment(r: any): Payment {
   return {
     bonusCampaignId: r.bonus_campaign_id ?? undefined,
     bonusMonth: r.bonus_month ?? undefined,

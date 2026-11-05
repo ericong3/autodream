@@ -1,0 +1,62 @@
+import {useEffect,useState} from 'react';
+import {rowToPayment,useStore} from '../store';
+import type {Car,Payment} from '../types';
+import {consignmentRequest,consignmentReviewMessage,type ConsignmentSnapshot,type ConsignmentOpenPreview} from '../lib/consignmentFinance';
+import {useInvestorQuery,useInvestorAction,prepareProof,formatCents} from '../lib/investorFinance';
+import {consignmentBasisPoints} from '../../shared/consignmentRules.mjs';
+import {paymentBalanceCents} from '../lib/companyBankPayments';
+import {PendingSaves} from './InvestorFinanceCar';
+import CompanyPaymentDocuments from './CompanyPaymentDocuments';
+import CompanyBankReceiptDialog from './CompanyBankReceiptDialog';
+import CompanyBankPaymentDialog from './CompanyBankPaymentDialog';
+import ConfirmSheet from './ConfirmSheet';
+
+export default function ConsignmentFinancePanel({car,actorId,role}:{car:Car;actorId:string;role:string}){
+ const director=role==='director',canUpload=director||role==='admin';
+ const query=useInvestorQuery<ConsignmentSnapshot>(`consignment:${actorId}:${role}:${car.id}`,()=>consignmentRequest('snapshot',{carId:car.id}));
+ const act=useInvestorAction(actorId),[share,setShare]=useState(String(car.consignment?.splitPercent??50)),[preview,setPreview]=useState<ConsignmentOpenPreview|null>(null),[file,setFile]=useState<File|null>(null),[uploading,setUploading]=useState(false),[error,setError]=useState(''),[costsConfirmed,setCostsConfirmed]=useState(false),[confirm,setConfirm]=useState<'open'|'approve'|null>(null),[documentPayment,setDocumentPayment]=useState(''),[receipt,setReceipt]=useState<Payment|null>(null),[payment,setPayment]=useState<Payment|null>(null),[agreementLink,setAgreementLink]=useState('');
+ const data=query.data,k=data?.case,review=k?.settlement??data?.review;
+ useEffect(()=>{setCostsConfirmed(false);setConfirm(current=>current==='approve'?null:current);},[data?.review?.sourceRevision]);
+ const slotPrefix=`consignment:${car.id}:`,pending=act.pending.filter(p=>p.slot.startsWith(slotPrefix));
+ const apply=async(saved:ConsignmentSnapshot|null)=>{
+  if(!saved||useStore.getState().currentUser?.id!==actorId)return;
+  useStore.getState().applyCompanyBankPayment(actorId,{payments:saved.payments??[],journals:saved.journals??[],...(saved.car?{car:saved.car}:{})});setPreview(null);setCostsConfirmed(false);await query.reload();
+ };
+ const check=async()=>{setError('');try{const dealerBasisPoints=car.consignment?.terms==='profit_split'?consignmentBasisPoints(Number(share)):undefined;const r=await consignmentRequest<{preview:ConsignmentOpenPreview}>('preview_open',{carId:car.id,...(dealerBasisPoints!==undefined?{dealerBasisPoints}:{})});if(useStore.getState().currentUser?.id===actorId)setPreview(r.preview);}catch(e){setError(e instanceof Error?e.message:'Could not load this deal.');}};
+ const mutate=async(action:'open'|'approve')=>{
+  if(action==='open'&&preview)await apply(await act.run<ConsignmentSnapshot>(slotPrefix+'open','open',{scope:'consignment_finance',carId:car.id,...(preview.dealerBasisPoints!==null?{dealerBasisPoints:preview.dealerBasisPoints}:{}),expectedRevision:preview.sourceRevision},'Open consignment deal'));
+  if(action==='approve'&&data?.review&&costsConfirmed)await apply(await act.run<ConsignmentSnapshot>(slotPrefix+'approve','approve',{scope:'consignment_finance',carId:car.id,expectedRevision:data.review.sourceRevision,costsConfirmed:true},'Approve dealer settlement'));
+ };
+ const upload=async()=>{if(!file)return;setUploading(true);setError('');try{const proof=await prepareProof(file);if(useStore.getState().currentUser?.id!==actorId)return;await consignmentRequest('upload',{carId:car.id,...proof});if(useStore.getState().currentUser?.id===actorId){setFile(null);await query.reload();}}catch(e){setError(e instanceof Error?e.message:'Could not upload the agreement.');}finally{setUploading(false);}};
+ const rows=(data?.payments??[]).map(rowToPayment);
+ return <section className="rounded-xl border border-blue-400/25 bg-blue-500/5 p-4 space-y-3">
+  <div className="flex items-center justify-between gap-3"><h3 className="text-white font-semibold text-sm">Consignment money</h3><button type="button" className="text-blue-300 text-sm px-2 py-1" onClick={()=>void query.reload()}>Refresh</button></div>
+  {(error||act.error||query.error)&&<p role="alert" className="text-red-400 text-sm">{error||act.error?.message||query.error?.message}</p>}
+  <PendingSaves pending={pending} busy={act.busy} onRetry={slot=>void act.retry<ConsignmentSnapshot>(slot).then(apply)} onDiscard={act.discard}/>
+  {query.loading&&!data&&<p className="text-gray-300 text-sm">Loading consignment records…</p>}
+  {data&&!k&&<div className="space-y-3"><p className="text-gray-300 text-sm">Open the agreed deal first. Customer receipts can then be recorded while the final car bills are checked.</p>
+   {director&&<>
+    {car.consignment?.terms==='profit_split'&&<label className="block text-gray-300 text-sm">Dealer’s share of net profit (%)<input type="number" min="0" max="100" step="0.01" className="input w-full rounded-lg p-2 mt-1" value={share} onChange={e=>{setShare(e.target.value);setPreview(null);}}/></label>}
+    <button type="button" className="rounded-lg px-3 py-2 text-sm border border-blue-400/40 text-blue-200" disabled={!!act.busy||pending.length>0} onClick={()=>void check()}>Review deal</button>
+    {preview&&<div className="rounded-lg bg-black/20 p-3 space-y-1 text-sm text-gray-300"><p>{preview.dealer.name} · {preview.terms==='profit_split'?`${(preview.dealerBasisPoints??0)/100}% of positive net profit`:'Fixed amount'}</p><p>Dealer bank: {preview.dealer.bankName} · account ending {preview.dealer.accountNumber?.slice(-4)} · {preview.dealer.accountHolder}</p><p>Customer invoice: {formatCents(preview.revenueCents)}</p><p>Bank loan towards invoice: {formatCents(preview.loanCents)}</p><p>Lender balance: {formatCents(preview.lenderCents)}</p><button type="button" className="btn-gold rounded-lg px-3 py-2 mt-2 text-sm" disabled={!!act.busy||pending.length>0} onClick={()=>setConfirm('open')}>Open this deal</button></div>}
+   </>}
+  </div>}
+  {k&&<>
+   <p className="text-gray-300 text-sm">{k.dealer.name} · {k.terms==='profit_split'?`Dealer ${(k.dealer_basis_points??0)/100}% of positive net profit; dealer bears loss.`:'Fixed dealer amount applies regardless of profit or loss.'}</p>
+   <p className="text-gray-400 text-xs">Dealer bank: {k.dealer.bankName} · account ending {k.dealer.accountNumber?.slice(-4)} · {k.dealer.accountHolder}</p>
+   <p className="text-gray-400 text-xs">Opened by {data?.openedByName||'Director'} · {new Date(k.opened_at).toLocaleString('en-MY')}</p>
+   {k.approved_at?<p className="text-emerald-300 text-sm">Dealer amount approved by {data?.approvedByName||'Director'} · {new Date(k.approved_at).toLocaleString('en-MY')}</p>:<p className="text-amber-300 text-sm">Car bills are still under review. Unsettled customer money stays reserved.</p>}
+   {(data?.documents??[]).map(doc=><div key={doc.id} className="flex gap-2 text-sm"><span className="text-gray-300">{doc.name}</span><button type="button" className="text-blue-300 underline" onClick={async()=>{try{const r=await consignmentRequest<{url:string}>('open_document',{documentId:doc.id});if(useStore.getState().currentUser?.id===actorId)setAgreementLink(r.url);}catch(e){setError(e instanceof Error?e.message:'Could not open the agreement.');}}}>Open</button></div>)}
+   {agreementLink&&<a href={agreementLink} target="_blank" rel="noopener noreferrer" className="text-blue-300 text-sm underline">View private agreement</a>}
+   {canUpload&&!k.approved_at&&<div className="space-y-2"><label className="block text-gray-300 text-sm">Dealer agreement or statement<input type="file" accept="image/png,image/jpeg,application/pdf" className="block mt-1 text-sm w-full" disabled={uploading} onChange={e=>setFile(e.target.files?.[0]??null)}/></label><button type="button" className="text-blue-200 border border-blue-400/30 rounded-lg px-3 py-2 text-sm" disabled={!file||uploading} onClick={()=>void upload()}>{uploading?'Uploading…':'Upload agreement'}</button></div>}
+   {data?.reviewIssue&&<p className="text-amber-300 text-sm">{consignmentReviewMessage(data.reviewIssue)}</p>}
+   {review&&<div className="grid grid-cols-2 gap-3 rounded-lg bg-black/20 p-3 text-sm"><div><p className="text-gray-400">Car costs</p><p className="text-white">{formatCents(review.costCents)}</p></div><div><p className="text-gray-400">Company profit / loss</p><p className="text-white">{formatCents(review.companyResultCents)}</p></div><div><p className="text-gray-400">Dealer receives</p><p className="text-white">{formatCents(review.dealerPayableCents)}</p></div><div><p className="text-gray-400">Dealer owes company</p><p className="text-white">{formatCents(review.dealerOwesCompanyCents)}</p></div></div>}
+   {director&&!k.approved_at&&data?.review&&<div className="space-y-2"><label className="flex gap-2 text-sm text-gray-300"><input type="checkbox" checked={costsConfirmed} onChange={e=>setCostsConfirmed(e.target.checked)}/>All current car bills are recorded and checked.</label><button type="button" className="btn-gold rounded-lg px-3 py-2 text-sm disabled:opacity-40" disabled={!costsConfirmed||!!act.busy||pending.length>0||!data.documents?.length} onClick={()=>setConfirm('approve')}>Approve dealer amount</button></div>}
+   <div className="divide-y divide-white/10">{rows.map(p=>{const inbound=['customer_collection','loan_disbursement','consignment_collection'].includes(p.type),canPay=director&&p.status==='pending'&&paymentBalanceCents(p)>0&&(inbound||!!k.approved_at||p.id===k.lender_payment_id||p.type==='customer_refund');return <div key={p.id} className="py-3 space-y-1"><div className="flex justify-between gap-3"><span className="text-white text-sm">{p.recipientName} · {p.type.split('_').join(' ')}</span><span className="text-gray-300 text-sm">{p.status==='transferred'?'Paid':`${formatCents(paymentBalanceCents(p))} left`}</span></div><div className="flex flex-wrap gap-3"><button type="button" className="text-blue-300 text-sm py-1" onClick={()=>setDocumentPayment(p.id)}>Invoices & receipts</button>{canPay&&<button type="button" className="text-gold-300 text-sm py-1" onClick={()=>inbound?setReceipt(p):setPayment(p)}>{inbound?'Record money received':'Record payment'}</button>}</div></div>;})}</div>
+  </>}
+  {documentPayment&&<CompanyPaymentDocuments paymentId={documentPayment} onClose={()=>{setDocumentPayment('');void query.reload();}}/>}
+  {receipt&&<CompanyBankReceiptDialog key={actorId+':'+receipt.id} payment={receipt} actorId={actorId} onClose={()=>{setReceipt(null);void query.reload();}}/>}
+  {payment&&<CompanyBankPaymentDialog key={actorId+':'+payment.id} payments={[payment]} actorId={actorId} onClose={()=>{setPayment(null);void query.reload();}}/>}
+  <ConfirmSheet isOpen={confirm!==null} onClose={()=>setConfirm(null)} title={confirm==='open'?'Open this consignment deal?':'Approve the dealer amount?'} variant="warning" message={confirm==='open'?'The agreed customer invoice, dealer terms and lender balance will be recorded. No bank money moves at this step.':'This saves the checked car costs and agreed dealer balance. Future changes need a reviewed correction. No bank money moves at this step.'} confirmLabel={confirm==='open'?'Open deal':'Approve settlement'} onConfirm={()=>{const action=confirm;setConfirm(null);if(action)void mutate(action);}}/>
+ </section>;
+}

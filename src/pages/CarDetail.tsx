@@ -73,6 +73,7 @@ import { completeRepairJob } from '../utils/completeRepair';
 import { recordInvestorMiscCost } from '../utils/completeInvestorMisc';
 import TradeInFundingChoice from '../components/TradeInFundingChoice';
 import CompanyPurchaseStart from '../components/CompanyPurchaseStart';
+import ConsignmentFinancePanel from '../components/ConsignmentFinancePanel';
 import { buildCarSaleEntry, buildPayableRecognizedEntry, buildCarCostRecognizedEntry, buildSettlementRecognizedEntry, buildTradeInAcquiredEntry, LEDGER_ACCOUNTS } from '../utils/generateJournalEntries';
 import { getCaseCompletion } from '../utils/caseCompletion';
 import { buildDealReceiptPdf, uploadDealReceipt } from '../utils/generateDealReceipt';
@@ -300,7 +301,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const dealIsLoan = !!dealCustomer?.loanWorkOrder;
   const _loanAmount = dealIsLoan ? (car?.disbursementExpectedAmount ?? car?.disbursementAmount ?? dealCustomer?.loanWorkOrder?.loanAmount ?? 0) : 0;
 
-  const nativeCollection = !!(companyBankPaymentsEnabled && car && !car.investorFunded && !car.consignment && !car.outgoingConsignment);
+  const nativeCollection = !!(companyBankPaymentsEnabled && car && !car.investorFunded && (!car.consignment || car.consignmentFinanceOpen) && !car.outgoingConsignment);
   const balanceKey = nativeCollection && currentUser && ['director','admin','shareholder','salesperson'].includes(currentUser.role) ? `${currentUser.id}:${currentUser.role}:${car!.id}` : null;
   const collectionBalance = useInvestorQuery(balanceKey, () => companyCollectionBalance(car!.id));
   useEffect(() => { if(balanceKey) void collectionBalance.reload(); }, [payments, balanceKey, collectionBalance.reload]);
@@ -311,10 +312,10 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     const wo = dealCustomer.loanWorkOrder ?? dealCustomer.cashWorkOrder;
     if (!wo) return 0;
     const addItems = (wo.additionalItems ?? []).reduce((s: number, i: WorkOrderItem) => s + i.amount, 0);
-    if (companyBankPaymentsEnabled && !car.investorFunded && !car.consignment && !car.outgoingConsignment) {
+    if (companyBankPaymentsEnabled && !car.investorFunded && (!car.consignment || car.consignmentFinanceOpen) && !car.outgoingConsignment) {
       const price = deliveredDealPrice(car, wo).netPrice + (wo.insurance ?? 0) + (wo.bankProduct ?? 0) + addItems;
       const trade = wo.hasTradeIn ? Math.max(0, (wo.tradeInPrice ?? 0) - (wo.settlementFigure ?? 0)) : 0;
-      const loan = dealCustomer.loanWorkOrder ? (car.disbursementExpectedAmount ?? dealCustomer.loanWorkOrder.loanAmount ?? car.disbursementAmount ?? 0) : 0;
+      const loan = dealCustomer.loanWorkOrder ? car.consignmentFinanceOpen ? Math.min(dealCustomer.loanWorkOrder.loanAmount??0,Math.max(0,price-Math.min(price,wo.bookingFee??0))) : (car.disbursementExpectedAmount ?? dealCustomer.loanWorkOrder.loanAmount ?? car.disbursementAmount ?? 0) : 0;
       if (balanceUnavailable) return 0;
       const customerCovered = collectionBalance.data!.customerCoveredCents / 100;
       return Math.round((price - trade - loan - customerCovered) * 100) / 100;
@@ -585,7 +586,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const _commission = salesCommission(car, customers);
   const netProfit = car.consignment ? calcCarNetProfitBreakdown(car,customers,repairs).netProfit : car.isStaffSale ? 0 : _profitBeforeComm - _commission - _intakeCommission - _sourceCommission;
   const consignmentResult = car.consignment ? calcConsignmentSettlement(car,customers,repairs) : null;
-  const consignmentTermsLocked = payments.some(p=>p.carId===car.id&&p.type==='consignment_payout'&&(p.status==='transferred'||(p.bankPaidCents??0)>0));
+  const consignmentTermsLocked = car.consignmentFinanceOpen || payments.some(p=>p.carId===car.id&&p.type==='consignment_payout'&&(p.status==='transferred'||(p.bankPaidCents??0)>0));
 
   // Checklist helpers
   const checklist: ChecklistItem[] = car.checklistItems ?? DEFAULT_CHECKLIST_LABELS.map((label, i) => ({
@@ -624,7 +625,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     const newlyAddedSettlement = (editForm.settlementAmount ?? 0) > 0
       && !(car.settlementAmount ?? 0)
       && !payments.some(p => p.type === 'purchase_settlement' && p.carId === car.id);
-    const savedConsignment = editForm.consignment?.terms === 'fixed_amount' && (editForm.purchasePrice!==car.purchasePrice || car.consignment?.terms!=='fixed_amount')
+    const savedConsignment = editForm.consignment?.terms === 'fixed_amount' && (editForm.purchasePrice!==car.purchasePrice || car.consignment?.terms!=='fixed_amount' || editForm.consignment.fixedAmount==null)
       ? { ...editForm.consignment, fixedAmount: editForm.purchasePrice || 0 }
       : editForm.consignment;
     await updateCar(car.id, { ...editForm, consignment: savedConsignment });
@@ -933,6 +934,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       </nav>
 
       {car.investorFunded && (isDirector || isAdmin) && <button className="w-full rounded-xl border border-gold-400/30 bg-gold-400/10 px-4 py-3 text-left text-gold-400" onClick={() => navigate('/investor-finance?carId='+encodeURIComponent(car.id))}>Investor-funded car · Open car bills and payments →</button>}
+      {companyBankPaymentsEnabled && car.consignment && !car.outgoingConsignment && currentUser && (isDirector||isAdmin||isShareHolder) && <ConsignmentFinancePanel key={currentUser.id+':'+currentUser.role+':'+car.id} car={car} actorId={currentUser.id} role={currentUser.role}/>}
       {companyBankPaymentsEnabled && isDirector && !car.companyPurchaseRecorded && !car.investorFunded && !car.investorId && !car.consignment && !car.outgoingConsignment && !car.tradeInSourceCarId && !(car.purchasePrice>0) && ['coming_soon','available','in_workshop','ready','photo_complete','submitted'].includes(car.status) && <CompanyPurchaseStart key={currentUser.id+':'+car.id} car={car} actorId={currentUser.id}/>}
       {car.tradeInSourceCarId && isDirector && import.meta.env.VITE_INVESTOR_FINANCE === '1' && <TradeInFundingChoice key={car.id + ':' + currentUser?.id} incomingCarId={car.id} />}
       {/* Back + actions */}
@@ -1062,6 +1064,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                             sourceCommission: _sourceCommission,
                             panelCharge: car.panelChargeAmount??0,
                             fixedAmount: car.consignment!.fixedAmount,
+                            otherCarCosts: calcCarNetProfitBreakdown(car,customers,repairs).otherCarCost,
                             netProfit,
                             terms: car.consignment!.terms,
                             splitPercent: car.consignment!.splitPercent ?? 50,
@@ -1112,6 +1115,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                             sourceCommission: _sourceCommission,
                             panelCharge: car.panelChargeAmount??0,
                             fixedAmount: car.consignment!.fixedAmount,
+                            otherCarCosts: calcCarNetProfitBreakdown(car,customers,repairs).otherCarCost,
                             netProfit,
                             terms: car.consignment!.terms,
                             splitPercent: car.consignment!.splitPercent ?? 50,

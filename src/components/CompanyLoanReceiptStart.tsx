@@ -13,6 +13,7 @@ export default function CompanyLoanReceiptStart({ car, actorId, expectedAmount, 
   const [amount, setAmount] = useState(expectedAmount ? expectedAmount.toFixed(2) : ''), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const cents = parseRinggit(amount);
   if (rows.length === 1) return <CompanyBankReceiptDialog key={actorId + ':' + rows[0].id} payment={rows[0]} actorId={actorId} onClose={onClose} />;
+  if(car.consignmentFinanceOpen&&rows.length===0)return <Modal isOpen title="Consignment bank receipt" onClose={onClose}><p className="text-sm text-gray-300">Open Consignment money on the car page and choose its recorded customer or bank receivable. No new receivable was created.</p></Modal>;
   const historical = car.moneyReceived || car.disbursementStatus === 'disbursed';
   return <Modal isOpen title="Bank loan receipt" onClose={onClose}>
     {rows.length > 1 ? <p className="text-sm text-amber-300">This car has more than one bank receivable. Review the duplicate records before recording more money.</p> : historical ? <p className="text-sm text-amber-300">This car already shows money received. Match its earlier bank record before adding another receipt.</p> : <div className="space-y-3">

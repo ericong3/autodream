@@ -54,6 +54,11 @@ begin
 end $$;
 create trigger uc_company_cash_receipt_once before insert on uc_company_bank_allocations for each row execute function uc_company_receipt_document_guard();
 
+create function public.uc_consignment_receipt_allowed(p_car text,p_payment text default null) returns boolean language plpgsql stable security definer set search_path=public,pg_temp as $$
+begin
+ if to_regclass('uc_consignment_cases') is null then return false;end if;
+ return exists(select 1 from uc_consignment_cases c where c.car_id=p_car and (p_payment is null or p_payment in(c.customer_payment_id,c.loan_payment_id,c.recovery_payment_id)));
+end $$;
 create function public.uc_company_bank_receipt(p_actor text,p_action text,p_data jsonb) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
 declare actor garage_building_staff;pay payments;bill payments;car cars;bank uc_investor_banks;receipt uc_company_bank_receipts;doc uc_company_payment_documents;customer jsonb;
  req text;allowed text[];ids text[]:='{}';item jsonb;amount bigint;fees bigint:=0;excess bigint;covered bigint;owing bigint;bill_paid bigint;bill_amount bigint;credit numeric;day date;reference text;
@@ -64,7 +69,7 @@ begin
   if actor.id is null or not coalesce(actor.enabled and actor.registration_status='active' and actor.role in ('director','admin','shareholder','salesperson') and actor.business_access in ('used_car','both'),false) then raise exception 'NOT_ALLOWED';end if;
   if jsonb_typeof(p_data) is distinct from 'object' or exists(select 1 from jsonb_object_keys(p_data) k where k<>'carId') or coalesce(length(p_data->>'carId'),0) not between 1 and 180 then raise exception 'INVALID';end if;
   select * into car from cars where id=p_data->>'carId';
-  if car.id is null or car.investor_id is not null or coalesce(to_jsonb(car)->>'investor_tagged','false')='true' or exists(select 1 from uc_investor_cars where car_id=car.id) or car.consignment is not null and car.consignment<>'null'::jsonb or car.outgoing_consignment is not null and car.outgoing_consignment<>'null'::jsonb then raise exception 'NOT_ALLOWED';end if;
+  if car.id is null or car.investor_id is not null or coalesce(to_jsonb(car)->>'investor_tagged','false')='true' or exists(select 1 from uc_investor_cars where car_id=car.id) or car.consignment is not null and car.consignment<>'null'::jsonb and not uc_consignment_receipt_allowed(car.id) or car.outgoing_consignment is not null and car.outgoing_consignment<>'null'::jsonb then raise exception 'NOT_ALLOWED';end if;
   if actor.role='salesperson' and (to_jsonb(car)->>'assigned_salesperson') is distinct from p_actor then
    execute 'select to_jsonb(c) from customers c where to_jsonb(c)->>''interested_car_id''=$1 and to_jsonb(c)->>''assigned_sales_id''=$2 limit 1' into customer using car.id,p_actor;
    if customer is null then raise exception 'NOT_ALLOWED';end if;
@@ -90,10 +95,11 @@ begin
   end loop;
   perform 1 from payments where id=any(ids) order by id for update;
   select * into pay from payments where id=p_data->>'paymentId';
-  if pay.id is null or pay.car_id is null or coalesce(pay.type,'') not in ('customer_collection','loan_disbursement') then raise exception 'COLLECTION_WORKFLOW_REQUIRED';end if;
+  if pay.id is null or pay.car_id is null or coalesce(pay.type,'') not in ('customer_collection','loan_disbursement','consignment_collection') or pay.type='consignment_collection' and not uc_consignment_receipt_allowed(pay.car_id,pay.id) then raise exception 'COLLECTION_WORKFLOW_REQUIRED';end if;
   select * into car from cars where id=pay.car_id for update;
   if car.id is null or car.investor_id is not null or coalesce(to_jsonb(car)->>'investor_tagged','false')='true' or exists(select 1 from uc_investor_cars where car_id=car.id) then raise exception 'USE_INVESTOR_CAR_BILLS';end if;
-  if car.consignment is not null and car.consignment<>'null'::jsonb or car.outgoing_consignment is not null and car.outgoing_consignment<>'null'::jsonb then raise exception 'COLLECTION_WORKFLOW_REQUIRED';end if;
+  if car.consignment is not null and car.consignment<>'null'::jsonb and not uc_consignment_receipt_allowed(car.id,pay.id) or car.outgoing_consignment is not null and car.outgoing_consignment<>'null'::jsonb then raise exception 'COLLECTION_WORKFLOW_REQUIRED';end if;
+  if pay.type='consignment_collection' and (fees<>0 or excess<>0) then raise exception 'COLLECTION_WORKFLOW_REQUIRED';end if;
   if pay.type='loan_disbursement' and (exists(select 1 from journal_entries where source_type='disbursement_received' and source_id=car.id and not coalesce(voided,false) and id not like 'company-receipt:%')
    or coalesce((to_jsonb(car)->>'money_received')::boolean,false) and not exists(select 1 from uc_company_bank_receipts where payment_id=pay.id)) then raise exception 'COLLECTION_HISTORY_REVIEW_REQUIRED';end if;
   covered:=amount+fees-excess;owing:=uc_commission_cents(to_jsonb(pay)->'amount')-uc_company_paid_cents(pay.id);
@@ -108,6 +114,7 @@ begin
    if customer is null then raise exception 'CUSTOMER_REQUIRED';end if;
   end if;
   counter:='acct-ar';v_source_type:=case pay.type when 'loan_disbursement' then 'disbursement_received' else 'customer_collection_received' end;v_source_id:=case pay.type when 'loan_disbursement' then car.id else pay.id end;
+  if pay.type='consignment_collection' then counter:='acct-consignor-ar';v_source_type:='consignment_collection_received';end if;
   -- Older cash-sale entries already booked Bank Operating. Reclassify that
   -- same cash to its real bank instead of recognising it for a second time.
   if pay.type='customer_collection' and exists(select 1 from journal_entries j cross join lateral jsonb_array_elements(j.lines) l where j.source_type='car_sold' and j.source_id=car.id and not coalesce(j.voided,false) and l->>'accountId'='acct-bank-operating' and (l->>'debit')::numeric>0) then counter:='acct-bank-operating';end if;
@@ -118,11 +125,14 @@ begin
   for item in select value from jsonb_array_elements(coalesce(p_data->'withheldBills','[]'::jsonb)) loop
    select * into bill from payments where id=item->>'paymentId';bill_amount:=uc_recovery_cents(item->'amountCents');bill_paid:=uc_company_paid_cents(bill.id);
    if bill.id is null or bill.car_id is distinct from car.id or coalesce(bill.type,'') not in ('repair','misc_cost','panel_charge') or bill.status is distinct from 'pending' or coalesce(uc_commission_cents(to_jsonb(bill)->'amount'),0)<=0 or bill_amount>uc_commission_cents(to_jsonb(bill)->'amount')-bill_paid then raise exception 'WITHHELD_BILL_REQUIRED';end if;
+   if bill.type='panel_charge' and not uc_consignment_payment_allowed(bill.id) then raise exception 'PAYMENT_WORKFLOW_REQUIRED';end if;
+   if uc_consignment_payment_needs_review(bill.id) then raise exception 'CONSIGNMENT_COST_CORRECTION_REQUIRED';end if;
+   if uc_consignment_bill_limit(bill.id) is not null and bill_paid+bill_amount>uc_consignment_bill_limit(bill.id) then raise exception 'PAYMENT_EXCEEDS_BALANCE';end if;
    if not exists(select 1 from uc_company_payment_documents where payment_id=bill.id and kind='invoice' and state='confirmed') then raise exception 'SUPPLIER_INVOICE_REQUIRED';end if;
    select * into doc from uc_company_payment_documents where id=(item->>'documentId')::uuid and payment_id=bill.id and kind='payment' and state='confirmed';if doc.id is null then raise exception 'PAYMENT_RECEIPT_REQUIRED';end if;
    if exists(select 1 from uc_company_bank_allocations where receipt_document_id=doc.id) or exists(select 1 from uc_company_withheld_payments where receipt_document_id=doc.id) then raise exception 'RECEIPT_ALREADY_USED';end if;
-   perform 1 from journal_entries j where j.source_type=bill.type and j.source_id=bill.id and not coalesce(j.voided,false) order by j.id for update;
-   select coalesce(sum(((l->>'credit')::numeric-(l->>'debit')::numeric)*100),0) into credit from journal_entries j cross join lateral jsonb_array_elements(j.lines) l where j.source_type=bill.type and j.source_id=bill.id and not coalesce(j.voided,false) and l->>'accountId'='acct-ap';
+   perform 1 from journal_entries j where (j.source_type=bill.type and j.source_id=bill.id or uc_consignment_journal_source(j.id,bill.id)) and not coalesce(j.voided,false) order by j.id for update;
+   select coalesce(sum(((l->>'credit')::numeric-(l->>'debit')::numeric)*100),0) into credit from journal_entries j cross join lateral jsonb_array_elements(j.lines) l where (j.source_type=bill.type and j.source_id=bill.id or uc_consignment_journal_source(j.id,bill.id)) and not coalesce(j.voided,false) and l->>'accountId'='acct-ap';
    if bill_amount>credit-bill_paid then raise exception 'BILL_LEDGER_REVIEW_REQUIRED';end if;
    insert into uc_company_withheld_payments(receipt_id,payment_id,amount_cents,receipt_document_id) values(receipt.id,bill.id,bill_amount,doc.id);
    perform set_config('autodream.company_bank_payment',txid_current()::text||':'||bill.id,true);
@@ -173,4 +183,5 @@ declare result jsonb;begin
 end $$;
 revoke all on function uc_company_has_bank_history(text),uc_company_receipt_journal_guard(),uc_company_receipt_document_guard(),uc_company_bank_receipt(text,text,jsonb),uc_company_bank_before_receipts(text,text,jsonb),uc_company_bank_money(text,text,jsonb) from public,anon,authenticated,service_role;
 grant execute on function uc_company_bank_receipt(text,text,jsonb),uc_company_bank_money(text,text,jsonb) to service_role;
+revoke all on function uc_consignment_receipt_allowed(text,text) from public,anon,authenticated,service_role;
 commit;

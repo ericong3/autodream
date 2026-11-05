@@ -376,6 +376,7 @@ export default function Investors() {
           if (b.intakeCommission) lines.push({ label: '− Intake bonus', value: -b.intakeCommission });
           if (b.sourceCommission) lines.push({ label: '− Source commission', value: -b.sourceCommission });
           if (b.panelCost) lines.push({label:'− Panel charge',value:-b.panelCost});
+          if (b.otherCarCost) lines.push({label:'− Other approved car bills',value:-b.otherCarCost});
           lines.push({ label: 'Net profit', value: b.netProfit, subtotal: true });
           lines.push({ label: 'Base car value', value: car.purchasePrice });
           if (settled > 0) lines.push({ label: '− Lender balance allocated separately', value: -settled });

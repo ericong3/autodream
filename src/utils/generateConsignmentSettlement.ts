@@ -19,6 +19,7 @@ export interface ConsignmentSettlementInput {
   sourceCommission?: number;
   panelCharge?: number;
   fixedAmount?: number;
+  otherCarCosts?: number;
   netProfit: number;       // matches the in-app Deal Financials Net Profit
   terms: 'fixed_amount' | 'profit_split';
   splitPercent: number;    // consignor's share of net profit, e.g. 30 — only meaningful for 'profit_split'
@@ -122,6 +123,7 @@ export async function buildConsignmentSettlementPdf(input: ConsignmentSettlement
   if (input.intakeBonus > 0) { row('- Intake Bonus', input.intakeBonus, y, { color: RED }); y -= 18; }
   if ((input.sourceCommission??0)>0) {row('- Source Commission',input.sourceCommission!,y,{color:RED});y-=18;}
   if ((input.panelCharge??0)>0) {row('- Panel Charge',input.panelCharge!,y,{color:RED});y-=18;}
+  if ((input.otherCarCosts??0)>0) {row('- Other Approved Car Bills',input.otherCarCosts!,y,{color:RED});y-=18;}
 
   y -= 6;
   hr(y, GOLD, 1.5);

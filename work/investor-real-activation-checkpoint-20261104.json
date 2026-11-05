@@ -32,7 +32,8 @@
     "Company cash and loan receipts: actual registered-bank money, partial customer balance, invoice-backed withheld bills without fake bank outflow, excess-customer liability and source-linked refund. Receipt uploads and audit, exact replay, immutable journals, actual monthly bank totals, assigned-salesperson minimal balance lookup without bank/salary access. Booking/downpayment metadata does not mark cash received in bank mode.",
     "Company-funded incoming trade-ins from investor sales: explicit company ownership, gross inventory and net source-investor sale credit, no fake bank movement, source-bound lender AP handled by receipt/invoice-backed partial company payouts, protected purchase/funding basis and immutable application/replay. Company pot tab shows recorded balances, customer money held and company stock photos/details. Customer deposits do not become spendable stock funding. Delivery no longer overwrites investor trade-in purchase agreements or duplicates acquisitions.",
     "Ordinary company car purchases: atomic car registration with separate named seller/lender AP bills, immutable basis and purchase markers, no assumed bank payment, existing invoice/receipt-backed partial payouts and current paid-balance replays. Existing Director/salesperson new-car registration roles preserved without returning private bills/journals to salespeople. Zero-price draft registration remains available; Director Record purchase completes a price-pending draft without overwriting its other car details. Finance catch-up no longer invents missing historical cash purchases in bank mode.",
-    "Incoming consignment business rules centralised in shared integer-cent code for browser/server reuse: Director-selected percentage on positive net profit; dealer absorbs full profit-sharing losses including signed dealer debt beyond capital; fixed-amount obligation independent of profit/loss and percentage. Car estimates, dealer reports and settlement PDFs share the rule; panel/source costs shown and included. Existing payout rows are never recalculated by an unrelated car edit; pending/calculated differences and overpayments flagged for review. Bank-mode legacy collection exits before any car/payment/journal change, old History direct-paid path blocked, panel withholding hidden until accrual route exists. No new consignment bank posting or SQL migration in this stage."
+    "Incoming consignment business rules centralised in shared integer-cent code for browser/server reuse: Director-selected percentage on positive net profit; dealer absorbs full profit-sharing losses including signed dealer debt beyond capital; fixed-amount obligation independent of profit/loss and percentage. Car estimates, dealer reports and settlement PDFs share the rule; panel/source costs shown and included. Existing payout rows are never recalculated by an unrelated car edit; pending/calculated differences and overpayments flagged for review. Bank-mode legacy collection exits before any car/payment/journal change, old History direct-paid path blocked, panel withholding hidden until accrual route exists. No new consignment bank posting or SQL migration in this stage.",
+    "Incoming consignment private Director-opened contract and approved cost snapshot, configurable dealer percentage, fixed-amount/loss rules, held customer/loan receipts, overloan refunds, partial invoice/proof-backed dealer/lender payouts and dealer debt receipts; immutable source and beneficiary guards. Local only."
   ],
   "validation": {
     "unit_tests": 432,
@@ -155,7 +156,7 @@
   "user_documents_policy": "Every bill needs its invoice before approval/payment; every outgoing payment needs uploaded proof before completion. Salary documents remain restricted; investors see only their own car/pot documents.",
   "bank_matching_policy": "User changed sequencing: start new live transactions first; reconcile all January-2026 onward history later without duplicates. Do not represent unmatched balances as bank-reconciled.",
   "pending_user_decision": null,
-  "claude_status": "Claude successfully completed two read-only reviews on 2026-11-05. Baseline review identified unsupported consignment/panel/legacy investor bank routes; focused review confirmed clarified profit-sharing/fixed rules and raised fixed-rate leakage, pending-row rewrite and missing mismatch warnings. Those findings were addressed with tests. Claude did not run tests, edit files or deploy. This is not approval of all remaining finance modules.",
+  "claude_status": "Claude successfully completed two read-only reviews on 2026-11-05. Baseline review identified unsupported consignment/panel/legacy investor bank routes; focused review confirmed clarified profit-sharing/fixed rules and raised fixed-rate leakage, pending-row rewrite and missing mismatch warnings. Those findings were addressed with tests. Claude did not run tests, edit files or deploy. This is not approval of all remaining finance modules. Incoming consignment follow-up review identified pre-existing payout beneficiary adoption and panel withholding approval bypass. Existing payout adoption now refuses for review; withholding uses same approved panel/source guards. New DB regressions pass. Dealer field format was checked against existing camel-case profile storage.",
   "client_work_date": "2026-11-05",
   "trade_in_funding_policy": "User answered 2026-11-05: Director chooses the company pot or a specific investor pot for each incoming trade-in. No automatic inheritance from the outgoing car.",
   "recovery_posting_design": {
@@ -172,18 +173,40 @@
     "No Supabase installation, GitHub push or production deployment"
   ],
   "next_work": [
-    "Implement incoming-consignment Director-approved immutable settlement/cost snapshot and receipt-backed bank receipts/payouts/dealer-debt recovery with both clarified contract types",
     "Complete panel/dealer and legacy investor bank routes, source-safe corrections and ownership transitions",
     "Remaining withdrawal destination/correction/privacy checks and reviewed bank opening ownership",
     "Real role/browser and PostgreSQL concurrency verification, then guarded exact-chain deployment and activation"
   ],
-  "current_release_status": "Local commits only. Live website and production Supabase are unchanged. New bank flags remain off; consignment calculations/preflight guards do not mean consignment bank posting is activated.",
+  "current_release_status": "Local only; live app and Supabase unchanged. All new bank flags remain off. Incoming consignment code passes local tests, not activated.",
   "consignment_policy": {
     "director_percentage": "Director selects the agreed dealer percentage per deal; 40/60 is not fixed. Existing 50% defaults are preserved only as editable defaults, not mandatory rates.",
     "profit_sharing": "Only positive net profit is shared; all loss reduces dealer capital. Company result is zero on loss. Negative dealer balance is shown as money owed by dealer, not silently clamped away.",
     "fixed_amount": "Agreed dealer amount stays fixed regardless of profit/loss; company keeps profit or bears loss.",
     "lender": "Lender amount is allocated separately from dealer entitlement; an allocation is not proof it was paid.",
     "history": "No historical payouts mass rewritten. Pending/calculated differences and paid-over-calculated amounts require review.",
-    "bank_module": "NOT IMPLEMENTED for incoming consignment yet. Requires server-calculated immutable Director-approved source snapshot, car-cost accrual/source checks, actual receipt/payout/refund/dealer-debt postings and source-specific privacy before activation."
+    "bank_module": "IMPLEMENTED LOCALLY for new/reviewed clean-history incoming cases. Old paid/purchase history, ambiguous dealer profiles and mismatched bills block conversion for review. Prepared 20261105080000 migration not installed."
+  },
+  "consignment_validation": {
+    "unit_tests": 437,
+    "production_build": "passed",
+    "pglite": [
+      "incoming consignment loss/fixed/debt/overloan/withholding/partial payout/ACL/invoice/source guards",
+      "existing company outgoing payments",
+      "existing company incoming receipts",
+      "existing company purchases",
+      "existing company trade-ins",
+      "investor sale recoveries",
+      "investor financed trade-in lenders"
+    ],
+    "not_verified": [
+      "real browser role flows",
+      "multi-connection PostgreSQL concurrency",
+      "production exact migration chain"
+    ],
+    "limitations": [
+      "Existing paid or purchase journal history requires review; no automatic conversion",
+      "Wrong approved bill/contract requires correction workflow; deletion is blocked",
+      "Insurance/bank-product amounts follow current invoice calculation; associated car bills must be entered before approval"
+    ]
   }
 }
