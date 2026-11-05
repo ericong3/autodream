@@ -44,3 +44,10 @@ test('monthly bank summary uses actual server movements and stays Director-only'
  f.setResult({data:{month:{receivedCents:'7900000',paidCents:0}}});assert.equal((await f.run({scope:'company_bank_payments',action:'month'},c)).status,503);
  const a=enabled(fixture('admin')),ac=await a.login();assert.equal((await a.run({scope:'company_bank_payments',action:'month'},ac)).status,403);
 });
+test('company pot stock and balances are paginated and Director-only',async()=>{
+ const f=enabled(fixture()),c=await f.login(),body={scope:'company_bank_payments',action:'company',page:0};
+ f.setResult({data:{company:{bankMatched:false},cars:[{id:'company-car'}],hasMore:false}});assert.equal((await f.run(body,c)).status,200);assert.equal(f.calls[0].args.p_action,'company');
+ for(const page of [-1,0.1,'1',1000000])assert.equal((await f.run({...body,page},c)).status,400);
+ const a=enabled(fixture('admin')),ac=await a.login();assert.equal((await a.run(body,ac)).status,403);assert.equal(a.calls.length,0);
+ f.setResult({data:{company:{},cars:[],hasMore:'yes'}});assert.equal((await f.run(body,c)).status,503);
+});

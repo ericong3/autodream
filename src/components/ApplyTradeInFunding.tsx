@@ -22,7 +22,8 @@ export default function ApplyTradeInFunding({ choiceId, actorId, amountCents, le
         sessionStorage.setItem(key, JSON.stringify(intent)); setPending(intent);
       }
       if (useStore.getState().currentUser?.id !== actorId) throw new Error('Your account changed. Reopen this car.');
-      await tradeInRequest('apply', intent, true);
+      const saved = await tradeInRequest<{car?: Record<string, unknown>; payments?: Record<string, unknown>[]; journals?: Record<string, unknown>[]}>('apply', intent, true);
+      if(saved.car) useStore.getState().applyCompanyBankPayment(actorId,{car:saved.car,payments:saved.payments??[],journals:saved.journals??[]});
       sessionStorage.removeItem(key); setPending(null); setFile(null); if (useStore.getState().currentUser?.id === actorId) await onChanged();
     } catch (e) {
       if (e instanceof InvestorFinanceError && !e.retryable && e.code !== 'REQUEST_CHANGED') { sessionStorage.removeItem(key); setPending(null); }

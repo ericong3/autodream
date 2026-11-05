@@ -48,8 +48,8 @@ export default function TradeInFundingChoice({ incomingCarId }: { incomingCarId:
     </div>}
     {choice && !choice.financiallyApplied && !editing && <button className="text-xs text-gray-400" onClick={() => setEditing(true)}>Change choice</button>}
     {choice?.financiallyApplied && <p className="text-xs text-green-400">Funded by {choice.appliedBy} · {choice.appliedAt && new Date(choice.appliedAt).toLocaleString('en-MY')}</p>}
-    {choice && !choice.financiallyApplied && !choice.valuationChanged && !editing && choice.fundingKind === 'investor' && <ApplyTradeInFunding key={actor.id + ':' + choice.id} choiceId={choice.id} actorId={actor.id} amountCents={choice.grossCents} lenderCents={choice.lenderCents} potName={choice.potName} onChanged={query.reload} />}
-    {choice && !choice.financiallyApplied && !editing && choice.fundingKind === 'company' && <p className="text-xs text-amber-300">Company-bank funding setup is still required. This car has not been funded.</p>}
+    {choice && !choice.financiallyApplied && !choice.valuationChanged && !editing && <ApplyTradeInFunding key={actor.id + ':' + choice.id} choiceId={choice.id} actorId={actor.id} amountCents={choice.grossCents} lenderCents={choice.lenderCents} potName={choice.potName} onChanged={query.reload} />}
+    {choice?.financiallyApplied && choice.fundingKind === 'company' && choice.lenderCents > (choice.lenderPaidCents ?? 0) && <p className="text-xs text-amber-300">Open Payments to attach the lender’s statement and record its payment.</p>}
     {pending && <button disabled={busy} className="block text-xs text-gold-400" onClick={() => void save(true)}>Retry original save</button>}
     {(query.data?.history?.length ?? 0) > 1 && <details className="text-xs text-gray-400"><summary className="cursor-pointer">Funding history</summary><div className="mt-2 space-y-2">{query.data?.history?.map((h) => <p key={h.id}>{h.potName} · {h.selectedBy} · {new Date(h.selectedAt).toLocaleString('en-MY')}{h.reason && <span className="block text-gray-500">{h.reason}</span>}</p>)}</div></details>}
   </section>;

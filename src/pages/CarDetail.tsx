@@ -834,14 +834,13 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     const _dealPriceAtDelivery = ((dealWo?.sellingPrice ?? car.sellingPrice) - (dealWo?.discount ?? 0)) || car.sellingPrice;
     const _commissionAtDelivery = salesCommission(car, customers);
 
-    // Trade-in reconciliation — now that this deal's final costs are known,
-    // lock in the traded-in car's real price and book its acquisition. Runs
-    // regardless of whether this (parent) deal is a consignment sale, since
-    // the trade-in car itself is ours either way; only the parent's own
+    // Legacy company/consignment trade-ins retain their existing reconciliation.
+    // Investor deals use the explicit funding agreement instead: delivery must
+    // not overwrite that purchase price or post a second acquisition. Only the parent's own
     // sale-side ledger entry below is skipped for consignment (existing,
     // separate behavior — consignment sales were never booked to Revenue/
     // Bank/COGS here, only through the Payments/payout flow).
-    if (dealWo?.hasTradeIn && currentUser) {
+    if (dealWo?.hasTradeIn && currentUser && !car.investorFunded) {
       const tradeInChild = cars.find(c => c.tradeInSourceCarId === car.id);
       if (tradeInChild) {
         const finalPurchasePrice = dealWo.tradeInMode === 'swap'

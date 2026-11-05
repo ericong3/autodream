@@ -62,6 +62,11 @@ declare physical bigint;investor bigint;reserved bigint;begin
   and (p.type<>'expense_claim' or p.claim_confirmed_by is not null) and not exists(select 1 from uc_investor_cars a where a.car_id=p.car_id);
  return jsonb_build_object('bankCents',physical,'investorOwnedCents',investor,'companyCashCents',physical-investor,'unpaidCompanyCents',reserved,'availableCents',physical-investor-reserved,'bankMatched',false);
 end $$;
+create function public.uc_company_trade_in_source(p_journal text,p_car text) returns boolean language plpgsql stable security definer set search_path=public,pg_temp as $$
+begin
+ if to_regclass('uc_company_trade_in_applications') is null then return false;end if;
+ return exists(select 1 from uc_company_trade_in_applications a where a.incoming_car_id=p_car and p_journal='uc:company-trade-in:'||a.id::text);
+end $$;
 create function public.uc_company_bank_payment_guard() returns trigger language plpgsql security definer set search_path=public,pg_temp as $$
 begin
  if tg_op='DELETE' then if exists(select 1 from uc_company_bank_allocations where payment_id=old.id) then raise exception 'BANK_PAYMENT_IMMUTABLE';end if;return old;end if;
@@ -149,9 +154,9 @@ begin
    -- Do not silently recognise another expense. Existing invoice/accrual is
    -- required; historical omissions are reviewed separately before payout.
    if pay.type<>'campaign_bonus' then
-    perform 1 from journal_entries j where (j.source_type=v_source_type and j.source_id=v_source_id or pay.type='customer_refund' and uc_company_refund_receipt_source(j.id,pay.car_id)) and not coalesce(j.voided,false) order by j.id for update;
+    perform 1 from journal_entries j where (j.source_type=v_source_type and j.source_id=v_source_id or pay.type='customer_refund' and uc_company_refund_receipt_source(j.id,pay.car_id) or pay.type='purchase_settlement' and uc_company_trade_in_source(j.id,pay.car_id)) and not coalesce(j.voided,false) order by j.id for update;
     select coalesce(sum((l->>'credit')::numeric-(l->>'debit')::numeric),0)*100 into source_credit from journal_entries j cross join lateral jsonb_array_elements(j.lines) l
-     where (j.source_type=v_source_type and j.source_id=v_source_id or pay.type='customer_refund' and uc_company_refund_receipt_source(j.id,pay.car_id)) and not coalesce(j.voided,false) and l->>'accountId'=counter;
+     where (j.source_type=v_source_type and j.source_id=v_source_id or pay.type='customer_refund' and uc_company_refund_receipt_source(j.id,pay.car_id) or pay.type='purchase_settlement' and uc_company_trade_in_source(j.id,pay.car_id)) and not coalesce(j.voided,false) and l->>'accountId'=counter;
     select coalesce(sum(a.amount_cents),0) into source_paid from uc_company_bank_allocations a join payments p on p.id=a.payment_id
      where p.type=pay.type and (case when p.type in ('salesman_commission','intake_bonus','source_commission','customer_refund','purchase_settlement') then p.car_id else p.id end)=v_source_id;
     source_paid:=source_paid+coalesce((select sum(((l->>'debit')::numeric-(l->>'credit')::numeric)*100) from payments p join journal_entries j on j.source_id=p.id and j.source_type=p.type||'_paid' cross join lateral jsonb_array_elements(j.lines) l
@@ -193,6 +198,7 @@ create or replace view public.uc_private_payment_rows as
  cross join lateral(select uc_commission_payment_row(c.bill_id) row_data) r where r.row_data is not null;
 revoke all on function uc_company_refund_receipt_source(text,text),uc_investor_bank_movement(),uc_company_paid_cents(text),uc_registered_bank_position(uuid),uc_company_cash_position(),uc_company_bank_payment_guard(),uc_company_bank_journal_guard(),uc_company_bank_money(text,text,jsonb) from public,anon,authenticated,service_role;
 grant execute on function uc_company_bank_money(text,text,jsonb) to service_role;
+revoke all on function uc_company_trade_in_source(text,text) from public,anon,authenticated,service_role;
 -- The protected view calls these helpers in its expressions.
 grant execute on function uc_company_paid_cents(text),uc_commission_cents(jsonb) to service_role;
 notify pgrst,'reload schema';

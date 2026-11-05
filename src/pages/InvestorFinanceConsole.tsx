@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import CompanyPot from '../components/CompanyPot';
+import { companyBankPaymentsEnabled } from '../lib/companyBankPayments';
 import { useSearchParams } from 'react-router-dom';
 import { Plus, Link2, Copy, Landmark, Users, ChevronLeft } from 'lucide-react';
 import { useStore } from '../store';
@@ -51,7 +53,7 @@ function DirectorConsole({ actorId, canWrite }: { actorId: string; canWrite: boo
   const requestedCar=params.get('carId');
   const act = useInvestorAction(actorId);
   const [potId, setPotId] = useState<string | null>(null);
-  const [view, setView] = useState<'investors' | 'banks'>('investors');
+  const [view, setView] = useState<'investors' | 'banks' | 'company'>('investors');
   const [confirm, setConfirm] = useState<PendingConfirm | null>(null);
   const data = list.data;
   const selected = data?.profiles.find((p) => p.potId === potId) ?? null;
@@ -74,6 +76,7 @@ function DirectorConsole({ actorId, canWrite }: { actorId: string; canWrite: boo
           <p className="text-gray-500 text-sm mt-0.5">{canWrite ? 'Record money, cars and profit for each investor.' : 'View only. The Director makes changes.'}</p>
         </div>
         <div className="flex gap-2">
+          {canWrite && companyBankPaymentsEnabled && <button type="button" aria-pressed={view==='company'} onClick={() => {setView('company');setPotId(null);}} className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${view==='company'?'bg-gold-500/15 text-gold-300 border-gold-500/40':'text-gray-400 border-obsidian-400/60'}`}>Company pot</button>}
           {([['investors', 'Investors', Users], ['banks', 'Bank accounts', Landmark]] as const).map(([key, label, Icon]) => (
             <button key={key} type="button" onClick={() => { setView(key); setPotId(null); }} className={`px-3 py-1.5 rounded-full text-xs font-semibold border flex items-center gap-1.5 ${view === key ? 'bg-gold-500/15 text-gold-300 border-gold-500/40' : 'text-gray-400 border-obsidian-400/60'}`}><Icon size={12} />{label}</button>
           ))}
@@ -81,6 +84,7 @@ function DirectorConsole({ actorId, canWrite }: { actorId: string; canWrite: boo
       </div>
 
       <PendingSaves pending={act.pending} busy={act.busy} onRetry={(s) => void retry(s)} onDiscard={act.discard} />
+      {view==='company' && canWrite && <CompanyPot key={actorId} actorId={actorId} />}
 
       <LoadState loading={list.loading} error={list.error} onRetry={() => void list.reload()}>
         {data && view === 'banks' && <BankRegister {...shared} />}
