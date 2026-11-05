@@ -47,3 +47,11 @@ test('terms corrections require Director, source revision and reason; approved c
  for(const role of ['admin','shareholder','salesperson','investor']){const g=enabled(fixture(role)),cookie=await g.login();assert.equal((await g.run(body,cookie)).status,403);assert.equal(g.calls.length,0);}
  for(const code of ['CONSIGNMENT_APPROVED_CORRECTION_REQUIRED','NO_CORRECTION_CHANGE','CORRECTION_REASON_REQUIRED']){f.setResult({error:{message:code}});const r=await f.run(body,c);assert.equal(r.status,409);assert.equal(r.body.error.code,code);}
 });
+
+test('unpaid bill corrections validate invoice, amount and actor; paid bills return a review conflict',async()=>{
+ const body={scope:'consignment_finance',action:'correct_bill',carId:'consign',paymentId:'bill',amountCents:300000,invoiceDocumentId:choiceId,reason:'Correct invoice amount',expectedRevision:'a'.repeat(32),requestId:'bill_correction_0001'};
+ const f=enabled(fixture()),c=await f.login();f.setResult(saved());assert.equal((await f.run(body,c)).status,200);assert.equal(f.calls[0].args.p_action,'correct_bill');assert.equal(f.calls[0].args.p_actor,'real-director');
+ for(const changes of [{amountCents:0},{amountCents:1.5},{invoiceDocumentId:'bad'},{reason:'bad'},{actor:'other'}])assert.equal((await f.run({...body,...changes},c)).status,400);
+ const a=enabled(fixture('admin')),ac=await a.login();assert.equal((await a.run(body,ac)).status,403);assert.equal(a.calls.length,0);
+ f.setResult({error:{message:'PAID_BILL_ADJUSTMENT_REQUIRED'}});assert.equal((await f.run(body,c)).status,409);
+});

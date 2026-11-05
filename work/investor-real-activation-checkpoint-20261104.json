@@ -34,7 +34,8 @@
     "Ordinary company car purchases: atomic car registration with separate named seller/lender AP bills, immutable basis and purchase markers, no assumed bank payment, existing invoice/receipt-backed partial payouts and current paid-balance replays. Existing Director/salesperson new-car registration roles preserved without returning private bills/journals to salespeople. Zero-price draft registration remains available; Director Record purchase completes a price-pending draft without overwriting its other car details. Finance catch-up no longer invents missing historical cash purchases in bank mode.",
     "Incoming consignment business rules centralised in shared integer-cent code for browser/server reuse: Director-selected percentage on positive net profit; dealer absorbs full profit-sharing losses including signed dealer debt beyond capital; fixed-amount obligation independent of profit/loss and percentage. Car estimates, dealer reports and settlement PDFs share the rule; panel/source costs shown and included. Existing payout rows are never recalculated by an unrelated car edit; pending/calculated differences and overpayments flagged for review. Bank-mode legacy collection exits before any car/payment/journal change, old History direct-paid path blocked, panel withholding hidden until accrual route exists. No new consignment bank posting or SQL migration in this stage.",
     "Incoming consignment private Director-opened contract and approved cost snapshot, configurable dealer percentage, fixed-amount/loss rules, held customer/loan receipts, overloan refunds, partial invoice/proof-backed dealer/lender payouts and dealer debt receipts; immutable source and beneficiary guards. Local only.",
-    "Director-only pre-approval consignment terms correction: adjustable percentage or fixed amount, required reason, immutable before/after/actor/time/revision, command FK and transaction guard, exact retry and stale-source protection, current-terms-bound private agreement upload, no bank/journal change. Approved/paid/bill corrections remain unfinished."
+    "Director-only pre-approval consignment terms correction: adjustable percentage or fixed amount, required reason, immutable before/after/actor/time/revision, command FK and transaction guard, exact retry and stale-source protection, current-terms-bound private agreement upload, no bank/journal change. Approved/paid/bill corrections remain unfinished.",
+    "Unpaid pre-approval direct repair/misc bill amount corrections: Director-only invoice selection, reason/source revision/request, immutable full before/after source/payment audit, audited payment-evidence exception, original source journal preserved with balanced delta when AP exists, no bank movement, paid/receipt-backed/legacy-paid blocks, immediate repair store refresh. Prepared 20261105090000 migration, not installed."
   ],
   "validation": {
     "unit_tests": 432,
@@ -153,11 +154,11 @@
     "20261105070000_company_car_purchases.sql PREPARED ONLY. Requires 600 and full evidence/bank/private finance chain. Adds private company-purchase source, read-only car marker, invoice/receipt-backed seller and lender obligations and source guards. No historical bank movement is inferred. New routes not production activated."
   ],
   "latest_live_preflight": "work/investor-browser-preflight-live-20261104.json",
-  "updated_at": "2026-11-05T11:49:24.635Z",
+  "updated_at": "2026-11-05T12:08:12.654Z",
   "user_documents_policy": "Every bill needs its invoice before approval/payment; every outgoing payment needs uploaded proof before completion. Salary documents remain restricted; investors see only their own car/pot documents.",
   "bank_matching_policy": "User changed sequencing: start new live transactions first; reconcile all January-2026 onward history later without duplicates. Do not represent unmatched balances as bank-reconciled.",
   "pending_user_decision": null,
-  "claude_status": "Claude successfully completed two read-only reviews on 2026-11-05. Baseline review identified unsupported consignment/panel/legacy investor bank routes; focused review confirmed clarified profit-sharing/fixed rules and raised fixed-rate leakage, pending-row rewrite and missing mismatch warnings. Those findings were addressed with tests. Claude did not run tests, edit files or deploy. This is not approval of all remaining finance modules. Incoming consignment follow-up review identified pre-existing payout beneficiary adoption and panel withholding approval bypass. Existing payout adoption now refuses for review; withholding uses same approved panel/source guards. New DB regressions pass. Dealer field format was checked against existing camel-case profile storage. Reviewed first correction path read-only: no blocker found; findings about agreement revision binding, transaction audit guard, revision/FK, input validation and labels addressed with regression checks.",
+  "claude_status": "Claude successfully completed two read-only reviews on 2026-11-05. Baseline review identified unsupported consignment/panel/legacy investor bank routes; focused review confirmed clarified profit-sharing/fixed rules and raised fixed-rate leakage, pending-row rewrite and missing mismatch warnings. Those findings were addressed with tests. Claude did not run tests, edit files or deploy. This is not approval of all remaining finance modules. Incoming consignment follow-up review identified pre-existing payout beneficiary adoption and panel withholding approval bypass. Existing payout adoption now refuses for review; withholding uses same approved panel/source guards. New DB regressions pass. Dealer field format was checked against existing camel-case profile storage. Reviewed first correction path read-only: no blocker found; findings about agreement revision binding, transaction audit guard, revision/FK, input validation and labels addressed with regression checks. Unpaid bill design and code reviews completed read-only. Fixed link-detachment bypass using immutable audit source IDs plus link locks, added journal author and replay journal return, tested full remaining payout after approval. Original invoice eligibility for initial typing correction retained deliberately; reason and selected evidence audited.",
   "client_work_date": "2026-11-05",
   "trade_in_funding_policy": "User answered 2026-11-05: Director chooses the company pot or a specific investor pot for each incoming trade-in. No automatic inheritance from the outgoing car.",
   "recovery_posting_design": {
@@ -174,7 +175,7 @@
     "No Supabase installation, GitHub push or production deployment"
   ],
   "next_work": [
-    "Complete panel/dealer and legacy investor bank routes, source-safe corrections and ownership transitions",
+    "Complete approved/paid bill and settlement adjustment entries, other legacy bank routes and ownership transitions; unpaid direct repair/misc corrections are now locally implemented",
     "Remaining withdrawal destination/correction/privacy checks and reviewed bank opening ownership",
     "Real role/browser and PostgreSQL concurrency verification, then guarded exact-chain deployment and activation"
   ],
@@ -188,7 +189,7 @@
     "bank_module": "IMPLEMENTED LOCALLY for new/reviewed clean-history incoming cases. Old paid/purchase history, ambiguous dealer profiles and mismatched bills block conversion for review. Prepared 20261105080000 migration not installed."
   },
   "consignment_validation": {
-    "unit_tests": 438,
+    "unit_tests": 439,
     "production_build": "passed",
     "pglite": [
       "incoming consignment loss/fixed/debt/overloan/withholding/partial payout/ACL/invoice/source guards",
@@ -212,6 +213,20 @@
     "browser": "PASS isolated Chrome against real React panel: adjustable percent, explicit open/approve confirmation, cancellation, current-source refresh invalidates checkbox, Director/admin/shareholder controls and mobile overflow; mocked finance API and blocked external network. Real production login/session integration not verified.",
     "database_roles": "PASS real local SQL: admin/shareholder read only; salesperson/investor/mechanic denied; disabled shareholder denied; salary rows excluded.",
     "concurrency": "Not run: no psql/postgres/pg_ctl/docker command available in this environment. PGlite is single-session and does not establish real concurrent transaction safety.",
-    "corrections": "PASS SQL percentage/fixed corrections, denied admin, audit immutability and transaction coupling, exact retry/source changes, fresh agreement required, old in-flight upload rejected, no bank/journal movement, approved adjustment blocked; API control-character validation; isolated browser invalid-percent/cancel. Build passed."
+    "corrections": "PASS SQL percentage/fixed corrections, denied admin, audit immutability and transaction coupling, exact retry/source changes, fresh agreement required, old in-flight upload rejected, no bank/journal movement, approved adjustment blocked; API control-character validation; isolated browser invalid-percent/cancel. Build passed.",
+    "unpaid_bill_corrections": {
+      "status": "Implemented locally; tests/build passed; Claude review findings addressed except intentionally allowing the original invoice for an initial typing-error correction.",
+      "scope": "Only positive amount corrections of one unpaid direct repair or linked misc_costs item before settlement approval. No expense claims, commission bills, disbursement-only unlinked charges, deletion/zeroing, approved or paid adjustments.",
+      "checks": [
+        "PGlite correction with/without prior AP, decreased amount, exact replay, reason/audit, fresh invoice reuse gate, partial payout after correction, paid/evidence block, source guard, misc correction and balanced journals",
+        "Existing company evidence, outgoing bank, incoming bank and ordinary purchase DB regressions",
+        "439 automated tests",
+        "Isolated real React/Chrome invoice-selection correction interaction with mocked API",
+        "Production build",
+        "Journal author, response-loss replay journal, corrected source link locks, and full remaining proof-backed payout after approval"
+      ],
+      "not_live": true,
+      "invoice_policy": "A Director may select the original supplier invoice when it proves the correct amount; it is linked to immutable correction audit. Subsequent corrections require a newly confirmed, unused invoice bound to the current bill. No automatic document content verification is claimed."
+    }
   }
 }

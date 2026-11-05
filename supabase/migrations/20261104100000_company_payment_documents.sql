@@ -109,13 +109,15 @@ create function public.uc_company_evidence_doc(d public.uc_company_payment_docum
  select jsonb_strip_nulls(jsonb_build_object('documentId',d.id,'kind',d.kind,'fileName',d.file_name,'mimeType',d.mime_type,'sizeBytes',d.size_bytes,'state',d.state,'uploadedAt',d.confirmed_at,'createdBy',d.confirmed_by,'actorName',(select s.name from garage_building_staff s where s.id=d.confirmed_by))) $$;
 
 -- ── Payments: evidence before money moves (every path) ───────────────────
+create function public.uc_consignment_bill_correction_allowed(p_before jsonb,p_after jsonb) returns boolean language sql stable security definer set search_path=public,pg_temp as $$ select false $$;
+revoke all on function uc_consignment_bill_correction_allowed(jsonb,jsonb) from public,anon,authenticated,service_role;
 create function public.uc_company_payment_evidence() returns trigger language plpgsql security definer set search_path=public,pg_temp as $$
 declare claiming boolean:=new.claim_confirmed_by is not null; paying boolean:=new.status='transferred';
 begin
  if tg_op='UPDATE' then
-  if old.status='transferred' and new.status is distinct from old.status and exists(select 1 from uc_company_payment_documents d where d.payment_id=old.id and d.state='confirmed') then raise exception 'EVIDENCE_REVIEW_REQUIRED';end if;
+  if old.status='transferred' and new.status is distinct from old.status and exists(select 1 from uc_company_payment_documents d where d.payment_id=old.id and d.state='confirmed') and not uc_consignment_bill_correction_allowed(to_jsonb(old),to_jsonb(new)) then raise exception 'EVIDENCE_REVIEW_REQUIRED';end if;
   if (new.id,new.type,new.amount,new.recipient_type,new.recipient_id,new.car_id) is distinct from (old.id,old.type,old.amount,old.recipient_type,old.recipient_id,old.car_id)
-   and exists(select 1 from uc_company_payment_documents d where d.payment_id=old.id and d.state='confirmed') then raise exception 'EVIDENCE_REVIEW_REQUIRED';end if;
+   and exists(select 1 from uc_company_payment_documents d where d.payment_id=old.id and d.state='confirmed') and not uc_consignment_bill_correction_allowed(to_jsonb(old),to_jsonb(new)) then raise exception 'EVIDENCE_REVIEW_REQUIRED';end if;
   -- Only a new transition is checked: earlier history is left as it was.
   claiming:=claiming and old.claim_confirmed_by is null;
   paying:=paying and old.status is distinct from 'transferred';
