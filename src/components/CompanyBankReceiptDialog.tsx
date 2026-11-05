@@ -18,7 +18,7 @@ export default function CompanyBankReceiptDialog({ payment: bill, actorId, onClo
   const allPayments = useStore((s) => s.payments), customers = useStore((s) => s.customers);
   const banks = useInvestorQuery<{ banks: Bank[] }>(`company-banks:${actorId}`, () => companyBankRequest('banks'));
   const remaining = paymentBalanceCents(bill), actual = parseRinggit(amount), extra = parseRinggit(excess);
-  const options = allPayments.filter((p) => p.id !== bill.id && p.carId === bill.carId && p.status === 'pending' && ['repair', 'misc_cost', 'panel_charge'].includes(p.type));
+  const options = allPayments.filter((p) => p.id !== bill.id && p.carId === bill.carId && p.status === 'pending' && ['repair', 'misc_cost'].includes(p.type));
   const selected = Object.entries(deductions).map(([paymentId, value]) => ({ paymentId, amountCents: parseRinggit(value) }));
   const fee = selected.reduce((s, p) => s + (p.amountCents ?? 0), 0), covered = actual === null || extra === null ? null : actual + fee - extra;
   const ready = !!file && bankPaymentReady(payment) && covered !== null && covered > 0 && covered <= remaining && extra !== null && (extra === 0 || !!customerId) && selected.every((p) => p.amountCents !== null && p.amountCents > 0 && p.amountCents <= paymentBalanceCents(options.find((x) => x.id === p.paymentId) ?? { ...bill, amount: 0 }));

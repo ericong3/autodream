@@ -67,7 +67,8 @@ import { Car, RepairJob, ChecklistItem, DEFAULT_CHECKLIST_LABELS, WorkOrderItem 
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, formatMileage, generateId, shortName } from '../utils/format';
-import { generateDeliveryPayments, generateMiscCostPayment, generatePanelChargePayment, calcConsignmentPayoutAmount } from '../utils/generatePayments';
+import { generateDeliveryPayments, generateMiscCostPayment, generatePanelChargePayment, calcCarNetProfitBreakdown, calcConsignmentSettlement } from '../utils/generatePayments';
+import { consignmentBasisPoints } from '../../shared/consignmentRules.mjs';
 import { completeRepairJob } from '../utils/completeRepair';
 import { recordInvestorMiscCost } from '../utils/completeInvestorMisc';
 import TradeInFundingChoice from '../components/TradeInFundingChoice';
@@ -582,7 +583,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const _disbursementCharges = (car.disbursementCharges ?? []).reduce((s, c) => s + c.amount, 0);
   const _profitBeforeComm = _dealPrice + _addOnRevenue - car.purchasePrice - totalRepairCost - totalMiscCost - _disbursementCharges;
   const _commission = salesCommission(car, customers);
-  const netProfit = car.isStaffSale ? 0 : _profitBeforeComm - _commission - _intakeCommission - _sourceCommission;
+  const netProfit = car.consignment ? calcCarNetProfitBreakdown(car,customers,repairs).netProfit : car.isStaffSale ? 0 : _profitBeforeComm - _commission - _intakeCommission - _sourceCommission;
+  const consignmentResult = car.consignment ? calcConsignmentSettlement(car,customers,repairs) : null;
+  const consignmentTermsLocked = payments.some(p=>p.carId===car.id&&p.type==='consignment_payout'&&(p.status==='transferred'||(p.bankPaidCents??0)>0));
 
   // Checklist helpers
   const checklist: ChecklistItem[] = car.checklistItems ?? DEFAULT_CHECKLIST_LABELS.map((label, i) => ({
@@ -613,28 +616,26 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     if (!editForm.colour?.trim()) e.colour = 'Required';
     if (!editForm.consignment && (!editForm.purchasePrice || editForm.purchasePrice <= 0)) e.purchasePrice = 'Required';
     if (editForm.salesCommission != null && (!Number.isFinite(editForm.salesCommission) || editForm.salesCommission < 0 || editForm.salesCommission > 100000 || Math.abs(editForm.salesCommission * 100 - Math.round(editForm.salesCommission * 100)) > 0.00001)) e.salesCommission = 'Enter an amount from 0 to 100,000 with at most 2 decimal places.';
+    if(editForm.consignment?.terms==='profit_split'){try{consignmentBasisPoints(editForm.consignment.splitPercent??50);}catch{e.consignment='Enter a dealer percentage from 0 to 100, with at most two decimal places.';}}
+    if(consignmentTermsLocked && (JSON.stringify(editForm.consignment)!==JSON.stringify(car.consignment)||editForm.purchasePrice!==car.purchasePrice||editForm.settlementAmount!==car.settlementAmount))e.consignment='This dealer settlement has payments. Review a correction before changing its agreed terms.';
     setEditErrors(e);
     if (Object.keys(e).length > 0) return;
     setShowEditModal(false);
     const newlyAddedSettlement = (editForm.settlementAmount ?? 0) > 0
       && !(car.settlementAmount ?? 0)
       && !payments.some(p => p.type === 'purchase_settlement' && p.carId === car.id);
-    const savedConsignment = editForm.consignment?.terms === 'fixed_amount'
+    const savedConsignment = editForm.consignment?.terms === 'fixed_amount' && (editForm.purchasePrice!==car.purchasePrice || car.consignment?.terms!=='fixed_amount')
       ? { ...editForm.consignment, fixedAmount: editForm.purchasePrice || 0 }
       : editForm.consignment;
     await updateCar(car.id, { ...editForm, consignment: savedConsignment });
-    // generateDeliveryPayments only creates the consignment payout once, at
-    // delivery — it never revisits it, so editing terms/purchase price
-    // afterward silently left an already-created pending payout showing the
-    // old amount. Keep it in sync here instead.
+    // A calculation change must not silently rewrite an existing dealer bill.
+    // A reviewed settlement correction will reconcile that difference.
     if (savedConsignment) {
       const pendingPayout = payments.find(p => p.type === 'consignment_payout' && p.carId === car.id && p.status === 'pending');
       if (pendingPayout) {
         const updatedCar: Car = { ...car, ...editForm, consignment: savedConsignment };
-        const amount = calcConsignmentPayoutAmount(updatedCar, customers, repairs);
-        if (amount !== pendingPayout.amount) {
-          await updatePayment(pendingPayout.id, { amount });
-        }
+        const result = calcConsignmentSettlement(updatedCar, customers, repairs);
+        if (!result || result.dealerPayableCents !== Math.round(pendingPayout.amount*100)) toast.error('Car saved. The existing dealer payout needs review; its amount has not been changed.');
       }
     }
     if (newlyAddedSettlement && currentUser && !car.investorFunded) {
@@ -1025,6 +1026,14 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                     </div>
                   </>
                 )}
+                {consignmentResult && <div className="col-span-2 sm:col-span-4 border-t border-blue-500/20 pt-2 space-y-1 text-xs">
+                  <p className="text-gray-300">{car.consignment.terms==='fixed_amount'?'Fixed amount applies regardless of profit or loss.':'Only positive net profit is shared. The dealer bears any loss.'}</p>
+                  <p className="text-blue-300">Dealer receives: {formatRM(consignmentResult.dealerPayableCents/100)}</p>
+                  {consignmentResult.dealerLossCents>0&&<p className="text-red-400">Loss borne by dealer: {formatRM(consignmentResult.dealerLossCents/100)}</p>}
+                  {consignmentResult.dealerOwesCompanyCents>0&&<p className="text-amber-300">Dealer owes company: {formatRM(consignmentResult.dealerOwesCompanyCents/100)}</p>}
+                  <p className="text-gray-300">Company profit / loss: {formatRM(consignmentResult.companyResultCents/100)}</p>
+                  {!car.finalDeal&&<p className="text-gray-400">Estimate until the deal and costs are confirmed.</p>}
+                </div>}
                 {car.finalDeal && (
                   <div className="col-span-2 sm:col-span-4 flex flex-wrap items-center gap-2 pt-2 mt-1 border-t border-blue-500/20">
                     <button
@@ -1034,7 +1043,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                         setGeneratingConsignDoc('settlement');
                         try {
                           const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
-                          const sellingPrice = wo?.sellingPrice ?? car.finalDeal!.dealPrice ?? car.sellingPrice;
+                          const price = deliveredDealPrice(car,wo);
+                          const sellingPrice = price.sellingPrice;
                           const addOnTotal = (wo?.insurance ?? 0) + (wo?.bankProduct ?? 0) + (wo?.additionalItems ?? []).reduce((s, i) => s + i.amount, 0);
                           const input: ConsignmentSettlementInput = {
                             dealerName: car.consignment!.dealer,
@@ -1042,13 +1052,16 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                             carPlate: car.carPlate,
                             sellingPrice,
                             addOnTotal,
-                            discount: wo?.discount ?? 0,
+                            discount: price.discount,
                             purchasePrice: car.purchasePrice,
                             repairCost: totalRepairCost,
                             miscCost: totalMiscCost,
                             disbursementCharges: _disbursementCharges,
                             commission: _commission,
                             intakeBonus: _intakeCommission,
+                            sourceCommission: _sourceCommission,
+                            panelCharge: car.panelChargeAmount??0,
+                            fixedAmount: car.consignment!.fixedAmount,
                             netProfit,
                             terms: car.consignment!.terms,
                             splitPercent: car.consignment!.splitPercent ?? 50,
@@ -1080,7 +1093,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                         setGeneratingConsignDoc('summary');
                         try {
                           const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
-                          const sellingPrice = wo?.sellingPrice ?? car.finalDeal!.dealPrice ?? car.sellingPrice;
+                          const price = deliveredDealPrice(car,wo);
+                          const sellingPrice = price.sellingPrice;
                           const addOnTotal = (wo?.insurance ?? 0) + (wo?.bankProduct ?? 0) + (wo?.additionalItems ?? []).reduce((s, i) => s + i.amount, 0);
                           const input: ConsignmentSettlementInput = {
                             dealerName: car.consignment!.dealer,
@@ -1088,13 +1102,16 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                             carPlate: car.carPlate,
                             sellingPrice,
                             addOnTotal,
-                            discount: wo?.discount ?? 0,
+                            discount: price.discount,
                             purchasePrice: car.purchasePrice,
                             repairCost: totalRepairCost,
                             miscCost: totalMiscCost,
                             disbursementCharges: _disbursementCharges,
                             commission: _commission,
                             intakeBonus: _intakeCommission,
+                            sourceCommission: _sourceCommission,
+                            panelCharge: car.panelChargeAmount??0,
+                            fixedAmount: car.consignment!.fixedAmount,
                             netProfit,
                             terms: car.consignment!.terms,
                             splitPercent: car.consignment!.splitPercent ?? 50,
@@ -1852,7 +1869,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           const commission = salesCommission(car, customers);
           const dealIntakeCommission = car.intakeCommission ?? 0;
           const dealSourceCommission = car.sourceCommission ?? 0;
-          const netProfit = car.isStaffSale ? 0 : profitBeforeCommission - commission - dealIntakeCommission - dealSourceCommission;
+          const netProfit = car.consignment ? calcCarNetProfitBreakdown(car,customers,repairs).netProfit : car.isStaffSale ? 0 : profitBeforeCommission - commission - dealIntakeCommission - dealSourceCommission;
 
           const caseCompletion = getCaseCompletion({ car, customers, payments });
 
@@ -2135,6 +2152,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   {totalRepairCost > 0 && <DRow label="− Repair Expenses" value={formatRM(totalRepairCost)} valueClass="text-red-400" />}
                   {totalMiscCost > 0 && <DRow label="− Misc Costs" value={formatRM(totalMiscCost)} valueClass="text-red-400" />}
                   {disbursementChargesTotal > 0 && <DRow label="− Disbursement Charges" value={formatRM(disbursementChargesTotal)} valueClass="text-red-400" />}
+                  {car.consignment && (car.panelChargeAmount??0)>0 && <DRow label="− Panel Charge" value={formatRM(car.panelChargeAmount!)} valueClass="text-red-400"/>}
                   {car.isStaffSale ? (
                     <DRow label="− Salesman Commission" value="Staff Sale — Waived" valueClass="text-amber-400" />
                   ) : car.waiveCommission ? (
@@ -2163,8 +2181,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                     <>
                       <DRow label="Purchase Price" value={`− ${formatRM(purchasePrice + dealSourceCommission)}`} valueClass="text-red-400" />
                       {discount > 0 && <DRow label="Discount" value={`− ${formatRM(discount)}`} valueClass="text-red-400" />}
-                      {insurance > 0 && <DRow label="Insurance" value={`− ${formatRM(insurance)}`} valueClass="text-red-400" />}
-                      {bankProduct > 0 && <DRow label="Bank Product" value={`− ${formatRM(bankProduct)}`} valueClass="text-red-400" />}
+                      {insurance > 0 && <DRow label={car.consignment?'+ Customer Insurance':'Insurance'} value={`${car.consignment?'+':'−'} ${formatRM(insurance)}`} valueClass={car.consignment?'text-emerald-400':'text-red-400'} />}
+                      {bankProduct > 0 && <DRow label={car.consignment?'+ Customer Bank Product':'Bank Product'} value={`${car.consignment?'+':'−'} ${formatRM(bankProduct)}`} valueClass={car.consignment?'text-emerald-400':'text-red-400'} />}
+                      {car.consignment&&additionalTotal>0&&<DRow label="+ Other Customer Add-ons" value={formatRM(additionalTotal)} valueClass="text-emerald-400"/>}
                       {car.isStaffSale ? (
                         <DRow label="Salesman Commission" value="Staff Sale — Waived" valueClass="text-amber-400" />
                       ) : car.waiveCommission ? (
@@ -2172,6 +2191,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                       ) : !car.outgoingConsignment && <DRow label="Salesman Commission" value={`− ${formatRM(commission)}`} valueClass="text-red-400" />}
                       {totalRepairCost > 0 && <DRow label="Repair Expenses" value={`− ${formatRM(totalRepairCost)}`} valueClass="text-red-400" />}
                       {totalMiscCost > 0 && <DRow label="Misc Costs" value={`− ${formatRM(totalMiscCost)}`} valueClass="text-red-400" />}
+                      {car.consignment && (car.panelChargeAmount??0)>0 && <DRow label="Panel Charge" value={`− ${formatRM(car.panelChargeAmount!)}`} valueClass="text-red-400"/>}
+                      {car.consignment && disbursementChargesTotal>0 && <DRow label="Disbursement Charges" value={`− ${formatRM(disbursementChargesTotal)}`} valueClass="text-red-400"/>}
                       {dealIntakeCommission > 0 && <DRow label="Intake Bonus" value={`− ${formatRM(dealIntakeCommission)}`} valueClass="text-red-400" />}
                       <div className="flex justify-between items-center pt-3 mt-1 border-t-2 border-obsidian-400/50">
                         <span className="text-white font-semibold">Net Profit</span>
@@ -2483,6 +2504,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                     <span className="text-sm font-medium text-red-400">− {formatRM(_disbursementCharges)}</span>
                   </div>
                 )}
+                {car.consignment && (car.panelChargeAmount??0)>0 && <div className="flex justify-between items-center"><span className="text-gray-500 text-xs">Panel Charge</span><span className="text-sm text-red-400">− {formatRM(car.panelChargeAmount!)}</span></div>}
                 <div className="flex justify-between items-center">
                   <span className="text-gray-500 text-xs">Commission</span>
                   <span className={`text-sm font-medium ${car.isStaffSale || car.waiveCommission ? 'text-amber-400' : 'text-gray-300'}`}>
@@ -2907,10 +2929,10 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                   </div>
                 )}
                 {editForm.consignment.terms === 'profit_split' && (
-                  <FormField label="Dealer's Split (%)">
+                  <FormField label="Dealer's Split (%)" error={editErrors.consignment}>
                     <input type="number" className={inputCls()}
                       value={editForm.consignment.splitPercent ?? 50}
-                      min={1} max={99}
+                      min={0} max={100} step="0.01" disabled={!isDirector||consignmentTermsLocked}
                       onChange={(e) => setEditForm({ ...editForm, consignment: { ...editForm.consignment!, splitPercent: Number(e.target.value) } })}
                     />
                   </FormField>

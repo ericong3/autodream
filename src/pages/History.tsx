@@ -1,5 +1,7 @@
 import CompanyLoanReceiptStart from '../components/CompanyLoanReceiptStart';
 import { companyBankPaymentsEnabled } from '../lib/companyBankPayments';
+import { reviewConsignmentPayout } from '../../shared/consignmentRules.mjs';
+import { toast } from '../utils/toast';
 import { salesCommission } from '../utils/salesCommission';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { thumbUrl } from '../utils/photoUrl';
@@ -49,7 +51,7 @@ import { Car, Payment } from '../types';
 import { formatRM as _formatRM } from '../utils/format';
 import Modal from '../components/Modal';
 import { useStore } from '../store';
-import { getDeliveryDate, calcConsignmentPayoutAmount } from '../utils/generatePayments';
+import { getDeliveryDate, calcConsignmentPayoutAmount, calcConsignmentSettlement } from '../utils/generatePayments';
 import { deliveredDealPrice } from '../utils/deliveredDealPrice';
 import { recordDisbursement } from '../utils/recordDisbursement';
 import { getCaseCompletion } from '../utils/caseCompletion';
@@ -239,7 +241,8 @@ export default function History() {
   const [fixPriceValue, setFixPriceValue] = useState('');
   const [fixPriceSaving, setFixPriceSaving] = useState(false);
 
-  const createConsignmentPayout = async (car: Car, amount: number): Promise<Payment> => {
+  const createConsignmentPayout = async (car: Car, amount: number): Promise<Payment|null> => {
+    if(companyBankPaymentsEnabled){toast.error('Use the reviewed consignment settlement workflow. No payout was created.');return null;}
     const dealerName = car.consignment!.dealer;
     const dealer = dealers.find(d => d.name.toLowerCase() === dealerName.toLowerCase());
     const label = `${car.make} ${car.model}${car.carPlate ? ` (${car.carPlate})` : ''}`;
@@ -511,7 +514,7 @@ export default function History() {
             { key: 'all',        label: 'All',                     icon: null,          count: soldCars.length },
             { key: 'awaiting',   label: 'Awaiting Disbursement',    icon: Banknote,      count: moneyStageCounts.awaiting },
             { key: 'processing', label: 'Processing',               icon: Clock,         count: moneyStageCounts.processing },
-            { key: 'payout',     label: 'Awaiting Dealer Payout',   icon: HeartHandshake, count: moneyStageCounts.payout },
+            { key: 'payout',     label: 'Dealer Settlement Review',   icon: HeartHandshake, count: moneyStageCounts.payout },
             { key: 'settled',    label: 'Settled',                  icon: CheckCircle,  count: moneyStageCounts.settled },
           ] as { key: 'all' | MoneyStage; label: string; icon: any; count: number }[]).map(({ key, label, icon: Icon, count }) => (
             <button
@@ -756,6 +759,8 @@ export default function History() {
                       </div>
                     );
                     const payout = getConsignmentPayout(car);
+                    const calculation=calcConsignmentSettlement(car,customers,repairs);
+                    if(payout&&reviewConsignmentPayout({recordedCents:Math.round(payout.amount*100),calculatedCents:calculation?.dealerPayableCents??null,paidCents:payout.bankPaidCents??0}).requiresReview)return <button className="text-xs text-amber-300" onClick={e=>{e.stopPropagation();navigate('/inventory/'+car.id);}}>Dealer payout needs review</button>;
                     if (payout) return (
                       <button
                         onClick={(e) => { e.stopPropagation(); setPayingConsignmentId(payout.id); }}
@@ -768,12 +773,15 @@ export default function History() {
                     // never been generated (amount is computable) or the terms
                     // are genuinely missing data (purchase price never entered).
                     const amount = calcConsignmentPayoutAmount(car, customers, repairs);
+                    const settlement=calcConsignmentSettlement(car,customers,repairs);
+                    if(settlement&&car.purchasePrice>0&&settlement.dealerBalanceCents<=0)return <span className="text-xs text-amber-300">{settlement.dealerOwesCompanyCents>0?`Dealer owes company: ${formatRM(settlement.dealerOwesCompanyCents/100)}`:'No dealer payout due'}</span>;
+                    if(amount<=0&&car.consignment.terms!=='fixed_amount')return <button className="text-xs text-amber-300" onClick={e=>{e.stopPropagation();navigate('/inventory/'+car.id);}}>Review consignment terms</button>;
                     if (amount > 0) return (
                       <button
                         onClick={async (e) => {
                           e.stopPropagation();
                           const created = await createConsignmentPayout(car, amount);
-                          setPayingConsignmentId(created.id);
+                          if(created)setPayingConsignmentId(created.id);
                         }}
                         className="mt-1 w-full flex items-center justify-center gap-1.5 py-1 rounded-lg border border-indigo-500/40 bg-indigo-500/10 text-indigo-300 text-[10px] font-bold hover:bg-indigo-500/20 transition-colors"
                       >
@@ -899,6 +907,8 @@ export default function History() {
                       </span>
                     );
                     const payout = getConsignmentPayout(car);
+                    const calculation=calcConsignmentSettlement(car,customers,repairs);
+                    if(payout&&reviewConsignmentPayout({recordedCents:Math.round(payout.amount*100),calculatedCents:calculation?.dealerPayableCents??null,paidCents:payout.bankPaidCents??0}).requiresReview)return <button className="text-xs text-amber-300" onClick={e=>{e.stopPropagation();navigate('/inventory/'+car.id);}}>Dealer payout needs review</button>;
                     if (payout) return (
                       <button
                         onClick={(e) => { e.stopPropagation(); setPayingConsignmentId(payout.id); }}
@@ -908,12 +918,15 @@ export default function History() {
                       </button>
                     );
                     const amount = calcConsignmentPayoutAmount(car, customers, repairs);
+                    const settlement=calcConsignmentSettlement(car,customers,repairs);
+                    if(settlement&&car.purchasePrice>0&&settlement.dealerBalanceCents<=0)return <span className="text-xs text-amber-300">{settlement.dealerOwesCompanyCents>0?`Dealer owes company: ${formatRM(settlement.dealerOwesCompanyCents/100)}`:'No dealer payout due'}</span>;
+                    if(amount<=0&&car.consignment.terms!=='fixed_amount')return <button className="text-xs text-amber-300" onClick={e=>{e.stopPropagation();navigate('/inventory/'+car.id);}}>Review consignment terms</button>;
                     if (amount > 0) return (
                       <button
                         onClick={async (e) => {
                           e.stopPropagation();
                           const created = await createConsignmentPayout(car, amount);
-                          setPayingConsignmentId(created.id);
+                          if(created)setPayingConsignmentId(created.id);
                         }}
                         className="flex items-center gap-1 text-[10px] font-bold text-indigo-300 hover:text-indigo-200 transition-colors"
                       >
@@ -968,7 +981,7 @@ export default function History() {
 
       {/* ── Disbursement Modal ── */}
       {(() => {
-        if (companyBankPaymentsEnabled) { const selected = cars.find(c => c.id === disbursalCarId); return selected && currentUser ? <CompanyLoanReceiptStart key={currentUser.id + ':' + selected.id} car={selected} actorId={currentUser.id} expectedAmount={Number(disbursalForm.expected) || undefined} onClose={() => { setDisbursalCarId(null); setDisbursalDealInfo(null); }} /> : null; }
+        if (companyBankPaymentsEnabled) { const selected = cars.find(c => c.id === disbursalCarId); if(selected&&(selected.consignment||selected.outgoingConsignment||selected.investorFunded||selected.investorId))return <Modal isOpen title="Record money received" onClose={()=>setDisbursalCarId(null)}><p className="text-sm text-gray-300">Open this car’s investor or consignment settlement workflow to record the bank receipt. No collection has been recorded.</p></Modal>; return selected && currentUser ? <CompanyLoanReceiptStart key={currentUser.id + ':' + selected.id} car={selected} actorId={currentUser.id} expectedAmount={Number(disbursalForm.expected) || undefined} onClose={() => { setDisbursalCarId(null); setDisbursalDealInfo(null); }} /> : null; }
         const expectedNum = Number(disbursalForm.expected || 0);
         const actualNum = Number(disbursalForm.actual || 0);
         const remaining = expectedNum > 0 ? expectedNum - actualNum : 0;
@@ -1111,7 +1124,7 @@ export default function History() {
                     try {
                     const confirmedPayments = privateCompanyEvidence && disbursalReceipt ? await prepareDisbursementEvidence({ car: disbCar, amount: grossAmt, payments, file: disbursalReceipt, addPayment, updatePayment }) : payments;
                     await recordDisbursement(
-                      { car: disbCar, grossAmount: grossAmt, netAmount: actualNum, charges: chargeItems, date: disbursalForm.date, currentUserId: currentUser.id },
+                      { car: disbCar, grossAmount: grossAmt, netAmount: actualNum, charges: chargeItems, date: disbursalForm.date, currentUserId: currentUser.id, bankReceiptMode:companyBankPaymentsEnabled },
                       { updateCar, payments: confirmedPayments, addPayment, updatePayment, ledgerAccounts, addLedgerAccount, journalEntries, addJournalEntry, voidJournalEntry },
                     );
                     setDisbursalCarId(null);
@@ -1137,6 +1150,7 @@ export default function History() {
       {payingConsignmentId && (() => {
         const payout = payments.find(p => p.id === payingConsignmentId);
         if (!payout) { setPayingConsignmentId(null); return null; }
+        if(companyBankPaymentsEnabled)return <Modal isOpen title="Consignment settlement" onClose={()=>setPayingConsignmentId(null)}><p className="text-sm text-gray-300">Review the agreed dealer amount, car costs and bank records through the consignment settlement workflow before recording payment. No payment has been made.</p></Modal>;
         return (
           <TransferModal
             paymentIds={[payout.id]}
@@ -1203,7 +1217,7 @@ export default function History() {
                     setFixPriceSaving(false);
                     if (amount > 0) {
                       const created = await createConsignmentPayout(updatedCar, amount);
-                      setPayingConsignmentId(created.id);
+                      if(created)setPayingConsignmentId(created.id);
                     }
                   }}
                   className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed"

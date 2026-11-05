@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import ts from 'typescript';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
+import * as consignmentRules from '../shared/consignmentRules.mjs';
 const cache=new Map();
 function load(path){
  const url=new URL(path,import.meta.url);if(cache.has(url.href))return cache.get(url.href);
  const module={exports:{}};cache.set(url.href,module.exports);
  const code=ts.transpileModule(readFileSync(url,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
- vm.runInNewContext(code,{module,exports:module.exports,require:n=>load(new URL(n+'.ts',url).href),Date,Math,crypto:{randomUUID:()=>String(Math.random())}});
+ vm.runInNewContext(code,{module,exports:module.exports,require:n=>n.endsWith('consignmentRules.mjs')?consignmentRules:load(new URL(n+'.ts',url).href),Date,Math,crypto:{randomUUID:()=>String(Math.random())}});
  return module.exports;
 }
 const {salesCommission}=load('../src/utils/salesCommission.ts');

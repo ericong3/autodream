@@ -4,6 +4,8 @@ import { Car, Payment, JournalEntry, LedgerAccount } from '../types';
 import { formatRM } from '../utils/format';
 import { recordDisbursement } from '../utils/recordDisbursement';
 import { privateCompanyEvidence, prepareDisbursementEvidence } from '../lib/companyEvidence';
+import { companyBankPaymentsEnabled } from '../lib/companyBankPayments';
+import Modal from './Modal';
 
 interface DealInfo {
   bank: string;
@@ -52,6 +54,7 @@ export default function DisbursementCollectModal({
   const [saving, setSaving] = useState(false);
   const [receipt, setReceipt] = useState<File | null>(null);
   const [error, setError] = useState('');
+  if(companyBankPaymentsEnabled)return <Modal isOpen title="Record money received" onClose={onClose}><p className="text-sm text-gray-300">Use the bank receipt or reviewed consignment settlement workflow for this car. No collection has been recorded.</p></Modal>;
 
   const expectedNum = Number(expected || 0);
   const actualNum = Number(actual || 0);
@@ -73,7 +76,7 @@ export default function DisbursementCollectModal({
         .map(c => ({ label: c.label.trim(), amount: Number(c.amount || 0) }))
         .filter(c => c.label && c.amount > 0);
       await recordDisbursement(
-        { car, grossAmount: expectedNum || actualNum, netAmount: actualNum, charges: chargeItems, date, currentUserId },
+        { car, grossAmount: expectedNum || actualNum, netAmount: actualNum, charges: chargeItems, date, currentUserId, bankReceiptMode:companyBankPaymentsEnabled },
         { updateCar, payments: confirmedPayments, addPayment, updatePayment, ledgerAccounts, addLedgerAccount, journalEntries, addJournalEntry, voidJournalEntry },
       );
       onClose();

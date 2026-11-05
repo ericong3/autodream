@@ -31,10 +31,11 @@
     "Financed investor trade-ins: gross asset cost, net sale credit and reserved lender payable; private statement/receipt upload; immutable beneficiary snapshot; one full proof-backed lender payout clearing AP; own-investor document access and masked bank details. Covers same/cross-pot and zero-equity cases. Acquired trade-ins can now be resold using trusted funding agreement rather than rejecting their source link.",
     "Company cash and loan receipts: actual registered-bank money, partial customer balance, invoice-backed withheld bills without fake bank outflow, excess-customer liability and source-linked refund. Receipt uploads and audit, exact replay, immutable journals, actual monthly bank totals, assigned-salesperson minimal balance lookup without bank/salary access. Booking/downpayment metadata does not mark cash received in bank mode.",
     "Company-funded incoming trade-ins from investor sales: explicit company ownership, gross inventory and net source-investor sale credit, no fake bank movement, source-bound lender AP handled by receipt/invoice-backed partial company payouts, protected purchase/funding basis and immutable application/replay. Company pot tab shows recorded balances, customer money held and company stock photos/details. Customer deposits do not become spendable stock funding. Delivery no longer overwrites investor trade-in purchase agreements or duplicates acquisitions.",
-    "Ordinary company car purchases: atomic car registration with separate named seller/lender AP bills, immutable basis and purchase markers, no assumed bank payment, existing invoice/receipt-backed partial payouts and current paid-balance replays. Existing Director/salesperson new-car registration roles preserved without returning private bills/journals to salespeople. Zero-price draft registration remains available; Director Record purchase completes a price-pending draft without overwriting its other car details. Finance catch-up no longer invents missing historical cash purchases in bank mode."
+    "Ordinary company car purchases: atomic car registration with separate named seller/lender AP bills, immutable basis and purchase markers, no assumed bank payment, existing invoice/receipt-backed partial payouts and current paid-balance replays. Existing Director/salesperson new-car registration roles preserved without returning private bills/journals to salespeople. Zero-price draft registration remains available; Director Record purchase completes a price-pending draft without overwriting its other car details. Finance catch-up no longer invents missing historical cash purchases in bank mode.",
+    "Incoming consignment business rules centralised in shared integer-cent code for browser/server reuse: Director-selected percentage on positive net profit; dealer absorbs full profit-sharing losses including signed dealer debt beyond capital; fixed-amount obligation independent of profit/loss and percentage. Car estimates, dealer reports and settlement PDFs share the rule; panel/source costs shown and included. Existing payout rows are never recalculated by an unrelated car edit; pending/calculated differences and overpayments flagged for review. Bank-mode legacy collection exits before any car/payment/journal change, old History direct-paid path blocked, panel withholding hidden until accrual route exists. No new consignment bank posting or SQL migration in this stage."
   ],
   "validation": {
-    "unit_tests": 423,
+    "unit_tests": 432,
     "build": "passed",
     "local_database_rehearsals": [
       "investor-capital-db.integration.mjs",
@@ -76,7 +77,10 @@
       "work/company-trade-in-build-20261105.log",
       "work/company-purchases-db-20261105.log",
       "work/company-purchases-tests-20261105.log",
-      "work/company-purchases-build-20261105.log"
+      "work/company-purchases-build-20261105.log",
+      "work/consignment-rules-tests-20261105.log",
+      "work/consignment-rules-build-20261105.log",
+      "work/consignment-rule-checks-20261105.log"
     ],
     "recovery_logs": [
       "work/investor-recoveries-db-20261105.log",
@@ -147,11 +151,11 @@
     "20261105070000_company_car_purchases.sql PREPARED ONLY. Requires 600 and full evidence/bank/private finance chain. Adds private company-purchase source, read-only car marker, invoice/receipt-backed seller and lender obligations and source guards. No historical bank movement is inferred. New routes not production activated."
   ],
   "latest_live_preflight": "work/investor-browser-preflight-live-20261104.json",
-  "updated_at": "2026-11-05T03:11:51.494Z",
+  "updated_at": "2026-11-05T05:31:16.820Z",
   "user_documents_policy": "Every bill needs its invoice before approval/payment; every outgoing payment needs uploaded proof before completion. Salary documents remain restricted; investors see only their own car/pot documents.",
   "bank_matching_policy": "User changed sequencing: start new live transactions first; reconcile all January-2026 onward history later without duplicates. Do not represent unmatched balances as bank-reconciled.",
   "pending_user_decision": null,
-  "claude_status": "Claude session quota prevented current review. Actual receipt/refund module implemented and tested by Codex.",
+  "claude_status": "Claude successfully completed two read-only reviews on 2026-11-05. Baseline review identified unsupported consignment/panel/legacy investor bank routes; focused review confirmed clarified profit-sharing/fixed rules and raised fixed-rate leakage, pending-row rewrite and missing mismatch warnings. Those findings were addressed with tests. Claude did not run tests, edit files or deploy. This is not approval of all remaining finance modules.",
   "client_work_date": "2026-11-05",
   "trade_in_funding_policy": "User answered 2026-11-05: Director chooses the company pot or a specific investor pot for each incoming trade-in. No automatic inheritance from the outgoing car.",
   "recovery_posting_design": {
@@ -168,9 +172,18 @@
     "No Supabase installation, GitHub push or production deployment"
   ],
   "next_work": [
-    "Review remaining consignment/panel and legacy-investor finance routes before bank guards activate; define source-safe corrections and ownership transitions",
+    "Implement incoming-consignment Director-approved immutable settlement/cost snapshot and receipt-backed bank receipts/payouts/dealer-debt recovery with both clarified contract types",
+    "Complete panel/dealer and legacy investor bank routes, source-safe corrections and ownership transitions",
     "Remaining withdrawal destination/correction/privacy checks and reviewed bank opening ownership",
     "Real role/browser and PostgreSQL concurrency verification, then guarded exact-chain deployment and activation"
   ],
-  "current_release_status": "Local commits only. Live website and production Supabase are unchanged. New bank flags remain off and prepared migrations must not be installed alone."
+  "current_release_status": "Local commits only. Live website and production Supabase are unchanged. New bank flags remain off; consignment calculations/preflight guards do not mean consignment bank posting is activated.",
+  "consignment_policy": {
+    "director_percentage": "Director selects the agreed dealer percentage per deal; 40/60 is not fixed. Existing 50% defaults are preserved only as editable defaults, not mandatory rates.",
+    "profit_sharing": "Only positive net profit is shared; all loss reduces dealer capital. Company result is zero on loss. Negative dealer balance is shown as money owed by dealer, not silently clamped away.",
+    "fixed_amount": "Agreed dealer amount stays fixed regardless of profit/loss; company keeps profit or bears loss.",
+    "lender": "Lender amount is allocated separately from dealer entitlement; an allocation is not proof it was paid.",
+    "history": "No historical payouts mass rewritten. Pending/calculated differences and paid-over-calculated amounts require review.",
+    "bank_module": "NOT IMPLEMENTED for incoming consignment yet. Requires server-calculated immutable Director-approved source snapshot, car-cost accrual/source checks, actual receipt/payout/refund/dealer-debt postings and source-specific privacy before activation."
+  }
 }

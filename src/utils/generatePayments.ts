@@ -3,6 +3,7 @@ import { salesCommission } from './salesCommission';
 import { Car, Payment, RepairJob, MiscCost, User, ExternalSalesman, Workshop, Dealer, Merchant, Customer } from '../types';
 import { generateId } from './format';
 import { companyReceiptParts } from './companyReceiptParts';
+import { settleIncomingConsignment, consignmentBasisPoints } from '../../shared/consignmentRules.mjs';
 
 type AddPayment = (p: Payment) => Promise<void>;
 type UpdatePayment = (id: string, u: Partial<Payment>) => Promise<void>;
@@ -65,7 +66,7 @@ export function calcCarNetProfit(car: Car, customers: Customer[], repairs: Repai
 export function calcCarNetProfitBreakdown(car: Car, customers: Customer[], repairs: RepairJob[]) {
   const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
   const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
-  const dealPrice = wo && wo.sellingPrice > 0
+  const dealPrice = car.consignment ? deliveredDealPrice(car, wo).netPrice : wo && wo.sellingPrice > 0
     ? (wo.sellingPrice - (wo.discount ?? 0))
     : (car.finalDeal?.dealPrice || car.sellingPrice);
   const addOnRevenue = (wo?.insurance ?? 0) + (wo?.bankProduct ?? 0) + (wo?.additionalItems ?? []).reduce((s, i) => s + i.amount, 0);
@@ -78,11 +79,12 @@ export function calcCarNetProfitBreakdown(car: Car, customers: Customer[], repai
   const commission = salesCommission(car, customers);
   const intakeCommission = car.intakeCommission ?? 0;
   const sourceCommission = car.sourceCommission ?? 0;
-  const netProfit = car.isStaffSale ? 0 : profitBeforeComm - commission - intakeCommission - sourceCommission;
+  const panelCost = car.consignment ? (car.panelChargeAmount ?? 0) : 0;
+  const netProfit = car.isStaffSale && !car.consignment ? 0 : profitBeforeComm - commission - intakeCommission - sourceCommission - panelCost;
   return {
     hasDeal: !!wo || !!car.finalDeal,
     dealPrice, addOnRevenue, repairCost, miscCost, disbursementCharges,
-    commission, intakeCommission, sourceCommission, netProfit,
+    commission, intakeCommission, sourceCommission, panelCost, netProfit,
   };
 }
 
@@ -90,17 +92,14 @@ export function calcCarNetProfitBreakdown(car: Car, customers: Customer[], repai
 // terms can't be computed yet (e.g. "fixed_amount" but purchasePrice was
 // never entered, so consignment.fixedAmount is still 0/unset).
 export function calcConsignmentPayoutAmount(car: Car, customers: Customer[], repairs: RepairJob[]): number {
-  const c = car.consignment;
-  if (!c) return 0;
-  if (c.terms === 'fixed_amount' && c.fixedAmount) return Math.max(0, c.fixedAmount - (car.settlementAmount ?? 0));
-  // Profit split returns the consignor their purchase price plus their share
-  // of NET profit (after repairs, misc, disbursement charges, commissions) —
-  // never gross. A loss means they just get their purchase price back.
-  if (c.terms === 'profit_split' && c.splitPercent) {
-    const share = Math.max(0, calcCarNetProfit(car, customers, repairs)) * (c.splitPercent / 100);
-    return Math.max(0, (car.purchasePrice - (car.settlementAmount ?? 0)) + share);
-  }
-  return 0;
+  return (calcConsignmentSettlement(car,customers,repairs)?.dealerPayableCents ?? 0)/100;
+}
+
+export function calcConsignmentSettlement(car: Car,customers: Customer[],repairs: RepairJob[]){
+ const c=car.consignment;if(!c)return null;
+ try{return settleIncomingConsignment({terms:c.terms,capitalCents:Math.round(car.purchasePrice*100),netProfitCents:Math.round(calcCarNetProfit(car,customers,repairs)*100),
+  lenderCents:Math.round((car.settlementAmount??0)*100),fixedAmountCents:c.terms==='fixed_amount'?Math.round((c.fixedAmount??car.purchasePrice)*100):undefined,dealerBasisPoints:c.terms==='profit_split'?consignmentBasisPoints(c.splitPercent??50):undefined});
+ }catch{return null;}
 }
 
 // Sundays are the standing off-day for everyone — the divisor for proration

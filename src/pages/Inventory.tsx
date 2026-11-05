@@ -64,6 +64,7 @@ import { formatRM, formatMileage, generateId } from '../utils/format';
 import { buildCarPurchaseEntry } from '../utils/generateJournalEntries';
 import { companyBankPaymentsEnabled } from '../lib/companyBankPayments';
 import { REGISTRATION_KEYS as INVESTOR_REGISTRATION_KEYS } from '../lib/companyPurchases';
+import { consignmentBasisPoints } from '../../shared/consignmentRules.mjs';
 import { SkeletonCard, SkeletonRow } from '../components/Skeleton';
 
 
@@ -636,6 +637,7 @@ export default function Inventory() {
     if (!form.make.trim()) newErrors.make = 'Make is required';
     if (!form.model.trim()) newErrors.model = 'Model is required';
     if (!form.colour.trim()) newErrors.colour = 'Colour is required';
+    if(form.consignment?.terms==='profit_split'){try{consignmentBasisPoints(form.consignment.splitPercent??50);}catch{newErrors.consignment='Enter a dealer percentage from 0 to 100, with at most two decimal places.';}}
     const minPhotos = form.consignment ? 1 : 4;
     if (!isComingSoon && (form.photos?.length ?? 0) < minPhotos) {
       newErrors.photos = `Please upload at least ${minPhotos} photo${minPhotos > 1 ? 's' : ''}`;
@@ -2255,13 +2257,13 @@ export default function Inventory() {
                 )}
 
                 {form.consignment.terms === 'profit_split' && (
-                  <FormField label="Dealer's Split (%)">
+                  <FormField label="Dealer's Split (%)" error={errors.consignment}>
                     <input
                       type="number"
                       className={inputCls()}
                       value={form.consignment.splitPercent ?? 50}
-                      min={1}
-                      max={99}
+                      min={0}
+                      max={100} step="0.01" disabled={!isDirector}
                       onChange={(e) => setForm({ ...form, consignment: { ...form.consignment!, splitPercent: Number(e.target.value) } })}
                     />
                   </FormField>

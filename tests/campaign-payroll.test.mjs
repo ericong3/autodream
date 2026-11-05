@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import ts from 'typescript';
 import {readFileSync} from 'node:fs';
+import * as consignmentRules from '../shared/consignmentRules.mjs';
 const modules=new Map();
-function load(path){const url=new URL(path,import.meta.url);if(modules.has(url.href))return modules.get(url.href);const module={exports:{}};modules.set(url.href,module.exports);vm.runInNewContext(ts.transpileModule(readFileSync(url,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{module,exports:module.exports,Date,Math,Map,crypto:{randomUUID:()=>String(Math.random())},require:n=>load(new URL(n+'.ts',url).href)});return module.exports;}
+function load(path){const url=new URL(path,import.meta.url);if(modules.has(url.href))return modules.get(url.href);const module={exports:{}};modules.set(url.href,module.exports);vm.runInNewContext(ts.transpileModule(readFileSync(url,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{module,exports:module.exports,Date,Math,Map,crypto:{randomUUID:()=>String(Math.random())},require:n=>n.endsWith('consignmentRules.mjs')?consignmentRules:load(new URL(n+'.ts',url).href)});return module.exports;}
 const {campaignBonusFor}=load('../src/utils/campaignPayroll.ts'),{computePayslipDraft}=load('../src/utils/payslip.ts');
 test('late background finance responses cannot remove a posted bonus or revert recorded payment',()=>{
  const {mergeBonusRows}=load('../src/utils/campaignPayroll.ts');

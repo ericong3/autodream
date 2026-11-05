@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, rgb, PDFFont } from 'pdf-lib';
 import { COMPANY_INFO } from './payslip';
 import { formatRM } from './format';
+import { settleIncomingConsignment, consignmentBasisPoints } from '../../shared/consignmentRules.mjs';
 
 export interface ConsignmentSettlementInput {
   dealerName: string;      // consignor, e.g. "Top Mark"
@@ -15,10 +16,13 @@ export interface ConsignmentSettlementInput {
   disbursementCharges: number;
   commission: number;
   intakeBonus: number;
+  sourceCommission?: number;
+  panelCharge?: number;
+  fixedAmount?: number;
   netProfit: number;       // matches the in-app Deal Financials Net Profit
   terms: 'fixed_amount' | 'profit_split';
   splitPercent: number;    // consignor's share of net profit, e.g. 30 — only meaningful for 'profit_split'
-  settlementAmount?: number; // already paid to the consignor against a 'fixed_amount' deal, if any
+  settlementAmount?: number; // lender allocation, not proof of bank payment
   generatedAt: Date;
 }
 
@@ -28,26 +32,16 @@ const GRAY = rgb(0.42, 0.42, 0.45);
 const HAIRLINE = rgb(0.87, 0.83, 0.71);
 const RED = rgb(0.7, 0.13, 0.13);
 
-function profitShare(input: ConsignmentSettlementInput): number {
-  if (input.terms !== 'profit_split') return 0;
-  return Math.max(0, input.netProfit) * (input.splitPercent / 100);
-}
-
-// What actually gets transferred to the consignor: purchase price plus their
-// profit share for 'profit_split' deals, or just the agreed fixed amount
-// (less anything already settled) for 'fixed_amount' ones — full profit
-// stays with us on those, there's no share to add.
-function totalToTransfer(input: ConsignmentSettlementInput): number {
-  if (input.terms === 'fixed_amount') {
-    return Math.max(0, input.purchasePrice - (input.settlementAmount ?? 0));
-  }
-  return input.purchasePrice + profitShare(input);
+export function consignmentDocumentResult(input: ConsignmentSettlementInput) {
+ return settleIncomingConsignment({terms:input.terms,capitalCents:Math.round(input.purchasePrice*100),netProfitCents:Math.round(input.netProfit*100),
+  lenderCents:Math.round((input.settlementAmount??0)*100),fixedAmountCents:input.terms==='fixed_amount'?Math.round((input.fixedAmount??input.purchasePrice)*100):undefined,dealerBasisPoints:input.terms==='profit_split'?consignmentBasisPoints(input.splitPercent):undefined});
 }
 
 // Detailed, itemized settlement receipt — every expense that fed into Net
 // Profit is shown so the consignor can see exactly how their share was
 // derived, not just take the final number on faith.
 export async function buildConsignmentSettlementPdf(input: ConsignmentSettlementInput): Promise<Uint8Array> {
+  const result=consignmentDocumentResult(input);
   const pdfDoc = await PDFDocument.create();
   const page = pdfDoc.addPage([595.28, 841.89]);
   const { width } = page.getSize();
@@ -126,6 +120,8 @@ export async function buildConsignmentSettlementPdf(input: ConsignmentSettlement
   if (input.disbursementCharges > 0) { row('- Disbursement Charges', input.disbursementCharges, y, { color: RED }); y -= 18; }
   if (input.commission > 0) { row('- Salesman Commission', input.commission, y, { color: RED }); y -= 18; }
   if (input.intakeBonus > 0) { row('- Intake Bonus', input.intakeBonus, y, { color: RED }); y -= 18; }
+  if ((input.sourceCommission??0)>0) {row('- Source Commission',input.sourceCommission!,y,{color:RED});y-=18;}
+  if ((input.panelCharge??0)>0) {row('- Panel Charge',input.panelCharge!,y,{color:RED});y-=18;}
 
   y -= 6;
   hr(y, GOLD, 1.5);
@@ -139,18 +135,20 @@ export async function buildConsignmentSettlementPdf(input: ConsignmentSettlement
   page.drawText('SETTLEMENT', { x: margin, y, size: 9, font: bold, color: GRAY });
   y -= 20;
   if (input.terms === 'fixed_amount') {
-    row('Agreed Fixed Amount', input.purchasePrice, y); y -= 18;
-    if ((input.settlementAmount ?? 0) > 0) { row('- Already Settled', input.settlementAmount!, y, { color: RED }); y -= 18; }
+    row('Agreed Fixed Amount', result.fixedAmountCents!/100, y); y -= 18;
   } else {
-    row('Purchase Price (returned)', input.purchasePrice, y); y -= 18;
-    row(`Consignor Share (${input.splitPercent}% of Net Profit)`, profitShare(input), y); y -= 18;
+    row('Base Car Value', input.purchasePrice, y); y -= 18;
+    row(`Dealer Profit Share (${input.splitPercent}%)`, result.dealerProfitCents/100, y); y -= 18;
+    if(result.dealerLossCents>0){row('- Loss Borne by Dealer',result.dealerLossCents/100,y,{color:RED});y-=18;}
   }
+  if(result.lenderCents>0){row('- Lender Balance Allocated',result.lenderCents/100,y);y-=18;}
+  row('Company Profit / Loss',result.companyResultCents/100,y);y-=18;
 
   y -= 10;
   hr(y, GOLD, 1.5);
   y -= 28;
-  page.drawText('TOTAL TO TRANSFER', { x: margin, y, size: 14, font: bold, color: INK });
-  rightText(formatRM(totalToTransfer(input)), y, 16, bold, GOLD);
+  page.drawText(result.dealerOwesCompanyCents>0?'DEALER OWES COMPANY':'AMOUNT DUE TO DEALER', { x: margin, y, size: 14, font: bold, color: INK });
+  rightText(formatRM(Math.abs(result.dealerBalanceCents)/100), y, 16, bold, GOLD);
 
   const footerY = 70;
   hr(footerY + 24);
@@ -165,6 +163,7 @@ export async function buildConsignmentSettlementPdf(input: ConsignmentSettlement
 // Short summary — just the final take-in price, no expense breakdown. For
 // handing to the consignor as a plain settlement notice.
 export async function buildConsignmentSummaryPdf(input: ConsignmentSettlementInput): Promise<Uint8Array> {
+  const result=consignmentDocumentResult(input);
   const pdfDoc = await PDFDocument.create();
   const page = pdfDoc.addPage([595.28, 420]);
   const { width } = page.getSize();
@@ -217,20 +216,19 @@ export async function buildConsignmentSummaryPdf(input: ConsignmentSettlementInp
   hr(y);
   y -= 34;
 
-  const total = totalToTransfer(input);
-  page.drawText('TAKE-IN PRICE', { x: margin, y, size: 12, font: bold, color: GRAY });
+  const total = Math.abs(result.dealerBalanceCents)/100;
+  page.drawText(result.dealerOwesCompanyCents>0?'DEALER OWES COMPANY':'AMOUNT DUE TO DEALER', { x: margin, y, size: 12, font: bold, color: GRAY });
   y -= 30;
   rightText(formatRM(total), y, 30, bold, GOLD);
 
   y -= 20;
   page.drawText(
-    input.terms === 'fixed_amount'
-      ? `(Agreed Fixed Amount${(input.settlementAmount ?? 0) > 0 ? ` − Already Settled ${formatRM(input.settlementAmount!)}` : ''})`
-      : `(Purchase Price ${formatRM(input.purchasePrice)} + Profit Share ${formatRM(profitShare(input))})`,
+    input.terms === 'fixed_amount' ? 'Fixed amount applies regardless of profit or loss.' : result.dealerLossCents>0 ? 'Dealer bears the loss. Company profit is zero.' : `Dealer receives ${input.splitPercent}% of positive net profit.`,
     { x: margin, y, size: 9, font, color: GRAY },
   );
 
   const footerY = 40;
+  if(result.lenderCents>0)page.drawText(`Lender balance allocated separately: ${formatRM(result.lenderCents/100)}`,{x:margin,y:y-16,size:9,font,color:GRAY});
   hr(footerY + 20);
   page.drawText(
     `Generated ${input.generatedAt.toLocaleString('en-MY', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })} · ${COMPANY_INFO.website}`,

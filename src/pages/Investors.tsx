@@ -10,7 +10,7 @@ import {
 import { useStore } from '../store';
 import { formatRM, generateId } from '../utils/format';
 import { User, Car, InvestorTransaction } from '../types';
-import { calcCarNetProfit, calcCarNetProfitBreakdown, calcConsignmentPayoutAmount } from '../utils/generatePayments';
+import { calcCarNetProfitBreakdown, calcConsignmentPayoutAmount, calcConsignmentSettlement } from '../utils/generatePayments';
 import { CarDetailContent } from './CarDetail';
 
 const STATUS_LABEL: Record<Car['status'], string> = {
@@ -119,10 +119,10 @@ export default function Investors() {
   const renderConsignTakeback = (car: Car) => {
     const c = car.consignment!;
     const hasDeal = !!car.finalDeal || customers.some((cu) => cu.interestedCarId === car.id && (cu.cashWorkOrder || cu.loanWorkOrder));
-    const netProfit = calcCarNetProfit(car, customers, repairs);
     const dealerTakes = calcConsignmentPayoutAmount(car, customers, repairs);
-    const dealerShare = c.terms === 'profit_split' ? Math.max(0, netProfit) * ((c.splitPercent ?? 0) / 100) : 0;
-    const weKeep = netProfit - dealerShare;
+    const result = calcConsignmentSettlement(car,customers,repairs);
+    if(!result)return <span className="text-amber-300">Review the dealer terms and car costs.</span>;
+    const weKeep = result.companyResultCents/100;
     const est = hasDeal ? '' : '≈ ';
     return (
       <>
@@ -130,6 +130,8 @@ export default function Investors() {
           <span>Split — Dealer <span className="text-white">{c.splitPercent ?? 50}%</span> / Us <span className="text-green-400">{100 - (c.splitPercent ?? 50)}%</span> of net</span>
         )}
         <span>Dealer takes back: <span className="text-blue-400 font-medium">{est}{formatRM(dealerTakes)}</span></span>
+        {result.dealerLossCents>0&&<span>Dealer bears loss: <span className="text-red-400">{formatRM(result.dealerLossCents/100)}</span></span>}
+        {result.dealerOwesCompanyCents>0&&<span>Dealer owes company: <span className="text-amber-300">{formatRM(result.dealerOwesCompanyCents/100)}</span></span>}
         <span>We keep: <span className={`font-medium ${weKeep >= 0 ? 'text-green-400' : 'text-red-400'}`}>{est}{formatRM(weKeep)}</span></span>
         {!hasDeal && <span className="text-gray-600 italic">est. at asking {formatRM(car.sellingPrice)}</span>}
       </>
@@ -333,7 +335,8 @@ export default function Investors() {
           // paid (old "Pay dealer" double-click bug), so pending records can't
           // be trusted once a transfer exists — owed is what the terms say the
           // dealer gets, minus what's already gone out.
-          const expected = calcConsignmentPayoutAmount(car, customers, repairs) || Math.max(...pending.map(p => p.amount), 0);
+          const expected = calcConsignmentPayoutAmount(car, customers, repairs);
+          if(transferred>expected)missing.push({car,stage,reason:'Past payments exceed the current calculation. Review the difference; payment records have not been changed.'});
           amount = Math.max(0, expected - transferred);
           if (amount <= 0) continue; // fully paid
           lines.push({ label: 'Dealer takeback per terms', value: expected });
@@ -341,25 +344,28 @@ export default function Investors() {
         } else {
           // Payout raised but not paid yet — what's owed is the pending record
           amount = pendingTotal;
+          const current=calcConsignmentSettlement(car,customers,repairs);
+          if(!current||Math.round(pendingTotal*100)!==current.dealerPayableCents){missing.push({car,stage,reason:'Pending payout differs from the current calculation. Review before payment; the saved amount has not been changed.'});if(current)lines.push({label:'Current calculation — review required',value:current.dealerPayableCents/100});}
           if (amount <= 0) continue;
           pending.forEach((p) => lines.push({ label: 'Pending payout record', value: p.amount }));
         }
       } else {
         amount = calcConsignmentPayoutAmount(car, customers, repairs);
         if (amount <= 0) {
+          const result=calcConsignmentSettlement(car,customers,repairs);
           missing.push({
             car, stage,
-            reason: c.terms === 'fixed_amount' ? 'Fixed amount / purchase price not entered'
-              : !c.splitPercent ? 'Split % not entered' : 'Purchase price not entered',
+            reason: result&&result.dealerOwesCompanyCents>0 ? `Dealer owes company ${formatRM(result.dealerOwesCompanyCents/100)}. Record through the reviewed dealer-collection workflow.` : result&&result.dealerBalanceCents===0&&car.purchasePrice>0?'No amount is due to the dealer under these terms.': 'Enter and review the agreed car value and terms.',
           });
           continue;
         }
         if (c.terms === 'fixed_amount') {
-          lines.push({ label: 'Agreed fixed amount', value: c.fixedAmount ?? 0 });
-          if (settled > 0) lines.push({ label: '− Loan settlement paid to bank', value: -settled });
+          lines.push({ label: 'Agreed fixed amount', value: c.fixedAmount ?? car.purchasePrice });
+          if (settled > 0) lines.push({ label: '− Lender balance allocated separately', value: -settled });
         } else {
           const b = calcCarNetProfitBreakdown(car, customers, repairs);
-          const pct = c.splitPercent ?? 0;
+          const pct = c.splitPercent ?? 50;
+          const result=calcConsignmentSettlement(car,customers,repairs)!;
           lines.push({ label: b.hasDeal ? 'Deal price' : 'Asking price (no deal yet — estimate)', value: b.dealPrice });
           if (b.addOnRevenue) lines.push({ label: '+ Customer add-ons', value: b.addOnRevenue });
           lines.push({ label: '− Purchase price', value: -car.purchasePrice });
@@ -369,10 +375,12 @@ export default function Investors() {
           if (b.commission) lines.push({ label: '− Salesman commission', value: -b.commission });
           if (b.intakeCommission) lines.push({ label: '− Intake bonus', value: -b.intakeCommission });
           if (b.sourceCommission) lines.push({ label: '− Source commission', value: -b.sourceCommission });
+          if (b.panelCost) lines.push({label:'− Panel charge',value:-b.panelCost});
           lines.push({ label: 'Net profit', value: b.netProfit, subtotal: true });
-          lines.push({ label: 'Purchase price returned', value: car.purchasePrice });
-          if (settled > 0) lines.push({ label: '− Loan settlement paid to bank', value: -settled });
-          lines.push({ label: `+ Dealer's ${pct}% of net profit`, value: Math.max(0, b.netProfit) * (pct / 100) });
+          lines.push({ label: 'Base car value', value: car.purchasePrice });
+          if (settled > 0) lines.push({ label: '− Lender balance allocated separately', value: -settled });
+          lines.push({ label: `+ Dealer's ${pct}% of positive net profit`, value: result.dealerProfitCents/100 });
+          if(result.dealerLossCents>0)lines.push({label:'− Loss borne by dealer',value:-result.dealerLossCents/100});
         }
       }
       stages[stage].push({ car, stage, amount, lines });

@@ -13,6 +13,7 @@ export interface RecordDisbursementInput {
   charges: { label: string; amount: number }[];
   date?: string;          // yyyy-mm-dd
   currentUserId: string;
+  bankReceiptMode?: boolean;
 }
 
 export interface RecordDisbursementDeps {
@@ -40,6 +41,7 @@ async function getOrCreateChargeAccount(label: string, ledgerAccounts: LedgerAcc
 }
 
 export async function recordDisbursement(input: RecordDisbursementInput, deps: RecordDisbursementDeps): Promise<void> {
+  if(input.bankReceiptMode)throw new Error('Use the bank receipt or reviewed consignment settlement workflow. No collection was recorded.');
   const { car, grossAmount, netAmount, charges, date, currentUserId } = input;
   const { updateCar, payments, addPayment, updatePayment, ledgerAccounts, addLedgerAccount, journalEntries, addJournalEntry, voidJournalEntry } = deps;
 
