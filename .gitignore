@@ -5,3 +5,6 @@ dist
 supabase/.temp
 
 .vite-recovery/
+
+# Disposable local PostgreSQL binaries, dependencies, data and logs.
+work/pg-rehearsal/

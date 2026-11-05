@@ -486,6 +486,7 @@ export default function Payments({ embedded }: PaymentsProps) {
   // ── Filters ─────────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     return payments.filter(p => {
+      if(p.obligationReplaced&&p.status==='pending')return false;
       if (tab === 'to_pay'    && (p.status !== 'pending' || INBOUND_TYPES.has(p.type))) return false;
       if (tab === 'to_collect'&& (p.status !== 'pending' || !INBOUND_TYPES.has(p.type))) return false;
       if (tab === 'transferred' && p.status !== 'transferred') return false;
@@ -502,7 +503,7 @@ export default function Payments({ embedded }: PaymentsProps) {
   }, [payments, tab, typeFilter, monthFilter, search]);
 
   // ── Stats ───────────────────────────────────────────────────────────────────
-  const pendingPayments = payments.filter(p => p.status === 'pending');
+  const pendingPayments = payments.filter(p => p.status === 'pending' && !p.obligationReplaced);
   const pendingOutbound = pendingPayments.filter(p => !INBOUND_TYPES.has(p.type));
   const pendingInbound = pendingPayments.filter(p => INBOUND_TYPES.has(p.type));
   const pendingRefundClaims = pendingPayments.filter(p => p.type === 'customer_refund');
@@ -551,12 +552,12 @@ export default function Payments({ embedded }: PaymentsProps) {
 
   const selectAll = () => {
     const pendingIds = filtered
-      .filter(p => p.status === 'pending' && !isInvestorCommission(p) && !(p.type === 'customer_refund' && !p.bankName) && !(p.type === 'expense_claim' && (!p.claimConfirmedBy || (p.recipientType !== 'user' && !p.recipientId))))
+      .filter(p => p.status === 'pending' && !p.obligationReplaced && !isInvestorCommission(p) && !(p.type === 'customer_refund' && !p.bankName) && !(p.type === 'expense_claim' && (!p.claimConfirmedBy || (p.recipientType !== 'user' && !p.recipientId))))
       .map(p => p.id);
     setSelected(prev => pendingIds.length === prev.size && pendingIds.every(id => prev.has(id)) ? new Set() : new Set(pendingIds));
   };
 
-  const selectedPending = filtered.filter(p => p.status === 'pending' && !isInvestorCommission(p) && selected.has(p.id));
+  const selectedPending = filtered.filter(p => p.status === 'pending' && !p.obligationReplaced && !isInvestorCommission(p) && selected.has(p.id));
   const selectedTotal = selectedPending.reduce((s, p) => s + (companyBankPaymentsEnabled ? paymentBalanceCents(p) / 100 : p.amount), 0);
 
   // ── Transfer / Collect ────────────────────────────────────────────────────────
@@ -817,7 +818,7 @@ export default function Payments({ embedded }: PaymentsProps) {
   // ── Render row ────────────────────────────────────────────────────────────────
   function PaymentRow({ p }: { p: Payment }) {
     const Icon = RECIPIENT_ICON[p.recipientType] ?? UserCircle;
-    const isPending = p.status === 'pending';
+    const isPending = p.status === 'pending' && !p.obligationReplaced;
     const isChecked = selected.has(p.id);
     const isInbound = INBOUND_TYPES.has(p.type);
     const hasDeleteRequest = !!p.deleteRequestedBy;
@@ -846,7 +847,7 @@ export default function Payments({ embedded }: PaymentsProps) {
 
         {/* Info */}
         <div className="flex-1 min-w-0">
-          {companyBankPaymentsEnabled && p.status === 'pending' && !!p.bankPaidCents && <p className="text-[11px] text-amber-300 mb-1">{INBOUND_TYPES.has(p.type) ? 'Covered' : 'Paid'} {formatRM(p.bankPaidCents / 100)} · unpaid {formatRM(paymentBalanceCents(p) / 100)}</p>}
+          {companyBankPaymentsEnabled && p.status === 'pending' && !p.obligationReplaced && !!p.bankPaidCents && <p className="text-[11px] text-amber-300 mb-1">{INBOUND_TYPES.has(p.type) ? 'Covered' : 'Paid'} {formatRM(p.bankPaidCents / 100)} · unpaid {formatRM(paymentBalanceCents(p) / 100)}</p>}
           {isInvestorCommission(p) && <a className="text-[11px] text-gold-400" href={`#/investor-finance?carId=${encodeURIComponent(p.carId || '')}`}>Open car bill</a>}
           {privateCompanyEvidence && !isInvestorCommission(p) && <button className="text-[11px] text-gold-400 mb-1" onClick={() => setDocumentPaymentId(p.id)}>Invoices & receipts</button>}
           <div className="flex items-center gap-2 flex-wrap">
@@ -1023,7 +1024,7 @@ export default function Payments({ embedded }: PaymentsProps) {
           boxShadow: '0 6px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06)',
         }}
       >
-        {items.some(p => p.status === 'pending') && (
+        {items.some(p => p.status === 'pending' && !p.obligationReplaced) && (
           <div className="flex items-center gap-3 px-5 py-2.5 border-b border-white/[0.06]">
             <button onClick={selectAll} className="text-[11px] text-white/40 hover:text-white transition-colors font-medium tracking-wide">
               {selected.size > 0 ? `${selected.size} selected` : 'Select all'}
@@ -1095,7 +1096,7 @@ export default function Payments({ embedded }: PaymentsProps) {
 
   function ReceivableTableRow({ p }: { p: Payment }) {
     const isChecked = selected.has(p.id);
-    const isPending = p.status === 'pending';
+    const isPending = p.status === 'pending' && !p.obligationReplaced;
     const car = p.carId ? cars.find(c => c.id === p.carId) : undefined;
     const Icon = p.type === 'loan_disbursement' ? Landmark : RECIPIENT_ICON[p.recipientType] ?? UserCircle;
     const typeStyle = RECEIVABLE_TYPE_STYLE[p.type] ?? { bg: 'rgba(234,184,32,0.1)', text: '#F7D96A', border: 'rgba(234,184,32,0.22)' };
@@ -1224,7 +1225,7 @@ export default function Payments({ embedded }: PaymentsProps) {
           boxShadow: '0 6px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06)',
         }}
       >
-        {items.some(p => p.status === 'pending') && (
+        {items.some(p => p.status === 'pending' && !p.obligationReplaced) && (
           <div className="flex items-center gap-3 px-5 py-2.5 border-b border-white/[0.06]">
             <button onClick={selectAll} className="text-[11px] text-white/40 hover:text-white transition-colors font-medium tracking-wide">
               {selected.size > 0 ? `${selected.size} selected` : 'Select all'}
@@ -1296,7 +1297,7 @@ export default function Payments({ embedded }: PaymentsProps) {
 
   function PayTableRow({ p }: { p: Payment }) {
     const isChecked = selected.has(p.id);
-    const isPending = p.status === 'pending';
+    const isPending = p.status === 'pending' && !p.obligationReplaced;
     const Icon = RECIPIENT_ICON[p.recipientType] ?? UserCircle;
     const refundMissingBankDetails = p.type === 'customer_refund' && !p.bankName;
     const claimNeedsVendor = p.type === 'expense_claim' && p.recipientType !== 'user' && !p.recipientId;
@@ -1677,7 +1678,7 @@ export default function Payments({ embedded }: PaymentsProps) {
         ) : (
           <div className="rounded-xl overflow-hidden border border-white/[0.06] bg-obsidian-900/40">
             {/* Select-all bar for pending tabs */}
-            {(tab === 'refund_claims' || tab === 'expense_claims') && filtered.some(p => p.status === 'pending') && (
+            {(tab === 'refund_claims' || tab === 'expense_claims') && filtered.some(p => p.status === 'pending' && !p.obligationReplaced) && (
               <div className="flex items-center gap-3 px-4 py-2.5 border-b border-white/[0.06] bg-obsidian-800/40">
                 <button
                   onClick={selectAll}

@@ -47,7 +47,7 @@ declare r jsonb;held bigint;refund_extra bigint;begin
   select j.car_id,sum(((l->>'credit')::numeric-(l->>'debit')::numeric)*100) liability
   from journal_entries j cross join lateral jsonb_array_elements(j.lines) l
   where not coalesce(j.voided,false) and l->>'accountId'='acct-customer-refunds' and exists(select 1 from uc_company_bank_receipts where car_id=j.car_id) group by j.car_id
- ) x left join lateral (select sum(greatest(0,uc_commission_cents(to_jsonb(p)->'amount')-uc_company_paid_cents(p.id))) pending from payments p where p.car_id=x.car_id and p.type='customer_refund' and p.status='pending') p on true;
+ ) x left join lateral (select sum(greatest(0,uc_commission_cents(to_jsonb(p)->'amount')-uc_company_paid_cents(p.id))) pending from payments p where p.car_id=x.car_id and p.type='customer_refund' and p.status='pending' and not coalesce((to_jsonb(p)->>'obligation_replaced')::boolean,false)) p on true;
  return r||jsonb_build_object('customerHeldCents',held+refund_extra,'availableCents',(r->>'availableCents')::bigint-held-refund_extra);
 end $$;
 

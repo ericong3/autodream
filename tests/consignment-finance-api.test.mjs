@@ -55,3 +55,11 @@ test('unpaid bill corrections validate invoice, amount and actor; paid bills ret
  const a=enabled(fixture('admin')),ac=await a.login();assert.equal((await a.run(body,ac)).status,403);assert.equal(a.calls.length,0);
  f.setResult({error:{message:'PAID_BILL_ADJUSTMENT_REQUIRED'}});assert.equal((await f.run(body,c)).status,409);
 });
+
+test('approved settlement amendments use Director source review and a new agreement',async()=>{
+ const f=enabled(fixture()),c=await f.login();const preview={scope:'consignment_finance',action:'preview_adjustment',carId:'consign',dealerBasisPoints:2000};f.setResult({data:{preview:{carId:'consign',sourceRevision:'b'.repeat(32)}}});assert.equal((await f.run(preview,c)).status,200);
+ const body={...preview,action:'adjust_settlement',expectedRevision:'b'.repeat(32),agreementDocumentId:choiceId,reason:'Amend agreed dealer share',requestId:'settlement_amend_0001'};f.setResult(saved());assert.equal((await f.run(body,c)).status,200);assert.equal(f.calls[1].args.p_actor,'real-director');
+ assert.equal((await f.run({...body,agreementDocumentId:'bad'},c)).status,400);assert.equal((await f.run({...body,reason:'bad'},c)).status,400);
+ for(const role of ['admin','shareholder','investor']){const g=enabled(fixture(role)),gc=await g.login();assert.equal((await g.run(preview,gc)).status,403);assert.equal((await g.run(body,gc)).status,403);}
+ f.setResult({error:{message:'NEW_SETTLEMENT_AGREEMENT_REQUIRED'}});assert.equal((await f.run(body,c)).status,409);
+});

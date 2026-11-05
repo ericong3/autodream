@@ -35,7 +35,11 @@
     "Incoming consignment business rules centralised in shared integer-cent code for browser/server reuse: Director-selected percentage on positive net profit; dealer absorbs full profit-sharing losses including signed dealer debt beyond capital; fixed-amount obligation independent of profit/loss and percentage. Car estimates, dealer reports and settlement PDFs share the rule; panel/source costs shown and included. Existing payout rows are never recalculated by an unrelated car edit; pending/calculated differences and overpayments flagged for review. Bank-mode legacy collection exits before any car/payment/journal change, old History direct-paid path blocked, panel withholding hidden until accrual route exists. No new consignment bank posting or SQL migration in this stage.",
     "Incoming consignment private Director-opened contract and approved cost snapshot, configurable dealer percentage, fixed-amount/loss rules, held customer/loan receipts, overloan refunds, partial invoice/proof-backed dealer/lender payouts and dealer debt receipts; immutable source and beneficiary guards. Local only.",
     "Director-only pre-approval consignment terms correction: adjustable percentage or fixed amount, required reason, immutable before/after/actor/time/revision, command FK and transaction guard, exact retry and stale-source protection, current-terms-bound private agreement upload, no bank/journal change. Approved/paid/bill corrections remain unfinished.",
-    "Unpaid pre-approval direct repair/misc bill amount corrections: Director-only invoice selection, reason/source revision/request, immutable full before/after source/payment audit, audited payment-evidence exception, original source journal preserved with balanced delta when AP exists, no bank movement, paid/receipt-backed/legacy-paid blocks, immediate repair store refresh. Prepared 20261105090000 migration, not installed."
+    "Unpaid pre-approval direct repair/misc bill amount corrections: Director-only invoice selection, reason/source revision/request, immutable full before/after source/payment audit, audited payment-evidence exception, original source journal preserved with balanced delta when AP exists, no bank movement, paid/receipt-backed/legacy-paid blocks, immediate repair store refresh. Prepared 20261105090000 migration, not installed.",
+    "Director-confirmed immutable investor withdrawal payout destination API/SQL/UI; own-investor display, locked payout ID, receipt gate. Claude supplied first draft, repaired variable/reply tests and finished UI locally.",
+    "Real disposable PostgreSQL 17.11 rehearsal with full prepared chain and independent simultaneous connections; duplicate receipt once, competing full payout once, approval vs terms correction serialized.",
+    "Bank opening clears legacy operating ledger exactly once, puts differences in named review balance rather than equity; later bank dates do not clear twice. Legacy-bank and investor-tag bypasses blocked.",
+    "Approved consignment dealer settlement amendments preserve original case and bank records, use exact terms-bound new agreement, replace only outstanding obligations, post balanced noncash delta, reserve new AP, allow actual dealer debt refunds, lock replacement bank details and keep audit."
   ],
   "validation": {
     "unit_tests": 432,
@@ -154,11 +158,11 @@
     "20261105070000_company_car_purchases.sql PREPARED ONLY. Requires 600 and full evidence/bank/private finance chain. Adds private company-purchase source, read-only car marker, invoice/receipt-backed seller and lender obligations and source guards. No historical bank movement is inferred. New routes not production activated."
   ],
   "latest_live_preflight": "work/investor-browser-preflight-live-20261104.json",
-  "updated_at": "2026-11-05T12:08:12.654Z",
+  "updated_at": "2026-11-05T13:00:55.317Z",
   "user_documents_policy": "Every bill needs its invoice before approval/payment; every outgoing payment needs uploaded proof before completion. Salary documents remain restricted; investors see only their own car/pot documents.",
   "bank_matching_policy": "User changed sequencing: start new live transactions first; reconcile all January-2026 onward history later without duplicates. Do not represent unmatched balances as bank-reconciled.",
   "pending_user_decision": null,
-  "claude_status": "Claude successfully completed two read-only reviews on 2026-11-05. Baseline review identified unsupported consignment/panel/legacy investor bank routes; focused review confirmed clarified profit-sharing/fixed rules and raised fixed-rate leakage, pending-row rewrite and missing mismatch warnings. Those findings were addressed with tests. Claude did not run tests, edit files or deploy. This is not approval of all remaining finance modules. Incoming consignment follow-up review identified pre-existing payout beneficiary adoption and panel withholding approval bypass. Existing payout adoption now refuses for review; withholding uses same approved panel/source guards. New DB regressions pass. Dealer field format was checked against existing camel-case profile storage. Reviewed first correction path read-only: no blocker found; findings about agreement revision binding, transaction audit guard, revision/FK, input validation and labels addressed with regression checks. Unpaid bill design and code reviews completed read-only. Fixed link-detachment bypass using immutable audit source IDs plus link locks, added journal author and replay journal return, tested full remaining payout after approval. Original invoice eligibility for initial typing correction retained deliberately; reason and selected evidence audited.",
+  "claude_status": "Claude successfully completed two read-only reviews on 2026-11-05. Baseline review identified unsupported consignment/panel/legacy investor bank routes; focused review confirmed clarified profit-sharing/fixed rules and raised fixed-rate leakage, pending-row rewrite and missing mismatch warnings. Those findings were addressed with tests. Claude did not run tests, edit files or deploy. This is not approval of all remaining finance modules. Incoming consignment follow-up review identified pre-existing payout beneficiary adoption and panel withholding approval bypass. Existing payout adoption now refuses for review; withholding uses same approved panel/source guards. New DB regressions pass. Dealer field format was checked against existing camel-case profile storage. Reviewed first correction path read-only: no blocker found; findings about agreement revision binding, transaction audit guard, revision/FK, input validation and labels addressed with regression checks. Unpaid bill design and code reviews completed read-only. Fixed link-detachment bypass using immutable audit source IDs plus link locks, added journal author and replay journal return, tested full remaining payout after approval. Original invoice eligibility for initial typing correction retained deliberately; reason and selected evidence audited. Release triage and approved amendment review completed. Fixed agreement-to-terms binding, replacement bank immutability, duplicate legacy opening transfer, stripped car summary private bill payload, terms-only no-cash event, added final ledger assertions. Confirmed shared lock exists in600wrapper.",
   "client_work_date": "2026-11-05",
   "trade_in_funding_policy": "User answered 2026-11-05: Director chooses the company pot or a specific investor pot for each incoming trade-in. No automatic inheritance from the outgoing car.",
   "recovery_posting_design": {
@@ -175,11 +179,12 @@
     "No Supabase installation, GitHub push or production deployment"
   ],
   "next_work": [
-    "Complete approved/paid bill and settlement adjustment entries, other legacy bank routes and ownership transitions; unpaid direct repair/misc corrections are now locally implemented",
-    "Remaining withdrawal destination/correction/privacy checks and reviewed bank opening ownership",
-    "Real role/browser and PostgreSQL concurrency verification, then guarded exact-chain deployment and activation"
+    "Complete approved/paid supplier bill and remaining panel/outgoing-dealer workflows",
+    "Finish private entry/review mode for historical records without current cash replay (full statement matching deferred)",
+    "Get working Supabase browser/CLI access and fresh read-only schema preflight; publish exact tested release and verify real login",
+    "Used Car opening balance entered in app, not chat; no investor opening conversion required per user"
   ],
-  "current_release_status": "Local only; live app and Supabase unchanged. All new bank flags remain off. Incoming consignment code passes local tests, not activated.",
+  "current_release_status": "Local work only; no GitHub push, Vercel deployment or Supabase installation. 450 unit tests, build and scoped real-browser/Postgres tests pass. CUA can list in-app tabs but selecting Supabase fails browser.user is unavailable.",
   "consignment_policy": {
     "director_percentage": "Director selects the agreed dealer percentage per deal; 40/60 is not fixed. Existing 50% defaults are preserved only as editable defaults, not mandatory rates.",
     "profit_sharing": "Only positive net profit is shared; all loss reduces dealer capital. Company result is zero on loss. Negative dealer balance is shown as money owed by dealer, not silently clamped away.",
@@ -189,7 +194,7 @@
     "bank_module": "IMPLEMENTED LOCALLY for new/reviewed clean-history incoming cases. Old paid/purchase history, ambiguous dealer profiles and mismatched bills block conversion for review. Prepared 20261105080000 migration not installed."
   },
   "consignment_validation": {
-    "unit_tests": 439,
+    "unit_tests": 450,
     "production_build": "passed",
     "pglite": [
       "incoming consignment loss/fixed/debt/overloan/withholding/partial payout/ACL/invoice/source guards",
@@ -201,9 +206,8 @@
       "investor financed trade-in lenders"
     ],
     "not_verified": [
-      "real browser role flows",
-      "multi-connection PostgreSQL concurrency",
-      "production exact migration chain"
+      "Production exact schema/migration preflight and live login",
+      "Approved/paid supplier bill credit-note and remaining outgoing-dealer workflows"
     ],
     "limitations": [
       "Existing paid or purchase journal history requires review; no automatic conversion",
@@ -212,7 +216,7 @@
     ],
     "browser": "PASS isolated Chrome against real React panel: adjustable percent, explicit open/approve confirmation, cancellation, current-source refresh invalidates checkbox, Director/admin/shareholder controls and mobile overflow; mocked finance API and blocked external network. Real production login/session integration not verified.",
     "database_roles": "PASS real local SQL: admin/shareholder read only; salesperson/investor/mechanic denied; disabled shareholder denied; salary rows excluded.",
-    "concurrency": "Not run: no psql/postgres/pg_ctl/docker command available in this environment. PGlite is single-session and does not establish real concurrent transaction safety.",
+    "concurrency": "PASS real PostgreSQL 17.11 full disposable fixture, duplicate receipt replay, competing full payouts, and approval vs correction. Not exhaustive concurrency proof.",
     "corrections": "PASS SQL percentage/fixed corrections, denied admin, audit immutability and transaction coupling, exact retry/source changes, fresh agreement required, old in-flight upload rejected, no bank/journal movement, approved adjustment blocked; API control-character validation; isolated browser invalid-percent/cancel. Build passed.",
     "unpaid_bill_corrections": {
       "status": "Implemented locally; tests/build passed; Claude review findings addressed except intentionally allowing the original invoice for an initial typing-error correction.",
@@ -227,6 +231,17 @@
       ],
       "not_live": true,
       "invoice_policy": "A Director may select the original supplier invoice when it proves the correct amount; it is linked to immutable correction audit. Subsequent corrections require a newly confirmed, unused invoice bound to the current bill. No automatic document content verification is claimed."
-    }
+    },
+    "approved_settlement_adjustments": "PASS full partial-to-revised-payout, later reduced entitlement after full payment, dealer receivable and real bank refund. Original amounts/cash retained. Wrong agreement terms and bank recipient changes blocked. Final AP/AR/revenue asserted."
+  },
+  "user_opening_decisions": {
+    "existing_investor_money": false,
+    "existing_investor_cars": false,
+    "used_car_bank": "Public Bank — Used Car",
+    "garage_bank": "Public Bank — Garage",
+    "separate_account_numbers": true,
+    "balance_will_be_entered_in_app": true,
+    "start_date": "Pending user choice; proposed go-live date",
+    "historical_matching": "Deferred; no fake current cash for historical entries"
   }
 }

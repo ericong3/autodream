@@ -20,10 +20,12 @@ begin
   update cars set investor_funded=true where id=new.car_id;
  else
   if TG_OP='INSERT' then
+   if new.investor_id is not null then raise exception 'USE_INVESTOR_ACCOUNTS';end if;
    if new.investor_funded then raise exception 'FUNDING_ACCOUNT_REQUIRED';end if;
    return new;
   end if;
   if new.investor_funded is distinct from old.investor_funded and not exists(select 1 from uc_investor_cars where car_id=new.id) then raise exception 'FUNDING_ACCOUNT_REQUIRED';end if;
+  if new.investor_id is distinct from old.investor_id and new.investor_id is not null then raise exception 'USE_INVESTOR_ACCOUNTS';end if;
   if old.investor_funded and (not new.investor_funded or new.purchase_price is distinct from old.purchase_price or new.investor_id is distinct from old.investor_id or new.investor_split is distinct from old.investor_split or new.consignment is distinct from old.consignment or new.outgoing_consignment is distinct from old.outgoing_consignment) then raise exception 'FUNDING_AGREEMENT_LOCKED';end if;
  end if;
  return new;
@@ -120,6 +122,7 @@ begin
    if current_setting('autodream.uc_posting',true) is distinct from 'on' then raise exception 'INVESTOR_POSTING_PRIVATE';end if;
    return new;
   end if;
+  if exists(select 1 from jsonb_array_elements(new.lines) l where l->>'accountId' in ('acct-investor-payable','acct-inv-investor','acct-rev-investor-share','acct-uc-sale-clearing')) then raise exception 'USE_INVESTOR_POSTING';end if;
  end if;
  if new.car_id is not null then
   -- Serialize against fund_car's source-car lock, including when this

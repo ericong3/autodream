@@ -58,7 +58,7 @@ declare physical bigint;investor bigint;reserved bigint;begin
  select coalesce(sum(uc_registered_bank_position(id)),0) into physical from uc_investor_banks;
  select coalesce(sum((uc_investor_position(id)->>'cashCents')::bigint),0) into investor from uc_investor_pots;
  select coalesce(sum(greatest(0,uc_commission_cents(to_jsonb(p)->'amount')-uc_company_paid_cents(p.id))),0) into reserved from payments p
- where p.status='pending' and p.type in ('salesman_commission','intake_bonus','source_commission','repair','misc_cost','expense_claim','purchase_settlement','salary','allowance','campaign_bonus','customer_refund')
+ where p.status='pending' and not coalesce((to_jsonb(p)->>'obligation_replaced')::boolean,false) and p.type in ('salesman_commission','intake_bonus','source_commission','repair','misc_cost','expense_claim','purchase_settlement','salary','allowance','campaign_bonus','customer_refund')
   and (p.type<>'expense_claim' or p.claim_confirmed_by is not null) and not exists(select 1 from uc_investor_cars a where a.car_id=p.car_id);
  return jsonb_build_object('bankCents',physical,'investorOwnedCents',investor,'companyCashCents',physical-investor,'unpaidCompanyCents',reserved,'availableCents',physical-investor-reserved,'bankMatched',false);
 end $$;
@@ -87,6 +87,8 @@ begin
  if to_regclass('uc_consignment_bill_sources') is null then return null;end if;
  return (select amount_cents from uc_consignment_bill_sources where payment_id=p_payment);
 end $$;
+create function uc_consignment_replacement_allowed(p_before jsonb,p_after jsonb) returns boolean language sql stable security definer set search_path=public,pg_temp as $$ select false $$;
+revoke all on function uc_consignment_replacement_allowed(jsonb,jsonb) from public,anon,authenticated,service_role;
 create function public.uc_company_bank_payment_guard() returns trigger language plpgsql security definer set search_path=public,pg_temp as $$
 begin
  if tg_op='DELETE' then if exists(select 1 from uc_company_bank_allocations where payment_id=old.id) then raise exception 'BANK_PAYMENT_IMMUTABLE';end if;return old;end if;
@@ -158,6 +160,7 @@ begin
   for item in select value from jsonb_array_elements(p_data->'allocations') loop
    select * into pay from payments where id=item->>'paymentId';v_amount:=uc_recovery_cents(item->'amountCents');paid:=uc_company_paid_cents(pay.id);owed:=uc_commission_cents(to_jsonb(pay)->'amount');
    if coalesce(owed,0)<=0 then raise exception 'INVALID';end if;
+   if coalesce((to_jsonb(pay)->>'obligation_replaced')::boolean,false) then raise exception 'PAYMENT_WORKFLOW_REQUIRED';end if;
    if pay.status is distinct from 'pending' or v_amount>owed-paid then raise exception 'PAYMENT_EXCEEDS_BALANCE';end if;
    if pay.type not in ('salesman_commission','intake_bonus','source_commission','repair','misc_cost','expense_claim','purchase_settlement','salary','allowance','campaign_bonus','customer_refund','consignment_payout','panel_charge') then raise exception 'PAYMENT_WORKFLOW_REQUIRED';end if;
    if pay.type in ('consignment_payout','panel_charge') and not uc_consignment_payment_allowed(pay.id) then raise exception 'PAYMENT_WORKFLOW_REQUIRED';end if;
@@ -185,6 +188,7 @@ begin
     source_paid:=source_paid+coalesce((select sum(((l->>'debit')::numeric-(l->>'credit')::numeric)*100) from payments p join journal_entries j on j.source_id=p.id and j.source_type=p.type||'_paid' cross join lateral jsonb_array_elements(j.lines) l
      where p.type=pay.type and (case when p.type in ('salesman_commission','intake_bonus','source_commission','customer_refund','purchase_settlement') then p.car_id else p.id end)=v_source_id
       and not coalesce(j.voided,false) and j.id not like 'company-bank:%' and l->>'accountId'=counter),0)::bigint;
+    if uc_consignment_bill_limit(pay.id) is not null then source_credit:=uc_consignment_bill_limit(pay.id);source_paid:=uc_company_paid_cents(pay.id);end if;
     if source_credit-source_paid<v_amount then raise exception 'BILL_LEDGER_REVIEW_REQUIRED';end if;
    end if;
    if exists(select 1 from journal_entries j where j.source_type=pay.type||'_paid' and j.source_id=pay.id and not coalesce(j.voided,false) and j.id not like 'company-bank:%') then raise exception 'PAYMENT_HISTORY_REVIEW_REQUIRED';end if;

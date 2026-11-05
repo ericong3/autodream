@@ -2774,7 +2774,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             </div>
           )}
 
-          {isDirector && (() => {
+          {isDirector && import.meta.env.VITE_INVESTOR_FINANCE !== '1' && (() => {
             const investors = users.filter(u => u.role === 'investor');
             if (investors.length === 0) return null;
             return (

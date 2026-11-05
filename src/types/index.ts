@@ -1181,6 +1181,7 @@ export interface Shipment {
 }
 
 export interface Payment {
+  obligationReplaced?: boolean;
   bonusCampaignId?: string;
   bonusMonth?: string;
   bankPaidCents?: number;

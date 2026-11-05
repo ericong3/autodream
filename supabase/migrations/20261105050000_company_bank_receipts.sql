@@ -34,6 +34,7 @@ create function public.uc_company_has_bank_history(p_payment text) returns boole
  select exists(select 1 from uc_company_bank_allocations where payment_id=p_payment) or exists(select 1 from uc_company_bank_receipts where payment_id=p_payment) or exists(select 1 from uc_company_withheld_payments where payment_id=p_payment) $$;
 create or replace function public.uc_company_bank_payment_guard() returns trigger language plpgsql security definer set search_path=public,pg_temp as $$
 begin
+ if tg_op='UPDATE' and uc_consignment_replacement_allowed(to_jsonb(old),to_jsonb(new)) then return new;end if;
  if tg_op='DELETE' then if uc_company_has_bank_history(old.id) then raise exception 'BANK_PAYMENT_IMMUTABLE';end if;return old;end if;
  if tg_op='UPDATE' and uc_company_has_bank_history(old.id) and (to_jsonb(new)-array['status','transferred_at','transferred_by','notes','receipt_url','delete_requested_by','delete_requested_at']) is distinct from (to_jsonb(old)-array['status','transferred_at','transferred_by','notes','receipt_url','delete_requested_by','delete_requested_at']) then raise exception 'BANK_PAYMENT_IMMUTABLE';end if;
  if (tg_op='INSERT' and new.status='transferred') or (tg_op='UPDATE' and new.status is distinct from old.status) then
@@ -99,7 +100,8 @@ begin
   select * into car from cars where id=pay.car_id for update;
   if car.id is null or car.investor_id is not null or coalesce(to_jsonb(car)->>'investor_tagged','false')='true' or exists(select 1 from uc_investor_cars where car_id=car.id) then raise exception 'USE_INVESTOR_CAR_BILLS';end if;
   if car.consignment is not null and car.consignment<>'null'::jsonb and not uc_consignment_receipt_allowed(car.id,pay.id) or car.outgoing_consignment is not null and car.outgoing_consignment<>'null'::jsonb then raise exception 'COLLECTION_WORKFLOW_REQUIRED';end if;
-  if pay.type='consignment_collection' and (fees<>0 or excess<>0) then raise exception 'COLLECTION_WORKFLOW_REQUIRED';end if;
+  if coalesce((to_jsonb(pay)->>'obligation_replaced')::boolean,false) then raise exception 'PAYMENT_WORKFLOW_REQUIRED';end if;
+ if pay.type='consignment_collection' and (fees<>0 or excess<>0) then raise exception 'COLLECTION_WORKFLOW_REQUIRED';end if;
   if pay.type='loan_disbursement' and (exists(select 1 from journal_entries where source_type='disbursement_received' and source_id=car.id and not coalesce(voided,false) and id not like 'company-receipt:%')
    or coalesce((to_jsonb(car)->>'money_received')::boolean,false) and not exists(select 1 from uc_company_bank_receipts where payment_id=pay.id)) then raise exception 'COLLECTION_HISTORY_REVIEW_REQUIRED';end if;
   covered:=amount+fees-excess;owing:=uc_commission_cents(to_jsonb(pay)->'amount')-uc_company_paid_cents(pay.id);
@@ -117,7 +119,7 @@ begin
   if pay.type='consignment_collection' then counter:='acct-consignor-ar';v_source_type:='consignment_collection_received';end if;
   -- Older cash-sale entries already booked Bank Operating. Reclassify that
   -- same cash to its real bank instead of recognising it for a second time.
-  if pay.type='customer_collection' and exists(select 1 from journal_entries j cross join lateral jsonb_array_elements(j.lines) l where j.source_type='car_sold' and j.source_id=car.id and not coalesce(j.voided,false) and l->>'accountId'='acct-bank-operating' and (l->>'debit')::numeric>0) then counter:='acct-bank-operating';end if;
+  if pay.type='customer_collection' and exists(select 1 from journal_entries j cross join lateral jsonb_array_elements(j.lines) l where j.source_type='car_sold' and j.source_id=car.id and not coalesce(j.voided,false) and l->>'accountId'='acct-bank-operating' and (l->>'debit')::numeric>0) then counter:=case when exists(select 1 from ledger_accounts where id='acct-opening-review') then 'acct-opening-review' else 'acct-bank-operating' end;end if;
   insert into uc_company_bank_receipts(payment_id,car_id,bank_id,amount_cents,covered_cents,withheld_cents,excess_cents,customer_id,receipt_document_id,paid_on,bank_reference,recorded_by,request_id,payload)
   values(pay.id,car.id,bank.id,amount,covered,fees,excess,case when excess>0 then p_data->>'customerId' end,doc.id,day,reference,p_actor,req,p_data) returning * into receipt;
   v_lines:='[]'::jsonb;

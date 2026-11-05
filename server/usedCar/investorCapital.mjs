@@ -8,9 +8,10 @@ const BODY_MAX=4096,PROOF_BODY_MAX=2_100_000;
 const fields={
  create_profile:['name','requestId'],link_account:['potId','staffId','requestId'],snapshot:['potId'],
  capital_received:['potId','amountCents','paidOn','bankAccount','bankReference','requestId'],
- request_withdrawal:['potId','amountCents','requestId'],approve_withdrawal:['potId','withdrawalId','requestId'],
- reject_withdrawal:['potId','withdrawalId','note','requestId'],withdrawal_paid:['potId','withdrawalId','paidOn','bankAccount','bankReference','receiptDocumentId','requestId'],
+ request_withdrawal:['potId','amountCents','requestId'],approve_withdrawal:['potId','withdrawalId','destinationBank','destinationHolder','destinationAccount','destinationConfirmed','requestId'],
+ reject_withdrawal:['potId','withdrawalId','note','requestId'],withdrawal_paid:['potId','withdrawalId','paidOn','bankAccount','bankReference','receiptDocumentId','destinationId','requestId'],
  cancel_withdrawal:['potId','withdrawalId','note','requestId'],
+ confirm_withdrawal_destination:['potId','withdrawalId','destinationBank','destinationHolder','destinationAccount','destinationConfirmed','requestId'],
  fund_car:['carId','potId','purchaseCents','investorBasisPoints','requestId'],car_snapshot:['carId'],
  purchase_paid:['carId','bankAccount','bankReference','paidOn','invoiceDocumentId','receiptDocumentId','requestId'],
  add_car_bill:['carId','category','purpose','payee','amountCents','requestId'],
@@ -21,6 +22,21 @@ const fields={
 };
 const carActions=new Set(['fund_car','car_snapshot','purchase_paid','add_car_bill','approve_car_bill','void_car_bill','pay_car_bill','agree_sale','sale_received','settle_car']);
 const uuid=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+// The investor's payout account, typed and confirmed by the Director. Never read from a profile.
+const DESTINATION_ACTIONS=new Set(['approve_withdrawal','confirm_withdrawal_destination']);
+const destinationText=(value,max)=>typeof value==='string'&&value.trim().length>=2&&value.trim().length<=max&&!/[\u0000-\u001f\u007f]/.test(value);
+const DESTINATION_ERRORS={DESTINATION_NOT_CONFIRMED:[400,'Confirm the investor\'s bank details before approving.'],DESTINATION_INVALID:[400,'Check the bank name, account holder and account number.'],
+ DESTINATION_REQUIRED:[409,'Enter and confirm the investor\'s bank details before paying this withdrawal.'],DESTINATION_CHANGED:[409,'The payout bank details do not match this withdrawal. Reload it first.'],
+ DESTINATION_LOCKED:[409,'The payout bank details are already confirmed and cannot be changed.']};
+export function validateDestination(action,body,scoped){
+ if(body.destinationId!==undefined&&!uuid(body.destinationId))throw new ApiError(400,'INVALID','Open the withdrawal again.');
+ if(scoped&&action==='withdrawal_paid'&&body.destinationId===undefined)throw new ApiError(400,'DESTINATION_REQUIRED',DESTINATION_ERRORS.DESTINATION_REQUIRED[1]);
+ if(!DESTINATION_ACTIONS.has(action))return;
+ const given=['destinationBank','destinationHolder','destinationAccount','destinationConfirmed'].some(key=>body[key]!==undefined);
+ if(!given&&!scoped)return;
+ if(!destinationText(body.destinationBank,80)||!destinationText(body.destinationHolder,150)||typeof body.destinationAccount!=='string'||!/^[0-9 -]{6,40}$/.test(body.destinationAccount)||!/^[0-9]{6,20}$/.test(body.destinationAccount.replace(/[ -]/g,'')))throw new ApiError(400,'DESTINATION_INVALID',DESTINATION_ERRORS.DESTINATION_INVALID[1]);
+ if(body.destinationConfirmed!==true)throw new ApiError(400,'DESTINATION_NOT_CONFIRMED',DESTINATION_ERRORS.DESTINATION_NOT_CONFIRMED[1]);
+}
 export async function handleInvestorCapital(req,deps){return respond(req,deps,['POST'],async(ctx,res)=>{
  const {user}=await authenticate(req,ctx,res,canUseApp);
  const raw=readJson(req,PROOF_BODY_MAX);
@@ -48,6 +64,7 @@ export async function handleInvestorCapital(req,deps){return respond(req,deps,['
  if(user.role==='investor'&&!['snapshot','car_snapshot','request_withdrawal'].includes(body.action))throw new ApiError(403,'FORBIDDEN','A Director must approve this action.');
  if(user.role!=='investor'&&body.action==='request_withdrawal')throw new ApiError(403,'FORBIDDEN','The investor must request their own withdrawal.');
  onlyKeys(body,['action',...allowed]);
+ validateDestination(body.action,body,scoped);
  const ownSnapshot=body.action==='snapshot'&&user.role==='investor'&&body.potId===undefined;
  const carAction=carActions.has(body.action);
  if((!carAction&&body.action!=='create_profile'&&!ownSnapshot&&!uuid(body.potId))||(body.action==='fund_car'&&!uuid(body.potId))||body.withdrawalId!==undefined&&!uuid(body.withdrawalId)||body.billId!==undefined&&!uuid(body.billId))throw new ApiError(400,'INVALID','Open the account again.');
@@ -62,6 +79,7 @@ export async function handleInvestorCapital(req,deps){return respond(req,deps,['
  const {action,...data}=body;
  const out=await ctx.repo.rpc('uc_investor_capital',{p_actor:user.id,p_action:action,p_data:data});
  if(out.error){
+  for(const [code,[status,message]] of Object.entries(DESTINATION_ERRORS))if(out.error.message?.includes(code))throw new ApiError(status,code,message);
   const moneyError=scoped?moneyEvidenceError(out.error):null;
   if(moneyError)throw moneyError;
   const known=scoped?activationError(out.error):null;

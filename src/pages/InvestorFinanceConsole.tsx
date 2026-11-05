@@ -12,7 +12,7 @@ import InvestorFinanceCar, {
 import {
   basisPointsLabel, carTitle, entryLabel, formatCents, formatDay, investorRequest, malaysiaToday, parsePercentToBasisPoints, parseRinggit,
   useInvestorAction, useInvestorQuery, WITHDRAWAL_LABEL,
-  type Bank, type FundableCar, type InvestorProfile, type InvestorSnapshot, type ProfileList, type CarSummary, type Withdrawal,
+  type Bank, type FundableCar, type InvestorProfile, type InvestorSnapshot, type ProfileList, type CarSummary, type Withdrawal, type WithdrawalDestination,
 } from '../lib/investorFinance';
 
 type Act = ReturnType<typeof useInvestorAction>;
@@ -159,7 +159,7 @@ function BankRegister({ act, run, canWrite, banks, errorBox }: Shared) {
           </div>
         ))}
       </div>
-      <p className="text-gray-600 text-[11px]">Opening balances are entered by the Director. Payments recorded here are not checked against bank statements.</p>
+      <p className="text-gray-600 text-[11px]">Enter the real bank balance on the start date. This is not a new deposit. Differences from older records stay for later review; statement matching is still pending.</p>
       {canWrite && (
         <form className="bg-card-gradient border border-obsidian-400/70 rounded-xl p-4 space-y-2" onSubmit={async (e) => {
           e.preventDefault(); if (!ok || openingCents === null) return;
@@ -225,7 +225,7 @@ function Account({ profile, actorId, onBack, onChanged, ...shared }: Shared & { 
           </Section>
         )}
         <Section title="Withdrawals" hint={`${profile.withdrawals.filter((w) => w.state === 'requested' || w.state === 'approved').length} open`} defaultOpen={profile.withdrawals.some((w) => w.state === 'requested')}>
-          {profile.withdrawals.length === 0 ? <p className="text-gray-500 text-xs">No withdrawals.</p> : profile.withdrawals.map((w) => <WithdrawalRow key={w.id} w={w} potId={profile.potId} name={profile.name} {...s} />)}
+          {profile.withdrawals.length === 0 ? <p className="text-gray-500 text-xs">No withdrawals.</p> : profile.withdrawals.map((w) => <WithdrawalRow key={w.id} w={w} destination={snap.data?.withdrawalDestinations?.find(d=>d.withdrawalId===w.id)} potId={profile.potId} name={profile.name} {...s} />)}
         </Section>
         <Section title="Money history" hint={snap.data ? `${snap.data.entries.length}` : undefined}>
           <LoadState loading={snap.loading} error={snap.error} onRetry={() => void snap.reload()}>
@@ -337,9 +337,11 @@ function AllocateCar({ potId, availableCents, name, act, run, setConfirm, errorB
   );
 }
 
-function WithdrawalRow({ w, potId, name, act, run, canWrite, banks, setConfirm, errorBox }: Shared & { w: Withdrawal; potId: string; name: string }) {
-  const [panel, setPanel] = useState<null | 'reject' | 'cancel' | 'paid'>(null);
+function WithdrawalRow({ w, destination, potId, name, act, run, canWrite, banks, setConfirm, errorBox }: Shared & { w: Withdrawal; destination?:WithdrawalDestination; potId: string; name: string }) {
+  const [panel, setPanel] = useState<null | 'reject' | 'cancel' | 'paid' | 'destination'>(null);
   const [note, setNote] = useState('');
+  const [destBank,setDestBank]=useState(''),[destHolder,setDestHolder]=useState(''),[destAccount,setDestAccount]=useState(''),[destConfirmed,setDestConfirmed]=useState(false);
+  const destinationReady=destBank.trim().length>=2&&destHolder.trim().length>=2&&/^[0-9]{6,20}$/.test(destAccount.replace(/[ -]/g,''))&&destConfirmed;
   const [pay, setPay] = useState<BankPayment>(emptyBankPayment);
   const [proof, setProof] = useState<MoneyProofSelection>({});
   const slot = (kind: string) => `${kind}:${potId}:${w.id}`;
@@ -359,24 +361,27 @@ function WithdrawalRow({ w, potId, name, act, run, canWrite, banks, setConfirm, 
         <div><p className="text-white text-sm font-medium">{formatCents(w.amountCents)}</p><p className="text-gray-500 text-[11px]">{WITHDRAWAL_LABEL[w.state]} · requested {formatDay(w.requestedAt)}</p>{w.note && <p className="text-gray-500 text-[11px]">{w.note}</p>}</div>
         {canWrite && (
           <div className="flex flex-wrap gap-2 justify-end">
-            {w.state === 'requested' && <button type="button" disabled={act.busy !== null} onClick={() => void run(slot('approve'), 'approve_withdrawal', { potId, withdrawalId: w.id }, `Approve withdrawal ${label}`)} className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 disabled:opacity-40">{act.busy === slot('approve') ? 'Approving…' : 'Approve'}</button>}
+            {w.state === 'requested' && <button type="button" disabled={act.busy !== null} onClick={() => setPanel(panel==='destination'?null:'destination')} className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 disabled:opacity-40">{act.busy === slot('approve') ? 'Approving…' : 'Approve'}</button>}
             {w.state === 'requested' && <button type="button" onClick={() => setPanel(panel === 'reject' ? null : 'reject')} className="text-xs px-3 py-1.5 rounded-lg text-gray-400 border border-obsidian-400/60">Reject</button>}
-            {w.state === 'approved' && <button type="button" onClick={() => setPanel(panel === 'paid' ? null : 'paid')} className="text-xs px-3 py-1.5 rounded-lg bg-gold-500/15 text-gold-300 border border-gold-500/30">Record payment</button>}
+            {w.state === 'approved' && !!destination && <button type="button" onClick={() => setPanel(panel === 'paid' ? null : 'paid')} className="text-xs px-3 py-1.5 rounded-lg bg-gold-500/15 text-gold-300 border border-gold-500/30">Record payment</button>}
             {w.state === 'approved' && <button type="button" onClick={() => setPanel(panel === 'cancel' ? null : 'cancel')} className="text-xs px-3 py-1.5 rounded-lg text-gray-400 border border-obsidian-400/60">Cancel</button>}
           </div>
         )}
       </div>
+      {destination&&<p className="text-xs text-gray-300">Pay to {destination.accountHolder} · {destination.bankName} · account ending {destination.accountNumber.slice(-4)}<span className="block text-gray-500">Confirmed by {destination.confirmedBy} · {formatDay(destination.confirmedAt)}</span></p>}
+      {canWrite&&w.state==='approved'&&!destination&&<button type="button" className="text-xs text-gold-300" onClick={()=>setPanel('destination')}>Confirm payout account</button>}
+      {panel==='destination'&&<form className="space-y-2" onSubmit={e=>{e.preventDefault();if(!destinationReady)return;const setup=w.state==='requested'?'approve_withdrawal':'confirm_withdrawal_destination';const fields={potId,withdrawalId:w.id,destinationBank:destBank,destinationHolder:destHolder,destinationAccount:destAccount,destinationConfirmed:true};setConfirm({title:'Confirm withdrawal account?',label:w.state==='requested'?'Approve withdrawal':'Confirm account',message:`Pay ${formatCents(w.amountCents)} to ${destHolder} at ${destBank}, account ending ${destAccount.replace(/[ -]/g,'').slice(-4)}. This account is saved with this withdrawal.`,go:async()=>{if(await run(slot('approve'),setup,fields,'Confirm payout account'))setPanel(null);}});}}><Field label="Recipient bank"><input className="input w-full px-3 py-2 rounded-lg text-sm" value={destBank} maxLength={80} onChange={e=>setDestBank(e.target.value)}/></Field><Field label="Account holder"><input className="input w-full px-3 py-2 rounded-lg text-sm" value={destHolder} maxLength={150} onChange={e=>setDestHolder(e.target.value)}/></Field><Field label="Recipient account number"><input className="input w-full px-3 py-2 rounded-lg text-sm" inputMode="numeric" value={destAccount} maxLength={40} onChange={e=>setDestAccount(e.target.value)}/></Field><label className="text-xs text-gray-300 flex gap-2"><input type="checkbox" checked={destConfirmed} onChange={e=>setDestConfirmed(e.target.checked)}/>I checked this account with the investor.</label><button type="submit" className="btn-gold text-xs px-4 py-2 rounded-lg" disabled={!destinationReady||act.busy!==null}>Review payout account</button></form>}
       {panel === 'reject' && noteForm('reject')}
       {panel === 'cancel' && noteForm('cancel')}
       {panel === 'paid' && (
         <form className="space-y-2" onSubmit={(e) => {
-          e.preventDefault(); if (!bankPaymentReady(pay) || !proof.receiptDocumentId) return;
+          e.preventDefault(); if (!bankPaymentReady(pay) || !proof.receiptDocumentId || !destination) return;
           setConfirm({ title: 'Record withdrawal paid?', label: 'Record payment', message: `Record that ${formatCents(w.amountCents)} was paid to ${name} on ${formatDay(pay.paidOn)}. ${CASH_NOTE}`,
-            go: async () => { if (await run(slot('paid'), 'withdrawal_paid', { potId, withdrawalId: w.id, ...pay, receiptDocumentId: proof.receiptDocumentId, bankReference: pay.bankReference.trim() }, `Withdrawal paid ${label}`)) setPanel(null); } });
+            go: async () => { if (await run(slot('paid'), 'withdrawal_paid', { potId, withdrawalId: w.id, destinationId:destination?.destinationId, ...pay, receiptDocumentId: proof.receiptDocumentId, bankReference: pay.bankReference.trim() }, `Withdrawal paid ${label}`)) setPanel(null); } });
         }}>
           <BankPaymentFields banks={banks} value={pay} onChange={setPay} />
           <InvestorMoneyDocuments source={{ target: 'withdrawal', withdrawalId: w.id }} amountCents={w.amountCents} editable onChoose={setProof} />
-          <button type="submit" disabled={!bankPaymentReady(pay) || !proof.receiptDocumentId || act.busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40">Record withdrawal paid</button>
+          <button type="submit" disabled={!destination || !bankPaymentReady(pay) || !proof.receiptDocumentId || act.busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40">Record withdrawal paid</button>
         </form>
       )}
       {errorBox(slot('approve'))}{errorBox(slot('reject'))}{errorBox(slot('cancel'))}{errorBox(slot('paid'))}

@@ -106,7 +106,7 @@ export default function InvestorAccountPortal() {
               <Section title="Withdrawals" hint={`${snap.withdrawals.length}`}>
                 {snap.withdrawals.length === 0 ? <p className="text-gray-500 text-xs">No withdrawals yet.</p> : snap.withdrawals.map((w) => (
                   <div key={w.id} className="flex justify-between gap-3 text-xs">
-                    <div className="text-gray-300">{WITHDRAWAL_LABEL[w.state]} <span className="text-gray-600">· {formatDay(w.requestedAt)}</span>{w.note && <span className="block text-gray-500">{w.note}</span>}{w.state === 'paid' && <InvestorMoneyDocuments source={{ target: 'withdrawal', withdrawalId: w.id }} amountCents={w.amountCents} />}</div>
+                    <div className="text-gray-300">{WITHDRAWAL_LABEL[w.state]} <span className="text-gray-600">· {formatDay(w.requestedAt)}</span>{w.note && <span className="block text-gray-500">{w.note}</span>}{snap.withdrawalDestinations?.filter(d=>d.withdrawalId===w.id).map(d=><span key={d.destinationId} className="block text-gray-400">{d.bankName} · account ending {d.accountNumber.slice(-4)} · {d.accountHolder}</span>)}{w.state === 'paid' && <InvestorMoneyDocuments source={{ target: 'withdrawal', withdrawalId: w.id }} amountCents={w.amountCents} />}</div>
                     <span className="text-white font-medium shrink-0">{formatCents(w.amountCents)}</span>
                   </div>
                 ))}

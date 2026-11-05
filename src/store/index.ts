@@ -1055,6 +1055,7 @@ export function rowToPayment(r: any): Payment {
     amount: r.amount,
     description: r.description ?? undefined,
     status: r.status,
+    obligationReplaced:r.obligation_replaced===true,
     transferredAt: r.transferred_at ?? undefined,
     transferredBy: r.transferred_by ?? undefined,
     referenceNumber: r.reference_number ?? undefined,

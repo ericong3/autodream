@@ -1,7 +1,7 @@
 import { InvestorFinanceError } from './investorFinance';
 import type { Payment } from '../types';
 export const companyBankPaymentsEnabled = import.meta.env.VITE_USED_CAR_BANK_PAYMENTS === '1';
-export const paymentBalanceCents = (p: Payment) => Math.max(0, Math.round(p.amount * 100) - (p.bankPaidCents ?? (p.status === 'transferred' ? Math.round(p.amount * 100) : 0)));
+export const paymentBalanceCents = (p: Payment) => p.obligationReplaced ? 0 : Math.max(0, Math.round(p.amount * 100) - (p.bankPaidCents ?? (p.status === 'transferred' ? Math.round(p.amount * 100) : 0)));
 export type CompanyBankSave = { bankPaymentId: string; payments: Record<string, unknown>[]; journals: Record<string, unknown>[] };
 export async function companyBankRequest<T>(action: string, data: Record<string, unknown> = {}): Promise<T> {
   let r: Response;
