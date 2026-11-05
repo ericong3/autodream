@@ -69,17 +69,19 @@ begin
  perform set_config('autodream.consignment_write',coalesce(ctx,''),true);
  return uc_consignment_view(cid)||jsonb_build_object('car',(select to_jsonb(v) from cars v where id=cid),'repairs',coalesce((select jsonb_agg(to_jsonb(rr) order by rr.id) from repairs rr where car_id=cid),'[]'::jsonb),'journals',coalesce((select jsonb_agg(to_jsonb(j)) from journal_entries j where id=jid),'[]'::jsonb));
 end $$;
+create function uc_consignment_approved_source_allowed(p_car text,p_before jsonb,p_after jsonb) returns boolean language sql stable security definer set search_path=public,pg_temp as $$ select false $$;
+revoke all on function uc_consignment_approved_source_allowed(text,jsonb,jsonb) from public,anon,authenticated,service_role;
 create function uc_consignment_corrected_source_guard() returns trigger language plpgsql security definer set search_path=public,pg_temp as $$
 declare v_id text;v_before jsonb;v_after jsonb;begin
  if tg_table_name='payments' then
   if (to_jsonb(old)->'repair_job_id',to_jsonb(old)->'misc_cost_id',old.car_id,old.type) is distinct from (to_jsonb(new)->'repair_job_id',to_jsonb(new)->'misc_cost_id',new.car_id,new.type) and exists(select 1 from uc_consignment_bill_corrections where payment_id=old.id) then raise exception 'USE_CONSIGNMENT_BILL_CORRECTION';end if;return new;
  elsif tg_table_name='repairs' then
-  if (old.car_id,old.status,old.actual_cost,old.total_cost) is distinct from (new.car_id,new.status,new.actual_cost,new.total_cost) and exists(select 1 from uc_consignment_bill_corrections x where x.before_payment->>'type'='repair' and x.before_source->>'id'=old.id) and not exists(select 1 from uc_consignment_bill_corrections x where x.transaction_id=txid_current() and x.before_source=to_jsonb(old) and x.after_source=to_jsonb(new)) then raise exception 'USE_CONSIGNMENT_BILL_CORRECTION';end if;
+  if (old.car_id,old.status,old.actual_cost,old.total_cost) is distinct from (new.car_id,new.status,new.actual_cost,new.total_cost) and exists(select 1 from uc_consignment_bill_corrections x where x.before_payment->>'type'='repair' and x.before_source->>'id'=old.id) and not exists(select 1 from uc_consignment_bill_corrections x where x.transaction_id=txid_current() and x.before_source=to_jsonb(old) and x.after_source=to_jsonb(new)) and not uc_consignment_approved_source_allowed(old.car_id,to_jsonb(old),to_jsonb(new)) then raise exception 'USE_CONSIGNMENT_BILL_CORRECTION';end if;
  else
   for v_id in select distinct x.before_payment->>'misc_cost_id' from uc_consignment_bill_corrections x where x.car_id=old.id and x.before_payment->>'type'='misc_cost' loop
    select x->'amount' into v_before from jsonb_array_elements(coalesce(nullif(old.misc_costs,'null'::jsonb),'[]'::jsonb)) x where x->>'id'=v_id;
    select x->'amount' into v_after from jsonb_array_elements(coalesce(nullif(new.misc_costs,'null'::jsonb),'[]'::jsonb)) x where x->>'id'=v_id;
-   if v_before is distinct from v_after and not exists(select 1 from uc_consignment_bill_corrections x where x.car_id=old.id and x.transaction_id=txid_current() and x.before_source=jsonb_build_object('misc_costs',old.misc_costs,'disbursement_charges',to_jsonb(old)->'disbursement_charges') and x.after_source=jsonb_build_object('misc_costs',new.misc_costs,'disbursement_charges',to_jsonb(new)->'disbursement_charges')) then raise exception 'USE_CONSIGNMENT_BILL_CORRECTION';end if;
+   if v_before is distinct from v_after and not exists(select 1 from uc_consignment_bill_corrections x where x.car_id=old.id and x.transaction_id=txid_current() and x.before_source=jsonb_build_object('misc_costs',old.misc_costs,'disbursement_charges',to_jsonb(old)->'disbursement_charges') and x.after_source=jsonb_build_object('misc_costs',new.misc_costs,'disbursement_charges',to_jsonb(new)->'disbursement_charges')) and not uc_consignment_approved_source_allowed(old.id,jsonb_build_object('misc_costs',old.misc_costs,'disbursement_charges',to_jsonb(old)->'disbursement_charges'),jsonb_build_object('misc_costs',new.misc_costs,'disbursement_charges',to_jsonb(new)->'disbursement_charges')) then raise exception 'USE_CONSIGNMENT_BILL_CORRECTION';end if;
   end loop;
  end if;return new;end $$;
 create trigger uc_consignment_corrected_bill_link before update on payments for each row execute function uc_consignment_corrected_source_guard();

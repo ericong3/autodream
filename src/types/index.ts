@@ -1074,7 +1074,7 @@ export type PaymentType =
   | 'repair'
   | 'misc_cost'
   | 'consignment_payout'
-  | 'consignment_collection'
+  | 'consignment_collection' | 'supplier_credit_collection'
   | 'panel_charge'
   | 'investor_payout'
   | 'customer_refund'

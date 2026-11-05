@@ -121,7 +121,7 @@ begin
   values(c.id,incoming.id,source.car_id,source.pot_id,c.gross_cents,c.lender_cents,d.id,case when c.lender_cents>0 then 'company-trade-in-lender:'||c.id::text end,p_actor,req,p_data) returning * into a;
   if a.lender_cents>0 then
    insert into payments(id,car_id,type,status,amount,recipient_type,recipient_id,recipient_name,description,created_at)
-   values(a.lender_payment_id,incoming.id,'purchase_settlement','pending',a.lender_cents::numeric/100,'other',incoming.id,'Trade-in lender','Trade-in lender balance. Confirm lender details and attach its statement before payment.',now());
+   values(a.lender_payment_id,incoming.id,'purchase_settlement','pending',a.lender_cents::numeric/100,'merchant',incoming.id,'Trade-in lender','Trade-in lender balance. Confirm lender details and attach its statement before payment.',now());
   end if;
   perform uc_post_journal('company-trade-in:'||a.id::text,(now() at time zone 'Asia/Kuala_Lumpur')::date,'Company funded trade-in; no bank transfer',incoming.id,p_actor,jsonb_build_array(
    jsonb_build_object('accountId','acct-inv-own','debit',a.gross_cents::numeric/100,'credit',0),jsonb_build_object('accountId','acct-uc-sale-clearing','debit',0,'credit',a.amount_cents::numeric/100),jsonb_build_object('accountId','acct-ap','debit',0,'credit',a.lender_cents::numeric/100)));

@@ -79,7 +79,7 @@ export function calcCarNetProfitBreakdown(car: Car, customers: Customer[], repai
   const commission = salesCommission(car, customers);
   const intakeCommission = car.intakeCommission ?? 0;
   const sourceCommission = car.sourceCommission ?? 0;
-  const panelCost = car.consignment ? (car.panelChargeAmount ?? 0) : 0;
+  const panelCost = car.panelChargeAmount ?? 0;
   const otherCarCost = car.consignment && car.consignmentSettlement ? Math.max(0,car.consignmentSettlement.costCents/100-repairCost-miscCost-disbursementCharges-commission-intakeCommission-sourceCommission-panelCost) : 0;
   const netProfit = car.consignment && car.consignmentSettlement ? car.consignmentSettlement.netProfitCents/100 : car.isStaffSale && !car.consignment ? 0 : profitBeforeComm - commission - intakeCommission - sourceCommission - panelCost;
   return {

@@ -1,0 +1,311 @@
+{
+  "rows": {
+    "cars": 200,
+    "journals": 1132,
+    "payments": 1132
+  },
+  "checked_at": "2026-11-05T13:57:15.324035+00:00",
+  "new_tables": [],
+  "finance_base": {
+    "staff": "garage_building_staff",
+    "sessions": "garage_building_sessions",
+    "bank_statements": "bank_statement_uploads"
+  },
+  "car_ownership": {
+    "legacy_investor": 0,
+    "incoming_consign": 131,
+    "outgoing_consign": 3
+  },
+  "server_version": "17.6",
+  "column_contract": [
+    {
+      "udt": "jsonb",
+      "type": "jsonb",
+      "table": "cars",
+      "column": "consignment",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "cars",
+      "column": "green_card",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "cars",
+      "column": "id",
+      "default": null,
+      "nullable": "NO"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "cars",
+      "column": "investor_id",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "numeric",
+      "type": "numeric",
+      "table": "cars",
+      "column": "investor_split",
+      "default": "50",
+      "nullable": "YES"
+    },
+    {
+      "udt": "jsonb",
+      "type": "jsonb",
+      "table": "cars",
+      "column": "outgoing_consignment",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "numeric",
+      "type": "numeric",
+      "table": "cars",
+      "column": "panel_charge_amount",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "cars",
+      "column": "panel_dealer_id",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "jsonb",
+      "type": "jsonb",
+      "table": "cars",
+      "column": "photos",
+      "default": "'[]'::jsonb",
+      "nullable": "YES"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "dealers",
+      "column": "bank_account_holder",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "dealers",
+      "column": "bank_account_number",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "dealers",
+      "column": "bank_name",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "dealers",
+      "column": "id",
+      "default": null,
+      "nullable": "NO"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "dealers",
+      "column": "name",
+      "default": null,
+      "nullable": "NO"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "dealers",
+      "column": "phone",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "payments",
+      "column": "account_holder",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "payments",
+      "column": "account_number",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "numeric",
+      "type": "numeric",
+      "table": "payments",
+      "column": "amount",
+      "default": null,
+      "nullable": "NO"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "payments",
+      "column": "bank_name",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "payments",
+      "column": "car_id",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "payments",
+      "column": "id",
+      "default": null,
+      "nullable": "NO"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "payments",
+      "column": "misc_cost_id",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "payments",
+      "column": "recipient_id",
+      "default": null,
+      "nullable": "NO"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "payments",
+      "column": "repair_job_id",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "payments",
+      "column": "status",
+      "default": "'pending'::text",
+      "nullable": "NO"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "payments",
+      "column": "type",
+      "default": null,
+      "nullable": "NO"
+    },
+    {
+      "udt": "numeric",
+      "type": "numeric",
+      "table": "repairs",
+      "column": "actual_cost",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "repairs",
+      "column": "car_id",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "repairs",
+      "column": "completed_at",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "repairs",
+      "column": "id",
+      "default": null,
+      "nullable": "NO"
+    },
+    {
+      "udt": "numeric",
+      "type": "numeric",
+      "table": "repairs",
+      "column": "total_cost",
+      "default": null,
+      "nullable": "YES"
+    }
+  ],
+  "payment_constraints": [
+    {
+      "name": "payments_bonus_month_fk",
+      "definition": "FOREIGN KEY (bonus_campaign_id, bonus_month) REFERENCES used_car_bonus_months(campaign_id, month)"
+    },
+    {
+      "name": "payments_campaign_bonus_shape",
+      "definition": "CHECK (((type <> 'campaign_bonus'::text) OR ((bonus_campaign_id IS NOT NULL) AND (bonus_month IS NOT NULL) AND (recipient_type = 'user'::text) AND (car_id IS NULL) AND (amount > (0)::numeric))))"
+    },
+    {
+      "name": "payments_car_id_fkey",
+      "definition": "FOREIGN KEY (car_id) REFERENCES cars(id) ON DELETE SET NULL"
+    },
+    {
+      "name": "payments_claim_kind_check",
+      "definition": "CHECK (((claim_kind IS NULL) OR (claim_kind = ANY (ARRAY['repair'::text, 'misc'::text]))))"
+    },
+    {
+      "name": "payments_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "name": "payments_recipient_type_check",
+      "definition": "CHECK ((recipient_type = ANY (ARRAY['user'::text, 'external_salesman'::text, 'workshop'::text, 'dealer'::text, 'merchant'::text, 'customer'::text])))"
+    },
+    {
+      "name": "payments_status_check",
+      "definition": "CHECK ((status = ANY (ARRAY['pending'::text, 'transferred'::text])))"
+    },
+    {
+      "name": "payments_type_check",
+      "definition": "CHECK (((type = ANY (ARRAY['salesman_commission'::text, 'intake_bonus'::text, 'source_commission'::text, 'repair'::text, 'misc_cost'::text, 'consignment_payout'::text, 'consignment_collection'::text, 'panel_charge'::text, 'investor_payout'::text, 'customer_refund'::text, 'customer_collection'::text, 'loan_disbursement'::text, 'expense_claim'::text, 'purchase_settlement'::text])) OR (type = ANY (ARRAY['salary'::text, 'allowance'::text, 'campaign_bonus'::text]))))"
+    }
+  ],
+  "ledger_review_balances": {
+    "checked": true,
+    "accountNames": [
+      "acct-bank-operating"
+    ],
+    "amountsOmitted": true
+  }
+}

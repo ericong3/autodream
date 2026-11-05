@@ -96,12 +96,12 @@ begin
   end loop;
   perform 1 from payments where id=any(ids) order by id for update;
   select * into pay from payments where id=p_data->>'paymentId';
-  if pay.id is null or pay.car_id is null or coalesce(pay.type,'') not in ('customer_collection','loan_disbursement','consignment_collection') or pay.type='consignment_collection' and not uc_consignment_receipt_allowed(pay.car_id,pay.id) then raise exception 'COLLECTION_WORKFLOW_REQUIRED';end if;
+  if pay.id is null or pay.car_id is null or coalesce(pay.type,'') not in ('customer_collection','loan_disbursement','consignment_collection','supplier_credit_collection') or pay.type in ('consignment_collection','supplier_credit_collection') and not uc_consignment_receipt_allowed(pay.car_id,pay.id) then raise exception 'COLLECTION_WORKFLOW_REQUIRED';end if;
   select * into car from cars where id=pay.car_id for update;
   if car.id is null or car.investor_id is not null or coalesce(to_jsonb(car)->>'investor_tagged','false')='true' or exists(select 1 from uc_investor_cars where car_id=car.id) then raise exception 'USE_INVESTOR_CAR_BILLS';end if;
   if car.consignment is not null and car.consignment<>'null'::jsonb and not uc_consignment_receipt_allowed(car.id,pay.id) or car.outgoing_consignment is not null and car.outgoing_consignment<>'null'::jsonb then raise exception 'COLLECTION_WORKFLOW_REQUIRED';end if;
   if coalesce((to_jsonb(pay)->>'obligation_replaced')::boolean,false) then raise exception 'PAYMENT_WORKFLOW_REQUIRED';end if;
- if pay.type='consignment_collection' and (fees<>0 or excess<>0) then raise exception 'COLLECTION_WORKFLOW_REQUIRED';end if;
+ if pay.type in ('consignment_collection','supplier_credit_collection') and (fees<>0 or excess<>0) then raise exception 'COLLECTION_WORKFLOW_REQUIRED';end if;
   if pay.type='loan_disbursement' and (exists(select 1 from journal_entries where source_type='disbursement_received' and source_id=car.id and not coalesce(voided,false) and id not like 'company-receipt:%')
    or coalesce((to_jsonb(car)->>'money_received')::boolean,false) and not exists(select 1 from uc_company_bank_receipts where payment_id=pay.id)) then raise exception 'COLLECTION_HISTORY_REVIEW_REQUIRED';end if;
   covered:=amount+fees-excess;owing:=uc_commission_cents(to_jsonb(pay)->'amount')-uc_company_paid_cents(pay.id);
@@ -117,6 +117,7 @@ begin
   end if;
   counter:='acct-ar';v_source_type:=case pay.type when 'loan_disbursement' then 'disbursement_received' else 'customer_collection_received' end;v_source_id:=case pay.type when 'loan_disbursement' then car.id else pay.id end;
   if pay.type='consignment_collection' then counter:='acct-consignor-ar';v_source_type:='consignment_collection_received';end if;
+  if pay.type='supplier_credit_collection' then counter:='acct-supplier-credit';v_source_type:='supplier_credit_received';end if;
   -- Older cash-sale entries already booked Bank Operating. Reclassify that
   -- same cash to its real bank instead of recognising it for a second time.
   if pay.type='customer_collection' and exists(select 1 from journal_entries j cross join lateral jsonb_array_elements(j.lines) l where j.source_type='car_sold' and j.source_id=car.id and not coalesce(j.voided,false) and l->>'accountId'='acct-bank-operating' and (l->>'debit')::numeric>0) then counter:=case when exists(select 1 from ledger_accounts where id='acct-opening-review') then 'acct-opening-review' else 'acct-bank-operating' end;end if;

@@ -15,6 +15,21 @@ function fixture(role='director'){
 
 
 const enabled=f=>{f.deps.env.USED_CAR_BANK_PAYMENTS_ONLINE='1';f.deps.env.USED_CAR_PRIVATE_FINANCE_ONLINE='1';return f;};
+test('panel refresh throttling cannot consume the approval allowance',async()=>{
+ const f=enabled(fixture()),c=await f.login(),hits=[];f.repo.throttleHit=async(key,limit,window)=>{hits.push({key,limit,window});return{allowed:true};};
+ f.setResult({data:{paymentId:'panel-bill',approved:false}});assert.equal((await f.run({scope:'company_panel',action:'review',paymentId:'panel-bill'},c)).status,200);
+ f.setResult({data:{paymentId:'panel-bill',approved:true,payments:[],journals:[]}});assert.equal((await f.run({scope:'company_panel',action:'approve',paymentId:'panel-bill',expectedRevision:'a'.repeat(32),requestId:'panel_approval_0001'},c)).status,200);
+ const panel=hits.filter(h=>h.key.startsWith('company-panel:'));assert.equal(panel.length,2);assert.notEqual(panel[0].key,panel[1].key);assert.equal(panel[0].limit,600);assert.equal(panel[1].limit,90);
+});
+test('panel approval uses session identity, current source and Director permission',async()=>{
+ const f=enabled(fixture()),c=await f.login(),body={scope:'company_panel',action:'approve',paymentId:'panel-bill',expectedRevision:'a'.repeat(32),requestId:'panel_approval_0001'};
+ f.setResult({data:{paymentId:'panel-bill',approved:true,payments:[],journals:[]}});
+ assert.equal((await f.run(body)).status,401);assert.equal((await f.run(body,c)).status,200);assert.equal(f.calls[0].fn,'uc_company_panel');assert.equal(f.calls[0].args.p_actor,'real-director');
+ for(const change of [{actor:'other'},{amountCents:1},{expectedRevision:'bad'},{requestId:''}])assert.equal((await f.run({...body,...change},c)).status,400);
+ for(const role of ['admin','shareholder','salesperson','investor']){const g=enabled(fixture(role)),gc=await g.login();assert.equal((await g.run(body,gc)).status,403);assert.equal(g.calls.length,0);}
+ f.setResult({error:{message:'SOURCE_CHANGED'}});assert.equal((await f.run(body,c)).status,409);f.setResult({data:{paymentId:'other',approved:true,payments:[],journals:[]}});assert.equal((await f.run(body,c)).status,503);
+ f.deps.env.USED_CAR_BANK_PAYMENTS_ONLINE='0';assert.equal((await f.run(body,c)).status,503);
+});
 const open=(extra={})=>({scope:'consignment_finance',action:'open',carId:'consign',dealerBasisPoints:5725,expectedRevision:'a'.repeat(32),requestId:'consign_request_0001',...extra});
 const saved=()=>({data:{carId:'consign',case:{car_id:'consign',approved_at:null},car:{id:'consign'},payments:[],journals:[]}});
 test('Director case confirmation uses session identity and rejects supplied financial totals',async()=>{
@@ -62,4 +77,13 @@ test('approved settlement amendments use Director source review and a new agreem
  assert.equal((await f.run({...body,agreementDocumentId:'bad'},c)).status,400);assert.equal((await f.run({...body,reason:'bad'},c)).status,400);
  for(const role of ['admin','shareholder','investor']){const g=enabled(fixture(role)),gc=await g.login();assert.equal((await g.run(preview,gc)).status,403);assert.equal((await g.run(body,gc)).status,403);}
  f.setResult({error:{message:'NEW_SETTLEMENT_AGREEMENT_REQUIRED'}});assert.equal((await f.run(body,c)).status,409);
+});
+
+test('approved supplier bill preview and amendment are Director-only and source-bound',async()=>{
+ const f=enabled(fixture()),c=await f.login();const body={scope:'consignment_finance',action:'preview_bill_adjustment',carId:'consign',paymentId:'repair-bill',amountCents:250000,invoiceDocumentId:choiceId,reason:'Correct supplier final invoice'};
+ f.setResult({data:{preview:{carId:'consign',sourceRevision:'a'.repeat(32),supplier:{receivableCents:50000}}}});assert.equal((await f.run(body,c)).status,200);
+ const save={...body,action:'adjust_approved_bill',expectedRevision:'a'.repeat(32),requestId:'approved_bill_adjust_01'};f.setResult(saved());assert.equal((await f.run(save,c)).status,200);assert.equal(f.calls[1].args.p_actor,'real-director');
+ for(const changes of [{amountCents:0},{invoiceDocumentId:'bad'},{reason:'bad'},{costCents:1}])assert.equal((await f.run({...save,...changes},c)).status,400);
+ for(const role of ['admin','shareholder','investor']){const g=enabled(fixture(role)),gc=await g.login();assert.equal((await g.run(body,gc)).status,403);assert.equal((await g.run(save,gc)).status,403);}
+ f.setResult({error:{message:'SUPPLIER_HISTORY_REVIEW_REQUIRED'}});assert.equal((await f.run(save,c)).status,409);
 });

@@ -46,6 +46,7 @@ const TYPE_LABELS: Record<PaymentType, string> = {
   misc_cost:              'Misc Cost',
   consignment_payout:     'Consign Payout',
   consignment_collection: 'Consign Collect',
+  supplier_credit_collection:'Supplier refund',
   panel_charge:           'Panel Charge',
   investor_payout:        'Investor Payout',
   customer_refund:        'Customer Refund',
@@ -65,6 +66,7 @@ const TYPE_COLORS: Record<PaymentType, string> = {
   repair:                 'bg-orange-500/20 text-orange-300 border-orange-500/20',
   misc_cost:              'bg-pink-500/20 text-pink-300 border-pink-500/20',
   consignment_payout:     'bg-green-500/20 text-green-300 border-green-500/20',
+  supplier_credit_collection:'bg-emerald-500/20 text-emerald-300 border-emerald-500/20',
   consignment_collection: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/20',
   panel_charge:           'bg-teal-500/20 text-teal-300 border-teal-500/20',
   investor_payout:        'bg-indigo-500/20 text-indigo-300 border-indigo-500/20',
@@ -76,7 +78,7 @@ const TYPE_COLORS: Record<PaymentType, string> = {
 };
 
 // Payments we RECEIVE (not pay out)
-const INBOUND_TYPES = new Set<PaymentType>(['customer_collection', 'loan_disbursement', 'consignment_collection']);
+const INBOUND_TYPES = new Set<PaymentType>(['customer_collection', 'loan_disbursement', 'consignment_collection','supplier_credit_collection']);
 
 // Jewel-tone glass badges for the Receivable tab specifically — a quieter,
 // more deliberate palette than the generic TYPE_COLORS map (whose bright
@@ -84,6 +86,7 @@ const INBOUND_TYPES = new Set<PaymentType>(['customer_collection', 'loan_disburs
 const RECEIVABLE_TYPE_STYLE: Partial<Record<PaymentType, { bg: string; text: string; border: string }>> = {
   loan_disbursement:      { bg: 'rgba(234,184,32,0.1)',  text: '#F7D96A', border: 'rgba(234,184,32,0.22)' },
   customer_collection:    { bg: 'rgba(52,211,153,0.1)',  text: '#6ee7b7', border: 'rgba(52,211,153,0.22)' },
+  supplier_credit_collection:{bg:'rgba(96,165,250,0.1)',text:'#93c5fd',border:'rgba(96,165,250,0.22)'},
   consignment_collection: { bg: 'rgba(96,165,250,0.1)',  text: '#93c5fd', border: 'rgba(96,165,250,0.22)' },
 };
 

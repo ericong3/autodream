@@ -6,6 +6,7 @@ import { uploadCompanyEvidence } from '../lib/companyEvidence';
 import { useInvestorQuery, parseRinggit, formatCents, InvestorFinanceError, type Bank } from '../lib/investorFinance';
 import { BankPaymentFields, bankPaymentReady, emptyBankPayment, CashConfirm, type PendingConfirm } from './InvestorFinanceCar';
 import Modal from './Modal';
+import CompanyPanelApproval from './CompanyPanelApproval';
 
 type Intent = { requestId: string; bankAccountId: string; bankReference: string; paidOn: string; notes: string; allocations: { paymentId: string; amountCents: number; documentId: string }[] };
 export default function CompanyBankPaymentDialog({ payments, actorId, onClose }: { payments: Payment[]; actorId: string; onClose: () => void }) {
@@ -14,10 +15,12 @@ export default function CompanyBankPaymentDialog({ payments, actorId, onClose }:
   const [pending, setPending] = useState<Intent | null>(read), [payment, setPayment] = useState(emptyBankPayment), [notes, setNotes] = useState('');
   const [file, setFile] = useState<File | null>(null), [amount, setAmount] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState(''), [confirm, setConfirm] = useState<PendingConfirm | null>(null);
   const banks = useInvestorQuery<{ banks: Bank[] }>(`company-banks:${actorId}`, () => companyBankRequest('banks'));
+  const [approvedPanels,setApprovedPanels]=useState<Record<string,boolean>>({});
+  const panelReady=payments.filter(p=>p.type==='panel_charge').every(p=>approvedPanels[p.id]);
   const total = payments.reduce((sum, p) => sum + paymentBalanceCents(p), 0);
   const cents = amount ? parseRinggit(amount) : total;
   const mixedPayroll = payments.some((p) => ['salary', 'allowance', 'campaign_bonus'].includes(p.type)) && payments.some((p) => !['salary', 'allowance', 'campaign_bonus'].includes(p.type));
-  const ready = !busy && !mixedPayroll && !!file && !!cents && cents <= total && bankPaymentReady(payment) && !!banks.data?.banks.some((b) => b.id === payment.bankAccountId);
+  const ready = panelReady && !busy && !mixedPayroll && !!file && !!cents && cents <= total && bankPaymentReady(payment) && !!banks.data?.banks.some((b) => b.id === payment.bankAccountId);
   const save = async () => {
     setBusy(true); setError('');
     try {
@@ -46,6 +49,7 @@ export default function CompanyBankPaymentDialog({ payments, actorId, onClose }:
   return <Modal isOpen title="Record bank payment" onClose={onClose}>
     <div className="space-y-4">
       <p className="text-sm text-white">{formatCents(total)} unpaid · {payments.length} {payments.length === 1 ? 'bill' : 'bills'}</p>
+      {payments.filter(p=>p.type==='panel_charge').map(p=><CompanyPanelApproval key={actorId+':'+p.id} paymentId={p.id} actorId={actorId} onApproved={()=>setApprovedPanels(old=>old[p.id]?old:{...old,[p.id]:true})}/>)}
       {(error || banks.error) && <p role="alert" className="text-xs text-red-400">{error || banks.error?.message}</p>}
       {mixedPayroll && <p role="alert" className="text-xs text-amber-300">Record salary and bonuses separately from ordinary bills to keep payroll private.</p>}
       {pending ? <div className="space-y-3"><p className="text-xs text-amber-300">An earlier payment save is waiting. Retry it before recording another payment.</p><p className="text-xs text-gray-400">{formatCents(pending.allocations.reduce((s, a) => s + a.amountCents, 0))} · {pending.paidOn} · {pending.bankReference}</p><button type="button" className="btn-gold px-4 py-2 rounded-lg text-xs" disabled={busy} onClick={() => void save()}>{busy ? 'Checking…' : 'Retry original payment'}</button></div> : <>

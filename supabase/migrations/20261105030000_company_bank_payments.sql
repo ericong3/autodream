@@ -67,8 +67,11 @@ begin
  if to_regclass('uc_company_trade_in_applications') is null then return false;end if;
  return exists(select 1 from uc_company_trade_in_applications a where a.incoming_car_id=p_car and p_journal='uc:company-trade-in:'||a.id::text);
 end $$;
+create function uc_company_panel_allowed(p_payment text) returns boolean language sql stable security definer set search_path=public,pg_temp as $$ select false $$;
+revoke all on function uc_company_panel_allowed(text) from public,anon,authenticated,service_role;
 create function public.uc_consignment_payment_allowed(p_payment text) returns boolean language plpgsql stable security definer set search_path=public,pg_temp as $$
 begin
+ if uc_company_panel_allowed(p_payment) then return true;end if;
  if to_regclass('uc_consignment_bill_sources') is null then return false;end if;
  return exists(select 1 from uc_consignment_bill_sources where payment_id=p_payment);
 end $$;
@@ -173,7 +176,7 @@ begin
    select * into doc from uc_company_payment_documents where id=(item->>'documentId')::uuid and payment_id=pay.id and kind='payment' and state='confirmed';
    if doc.id is null then raise exception 'PAYMENT_RECEIPT_REQUIRED';end if;
    if exists(select 1 from uc_company_bank_allocations where receipt_document_id=doc.id) then raise exception 'RECEIPT_ALREADY_USED';end if;
-   if uc_company_invoice_type(pay.type) and not exists(select 1 from uc_company_payment_documents where payment_id=pay.id and kind='invoice' and state='confirmed') then raise exception 'SUPPLIER_INVOICE_REQUIRED';end if;
+   if uc_company_invoice_type(pay.type) and not exists(select 1 from uc_company_payment_documents where payment_id=pay.id and kind='invoice' and state='confirmed') and uc_supplier_adjustment_invoice(pay.id) is null then raise exception 'SUPPLIER_INVOICE_REQUIRED';end if;
    v_source_type:=case pay.type when 'expense_claim' then 'expense_claim_confirmed' when 'customer_refund' then 'car_sold' when 'purchase_settlement' then 'car_purchased' else pay.type end;
    v_source_id:=case when pay.type in ('salesman_commission','intake_bonus','source_commission','customer_refund','purchase_settlement') then pay.car_id else pay.id end;
    counter:=case when pay.type='customer_refund' then 'acct-customer-refunds' else 'acct-ap' end;

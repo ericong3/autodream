@@ -33,7 +33,7 @@ try{
   REQUIRED_DOCUMENTS])await db.exec(migration(file));
 
 
- await db.exec('alter table payments add column recipient_type text;alter table payments add column recipient_id text');
+ await db.exec("alter table payments add column recipient_type text constraint payments_recipient_type_check check(recipient_type in ('user','external_salesman','workshop','dealer','merchant','customer'));alter table payments add column recipient_id text");
  await db.exec(migration('20261104100000_company_payment_documents.sql'));
  await db.exec(migration('20261104110000_investor_money_documents.sql'));
 

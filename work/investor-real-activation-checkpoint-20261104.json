@@ -39,10 +39,12 @@
     "Director-confirmed immutable investor withdrawal payout destination API/SQL/UI; own-investor display, locked payout ID, receipt gate. Claude supplied first draft, repaired variable/reply tests and finished UI locally.",
     "Real disposable PostgreSQL 17.11 rehearsal with full prepared chain and independent simultaneous connections; duplicate receipt once, competing full payout once, approval vs terms correction serialized.",
     "Bank opening clears legacy operating ledger exactly once, puts differences in named review balance rather than equity; later bank dates do not clear twice. Legacy-bank and investor-tag bypasses blocked.",
-    "Approved consignment dealer settlement amendments preserve original case and bank records, use exact terms-bound new agreement, replace only outstanding obligations, post balanced noncash delta, reserve new AP, allow actual dealer debt refunds, lock replacement bank details and keep audit."
+    "Approved consignment dealer settlement amendments preserve original case and bank records, use exact terms-bound new agreement, replace only outstanding obligations, post balanced noncash delta, reserve new AP, allow actual dealer debt refunds, lock replacement bank details and keep audit.",
+    "Approved incoming-consignment supplier bill adjustments with fresh invoices, supplier refund or additional AP, preserved actual bank history, and revised dealer settlement.",
+    "Director approval of invoice-backed company-owned panel bills, saved recipient, single AP posting, partial payment and withheld settlement, production snake_case dealer fields supported."
   ],
   "validation": {
-    "unit_tests": 432,
+    "unit_tests": 453,
     "build": "passed",
     "local_database_rehearsals": [
       "investor-capital-db.integration.mjs",
@@ -112,7 +114,34 @@
     ],
     "all_database_rehearsals_passed": 13,
     "final_build_log": "work/finance-bank-lender-final-build-20261105.log",
-    "payroll_compatibility": "Company bank route preserves full confirmed salary/allowance/bonus payouts; partial ordinary bills remain supported. Actual existing bonus settlement function and guards exercised locally."
+    "payroll_compatibility": "Company bank route preserves full confirmed salary/allowance/bonus payouts; partial ordinary bills remain supported. Actual existing bonus settlement function and guards exercised locally.",
+    "production_preflight": {
+      "checked_at": "2026-11-05T13:57:15.324035+00:00",
+      "connected": true,
+      "project": "ayvbagxashasdqgwncbf",
+      "investor_tables_installed": false,
+      "cars": 200,
+      "payments": 1132,
+      "journals": 1132,
+      "investor_cars": 0,
+      "outgoing_consignments": 3,
+      "outgoing_status": "delivered",
+      "outgoing_pending_collections": 3,
+      "production_writes": false
+    },
+    "not_verified": [
+      "Exact full production-schema migration rehearsal and live login",
+      "Outgoing dealer collections compatibility before activation",
+      "General company/investor paid-bill correction paths"
+    ],
+    "browser": "PASS isolated Chrome React consignment correction/approval, withdrawal destination confirmation and panel approval/cancel. APIs mocked; no production sessions tested.",
+    "supplier_adjustments": "PASS disposable PostgreSQL17 partial/full payment, supplier credit note, real refund, additional invoice, remaining AP, original bank history, private source and invoice isolation.",
+    "panel_bills": "PASS disposable PostgreSQL17 invoice gate, Director role, snake_case dealer fields, exact replay, recipient lock, partial bank payment plus withheld fee. Focused API and browser confirmation tests pass.",
+    "connected_schema_fixes": [
+      "Production snake_case dealer bank columns supported",
+      "Supplier refund payment type extends existing check",
+      "Company trade-in lender uses allowed merchant recipient; production recipient constraint tested"
+    ]
   },
   "blocking_access": "Resolved 2026-11-04: cua.getBrowser({url: Supabase SQL page}) reached the in-app browser. The earlier local-browser inventory error was mistakenly treated as blocking IAB. Browser binding supabaseBrowser (iab ID2), investorSupabaseTab ID2. Live read-only investor counts verified; new investor tables absent. Do not ask user to enable Work settings again unless a fresh interaction with this browser fails.",
   "required_before_activation": [

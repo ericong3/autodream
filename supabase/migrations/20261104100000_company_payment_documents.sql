@@ -109,6 +109,8 @@ create function public.uc_company_evidence_doc(d public.uc_company_payment_docum
  select jsonb_strip_nulls(jsonb_build_object('documentId',d.id,'kind',d.kind,'fileName',d.file_name,'mimeType',d.mime_type,'sizeBytes',d.size_bytes,'state',d.state,'uploadedAt',d.confirmed_at,'createdBy',d.confirmed_by,'actorName',(select s.name from garage_building_staff s where s.id=d.confirmed_by))) $$;
 
 -- ── Payments: evidence before money moves (every path) ───────────────────
+create function public.uc_supplier_adjustment_invoice(p_payment text) returns uuid language sql stable security definer set search_path=public,pg_temp as $$ select null::uuid $$;
+revoke all on function uc_supplier_adjustment_invoice(text) from public,anon,authenticated,service_role;
 create function public.uc_consignment_bill_correction_allowed(p_before jsonb,p_after jsonb) returns boolean language sql stable security definer set search_path=public,pg_temp as $$ select false $$;
 revoke all on function uc_consignment_bill_correction_allowed(jsonb,jsonb) from public,anon,authenticated,service_role;
 create function public.uc_company_payment_evidence() returns trigger language plpgsql security definer set search_path=public,pg_temp as $$
@@ -122,9 +124,9 @@ begin
   claiming:=claiming and old.claim_confirmed_by is null;
   paying:=paying and old.status is distinct from 'transferred';
  end if;
- if coalesce(claiming,false) and not exists(select 1 from uc_company_payment_documents d where d.payment_id=new.id and d.kind='invoice' and d.state='confirmed') then raise exception 'SUPPLIER_INVOICE_REQUIRED';end if;
+ if coalesce(claiming,false) and not exists(select 1 from uc_company_payment_documents d where d.payment_id=new.id and d.kind='invoice' and d.state='confirmed') and uc_supplier_adjustment_invoice(new.id) is null then raise exception 'SUPPLIER_INVOICE_REQUIRED';end if;
  if coalesce(paying,false) then
-  if uc_company_invoice_type(new.type) and not exists(select 1 from uc_company_payment_documents d where d.payment_id=new.id and d.kind='invoice' and d.state='confirmed') then raise exception 'SUPPLIER_INVOICE_REQUIRED';end if;
+  if uc_company_invoice_type(new.type) and not exists(select 1 from uc_company_payment_documents d where d.payment_id=new.id and d.kind='invoice' and d.state='confirmed') and uc_supplier_adjustment_invoice(new.id) is null then raise exception 'SUPPLIER_INVOICE_REQUIRED';end if;
   if not exists(select 1 from uc_company_payment_documents d where d.payment_id=new.id and d.kind='payment' and d.state='confirmed') then raise exception 'PAYMENT_RECEIPT_REQUIRED';end if;
  end if;
  return new;
@@ -210,10 +212,10 @@ begin
   if pay.id is null or not uc_company_evidence_allows(tier,actor.id,pay.type,pay.recipient_id,null) then raise exception 'NOT_ALLOWED';end if;
   return jsonb_strip_nulls(jsonb_build_object('paymentId',pay.id,
    'invoiceRequired',uc_company_invoice_type(pay.type),
-   'invoiceConfirmed',exists(select 1 from uc_company_payment_documents d where d.payment_id=pay.id and d.kind='invoice' and d.state='confirmed'),
+   'invoiceConfirmed',exists(select 1 from uc_company_payment_documents d where d.payment_id=pay.id and d.kind='invoice' and d.state='confirmed') or uc_supplier_adjustment_invoice(pay.id) is not null,
    'receiptConfirmed',case when tier<>'staff' then exists(select 1 from uc_company_payment_documents d where d.payment_id=pay.id and d.kind='payment' and d.state='confirmed') end))
    ||jsonb_build_object('documents',coalesce((select jsonb_agg(uc_company_evidence_doc(d) order by d.confirmed_at,d.id) from uc_company_payment_documents d
-    where d.payment_id=pay.id and d.state='confirmed' and uc_company_evidence_allows(tier,actor.id,pay.type,pay.recipient_id,d.kind)),'[]'::jsonb));
+    where (d.payment_id=pay.id or d.id=uc_supplier_adjustment_invoice(pay.id)) and d.state='confirmed' and uc_company_evidence_allows(tier,actor.id,pay.type,pay.recipient_id,d.kind)),'[]'::jsonb));
 
  elsif p_action='read' then
   -- Missing, unconfirmed and unauthorised documents look the same.
