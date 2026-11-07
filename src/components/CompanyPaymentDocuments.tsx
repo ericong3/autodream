@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Modal from './Modal';
+import CompanyBillAdjustment from './CompanyBillAdjustment';
 import { companyEvidence, uploadCompanyEvidence, type CompanyDocument } from '../lib/companyEvidence';
 import { useStore } from '../store';
 import { companyBankPaymentsEnabled, companyBankRequest } from '../lib/companyBankPayments';
@@ -19,6 +20,10 @@ function CompanyPaymentDocumentsBody({ paymentId, onClose }: { paymentId: string
   const [link, setLink] = useState<{ id: string; url: string } | null>(null);
   const [requirements, setRequirements] = useState<DocumentList>({ documents: [] });
   const role = useStore((s) => s.currentUser?.role);
+  const actorId = useStore((s) => s.currentUser?.id);
+  const bill = useStore((s) => s.payments.find(p => p.id === paymentId));
+  const car = useStore((s) => s.cars.find(c => c.id === bill?.carId));
+  const canCorrect = role === 'director' && !!actorId && !!car && !!bill && ['repair', 'misc_cost'].includes(bill.type) && !car.investorId && !car.consignment;
   const load = async () => {
     const result = await companyEvidence<DocumentList>('list', { paymentId });
     if (!Array.isArray(result.documents)) throw new Error('Could not load the documents.');
@@ -51,6 +56,7 @@ function CompanyPaymentDocumentsBody({ paymentId, onClose }: { paymentId: string
       <p className="text-[11px] text-gray-500">{d.actorName || d.createdBy || ''}{d.uploadedAt ? ` · ${new Date(d.uploadedAt).toLocaleString('en-MY')}` : ''}</p>
       {link?.id === d.documentId ? <a className="text-xs text-gold-400 underline" href={link.url} target="_blank" rel="noopener noreferrer">Open document</a> : <button className="text-xs text-gold-400 mt-1" disabled={busy} onClick={async () => { setBusy(true); setError(''); try { const r = await companyEvidence<{ url: string }>('open', { documentId: d.documentId }); if (!r.url?.startsWith('https://')) throw new Error('Could not open the document.'); setLink({ id: d.documentId, url: r.url }); } catch (e) { setError(e instanceof Error ? e.message : 'Could not open this file.'); } finally { setBusy(false); } }}>View document</button>}
     </div>)}</div>
+    {companyBankPaymentsEnabled && canCorrect && actorId && <CompanyBillAdjustment key={actorId + ':' + paymentId} paymentId={paymentId} actorId={actorId} invoiceVersion={documents.length} />}
   </Modal>;
 }
 

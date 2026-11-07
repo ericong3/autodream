@@ -1,4 +1,5 @@
 import TradeInLenderPayment from './TradeInLenderPayment';
+import InvestorBillAdjustment from './InvestorBillAdjustment';
 import { TradeInInvoiceLink } from './ApplyTradeInFunding';
 import { useState, type ReactNode } from 'react';
 import { Car as CarIcon, ChevronDown, AlertTriangle, RotateCw, Paperclip, Loader2, CheckCircle2 } from 'lucide-react';
@@ -112,7 +113,7 @@ export function BankPaymentFields({ banks, value, onChange, dateLabel = 'Date pa
   return (
     <div className="grid sm:grid-cols-3 gap-2">
       <Field label="Bank account">
-        <select className="input w-full px-3 py-2 rounded-lg text-sm" value={value.bankAccountId} onChange={(e) => onChange({ ...value, bankAccountId: e.target.value })}>
+        <select aria-label="Bank account" className="input w-full px-3 py-2 rounded-lg text-sm" value={value.bankAccountId} onChange={(e) => onChange({ ...value, bankAccountId: e.target.value })}>
           <option value="">Choose…</option>
           {banks.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
         </select>
@@ -241,7 +242,7 @@ export default function InvestorFinanceCar({ carId, actorId, mode, banks = [], o
             <Section title="Bills" hint={`${car.bills.filter((b) => b.state !== 'voided').length}`} defaultOpen={mode === 'admin'}>
               {car.bills.length === 0 && <p className="text-gray-500 text-xs">No bills recorded for this car.</p>}
               {car.bills.map((bill) => (
-                <BillRow key={bill.id} bill={bill} carId={carId} mode={mode} banks={banks} busy={act.busy} seesProof={seesProof}
+                <BillRow key={bill.id} bill={bill} actorId={actorId} carId={carId} mode={mode} banks={banks} busy={act.busy} seesProof={seesProof}
                   onApprove={() => void mutate(`approve:${carId}:${bill.id}`, 'approve_car_bill', { carId, billId: bill.id }, `Approve bill · ${bill.purpose}`)}
                   onVoid={(note) => void mutate(`void:${carId}:${bill.id}`, 'void_car_bill', { carId, billId: bill.id, note }, `Void bill · ${bill.purpose}`)}
                   onPay={(amountCents, pay) => setConfirm({
@@ -283,6 +284,8 @@ export default function InvestorFinanceCar({ carId, actorId, mode, banks = [], o
             )}
 
             {mode !== 'admin' && (
+              <>
+              {(car.companyOwesInvestorCents ?? 0) > 0 && <p className="px-4 py-3 text-xs text-amber-300">Company owes investor {formatCents(car.companyOwesInvestorCents)} · not available to spend yet</p>}
               <Section title="Profit" hint={car.settlement ? 'Confirmed' : car.saleCents ? 'Estimate' : undefined}>
                 {car.settlement ? (
                   <div className="grid grid-cols-2 gap-3">
@@ -318,6 +321,7 @@ export default function InvestorFinanceCar({ carId, actorId, mode, banks = [], o
                   );
                 })()}
               </Section>
+              </>
             )}
 
             {car.activity && (
@@ -398,15 +402,15 @@ function AddBill({ busy, onSubmit }: { busy: boolean; onSubmit: (b: { category: 
 
 const BILL_STATE: Record<CarBill['state'], [string, string]> = { pending: ['Waiting for Director', 'text-amber-300'], approved: ['Approved', 'text-emerald-400'], voided: ['Voided', 'text-gray-500'] };
 
-function BillRow({ bill, carId, mode, banks, busy, seesProof, onApprove, onVoid, onPay, onUploaded, errorBox }: {
-  bill: CarBill; carId: string; mode: CarMode; banks: Bank[]; busy: string | null; seesProof: boolean;
+function BillRow({ bill, actorId, carId, mode, banks, busy, seesProof, onApprove, onVoid, onPay, onUploaded, errorBox }: {
+  bill: CarBill; actorId: string; carId: string; mode: CarMode; banks: Bank[]; busy: string | null; seesProof: boolean;
   onApprove: () => void; onVoid: (note: string) => void; onPay: (cents: number, p: BankPayment & { receiptDocumentId: string }) => void; onUploaded: () => void; errorBox: (slot: string) => ReactNode;
 }) {
   const [panel, setPanel] = useState<null | 'void' | 'pay'>(null);
   const [note, setNote] = useState('');
   const [amount, setAmount] = useState('');
   const [pay, setPay] = useState(emptyBankPayment);
-  const director = mode === 'director', remaining = bill.amountCents - bill.paidCents;
+  const director = mode === 'director', remaining = bill.remainingCents ?? bill.amountCents - bill.paidCents;
   const [receiptId, setReceiptId] = useState('');
   const receipts = (bill.documents ?? []).filter((d) => d.kind === 'receipt' && !d.used);
   const cents = parseRinggit(amount), payOk = !!cents && cents <= remaining && bankPaymentReady(pay) && receipts.some((d) => d.id === receiptId);
@@ -469,12 +473,16 @@ function BillRow({ bill, carId, mode, banks, busy, seesProof, onApprove, onVoid,
           <button type="submit" disabled={!payOk || busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40">Record bill payment</button>
         </form>
       )}
+      {bill.originalAmountCents !== undefined && bill.originalAmountCents !== bill.amountCents && <p className="text-[11px] text-gray-400">Original bill {formatCents(bill.originalAmountCents)} · corrected total shown above</p>}
+      {(bill.refundOwingCents ?? 0) > 0 && <p className="text-[11px] text-amber-300">Supplier owes back {formatCents(bill.refundOwingCents)} · not received yet</p>}
+      {!director && !!bill.adjustments?.length && <details className="text-[11px] text-gray-400"><summary className="cursor-pointer py-2">Correction history</summary><ul className="space-y-2">{bill.adjustments.map(a => <li key={a.id}><p>{formatCents(a.beforeTotalCents)} → {formatCents(a.afterTotalCents)}</p><p>{a.reason}</p><p>{a.actorName} · {formatDay(a.createdAt)}</p></li>)}</ul></details>}
+      {director && bill.state === 'approved' && bill.category !== 'commission' && <InvestorBillAdjustment key={actorId + ':' + bill.id} actorId={actorId} carId={carId} billId={bill.id} banks={banks} invoiceVersion={bill.documents?.length ?? 0} onChanged={onUploaded}/>}
       {errorBox(`approve:${carId}:${bill.id}`)}{errorBox(`void:${carId}:${bill.id}`)}{errorBox(`pay:${carId}:${bill.id}`)}
     </div>
   );
 }
 
-function ProofUpload({ billId, entryId, kind, onUploaded }: { billId: string; entryId?: string; kind: 'bill' | 'payment' | 'receipt'; onUploaded: (documentId: string) => void }) {
+export function ProofUpload({ billId, entryId, kind, onUploaded }: { billId: string; entryId?: string; kind: 'bill' | 'payment' | 'receipt'; onUploaded: (documentId: string) => void }) {
   const [state, setState] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
   const upload = async (file: File | undefined) => {
     if (!file) return;

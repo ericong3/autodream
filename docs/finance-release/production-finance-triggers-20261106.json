@@ -1,0 +1,26 @@
+[
+  {
+    "table_name": "cars",
+    "trigger_name": "used_car_preserve_delivery",
+    "trigger_definition": "CREATE TRIGGER used_car_preserve_delivery BEFORE UPDATE ON public.cars FOR EACH ROW EXECUTE FUNCTION used_car_preserve_delivery()",
+    "function_definition": "CREATE OR REPLACE FUNCTION public.used_car_preserve_delivery()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\r\nbegin\r\n if (old.status='delivered' or exists(select 1 from public.customers c where c.interested_car_id=old.id and c.delivered))\r\n and (new.status is distinct from 'delivered' or (old.final_deal is not null and new.final_deal is null)) then\r\n  raise exception 'DELIVERED_LOCKED: A delivered car cannot return to stock or have its deal cancelled.';\r\n end if;\r\n return new;\r\nend $function$\n"
+  },
+  {
+    "table_name": "customers",
+    "trigger_name": "used_car_preserve_delivered_customer",
+    "trigger_definition": "CREATE TRIGGER used_car_preserve_delivered_customer BEFORE UPDATE ON public.customers FOR EACH ROW EXECUTE FUNCTION used_car_preserve_delivered_customer()",
+    "function_definition": "CREATE OR REPLACE FUNCTION public.used_car_preserve_delivered_customer()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\r\nbegin\r\n -- Serialize against car cancellation, including an old browser tab.\r\n perform 1 from public.cars where id=old.interested_car_id for update;\r\n if old.delivered and (new.delivered is distinct from true\r\n  or new.interested_car_id is distinct from old.interested_car_id\r\n  or (old.cash_work_order is not null and new.cash_work_order is null)\r\n  or (old.loan_work_order is not null and new.loan_work_order is null)) then\r\n  raise exception 'DELIVERED_LOCKED: A delivered customer deal cannot be reverted.';\r\n end if;\r\n return new;\r\nend $function$\n"
+  },
+  {
+    "table_name": "journal_entries",
+    "trigger_name": "used_car_bonus_journal_guard",
+    "trigger_definition": "CREATE TRIGGER used_car_bonus_journal_guard BEFORE INSERT OR DELETE OR UPDATE ON public.journal_entries FOR EACH ROW EXECUTE FUNCTION used_car_bonus_finance_guard()",
+    "function_definition": "CREATE OR REPLACE FUNCTION public.used_car_bonus_finance_guard()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\r\nbegin\r\n if tg_table_name='payments' then\r\n  if (tg_op<>'INSERT' and old.type='campaign_bonus') or (tg_op<>'DELETE' and new.type='campaign_bonus') then\r\n   if current_setting('app.used_car_bonus_posting',true) is distinct from '1' then raise exception 'BONUS_IMMUTABLE: Use the authorised bonus workflow.';end if;\r\n  end if;\r\n else\r\n  if (tg_op<>'INSERT' and old.source_type in ('campaign_bonus','campaign_bonus_paid')) or (tg_op<>'DELETE' and new.source_type in ('campaign_bonus','campaign_bonus_paid')) then\r\n   if current_setting('app.used_car_bonus_posting',true) is distinct from '1' then raise exception 'BONUS_IMMUTABLE: Posted bonus entries require a separate adjustment.';end if;\r\n  end if;\r\n end if;\r\n if tg_op='DELETE' then return old;end if;return new;\r\nend $function$\n"
+  },
+  {
+    "table_name": "payments",
+    "trigger_name": "used_car_bonus_payment_guard",
+    "trigger_definition": "CREATE TRIGGER used_car_bonus_payment_guard BEFORE INSERT OR DELETE OR UPDATE ON public.payments FOR EACH ROW EXECUTE FUNCTION used_car_bonus_finance_guard()",
+    "function_definition": "CREATE OR REPLACE FUNCTION public.used_car_bonus_finance_guard()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\r\nbegin\r\n if tg_table_name='payments' then\r\n  if (tg_op<>'INSERT' and old.type='campaign_bonus') or (tg_op<>'DELETE' and new.type='campaign_bonus') then\r\n   if current_setting('app.used_car_bonus_posting',true) is distinct from '1' then raise exception 'BONUS_IMMUTABLE: Use the authorised bonus workflow.';end if;\r\n  end if;\r\n else\r\n  if (tg_op<>'INSERT' and old.source_type in ('campaign_bonus','campaign_bonus_paid')) or (tg_op<>'DELETE' and new.source_type in ('campaign_bonus','campaign_bonus_paid')) then\r\n   if current_setting('app.used_car_bonus_posting',true) is distinct from '1' then raise exception 'BONUS_IMMUTABLE: Posted bonus entries require a separate adjustment.';end if;\r\n  end if;\r\n end if;\r\n if tg_op='DELETE' then return old;end if;return new;\r\nend $function$\n"
+  }
+]

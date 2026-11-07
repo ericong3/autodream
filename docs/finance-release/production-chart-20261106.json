@@ -1,0 +1,292 @@
+[
+  {
+    "id": "acct-ap",
+    "name": "Accounts Payable",
+    "type": "liability"
+  },
+  {
+    "id": "acct-ar",
+    "name": "Accounts Receivable",
+    "type": "asset"
+  },
+  {
+    "id": "acct-bank-investor",
+    "name": "Bank — Investor",
+    "type": "asset"
+  },
+  {
+    "id": "acct-bank-operating",
+    "name": "Bank — Operating",
+    "type": "asset"
+  },
+  {
+    "id": "acct-cogs-own",
+    "name": "COGS — Own Stock",
+    "type": "cogs"
+  },
+  {
+    "id": "acct-customer-refunds",
+    "name": "Customer Refunds Payable",
+    "type": "liability"
+  },
+  {
+    "id": "acct-equity",
+    "name": "Owner's Capital / Retained Earnings",
+    "type": "equity"
+  },
+  {
+    "id": "acct-exp-allowance",
+    "name": "Allowance Expense",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-campaign-bonus",
+    "name": "Used Car Staff Bonus Expense",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-director-fee",
+    "name": "Director Fee Expense",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-advance-installment",
+    "name": "Advance Installment",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-advance-instalment-payment",
+    "name": "Advance Instalment Payment",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-advance-payment",
+    "name": "Advance Payment",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-applicant-fee",
+    "name": "Applicant Fee",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-application-fee",
+    "name": "Application Fee",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-auto-life",
+    "name": "Auto Life",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-bintulu-runner-fee",
+    "name": "Bintulu Runner Fee",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-car-insurance",
+    "name": "Car Insurance",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-chailease-processing-fee",
+    "name": "Chailease Processing Fee",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-cimb-banca",
+    "name": "Cimb Banca",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-cimb-car-insurance",
+    "name": "Cimb Car Insurance",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-cimb-car-insurance-increase",
+    "name": "Cimb Car Insurance Increase",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-cimb-insurance",
+    "name": "Cimb Insurance",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-cimb-processing-fee",
+    "name": "Cimb Processing Fee",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-eauto",
+    "name": "Eauto",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-ewp",
+    "name": "Ewp",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-gps",
+    "name": "Gps",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-hlbb-processing-fee",
+    "name": "Hlbb Processing Fee",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-hong-leong-hp-admin-fee",
+    "name": "Hong Leong Hp Admin Fee",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-insurance",
+    "name": "Insurance",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-invoice-service-charge",
+    "name": "Invoice Service Charge",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-invoice-service-charges",
+    "name": "Invoice Service Charges",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-invoicing-service-charge",
+    "name": "Invoicing Service Charge",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-jpj-eauto",
+    "name": "Jpj Eauto",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-jpj-full-extract",
+    "name": "Jpj Full Extract",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-loan-service-charge",
+    "name": "Loan Service Charge",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-loan-submission-charge",
+    "name": "Loan Submission Charge",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-loan-submission-service-charge",
+    "name": "Loan Submission Service Charge",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-loan-submissionn-service-charge",
+    "name": "Loan Submissionn Service Charge",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-processing-fee",
+    "name": "Processing Fee",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-road-tax",
+    "name": "Road Tax",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-roadtax",
+    "name": "Roadtax",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-runner-fee",
+    "name": "Runner Fee",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-service-charge",
+    "name": "Service Charge",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-submission-fee",
+    "name": "Submission Fee",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-disb-toyota-capital-charge",
+    "name": "Toyota Capital Charge",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-general",
+    "name": "General & Admin Expense",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-intake-bonus",
+    "name": "Intake Bonus Expense",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-salary",
+    "name": "Basic Salary Expense",
+    "type": "expense"
+  },
+  {
+    "id": "acct-exp-salesman-comm",
+    "name": "Salesman Commission Expense",
+    "type": "expense"
+  },
+  {
+    "id": "acct-inv-investor",
+    "name": "Inventory — Investor Stock",
+    "type": "asset"
+  },
+  {
+    "id": "acct-inv-own",
+    "name": "Inventory — Own Stock",
+    "type": "asset"
+  },
+  {
+    "id": "acct-investor-payable",
+    "name": "Investor Capital Payable",
+    "type": "liability"
+  },
+  {
+    "id": "acct-loan-subsidiary",
+    "name": "Loan from Subsidiary Company",
+    "type": "liability"
+  },
+  {
+    "id": "acct-rev-car-sales",
+    "name": "Car Sales Revenue",
+    "type": "revenue"
+  },
+  {
+    "id": "acct-rev-commission",
+    "name": "Commission / Panel Charge Income",
+    "type": "revenue"
+  },
+  {
+    "id": "acct-rev-investor-share",
+    "name": "Company Share of Investor Car Profit",
+    "type": "revenue"
+  },
+  {
+    "id": "acct-trade-in-clearing",
+    "name": "Trade-In Clearing",
+    "type": "asset"
+  }
+]

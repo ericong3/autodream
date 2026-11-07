@@ -4,3 +4,7 @@ integrate.py
 fix-board-saving.py
 
 .vite-recovery/
+work/
+.codex/
+.agents/
+.git/

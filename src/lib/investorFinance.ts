@@ -14,12 +14,12 @@ export type Settlement = { investor_result_cents: number; company_profit_cents: 
 export type CarSummary = {
   carId: string; potId?: string; make: string; model: string; year: number | null; plate: string | null; photo: string | null;
   purchaseCents?: number; purchasePaidCents?: number; investorBasisPoints?: number; saleCents?: number | null; receivedCents?: number; actualReceivedCents?: number; withheldCents?: number; refundOwingCents?: number;
-  costCents?: number; unpaidBillCents?: number; pendingBills?: number; profitCents?: number | null; settledAt?: string | null;
+  companyOwesInvestorCents?: number; heldCompanyProfitAdjustmentCents?: number; costCents?: number; unpaidBillCents?: number; pendingBills?: number; profitCents?: number | null; settledAt?: string | null;
   state?: CarState; settlement?: Settlement | null;
 };
 export type BillPayment = { id: string; amountCents: number; paidOn: string; receiptDocumentId?: string | null };
 export type BillDocument = { id: string; name: string; kind: 'bill' | 'payment' | 'receipt'; entryId?: string; used?: boolean };
-export type CarBill = { id: string; category: BillCategory; purpose: string; payee: string; amountCents: number; paidCents: number; state: 'pending' | 'approved' | 'voided'; withheldCents?: number; createdAt: string; reviewedAt: string | null; payments?: BillPayment[]; documents?: BillDocument[] };
+export type CarBill = { adjustments?: {id:string;beforeTotalCents:number;afterTotalCents:number;reason:string;actorName:string;createdAt:string}[]; originalAmountCents?: number; remainingCents?: number; returnedCents?: number; refundOwingCents?: number; id: string; category: BillCategory; purpose: string; payee: string; amountCents: number; paidCents: number; state: 'pending' | 'approved' | 'voided'; withheldCents?: number; createdAt: string; reviewedAt: string | null; payments?: BillPayment[]; documents?: BillDocument[] };
 export type CarActivity = { id: string; actorName: string; action: string; createdAt: string };
 export type CarDetail = CarSummary & { tradeInDocumentId?: string | null; tradeInApplicationId?: string | null; lenderCents?: number; lenderPaidCents?: number; tradeInReceivedCents?: number; bills: CarBill[]; activity?: CarActivity[] };
 export type Withdrawal = { id: string; amountCents: number; state: WithdrawalState; requestedAt: string; reviewedAt: string | null; note: string | null };
@@ -203,7 +203,7 @@ export const BILL_CATEGORIES: { value: BillCategory; label: string }[] = [
 ];
 export const CAR_STATE_LABEL: Record<CarState, string> = { reserved: 'Waiting for purchase payment', in_stock: 'In stock', sold: 'Sold', settled: 'Profit confirmed' };
 export const WITHDRAWAL_LABEL: Record<WithdrawalState, string> = { requested: 'Waiting for Director', approved: 'Approved — payment not yet recorded', rejected: 'Not approved', paid: 'Paid', cancelled: 'Cancelled' };
-const ENTRY_LABEL: Record<string, string> = { capital_in: 'Capital received', trade_in_lender_out: 'Lender settlement paid', trade_in_value_in: 'Trade-in value received (no bank transfer)', trade_in_value_out: 'Trade-in car funded (no bank transfer)', customer_refund_out: 'Customer refund paid', withdrawal_out: 'Withdrawal paid', car_purchase: 'Car purchase paid', car_sale: 'Sale money received', car_expense: 'Car bill paid', profit_in: 'Profit confirmed', profit_out: 'Loss confirmed' };
+const ENTRY_LABEL: Record<string, string> = { car_expense_refund: 'Supplier refund received', profit_adjustment_in: 'Profit balance increased (no bank transfer)', profit_adjustment_out: 'Profit balance reduced (no bank transfer)', capital_in: 'Capital received', trade_in_lender_out: 'Lender settlement paid', trade_in_value_in: 'Trade-in value received (no bank transfer)', trade_in_value_out: 'Trade-in car funded (no bank transfer)', customer_refund_out: 'Customer refund paid', withdrawal_out: 'Withdrawal paid', car_purchase: 'Car purchase paid', car_sale: 'Sale money received', car_expense: 'Car bill paid', profit_in: 'Profit confirmed', profit_out: 'Loss confirmed' };
 export const entryLabel = (kind: string) => ENTRY_LABEL[kind] ?? kind.replace(/_/g, ' ').replace(/^./, (s) => s.toUpperCase());
 
 // ── Proof files ──────────────────────────────────────────────────────────────

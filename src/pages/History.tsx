@@ -291,11 +291,16 @@ export default function History() {
   );
 
   const carCalcMap = useMemo(() => {
-    const map: Record<string, { dealNetPrice: number; profit: number }> = {};
+    const map: Record<string, { dealNetPrice: number; profit?: number }> = {};
     for (const c of cars.filter(x => x.status === 'delivered')) {
       const wo = customers.find(cu => cu.interestedCarId === c.id && (cu.cashWorkOrder || cu.loanWorkOrder));
       const w = wo?.loanWorkOrder ?? wo?.cashWorkOrder;
       const { netPrice: dealNetPrice } = deliveredDealPrice(c, w);
+      if (c.investorFunded) {
+        // Investor bills and amendments are authoritative in the private account.
+        map[c.id] = { dealNetPrice };
+        continue;
+      }
       const additionalTotal = w?.additionalItems?.reduce((a, i) => a + i.amount, 0) ?? 0;
       const repairCosts = repairs.filter(r => r.carId === c.id && r.status === 'done').reduce((a, r) => a + (r.actualCost ?? r.totalCost), 0);
       const miscCosts = (c.miscCosts ?? []).reduce((a, m) => a + m.amount, 0);
@@ -308,6 +313,8 @@ export default function History() {
 
   const totalRevenue = soldCars.reduce((s, c) => s + (carCalcMap[c.id]?.dealNetPrice ?? c.sellingPrice), 0);
   const totalProfit = soldCars.reduce((s, c) => s + (carCalcMap[c.id]?.profit ?? 0), 0);
+  const hasInvestorCars = soldCars.some(c => c.investorFunded);
+  const hasOtherCars = soldCars.some(c => !c.investorFunded);
 
   const getDealSalespersonId = (car: typeof cars[0]): string | undefined => {
     const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
@@ -505,8 +512,9 @@ export default function History() {
       <div className={`grid grid-cols-1 gap-4 ${isDirectorView ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
         <StatCard title="Units Delivered" value={soldCars.length} icon={CheckCircle} borderColor="border-l-green-400" iconColor="text-green-400" />
         <StatCard title="Total Revenue" value={formatRM(totalRevenue)} icon={DollarSign} borderColor="border-l-gold-400" iconColor="text-gold-400" />
-        {isDirectorView && <StatCard title="Total Profit" value={formatRM(totalProfit)} icon={TrendingUp} borderColor="border-l-yellow-400" iconColor="text-yellow-400" />}
+        {isDirectorView && <StatCard title={hasInvestorCars ? (hasOtherCars ? 'Profit · other cars' : 'Investor car profit') : 'Total Profit'} value={hasInvestorCars && !hasOtherCars ? 'In investor accounts' : formatRM(totalProfit)} icon={TrendingUp} borderColor="border-l-yellow-400" iconColor="text-yellow-400" />}
       </div>
+      {isDirectorView && hasInvestorCars && (isDirector ? <button className="text-sm text-gold-400 hover:underline text-left" onClick={() => navigate('/investor-finance')}>View investor car costs and profit in investor accounts →</button> : <p className="text-sm text-gray-400">Investor car totals are shown in investor accounts.</p>)}
 
       {/* ── Money stage filter — where each delivered car sits in the
           Submit → Processing → Disbursed → (consignment) Pay Dealer chain,
@@ -719,6 +727,7 @@ export default function History() {
                         {profit >= 0 ? '+' : ''}{formatRM(profit)}
                       </p>
                     )}
+                    {isDirectorView && car.investorFunded && (isDirector ? <button className="text-xs text-gold-300 hover:underline" onClick={e => { e.stopPropagation(); navigate('/investor-finance?carId='+encodeURIComponent(car.id)); }}>Investor account →</button> : <span className="text-xs text-gray-400">Investor car</span>)}
                   </div>
                   <p className="text-gray-600 text-[10px] mt-0.5 truncate">{getSalesperson(getDealSalespersonId(car))}</p>
 
@@ -975,6 +984,7 @@ export default function History() {
                       {profit >= 0 ? '+' : ''}{formatRM(profit)}
                     </p>
                   )}
+                  {isDirectorView && car.investorFunded && (isDirector ? <button className="text-xs text-gold-300 hover:underline mt-0.5" onClick={e => { e.stopPropagation(); navigate('/investor-finance?carId='+encodeURIComponent(car.id)); }}>Investor account →</button> : <span className="text-xs text-gray-400">Investor car</span>)}
                 </div>
               </div>
             );

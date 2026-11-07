@@ -107,5 +107,25 @@ try{
  assert.equal((await db.query("select has_function_privilege('anon','uc_company_bank_money(text,text,jsonb)','execute') allowed")).rows[0].allowed,false);
  const bankLedger='acct-bank-uc-'+(await db.query("select md5('bank:'||$1) value",[bank.id])).rows[0].value;
  await assert.rejects(()=>db.query("insert into journal_entries(id,date,description,lines) values('manual-bank',current_date,'Manual bank change',$1)",[JSON.stringify([{accountId:bankLedger,debit:100,credit:0},{accountId:'acct-equity',debit:0,credit:100}])]),/USE_COMPANY_BANK_PAYMENT/);
+ // A physical bank balance includes money owned by investors. An ordinary
+ // company bill must never consume that money, even when the bank has enough.
+ await db.exec(migration('20261106112743_company_cash_ownership_guard.sql'));
+ const ownedPosition=(await money('d','banks')).company;
+ const companyCash=Number(ownedPosition.companyCashCents);
+ assert.ok(companyCash>0);assert.ok(Number(ownedPosition.investorOwnedCents)>0);
+ const oversized=companyCash+1;
+ await db.query("insert into payments(id,type,status,amount,car_id,recipient_type,recipient_id,recipient_name) values('ownership-floor-bill','repair','pending',$1,'car-low','workshop','shop','Workshop')",[oversized/100]);
+ await db.query("insert into journal_entries(id,date,description,source_type,source_id,car_id,lines) values('ownership-floor-accrual',current_date,'Bill larger than company-owned cash','repair','ownership-floor-bill','car-low',$1)",[JSON.stringify([{accountId:'acct-inv-own',debit:oversized/100,credit:0},{accountId:'acct-ap',debit:0,credit:oversized/100}])]);
+ await doc('ownership-floor-bill','invoice');const ownedReceipt=await doc('ownership-floor-bill','payment');
+ const badOwnership={bankAccountId:bank.id,paidOn:day,bankReference:'must not spend investor money',requestId:req(),allocations:[{paymentId:'ownership-floor-bill',amountCents:oversized,documentId:ownedReceipt}]};
+ const beforeOwnership=Number((await db.query('select count(*) n from uc_bank_movements')).rows[0].n);
+ await assert.rejects(()=>money('d','record',badOwnership),/COMPANY_FUNDS_REQUIRED/);
+ assert.equal(Number((await db.query('select count(*) n from uc_bank_movements')).rows[0].n),beforeOwnership);
+ assert.equal(Number((await db.query("select uc_company_paid_cents('ownership-floor-bill') n")).rows[0].n),0);
+ const allowedOwnership={...badOwnership,bankReference:'company-owned amount only',requestId:req(),allocations:[{paymentId:'ownership-floor-bill',amountCents:companyCash,documentId:ownedReceipt}]};
+ await money('d','record',allowedOwnership);
+ assert.equal(Number((await money('d','banks')).company.companyCashCents),0);
+ assert.equal(Number((await money('d','banks')).company.investorOwnedCents),500000);
+ assert.equal((await money('d','record',allowedOwnership)).payments[0].id,'ownership-floor-bill');
  console.log('PASS company-bank payments: proof/invoice/accrual gates, partial balance, atomic journal and status, registered bank, replay, cross-payment reference, rollback and ACL');
 }finally{await db.close();}

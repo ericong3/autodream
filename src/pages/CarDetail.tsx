@@ -935,7 +935,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
         </span>
       </nav>
 
-      {car.investorFunded && (isDirector || isAdmin) && <button className="w-full rounded-xl border border-gold-400/30 bg-gold-400/10 px-4 py-3 text-left text-gold-400" onClick={() => navigate('/investor-finance?carId='+encodeURIComponent(car.id))}>Investor-funded car · Open car bills and payments →</button>}
+      {car.investorFunded && (isDirector || isAdmin) && <button className="w-full rounded-xl border border-gold-400/30 bg-gold-400/10 px-4 py-3 text-left text-gold-400" onClick={() => navigate('/investor-finance?carId='+encodeURIComponent(car.id))}>{isAdmin ? 'View current car bills in investor account →' : 'View current costs and profit in investor account →'}</button>}
+      {car.investorFunded && isShareHolder && <p className="text-sm text-gray-400">Investor car totals are shown in investor accounts.</p>}
       {companyBankPaymentsEnabled && car.consignment && !car.outgoingConsignment && currentUser && (isDirector||isAdmin||isShareHolder) && <ConsignmentFinancePanel key={currentUser.id+':'+currentUser.role+':'+car.id} car={car} actorId={currentUser.id} role={currentUser.role}/>}
       {companyBankPaymentsEnabled && car.outgoingConsignment && isDirector && currentUser && payments.filter(p=>p.carId===car.id&&p.type==='consignment_collection'&&!p.obligationReplaced).map(p=><details key={p.id} className="rounded-xl border border-orange-500/30 p-4"><summary className="text-sm font-medium text-orange-300 cursor-pointer">Dealer collection &amp; car costs</summary><div className="mt-3"><OutgoingCollectionApproval paymentId={p.id} actorId={currentUser.id} onApproved={()=>{}}/></div></details>)}
       {companyBankPaymentsEnabled&&currentUser&&outgoingAction.pending.filter(p=>p.slot==='outgoing-send:'+car.id).map(p=><button key={p.slot} type="button" disabled={!!outgoingAction.busy} className="text-amber-300 underline py-2 text-sm" onClick={()=>void outgoingAction.retry<{payments:Record<string,unknown>[];journals:Record<string,unknown>[];car:Record<string,unknown>}>(p.slot).then(saved=>{if(saved){useStore.getState().applyCompanyBankPayment(currentUser.id,saved);setOutgoingConsignModal(null);}})}>Retry original dealer sale</button>)}
@@ -1306,7 +1307,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               <InfoItem label="Transmission" value={car.transmission === 'auto' ? 'Automatic' : 'Manual'} />
               <InfoItem label="Date Added" value={car.dateAdded} />
               <InfoItem label="Selling Price" value={car.sellingPrice > 0 ? formatRM(car.sellingPrice) : 'TBD'} valueClass="text-gold-400 font-bold" />
-              {isDirectorView && (
+              {isDirectorView && !car.investorFunded && (
                 <>
                   <InfoItem label="Purchase Price" value={formatRM(car.purchasePrice)} />
                   <InfoItem label="Repair Costs" value={formatRM(totalRepairCost)} valueClass="text-orange-400" />
@@ -1588,7 +1589,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                       )}
                       {r.actualCost !== undefined && r.status === 'done' && (
                         <p className="text-xs text-green-400 mt-2">
-                          Actual cost: <span className="font-semibold">{formatRM(r.actualCost)}</span>
+                          {car.investorFunded ? 'Original recorded cost' : 'Actual cost'}: <span className="font-semibold">{formatRM(r.actualCost)}</span>
                         </p>
                       )}
                       {r.completedAt && (
@@ -1607,6 +1608,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                     <div className="flex flex-col items-end gap-2">
                       {isDirectorView && (
                         <div className="text-right">
+                          {car.investorFunded && <div className="text-xs text-gray-500">Original repair record</div>}
                           <div className="text-xs text-gray-500">Parts: {formatRM(partsTotal)}</div>
                           <div className="text-xs text-gray-500">Labour: {formatRM(r.labourCost)}</div>
                           <div className="text-orange-400 font-bold text-sm">{formatRM(r.totalCost)}</div>
@@ -1649,7 +1651,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             })}
           </div>
         ))}
-        {jobTab === 'repairs' && isDirectorView && carRepairs.length > 0 && (
+        {jobTab === 'repairs' && isDirectorView && !car.investorFunded && carRepairs.length > 0 && (
           <div className="px-5 py-3 border-t border-obsidian-400/60 text-right">
             <p className="text-sm text-gray-400">
               Total Repair Cost: <span className="text-orange-400 font-semibold">{formatRM(totalRepairCost)}</span>
@@ -1722,7 +1724,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                         <p className="text-gray-500 text-xs mt-0.5">{new Date(m.createdAt).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="text-purple-400 font-semibold text-sm">{formatRM(m.amount)}</span>
+                        <span className="text-purple-400 font-semibold text-sm">{car.investorFunded && <span className="text-xs text-gray-500 font-normal">Originally recorded: </span>}{formatRM(m.amount)}</span>
                         {(isAdmin || isDirector) && !car.investorFunded && (
                           <button
                             onClick={() => setDeleteTarget({ label: `misc cost "${m.description}"`, action: () => deleteMiscCost(car.id, m.id) })}
@@ -1737,9 +1739,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 </div>
               )}
               <div className="px-5 py-3 border-t border-obsidian-400/60 text-right">
-                <p className="text-sm text-gray-400">
+                {car.investorFunded ? (isDirector || isAdmin ? <button className="text-sm text-gold-400 hover:underline" onClick={() => navigate('/investor-finance?carId='+encodeURIComponent(car.id))}>View current car bills in investor account →</button> : <p className="text-xs text-gray-500">Original expense records</p>) : <p className="text-sm text-gray-400">
                   Total Misc Cost: <span className="text-purple-400 font-semibold">{formatRM((car.miscCosts ?? []).reduce((s, m) => s + m.amount, 0))}</span>
-                </p>
+                </p>}
               </div>
             </div>
           </div>
@@ -2148,7 +2150,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               })()}
 
               {/* ── Director View: profit breakdown ── */}
-              {(dealView === 'director' && isDirectorView) && (
+              {(dealView === 'director' && isDirectorView && !car.investorFunded) && (
                 <Section title="Deal Financials">
                   <DRow label="Selling Price" value={formatRM(sellingPrice)} valueClass="text-gold-400 font-bold" />
                   {addOnTotal > 0 && <DRow label="+ Customer Add-ons" value={formatRM(addOnTotal)} valueClass="text-emerald-400" />}
@@ -2183,7 +2185,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               )}
 
               {/* For non-loan deals, always show regular financials */}
-              {!isLoan && (
+              {!isLoan && !car.investorFunded && (
                 <Section title="Deal Financials">
                   <DRow label="Selling Price" value={formatRM(sellingPrice)} valueClass="text-gold-400 font-bold" />
                   {dealView === 'director' && isDirectorView && (
@@ -2460,7 +2462,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
         {/* ── Right Column ── */}
         <div className="space-y-4 xl:sticky xl:top-24">
           {/* Financial Summary Card */}
-          {isDirectorView && (
+          {isDirectorView && !car.investorFunded && (
             <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl p-5 space-y-4">
               <p className="text-white font-semibold text-sm flex items-center gap-2">
                 <TrendingUp size={15} className="text-gold-400" /> Financial Summary
