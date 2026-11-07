@@ -11,6 +11,8 @@ import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import Payments from './Payments';
 import Reconciliation from './Reconciliation';
+import { useSearchParams } from 'react-router-dom';
+import AccountingBankAccounts from '../components/AccountingBankAccounts';
 
 const ACCOUNT_TYPE_LABELS: Record<LedgerAccountType, string> = {
   asset: 'Assets', liability: 'Liabilities', equity: 'Equity',
@@ -54,7 +56,13 @@ export default function Finance() {
   const [staleOverrides, setStaleOverrides] = useState<Record<string, { loanAmount: number; bookingFee: number }>>({});
   const [applyingStale, setApplyingStale] = useState<string | null>(null);
 
-  const [financeTab, setFinanceTab] = useState<'overview' | 'payments' | 'reconciliation' | 'accounts' | 'ledger' | 'balance_sheet'>('overview');
+  const [params, setParams] = useSearchParams();
+  const [selectedTab, setSelectedTab] = useState<'overview' | 'payments' | 'reconciliation' | 'accounts' | 'ledger' | 'balance_sheet'>('overview');
+  const financeTab = companyBankPaymentsEnabled && params.get('tab') === 'banks' ? 'banks' : selectedTab;
+  const setFinanceTab = (tab: typeof selectedTab) => {
+    setSelectedTab(tab);
+    if (params.has('tab')) setParams(previous => { const next = new URLSearchParams(previous); next.delete('tab'); return next; });
+  };
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [accountForm, setAccountForm] = useState({ name: '', type: 'expense' as LedgerAccountType, investorTagged: false });
   const [accountDeleteTarget, setAccountDeleteTarget] = useState<{ id: string; name: string } | null>(null);
@@ -200,7 +208,7 @@ export default function Finance() {
       )}
 
       {/* Tab switcher */}
-      <div className="flex gap-1 rounded-xl bg-obsidian-800/60 border border-white/[0.06] p-1">
+      <div className="flex flex-wrap gap-1 rounded-xl bg-obsidian-800/60 border border-white/[0.06] p-1">
         <button
           onClick={() => setFinanceTab('overview')}
           className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${financeTab === 'overview' ? 'bg-gold-gradient text-obsidian-950 font-bold shadow-gold-sm' : 'text-gray-400 hover:text-white'}`}
@@ -215,6 +223,15 @@ export default function Finance() {
           <Wallet size={12} />
           Payments
         </button>
+        {companyBankPaymentsEnabled && <button
+          type="button"
+          aria-pressed={financeTab === 'banks'}
+          onClick={() => setParams(previous => { const next = new URLSearchParams(previous); next.set('tab', 'banks'); return next; })}
+          className={`flex-1 flex items-center justify-center gap-2 whitespace-nowrap px-2 py-1.5 rounded-lg text-xs font-medium ${financeTab === 'banks' ? 'bg-gold-gradient text-obsidian-950 font-bold shadow-gold-sm' : 'text-gray-400 hover:text-white'}`}
+        >
+          <Landmark size={12} />
+          Bank accounts
+        </button>}
         <button
           onClick={() => setFinanceTab('reconciliation')}
           className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${financeTab === 'reconciliation' ? 'bg-gold-gradient text-obsidian-950 font-bold shadow-gold-sm' : 'text-gray-400 hover:text-white'}`}
@@ -248,6 +265,8 @@ export default function Finance() {
       {financeTab === 'payments' && <Payments embedded />}
 
       {financeTab === 'reconciliation' && <Reconciliation />}
+
+      {financeTab === 'banks' && currentUser?.role === 'director' && <AccountingBankAccounts key={currentUser.id} actorId={currentUser.id} />}
 
       {financeTab === 'balance_sheet' && (
         <div className="space-y-4">

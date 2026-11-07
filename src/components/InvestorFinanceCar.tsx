@@ -109,7 +109,7 @@ export const emptyBankPayment = (): BankPayment => ({ bankAccountId: '', bankRef
 export const bankPaymentReady = (p: BankPayment) => !!p.bankAccountId && p.bankReference.trim().length >= 3 && /^\d{4}-\d{2}-\d{2}$/.test(p.paidOn) && p.paidOn <= malaysiaToday();
 
 export function BankPaymentFields({ banks, value, onChange, dateLabel = 'Date paid' }: { banks: Bank[]; value: BankPayment; onChange: (v: BankPayment) => void; dateLabel?: string }) {
-  if (!banks.length) return <p className="text-amber-300 text-xs">Add a company bank account in “Bank accounts” first.</p>;
+  if (!banks.length) return <p className="text-amber-300 text-xs">Add a company bank account under Accounting → Bank accounts first.</p>;
   return (
     <div className="grid sm:grid-cols-3 gap-2">
       <Field label="Bank account">

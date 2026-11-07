@@ -2,7 +2,7 @@ import { useState } from 'react';
 import CompanyPot from '../components/CompanyPot';
 import { companyBankPaymentsEnabled } from '../lib/companyBankPayments';
 import { useSearchParams } from 'react-router-dom';
-import { Plus, Link2, Copy, Landmark, Users, ChevronLeft } from 'lucide-react';
+import { Plus, Link2, Copy, Users, ChevronLeft } from 'lucide-react';
 import { useStore } from '../store';
 import InvestorMoneyDocuments, { type MoneyProofSelection } from '../components/InvestorMoneyDocuments';
 import InvestorFinanceCar, {
@@ -10,7 +10,7 @@ import InvestorFinanceCar, {
   bankPaymentReady, emptyBankPayment, type BankPayment, type PendingConfirm,
 } from '../components/InvestorFinanceCar';
 import {
-  basisPointsLabel, carTitle, entryLabel, formatCents, formatDay, investorRequest, malaysiaToday, parsePercentToBasisPoints, parseRinggit,
+  basisPointsLabel, carTitle, entryLabel, formatCents, formatDay, investorRequest, parsePercentToBasisPoints, parseRinggit,
   useInvestorAction, useInvestorQuery, WITHDRAWAL_LABEL,
   type Bank, type FundableCar, type InvestorProfile, type InvestorSnapshot, type ProfileList, type CarSummary, type Withdrawal, type WithdrawalDestination,
 } from '../lib/investorFinance';
@@ -53,7 +53,7 @@ function DirectorConsole({ actorId, canWrite }: { actorId: string; canWrite: boo
   const requestedCar=params.get('carId');
   const act = useInvestorAction(actorId);
   const [potId, setPotId] = useState<string | null>(null);
-  const [view, setView] = useState<'investors' | 'banks' | 'company'>('investors');
+  const [view, setView] = useState<'investors' | 'company'>('investors');
   const [confirm, setConfirm] = useState<PendingConfirm | null>(null);
   const data = list.data;
   const selected = data?.profiles.find((p) => p.potId === potId) ?? null;
@@ -77,17 +77,14 @@ function DirectorConsole({ actorId, canWrite }: { actorId: string; canWrite: boo
         </div>
         <div className="flex gap-2">
           {canWrite && companyBankPaymentsEnabled && <button type="button" aria-pressed={view==='company'} onClick={() => {setView('company');setPotId(null);}} className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${view==='company'?'bg-gold-500/15 text-gold-300 border-gold-500/40':'text-gray-400 border-obsidian-400/60'}`}>Company pot</button>}
-          {([['investors', 'Investors', Users], ['banks', 'Bank accounts', Landmark]] as const).map(([key, label, Icon]) => (
-            <button key={key} type="button" onClick={() => { setView(key); setPotId(null); }} className={`px-3 py-1.5 rounded-full text-xs font-semibold border flex items-center gap-1.5 ${view === key ? 'bg-gold-500/15 text-gold-300 border-gold-500/40' : 'text-gray-400 border-obsidian-400/60'}`}><Icon size={12} />{label}</button>
-          ))}
+          <button type="button" aria-pressed={view === 'investors'} onClick={() => { setView('investors'); setPotId(null); }} className={`px-3 py-1.5 rounded-full text-xs font-semibold border flex items-center gap-1.5 ${view === 'investors' ? 'bg-gold-500/15 text-gold-300 border-gold-500/40' : 'text-gray-400 border-obsidian-400/60'}`}><Users size={12} />Investors</button>
         </div>
       </div>
 
-      <PendingSaves pending={act.pending} busy={act.busy} onRetry={(s) => void retry(s)} onDiscard={act.discard} />
+      <PendingSaves pending={act.pending.filter(p => p.slot !== 'save_bank')} busy={act.busy} onRetry={(s) => void retry(s)} onDiscard={act.discard} />
       {view==='company' && canWrite && <CompanyPot key={actorId} actorId={actorId} />}
 
       <LoadState loading={list.loading} error={list.error} onRetry={() => void list.reload()}>
-        {data && view === 'banks' && <BankRegister {...shared} />}
         {data && view === 'investors' && !selected && (
           <>
             <div className="bg-gradient-to-br from-obsidian-800/80 to-obsidian-900/60 border border-gold-500/25 rounded-2xl p-5">
@@ -140,42 +137,6 @@ function CreateProfile({ act, run, errorBox, onCreated }: Shared & { onCreated: 
       <button type="submit" disabled={!ok || act.busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 disabled:opacity-40"><Plus size={13} />{act.busy === 'create_profile' ? 'Creating…' : 'Create account'}</button>
       <div className="w-full">{errorBox('create_profile')}</div>
     </form>
-  );
-}
-
-function BankRegister({ act, run, canWrite, banks, errorBox }: Shared) {
-  const [name, setName] = useState('');
-  const [openingDate, setOpeningDate] = useState(malaysiaToday());
-  const [opening, setOpening] = useState('');
-  const openingCents = opening.trim() === '0' ? 0 : parseRinggit(opening);
-  const ok = name.trim().length >= 2 && openingCents !== null && /^\d{4}-\d{2}-\d{2}$/.test(openingDate) && openingDate <= malaysiaToday();
-  return (
-    <div className="space-y-3">
-      <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl divide-y divide-obsidian-400/40">
-        {banks.length === 0 ? <p className="text-gray-500 text-sm p-4">No company bank accounts registered yet.</p> : banks.map((b) => (
-          <div key={b.id} className="flex items-center justify-between gap-3 px-4 py-3">
-            <div><p className="text-white text-sm font-medium">{b.name}</p><p className="text-gray-500 text-[11px]">Opening balance as at {formatDay(b.openingDate)}</p></div>
-            <p className="text-white text-sm font-semibold">{formatCents(b.openingCents)}</p>
-          </div>
-        ))}
-      </div>
-      <p className="text-gray-600 text-[11px]">Enter the real bank balance on the start date. This is not a new deposit. Differences from older records stay for later review; statement matching is still pending.</p>
-      {canWrite && (
-        <form className="bg-card-gradient border border-obsidian-400/70 rounded-xl p-4 space-y-2" onSubmit={async (e) => {
-          e.preventDefault(); if (!ok || openingCents === null) return;
-          if (await run('save_bank', 'save_bank', { name: name.trim(), openingDate, openingCents }, `Bank account · ${name.trim()}`)) { setName(''); setOpening(''); }
-        }}>
-          <p className="text-gray-300 text-xs font-semibold uppercase tracking-wider">Add a bank account</p>
-          <div className="grid sm:grid-cols-3 gap-2">
-            <Field label="Account name" hint="e.g. Maybank current ••1234"><input className="input w-full px-3 py-2 rounded-lg text-sm" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} /></Field>
-            <Field label="Opening balance date"><input type="date" max={malaysiaToday()} className="input w-full px-3 py-2 rounded-lg text-sm" value={openingDate} onChange={(e) => setOpeningDate(e.target.value)} /></Field>
-            <Field label="Opening balance (RM)" hint="From the bank statement on that date"><input inputMode="decimal" className="input w-full px-3 py-2 rounded-lg text-sm" value={opening} onChange={(e) => setOpening(e.target.value)} placeholder="0.00" /></Field>
-          </div>
-          <button type="submit" disabled={!ok || act.busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40">{act.busy === 'save_bank' ? 'Saving…' : 'Save bank account'}</button>
-          {errorBox('save_bank')}
-        </form>
-      )}
-    </div>
   );
 }
 
