@@ -27,7 +27,7 @@ const Inventory=lazy(()=>import('./pages/Inventory'));
 import CarDetail from './pages/CarDetail';
 import Quotations from './pages/Quotations';
 import Workshop from './pages/Workshop';
-import Finance from './pages/Finance';
+const Finance = lazy(() => import('./pages/Finance'));
 import Payroll from './pages/Payroll';
 import TeamMembers from './pages/TeamMembers';
 import Reminders from './pages/Reminders';
@@ -320,7 +320,7 @@ export default function App() {
           <Route path="/calendar" element={<RequireSalesOrDirector><Calendar /></RequireSalesOrDirector>} />
           <Route path="/sales-dashboard" element={<RequireSalesOrDirector><SalesDashboard /></RequireSalesOrDirector>} />
           <Route path="/loan-cases" element={<RequireSalesOrDirector><LoanCases /></RequireSalesOrDirector>} />
-          <Route path="/finance" element={<RequireDirector><Finance /></RequireDirector>} />
+          <Route path="/finance" element={<RequireDirector><Suspense fallback={<p className="p-8 text-white/60">Loading Accounting…</p>}><Finance /></Suspense></RequireDirector>} />
           <Route path="/payroll" element={<RequireDirector><Payroll /></RequireDirector>} />
           <Route path="/payroll/bonus-campaigns" element={<RequireDirector><BonusCampaigns /></RequireDirector>} />
           <Route path="/team" element={<RequireDirector><TeamMembers /></RequireDirector>} />
