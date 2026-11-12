@@ -1,6 +1,7 @@
 node_modules
 dist
 .env
+.env*.local
 .vercel
 supabase/.temp
 
@@ -8,3 +9,6 @@ supabase/.temp
 
 # Disposable local PostgreSQL binaries, dependencies, data and logs.
 work/pg-rehearsal/
+
+.vercel
+.env*

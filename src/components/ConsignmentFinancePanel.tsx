@@ -13,6 +13,9 @@ import ConfirmSheet from './ConfirmSheet';
 import Modal from './Modal';
 import ConsignmentSettlementAdjustment from './ConsignmentSettlementAdjustment';
 
+// Server message for DEALER_BANK_DETAILS_REQUIRED (server/usedCar/consignmentFinance.mjs).
+const DEALER_BANK_MISSING='Complete the dealer bank name, account number and account holder first.';
+
 export default function ConsignmentFinancePanel({car,actorId,role}:{car:Car;actorId:string;role:string}){
  const director=role==='director',canUpload=director||role==='admin';
  const query=useInvestorQuery<ConsignmentSnapshot>(`consignment:${actorId}:${role}:${car.id}`,()=>consignmentRequest('snapshot',{carId:car.id}));
@@ -21,6 +24,9 @@ export default function ConsignmentFinancePanel({car,actorId,role}:{car:Car;acto
  const [billPreview,setBillPreview]=useState<ConsignmentAdjustmentPreview|null>(null),[billReviewBusy,setBillReviewBusy]=useState(false);
  const [billForm,setBillForm]=useState<{payment:Payment;amount:string;reason:string;invoice:string}|null>(null);
  const [correcting,setCorrecting]=useState(false),[correctedValue,setCorrectedValue]=useState(''),[correctionReason,setCorrectionReason]=useState('');
+ // The deal review matches the dealer by id or name (case-insensitive), same as the server.
+ const dealerKey=car.consignment?.dealer?.trim().toLowerCase()??'',dealer=useStore(s=>s.dealers.find(d=>d.id===car.consignment?.dealer||d.name.trim().toLowerCase()===dealerKey));
+ const [bankForm,setBankForm]=useState<{bankName:string;bankAccountNumber:string;bankAccountHolder:string}|null>(null),[bankSaving,setBankSaving]=useState(false);
  const data=query.data,k=data?.case,review=k?.settlement??data?.review;
  useEffect(()=>{setCostsConfirmed(false);setConfirm(current=>current==='approve'?null:current);},[data?.review?.sourceRevision]);
  useEffect(()=>{setConfirm(current=>current==='correct_terms'?null:current);setCorrecting(false);},[data?.termsRevision]);
@@ -46,6 +52,11 @@ export default function ConsignmentFinancePanel({car,actorId,role}:{car:Car;acto
  return <section className="rounded-xl border border-blue-400/25 bg-blue-500/5 p-4 space-y-3">
   <div className="flex items-center justify-between gap-3"><h3 className="text-white font-semibold text-sm">Consignment money</h3><button type="button" className="text-blue-300 text-sm px-2 py-1" onClick={()=>void query.reload()}>Refresh</button></div>
   {(error||act.error||query.error)&&<p role="alert" className="text-red-400 text-sm">{error||act.error?.message||query.error?.message}</p>}
+  {director&&dealer&&error===DEALER_BANK_MISSING&&<button type="button" className="btn-gold rounded-lg px-3 py-2 text-sm" onClick={()=>setBankForm({bankName:dealer.bankName??'',bankAccountNumber:dealer.bankAccountNumber??'',bankAccountHolder:dealer.bankAccountHolder??''})}>Add {dealer.name} bank details</button>}
+  {bankForm&&dealer&&<Modal isOpen onClose={()=>setBankForm(null)} title={`${dealer.name} bank details`}><div className="space-y-3">
+   {([['bankName','Bank name'],['bankAccountNumber','Account number'],['bankAccountHolder','Account holder']] as const).map(([key,label])=><label key={key} className="block text-sm text-gray-300">{label}<input className="input w-full rounded-lg p-2 mt-1" value={bankForm[key]} disabled={bankSaving} onChange={e=>setBankForm({...bankForm,[key]:e.target.value})}/></label>)}
+   <button type="button" className="btn-gold rounded-lg px-3 py-2 text-sm disabled:opacity-40" disabled={bankSaving||!bankForm.bankName.trim()||!bankForm.bankAccountNumber.trim()||!bankForm.bankAccountHolder.trim()} onClick={async()=>{setBankSaving(true);try{await useStore.getState().updateDealer(dealer.id,{bankName:bankForm.bankName.trim(),bankAccountNumber:bankForm.bankAccountNumber.trim(),bankAccountHolder:bankForm.bankAccountHolder.trim()});setBankForm(null);await check();}catch(e){setBankForm(null);setError(e instanceof Error?e.message:'Could not save the dealer bank details.');}finally{setBankSaving(false);}}}>{bankSaving?'Saving…':'Save and review deal'}</button>
+  </div></Modal>}
   <PendingSaves pending={pending} busy={act.busy} onRetry={slot=>void act.retry<ConsignmentSnapshot>(slot).then(apply)} onDiscard={act.discard}/>
   {query.loading&&!data&&<p className="text-gray-300 text-sm">Loading consignment records…</p>}
   {data&&!k&&<div className="space-y-3"><p className="text-gray-300 text-sm">Open the agreed deal first. Customer receipts can then be recorded while the final car bills are checked.</p>

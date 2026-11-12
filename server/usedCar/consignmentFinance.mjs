@@ -19,7 +19,7 @@ export async function handleConsignmentFinance(req,deps){return respond(req,deps
  if(action==='adjust_settlement'&&!uuid(data.agreementDocumentId))throw new ApiError(400,'INVALID','Choose the new dealer agreement.');
  if(action==='approve'&&data.costsConfirmed!==true)throw new ApiError(400,'INVALID',consignmentMessages.COST_CONFIRMATION_REQUIRED);
  if(deps.env.USED_CAR_BANK_PAYMENTS_ONLINE!=='1'||deps.env.USED_CAR_PRIVATE_FINANCE_ONLINE!=='1'||deps.env.USED_CAR_INVESTOR_CARS_ONLINE!=='1')throw new ApiError(503,'SETUP','Consignment bank records are not switched on yet. Nothing was saved.');
- const hit=await ctx.repo.throttleHit('ucconsign:'+createHash('sha256').update(user.id).digest('hex'),120,900);if(!hit.allowed)throw new ApiError(429,'RATE_LIMITED','Wait a moment before trying again.');
+ const hit=await ctx.repo.throttleHit('ucconsgn:'+createHash('sha256').update(user.id).digest('hex'),120,900);if(!hit.allowed)throw new ApiError(429,'RATE_LIMITED','Wait a moment before trying again.');
  if(action==='upload'){
   const fileName=cleanFileName(data.fileName),{bytes,digest}=decodeProof(data.mimeType,data.base64);
   const doc=await call(ctx,user.id,'proof_prepare',{carId:data.carId,fileName,mimeType:data.mimeType,sizeBytes:bytes.length,sha256:digest,...(data.amendmentTerms!==undefined?{amendmentTerms:data.amendmentTerms}:{})});

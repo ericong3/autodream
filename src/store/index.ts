@@ -406,6 +406,29 @@ function rowToWorkshop(r: any): Workshop {
   };
 }
 
+// The dealers table uses snake_case bank columns, like workshops.
+function rowToDealer(r: any): Dealer {
+  return {
+    id: r.id,
+    name: r.name,
+    phone: r.phone ?? undefined,
+    bankName: r.bank_name ?? undefined,
+    bankAccountNumber: r.bank_account_number ?? undefined,
+    bankAccountHolder: r.bank_account_holder ?? undefined,
+  };
+}
+
+function dealerToRow(d: Partial<Dealer>) {
+  const row: any = {};
+  if ('id' in d) row.id = d.id;
+  if ('name' in d) row.name = d.name;
+  if ('phone' in d) row.phone = d.phone ?? null;
+  if ('bankName' in d) row.bank_name = d.bankName ?? null;
+  if ('bankAccountNumber' in d) row.bank_account_number = d.bankAccountNumber ?? null;
+  if ('bankAccountHolder' in d) row.bank_account_holder = d.bankAccountHolder ?? null;
+  return row;
+}
+
 function workshopToRow(w: Partial<Workshop>) {
   // Use `in` rather than `!== undefined` so callers can explicitly clear a field
   // by passing `undefined` (e.g. rejecting a delete request nulls deleteRequestedBy) —
@@ -1458,6 +1481,10 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     // Wrapped so a rejected query (network blip, PWA waking from background, etc.) doesn't
     // silently blackhole delivered cars / quotations / instructions / payments / etc. for the
     // rest of the session — `loaded` is already true from phase 1, so nothing else retries this.
+    // financeFrom throws on a server error instead of returning `{ error }`, so each
+    // query is settled on its own — one bad finance table must not drop delivered cars.
+    const settle = (load: () => Promise<{ data: any[] | null; error: any }>) => () =>
+      load().catch((error) => { console.error('loadAll phase 2 query failed:', error); return { data: null, error }; });
     const runPhase2 = (isRetry = false): Promise<void> => runBatched([
       () => fetchAllRows((from, to) => supabase.from('cars').select('*').eq('status', 'delivered').order('id').range(from, to)),
       () => fetchAllRows((from, to) => supabase.from('loan_cases').select('*').in('status', ['rejected', 'cancelled', 'withdrawn']).order('id').range(from, to)),
@@ -1481,7 +1508,10 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       () => fetchAllRows((from, to) => financeFrom('payslips').select('*').order('created_at', { ascending: false }).order('id').range(from, to)),
       () => fetchAllRows((from, to) => financeFrom('bank_statement_uploads').select('*').order('uploaded_at', { ascending: false }).order('id').range(from, to)),
       () => fetchAllRows((from, to) => financeFrom('bank_transactions').select('*').order('created_at', { ascending: false }).order('id').range(from, to)),
-    ], 5).then(async ([deliveredCarsResult, closedCasesResult, quotations, instructions, testDrives, reminders, dealers, workshops, suppliers, merchants, claimCategories, ledgerAccounts, journalEntries, loanCaseDocsResult, loanCaseActivitiesResult, paymentsResult, investorTxnsResult, shipmentsResult, carMovementsResult, payslipsResult, bankUploadsResult, bankTxnsResult]) => {
+    ].map(settle), 5).then((results) => {
+      if (!isRetry && results.some((r) => r.error)) setTimeout(() => { if (loadCurrent()) runPhase2(true).catch(() => {}); }, 4000);
+      return results;
+    }).then(async ([deliveredCarsResult, closedCasesResult, quotations, instructions, testDrives, reminders, dealers, workshops, suppliers, merchants, claimCategories, ledgerAccounts, journalEntries, loanCaseDocsResult, loanCaseActivitiesResult, paymentsResult, investorTxnsResult, shipmentsResult, carMovementsResult, payslipsResult, bankUploadsResult, bankTxnsResult]) => {
       if(!loadCurrent())return;
       const allQuotations  = (quotations.data ?? []).map(rowToQuotation);
       const allTestDrives  = (testDrives.data ?? []).map(rowToTestDrive);
@@ -1503,7 +1533,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         instructions:        instructions.data         ? instructions.data.map(rowToInstruction)                                : s.instructions,
         testDrives:          testDrives.data           ? allTestDrives                                                          : s.testDrives,
         personalReminders:   reminders.data            ? reminders.data.map(rowToReminder)                                      : s.personalReminders,
-        dealers:             dealers.data              ? (dealers.data as Dealer[])                                             : s.dealers,
+        dealers:             dealers.data              ? dealers.data.map(rowToDealer)                                          : s.dealers,
         workshops:           workshops.data            ? workshops.data.map(rowToWorkshop)                                      : s.workshops,
         suppliers:           suppliers.data            ? (suppliers.data as Supplier[])                                         : s.suppliers,
         merchants:           merchants.data            ? (merchants.data as Merchant[])                                         : s.merchants,
@@ -1793,10 +1823,10 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
           setForActor((s) => ({
             dealers: s.dealers.some((d) => d.id === (payload.new as any).id)
               ? s.dealers
-              : [...s.dealers, payload.new as Dealer],
+              : [...s.dealers, rowToDealer(payload.new)],
           }));
         } else if (payload.eventType === 'UPDATE') {
-          setForActor((s) => ({ dealers: s.dealers.map((d) => d.id === (payload.new as any).id ? payload.new as Dealer : d) }));
+          setForActor((s) => ({ dealers: s.dealers.map((d) => d.id === (payload.new as any).id ? rowToDealer(payload.new) : d) }));
         } else if (payload.eventType === 'DELETE') {
           setForActor((s) => ({ dealers: s.dealers.filter((d) => d.id !== (payload.old as any)?.id) }));
         }
@@ -2518,15 +2548,20 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
 
   addDealer: async (dealer) => {
     set((s) => ({ dealers: [...s.dealers, dealer] }));
-    const { error } = await supabase.from('dealers').insert(dealer);
+    const { error } = await supabase.from('dealers').insert(dealerToRow(dealer));
     if (error) {
       set((s) => ({ dealers: s.dealers.filter((d) => d.id !== dealer.id) }));
       throw new Error(error.message);
     }
   },
   updateDealer: async (id, updates) => {
+    const before = get().dealers.find((d) => d.id === id);
     set((s) => ({ dealers: s.dealers.map((d) => d.id === id ? { ...d, ...updates } : d) }));
-    await supabase.from('dealers').update(updates).eq('id', id);
+    const { error } = await supabase.from('dealers').update(dealerToRow(updates)).eq('id', id);
+    if (error) {
+      if (before) set((s) => ({ dealers: s.dealers.map((d) => d.id === id ? before : d) }));
+      throw new Error(error.message);
+    }
   },
   deleteDealer: async (id) => {
     set((s) => ({ dealers: s.dealers.filter((d) => d.id !== id) }));
