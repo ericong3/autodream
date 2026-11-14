@@ -3,6 +3,20 @@ import ReactDOM from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
 
+// After a deploy, a page left open still runs the old version and asks for
+// page files the new version replaced, which left a blank screen. Reload once
+// to pick up the new version; never more than once a minute, so a real outage
+// shows its error instead of reloading in a loop.
+window.addEventListener('vite:preloadError', (event) => {
+  const key = 'autodream-update-reload';
+  let last = 0;
+  try { last = Number(sessionStorage.getItem(key) || 0); } catch { /* storage blocked */ }
+  if (Date.now() - last < 60_000) return;
+  try { sessionStorage.setItem(key, String(Date.now())); } catch { /* storage blocked */ }
+  event.preventDefault();
+  window.location.reload();
+});
+
 // Auto-capitalize first letter of every word in text inputs
 document.addEventListener('input', (e) => {
   const target = e.target as HTMLInputElement;
