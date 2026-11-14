@@ -556,7 +556,16 @@ export default function Inventory() {
     return movements[0]?.type === 'out';
   }), [filteredOrdered, carMovements]);
   const outCarIds            = useMemo(() => new Set(outOrdered.map(c => c.id)), [outOrdered]);
-  const consignmentOrdered   = useMemo(() => filteredOrdered.filter(c => !!c.consignment && !outCarIds.has(c.id)), [filteredOrdered, outCarIds]);
+  const consignmentAll       = useMemo(() => filteredOrdered.filter(c => !!c.consignment && !outCarIds.has(c.id)), [filteredOrdered, outCarIds]);
+  // Dealer chips inside the Consignment tab (e.g. only 2TN's stock).
+  const [consignmentDealer, setConsignmentDealer] = useState('All');
+  const consignmentDealers   = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const c of consignmentAll) { const d = c.consignment?.dealer?.trim() || 'Unknown dealer'; counts.set(d, (counts.get(d) ?? 0) + 1); }
+    return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  }, [consignmentAll]);
+  const consignmentOrdered   = useMemo(() => consignmentDealer === 'All' ? consignmentAll
+    : consignmentAll.filter(c => (c.consignment?.dealer?.trim() || 'Unknown dealer').toLowerCase() === consignmentDealer.toLowerCase()), [consignmentAll, consignmentDealer]);
   // "Unpriced" is a director to-do overlay, not a bucket — a car stays visible in
   // Consignment/Out regardless of pricing, and also shows up here until it's
   // actually priced. A selling price is always required to sell it; a purchase
@@ -1516,6 +1525,16 @@ export default function Inventory() {
           </button>
         )}
       </div>
+      {stockView === 'consignment' && consignmentDealers.length > 1 && (
+        <div className="flex flex-wrap gap-1.5 -mt-1" role="group" aria-label="Filter consignment cars by dealer">
+          {[['All', consignmentAll.length] as [string, number], ...consignmentDealers].map(([name, count]) => (
+            <button key={name} type="button" aria-pressed={consignmentDealer === name} onClick={() => setConsignmentDealer(name)}
+              className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${consignmentDealer === name ? 'bg-violet-500/20 text-violet-200 border-violet-500/40' : 'text-gray-400 border-obsidian-400/60 hover:text-gray-200'}`}>
+              {name} <span className="opacity-60">{count}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* QR Code modal */}
       {showQR && createPortal(

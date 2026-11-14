@@ -41,7 +41,7 @@ test('panel refresh throttling cannot consume the approval allowance',async()=>{
  const f=enabled(fixture()),c=await f.login(),hits=[];f.repo.throttleHit=async(key,limit,window)=>{hits.push({key,limit,window});return{allowed:true};};
  f.setResult({data:{paymentId:'panel-bill',approved:false}});assert.equal((await f.run({scope:'company_panel',action:'review',paymentId:'panel-bill'},c)).status,200);
  f.setResult({data:{paymentId:'panel-bill',approved:true,payments:[],journals:[]}});assert.equal((await f.run({scope:'company_panel',action:'approve',paymentId:'panel-bill',expectedRevision:'a'.repeat(32),requestId:'panel_approval_0001'},c)).status,200);
- const panel=hits.filter(h=>h.key.startsWith('company-panel:'));assert.equal(panel.length,2);assert.notEqual(panel[0].key,panel[1].key);assert.equal(panel[0].limit,600);assert.equal(panel[1].limit,90);
+ const panel=hits.filter(h=>h.key.startsWith('ucpanel:'));assert.equal(panel.length,2);assert.notEqual(panel[0].key,panel[1].key);assert.equal(panel[0].limit,600);assert.equal(panel[1].limit,90);
 });
 test('panel approval uses session identity, current source and Director permission',async()=>{
  const f=enabled(fixture()),c=await f.login(),body={scope:'company_panel',action:'approve',paymentId:'panel-bill',expectedRevision:'a'.repeat(32),requestId:'panel_approval_0001'};

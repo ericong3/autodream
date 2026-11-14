@@ -49,7 +49,7 @@ const DIRECTOR_PRIMARY = [
 const DIRECTOR_MORE = [
   { to: '/finance',         icon: TrendingUp,    label: 'Accounting'   },
   { to: '/team',            icon: UsersRound,    label: 'Team Members' },
-  ...(import.meta.env.VITE_INVESTOR_FINANCE==='1'?[{ to: '/investor-finance', icon: Briefcase, label: 'Investor accounts' }]:[]),
+  ...(import.meta.env.VITE_INVESTOR_FINANCE==='1'?[{ to: '/investor-finance', icon: Briefcase, label: 'Investor accounts' },{ to: '/dealer-accounts', icon: Briefcase, label: 'Dealer accounts' }]:[]),
   { to: '/investors',       icon: Briefcase,     label: 'Consignment' },
   { to: '/quotations',      icon: FileText,      label: 'Quotations'   },
   { to: '/commission',      icon: Banknote,      label: 'Commission'   },

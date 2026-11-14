@@ -43,7 +43,7 @@ const directorBottomItems: NavItem[] = [
   { to: '/finance',    icon: TrendingUp,    label: 'Accounting'    },
   { to: '/payroll',    icon: PiggyBank,     label: 'Payroll'       },
   { to: '/team',       icon: UsersRound,    label: 'Team Members'  },
-  ...(import.meta.env.VITE_INVESTOR_FINANCE==='1'?[{ to: '/investor-finance', icon: Briefcase, label: 'Investor accounts' }]:[]),
+  ...(import.meta.env.VITE_INVESTOR_FINANCE==='1'?[{ to: '/investor-finance', icon: Briefcase, label: 'Investor accounts' },{ to: '/dealer-accounts', icon: Briefcase, label: 'Dealer accounts' }]:[]),
   { to: '/investors',  icon: Briefcase,     label: 'Consignment' },
   { to: '/data',       icon: Database,      label: 'Data'          },
   { to: '/claims',     icon: Receipt,       label: 'Claims'        },

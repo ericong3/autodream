@@ -43,6 +43,7 @@ import Data from './pages/Data';
 import Investors from './pages/Investors';
 const InvestorAccountPortal=lazy(()=>import('./pages/InvestorAccountPortal'));
 const InvestorFinanceConsole=lazy(()=>import('./pages/InvestorFinanceConsole'));
+const DealerAccounts=lazy(()=>import('./pages/DealerAccounts'));
 import LoanCases from './pages/LoanCases';
 import BankerDashboard from './pages/BankerDashboard';
 import AdminDashboard from './pages/AdminDashboard';
@@ -327,6 +328,7 @@ export default function App() {
           <Route path="/data" element={<RequireDataAccess><Data /></RequireDataAccess>} />
           <Route path="/investor-finance" element={<RequireDataAccess><Suspense fallback={<p className="p-8 text-white/60">Loading investor accounts...</p>}><InvestorFinanceConsole /></Suspense></RequireDataAccess>} />
           <Route path="/investors" element={<RequireDirector><Investors /></RequireDirector>} />
+          {import.meta.env.VITE_INVESTOR_FINANCE==='1'&&<Route path="/dealer-accounts" element={<RequireDirector><Suspense fallback={<p className="p-8 text-white/60">Loading dealer accounts...</p>}><DealerAccounts /></Suspense></RequireDirector>} />}
           <Route path="/dashboard" element={<RequireDirector><Dashboard /></RequireDirector>} />
           <Route path="/history/:id?" element={<History />} />
           <Route path="/admin-dashboard" element={<RequireAdmin><AdminDashboard /></RequireAdmin>} />

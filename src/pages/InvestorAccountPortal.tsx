@@ -8,6 +8,9 @@ import {
   earnedProfit, entryLabel, formatCents, formatDay, investorRequest, isInStock, parseRinggit, useInvestorAction, useInvestorQuery,
   WITHDRAWAL_LABEL, type InvestorSnapshot,
 } from '../lib/investorFinance';
+import DealerAccountView from '../components/DealerAccountView';
+import DealerStockForm from '../components/DealerStockForm';
+import { dealerRequest, type DealerCar, type DealerView } from '../lib/dealerAccounts';
 
 export default function InvestorAccountPortal() {
   const actorId = useStore((s) => s.currentUser?.id);
@@ -18,6 +21,13 @@ export default function InvestorAccountPortal() {
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [amount, setAmount] = useState('');
   const snap = query.data;
+  // A dealer linked to this investor (e.g. 2TN): their consignment stock and payouts.
+  // They may add stock and update their own cars; prices and terms stay with AutoDream.
+  const dealer = useInvestorQuery<DealerView>(actorId ? actorId + ':my-dealer' : null, () => dealerRequest<DealerView>('mine'));
+  const [area, setArea] = useState<'investment' | 'dealer'>('investment');
+  const dealerName = dealer.data?.dealer?.name;
+  // undefined = closed, null = add a new car, a car = update that car.
+  const [stockForm, setStockForm] = useState<DealerCar | null | undefined>(undefined);
 
   const { stock, sold, earned } = useMemo(() => {
     const cars = snap?.cars ?? [];
@@ -50,12 +60,34 @@ export default function InvestorAccountPortal() {
   );
 
   const list = tab === 'stock' ? stock : sold;
+  const switcher = dealerName ? (
+    <div className="flex gap-2">
+      {([['investment', 'My investment'], ['dealer', `${dealerName} consignment`]] as const).map(([key, label]) => (
+        <button key={key} type="button" aria-pressed={area === key} onClick={() => setArea(key)} className={`px-4 py-2 rounded-full text-xs font-semibold border ${area === key ? 'bg-gold-500/15 text-gold-300 border-gold-500/40' : 'text-gray-400 border-obsidian-400/60'}`}>{label}</button>
+      ))}
+    </div>
+  ) : null;
+  if (area === 'dealer' && dealer.data?.dealer) return (
+    <div className="space-y-5 max-w-3xl mx-auto">
+      <div>
+        <h1 className="font-display text-white font-bold text-xl">{dealerName} consignment</h1>
+        <p className="text-gray-500 text-sm mt-0.5">Your cars with AutoDream and what is owed to you</p>
+      </div>
+      {switcher}
+      <DealerAccountView view={dealer.data} audience="dealer" onAdd={() => setStockForm(null)} onEdit={(c) => setStockForm(c)} />
+      {stockForm !== undefined && (
+        <DealerStockForm key={stockForm?.carId ?? 'new'} actorId={actorId} dealerName={dealerName ?? 'dealer'} car={stockForm}
+          onClose={() => setStockForm(undefined)} onSaved={() => { setStockForm(undefined); void dealer.reload(); }} />
+      )}
+    </div>
+  );
   return (
     <div className="space-y-5 max-w-3xl mx-auto">
       <div>
         <h1 className="font-display text-white font-bold text-xl">My Investment</h1>
         <p className="text-gray-500 text-sm mt-0.5">AutoDream{snap ? ` · ${snap.profile.name}` : ''}</p>
       </div>
+      {switcher}
 
       <LoadState loading={query.loading} error={query.error} onRetry={() => void query.reload()}>
         {snap && (
