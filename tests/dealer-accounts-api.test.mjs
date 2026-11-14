@@ -19,6 +19,9 @@ test('dealer account: director converts through the database with the server act
  const r=await f.run(convert,cookie);assert.equal(r.status,200);
  assert.deepEqual(f.calls.at(-1),{fn:'uc_dealer_account',args:{p_actor:'real-director',p_action:'convert',p_data:{dealerId:'2tn',amountCents:50000000,convertedOn:'2026-11-15',note:'Signed agreement: kept as investment',requestId:'dealer_convert_0001'}}});
  assert.equal((await f.run({scope:'dealer_accounts',action:'link',dealerId:'2tn',potId,requestId:'dealer_link_00001'},cookie)).status,200);
+ assert.equal((await f.run({scope:'dealer_accounts',action:'prepare_payouts',dealerId:'2tn',requestId:'dealer_prep_000001'},cookie)).status,200);
+ assert.deepEqual(f.calls.at(-1).args,{p_actor:'real-director',p_action:'prepare_payouts',p_data:{dealerId:'2tn',requestId:'dealer_prep_000001'}});
+ assert.equal((await f.run({scope:'dealer_accounts',action:'prepare_payouts',dealerId:'2tn',amountCents:1,requestId:'dealer_prep_000002'},cookie)).status,400,'No amount: it prepares what is unpaid');
  f.setResult({data:{dealers:[],investors:[]}});assert.equal((await f.run({scope:'dealer_accounts',action:'list'},cookie)).status,200);
 });
 
@@ -35,7 +38,7 @@ test('dealer account: investor may only read their own dealer',async()=>{
  const f=fixture('investor');const cookie=await f.login();
  assert.equal((await f.run({scope:'dealer_accounts',action:'mine'},cookie)).status,200);
  assert.deepEqual(f.calls.at(-1).args,{p_actor:'real-investor',p_action:'mine',p_data:{}});
- for(const body of [convert,{scope:'dealer_accounts',action:'view',dealerId:'2tn'},{scope:'dealer_accounts',action:'list'}])assert.equal((await f.run(body,cookie)).status,403);
+ for(const body of [convert,{scope:'dealer_accounts',action:'view',dealerId:'2tn'},{scope:'dealer_accounts',action:'list'},{scope:'dealer_accounts',action:'prepare_payouts',dealerId:'2tn',requestId:'dealer_prep_000003'}])assert.equal((await f.run(body,cookie)).status,403);
  f.setResult({data:{dealer:null}});assert.equal((await f.run({scope:'dealer_accounts',action:'mine'},cookie)).status,200);
 });
 

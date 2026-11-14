@@ -5,7 +5,7 @@ import {createHash} from 'node:crypto';
 import {ApiError,authenticate,canUseApp,respond,readJson,onlyKeys} from '../garageBuilding/core.mjs';
 
 const CAR_FIELDS=['make','model','variant','year','carPlate','colour','mileage','transmission','notes','photos','requestId'];
-export const DEALER_FIELDS={mine:[],list:[],view:['dealerId'],link:['dealerId','potId','requestId'],convert:['dealerId','amountCents','convertedOn','note','requestId'],
+export const DEALER_FIELDS={mine:[],list:[],view:['dealerId'],link:['dealerId','potId','requestId'],convert:['dealerId','amountCents','convertedOn','note','requestId'],prepare_payouts:['dealerId','requestId'],
  add_car:CAR_FIELDS,edit_car:['carId','variant','colour','mileage','notes','photos','requestId']};
 const READS=new Set(['mine','list','view']);
 const DEALER_STOCK=new Set(['mine','add_car','edit_car']);

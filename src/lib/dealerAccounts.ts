@@ -14,11 +14,13 @@ export type DealerCar = {
 export type DealerPayout = {
   paymentId: string; carId: string | null; status: string; createdAt: string | null; transferredAt: string | null; replaced: boolean;
   amountCents: number; paidCents: number; convertedCents: number; balanceCents: number;
+  bankReady: boolean; needsPreparing: boolean;
 };
 export type DealerConversion = { id: string; amountCents: number; convertedOn: string; note: string; createdAt: string; actorName: string; allocations: { paymentId: string; amountCents: number }[] };
 export type DealerTotals = {
   payoutCents: number; paidCents: number; convertedCents: number; owedCents: number;
   carsInStock: number; carsDelivered: number; deliveredWithoutPayout: number; deliveredNotDisbursed: number;
+  needsPreparingCents: number; needsPreparingCount: number;
 };
 export type DealerView = {
   dealer: { id: string; name: string; bankName: string | null; accountHolder: string | null; accountEnding: string } | null;

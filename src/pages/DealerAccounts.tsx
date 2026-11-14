@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronLeft, Lock, Link2 } from 'lucide-react';
+import { ChevronLeft, Landmark, Lock, Link2 } from 'lucide-react';
 import { useStore } from '../store';
 import DealerAccountView from '../components/DealerAccountView';
 import { ActionErrorBox, CashConfirm, Field, LoadState, PendingSaves, type PendingConfirm } from '../components/InvestorFinanceCar';
@@ -69,6 +69,8 @@ function Dealer({ actorId, dealerId, investors, onBack }: { actorId: string; dea
               onLink={(potId, name) => run('dealer-link:' + dealerId, 'link', { potId }, `Link ${view.dealer!.name} to ${name}`)} error={<ActionErrorBox error={act.error} slot={'dealer-link:' + dealerId} onRetry={() => void retry('dealer-link:' + dealerId)} onDismiss={act.clearError} />} />}
             {view.investor && <LockInvestment view={view} busy={act.busy} setConfirm={setConfirm}
               onLock={(data) => run('dealer-lock:' + dealerId, 'convert', data, `Lock ${formatCents(data.amountCents)} as investment · ${view.dealer!.name}`)} error={<ActionErrorBox error={act.error} slot={'dealer-lock:' + dealerId} onRetry={() => void retry('dealer-lock:' + dealerId)} onDismiss={act.clearError} />} />}
+            {view.totals.needsPreparingCount > 0 && <PreparePayouts view={view} busy={act.busy} setConfirm={setConfirm}
+              onPrepare={() => run('dealer-prepare:' + dealerId, 'prepare_payouts', {}, `Prepare ${view.dealer!.name} payouts for bank payment`)} error={<ActionErrorBox error={act.error} slot={'dealer-prepare:' + dealerId} onRetry={() => void retry('dealer-prepare:' + dealerId)} onDismiss={act.clearError} />} />}
             <DealerAccountView view={view} audience="director" />
           </>
         )}
@@ -123,5 +125,22 @@ function LockInvestment({ view, busy, setConfirm, onLock, error }: { view: Deale
       <button type="submit" disabled={!ok || busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40">{busy?.startsWith('dealer-lock:') ? 'Saving…' : 'Review lock'}</button>
       {error}
     </form>
+  );
+}
+
+// Older payouts were never recorded in the books, so the bank payment screen
+// refuses them until they are recorded as bills here (once per payout).
+function PreparePayouts({ view, busy, setConfirm, onPrepare, error }: { view: DealerView; busy: string | null; setConfirm: (c: PendingConfirm) => void; onPrepare: () => Promise<unknown>; error: JSX.Element }) {
+  const { needsPreparingCount: count, needsPreparingCents: cents } = view.totals;
+  return (
+    <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl p-4 space-y-2">
+      <p className="text-white text-sm font-semibold flex items-center gap-1.5"><Landmark size={14} /> Prepare older payouts for bank payment</p>
+      <p className="text-gray-500 text-xs">{count} unpaid payout{count === 1 ? '' : 's'} ({formatCents(cents)}) were made before the reviewed consignment workflow, so the bank payment screen cannot pay {count === 1 ? 'it' : 'them'} yet. Preparing records each unpaid balance as a bill. No money moves, and you can still lock {count === 1 ? 'it' : 'them'} as investment.</p>
+      <button type="button" disabled={busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40"
+        onClick={() => setConfirm({ title: 'Prepare payouts for bank payment?', label: 'Prepare payouts', message: `${count} unpaid payout${count === 1 ? '' : 's'} to ${view.dealer!.name} (${formatCents(cents)}) will be recorded as bills you can pay from Payments. Their amounts are then fixed. No bank transfer is recorded.`, go: () => void onPrepare() })}>
+        {busy?.startsWith('dealer-prepare:') ? 'Preparing…' : 'Prepare for bank payment'}
+      </button>
+      {error}
+    </div>
   );
 }
