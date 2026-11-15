@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { ArrowUpCircle, Clock, Car as CarIcon } from 'lucide-react';
+import { ArrowUpCircle, Clock, Car as CarIcon, Eye, ChevronLeft } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useStore } from '../store';
 import Modal from '../components/Modal';
 import InvestorMoneyDocuments from '../components/InvestorMoneyDocuments';
@@ -10,11 +11,15 @@ import {
 } from '../lib/investorFinance';
 import DealerAccountView from '../components/DealerAccountView';
 import DealerStockForm from '../components/DealerStockForm';
-import { dealerRequest, type DealerCar, type DealerView } from '../lib/dealerAccounts';
+import { dealerRequest, type DealerCar, type DealerList, type DealerView } from '../lib/dealerAccounts';
 
-export default function InvestorAccountPortal() {
+// preview: the Director sees an investor's portal as that investor would,
+// read-only. Same screens, loaded with the Director's own login; every button
+// that saves (withdraw, add or update dealer stock) is hidden.
+export default function InvestorAccountPortal({ preview }: { preview?: { potId: string } } = {}) {
   const actorId = useStore((s) => s.currentUser?.id);
-  const query = useInvestorQuery<InvestorSnapshot>(actorId ?? null, () => investorRequest<InvestorSnapshot>('snapshot', {}));
+  const potKey = preview ? ':' + preview.potId : '';
+  const query = useInvestorQuery<InvestorSnapshot>(actorId ? actorId + potKey : null, () => investorRequest<InvestorSnapshot>('snapshot', preview ? { potId: preview.potId } : {}));
   const act = useInvestorAction(actorId);
   const [tab, setTab] = useState<'stock' | 'sold'>('stock');
   const [openCar, setOpenCar] = useState<string | null>(null);
@@ -23,7 +28,11 @@ export default function InvestorAccountPortal() {
   const snap = query.data;
   // A dealer linked to this investor (e.g. 2TN): their consignment stock and payouts.
   // They may add stock and update their own cars; prices and terms stay with AutoDream.
-  const dealer = useInvestorQuery<DealerView>(actorId ? actorId + ':my-dealer' : null, () => dealerRequest<DealerView>('mine'));
+  const dealer = useInvestorQuery<DealerView>(actorId ? actorId + (preview ? ':dealer' + potKey : ':my-dealer') : null, async () => {
+    if (!preview) return dealerRequest<DealerView>('mine');
+    const linked = (await dealerRequest<DealerList>('list')).dealers.find((d) => d.potId === preview.potId);
+    return linked ? dealerRequest<DealerView>('view', { dealerId: linked.id }) : ({ dealer: null } as DealerView);
+  });
   const [area, setArea] = useState<'investment' | 'dealer'>('investment');
   const dealerName = dealer.data?.dealer?.name;
   // undefined = closed, null = add a new car, a car = update that car.
@@ -53,9 +62,17 @@ export default function InvestorAccountPortal() {
   };
   const retryWithdrawal = async (s: string) => { if (await act.retry(s)) { setWithdrawOpen(false); setAmount(''); await query.reload(); } };
 
+  const banner = preview ? (
+    <div className="flex flex-wrap items-center justify-between gap-2 bg-sky-500/10 border border-sky-500/30 text-sky-200 rounded-xl px-4 py-2.5 text-xs">
+      <span className="flex items-center gap-2"><Eye size={14} /> Preview: this is what {snap?.profile.name ?? 'this investor'} sees. Nothing can be saved here.</span>
+      <Link to="/investor-finance" className="flex items-center gap-1 text-sky-300 font-semibold"><ChevronLeft size={13} /> Back to Investor accounts</Link>
+    </div>
+  ) : null;
+
   if (openCar) return (
-    <div className="max-w-2xl mx-auto">
-      <InvestorFinanceCar carId={openCar} actorId={actorId} mode="investor" onClose={() => setOpenCar(null)} />
+    <div className="max-w-2xl mx-auto space-y-4">
+      {banner}
+      <InvestorFinanceCar carId={openCar} actorId={actorId} mode={preview ? 'viewer' : 'investor'} onClose={() => setOpenCar(null)} />
     </div>
   );
 
@@ -73,9 +90,10 @@ export default function InvestorAccountPortal() {
         <h1 className="font-display text-white font-bold text-xl">{dealerName} consignment</h1>
         <p className="text-gray-500 text-sm mt-0.5">Your cars with AutoDream and what is owed to you</p>
       </div>
+      {banner}
       {switcher}
-      <DealerAccountView view={dealer.data} audience="dealer" onAdd={() => setStockForm(null)} onEdit={(c) => setStockForm(c)} />
-      {stockForm !== undefined && (
+      <DealerAccountView view={dealer.data} audience="dealer" onAdd={preview ? undefined : () => setStockForm(null)} onEdit={preview ? undefined : (c) => setStockForm(c)} />
+      {!preview && stockForm !== undefined && (
         <DealerStockForm key={stockForm?.carId ?? 'new'} actorId={actorId} dealerName={dealerName ?? 'dealer'} car={stockForm}
           onClose={() => setStockForm(undefined)} onSaved={() => { setStockForm(undefined); void dealer.reload(); }} />
       )}
@@ -87,6 +105,7 @@ export default function InvestorAccountPortal() {
         <h1 className="font-display text-white font-bold text-xl">My Investment</h1>
         <p className="text-gray-500 text-sm mt-0.5">AutoDream{snap ? ` · ${snap.profile.name}` : ''}</p>
       </div>
+      {banner}
       {switcher}
 
       <LoadState loading={query.loading} error={query.error} onRetry={() => void query.reload()}>
@@ -112,7 +131,7 @@ export default function InvestorAccountPortal() {
                   <span className="flex items-center gap-2 text-amber-300 text-xs"><Clock size={14} /> {WITHDRAWAL_LABEL[openWithdrawal.state]}</span>
                   <span className="text-white font-semibold text-sm">{formatCents(openWithdrawal.amountCents)}</span>
                 </div>
-              ) : (
+              ) : preview ? null : (
                 <button type="button" disabled={available <= 0} onClick={() => setWithdrawOpen(true)} className="btn-gold w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-40">
                   <ArrowUpCircle size={16} /> Withdraw
                 </button>
@@ -157,7 +176,7 @@ export default function InvestorAccountPortal() {
         )}
       </LoadState>
 
-      <Modal isOpen={withdrawOpen} onClose={() => setWithdrawOpen(false)} title="Request a withdrawal"
+      <Modal isOpen={!preview && withdrawOpen} onClose={() => setWithdrawOpen(false)} title="Request a withdrawal"
         footer={
           <div className="flex justify-end gap-2">
             <button type="button" onClick={() => setWithdrawOpen(false)} className="btn-ghost px-4 py-2 rounded-lg text-sm">Cancel</button>

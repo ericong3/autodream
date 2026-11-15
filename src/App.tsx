@@ -8,6 +8,7 @@ import {
   useLocation,
   useNavigate,
   Outlet,
+  useParams,
 } from 'react-router-dom';
 import { useStore } from './store';
 import Layout from './components/Layout';
@@ -179,6 +180,15 @@ function RequireDirector({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Director only: the server reads investor and dealer accounts for the Director, not shareholders.
+function InvestorPreview() {
+  const currentUser = useStore((s) => s.currentUser);
+  const { potId } = useParams();
+  if (!currentUser) return <Navigate to="/login" replace />;
+  if (currentUser.role !== 'director' || !potId) return <Navigate to={roleHome(currentUser.role)} replace />;
+  return <Suspense fallback={<p className="p-8 text-white/60">Loading preview...</p>}><InvestorAccountPortal key={potId} preview={{ potId }} /></Suspense>;
+}
+
 
 function RequireSalesOrDirector({ children }: { children: React.ReactNode }) {
   const currentUser = useStore((s) => s.currentUser);
@@ -327,6 +337,7 @@ export default function App() {
           <Route path="/team" element={<RequireDirector><TeamMembers /></RequireDirector>} />
           <Route path="/data" element={<RequireDataAccess><Data /></RequireDataAccess>} />
           <Route path="/investor-finance" element={<RequireDataAccess><Suspense fallback={<p className="p-8 text-white/60">Loading investor accounts...</p>}><InvestorFinanceConsole /></Suspense></RequireDataAccess>} />
+          <Route path="/investor-preview/:potId" element={<InvestorPreview />} />
           <Route path="/investors" element={<RequireDirector><Investors /></RequireDirector>} />
           {import.meta.env.VITE_INVESTOR_FINANCE==='1'&&<Route path="/dealer-accounts" element={<RequireDirector><Suspense fallback={<p className="p-8 text-white/60">Loading dealer accounts...</p>}><DealerAccounts /></Suspense></RequireDirector>} />}
           <Route path="/dashboard" element={<RequireDirector><Dashboard /></RequireDirector>} />

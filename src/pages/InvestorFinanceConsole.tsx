@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import CompanyPot from '../components/CompanyPot';
 import { companyBankPaymentsEnabled } from '../lib/companyBankPayments';
-import { useSearchParams } from 'react-router-dom';
-import { Plus, Link2, Copy, Users, ChevronLeft } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Plus, Link2, Copy, Users, ChevronLeft, Eye } from 'lucide-react';
 import { useStore } from '../store';
 import InvestorMoneyDocuments, { type MoneyProofSelection } from '../components/InvestorMoneyDocuments';
 import InvestorFinanceCar, {
@@ -164,7 +164,10 @@ function Account({ profile, actorId, onBack, onChanged, ...shared }: Shared & { 
             <p className="text-white font-display font-bold text-xl">{profile.name}</p>
             <p className="text-gray-500 text-xs">{profile.linkedStaffId ? 'Investor can sign in' : 'No login yet'}</p>
           </div>
-          {canWrite && !profile.linkedStaffId && <Invite potId={profile.potId} {...s} />}
+          <div className="flex flex-wrap items-center gap-2">
+            {canWrite && <Link to={`/investor-preview/${profile.potId}`} className="btn-ghost text-xs px-3 py-2 rounded-lg flex items-center gap-1.5"><Eye size={13} /> Preview as investor</Link>}
+            {canWrite && !profile.linkedStaffId && <Invite potId={profile.potId} {...s} />}
+          </div>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <Figure label="Available" value={formatCents(pos.availableCents)} tone="text-gold-300" />
