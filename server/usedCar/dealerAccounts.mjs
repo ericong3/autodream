@@ -5,7 +5,9 @@ import {createHash} from 'node:crypto';
 import {ApiError,authenticate,canUseApp,respond,readJson,onlyKeys} from '../garageBuilding/core.mjs';
 
 const CAR_FIELDS=['make','model','variant','year','carPlate','colour','mileage','transmission','notes','photos','requestId'];
-export const DEALER_FIELDS={mine:[],list:[],view:['dealerId'],link:['dealerId','potId','requestId'],convert:['dealerId','amountCents','convertedOn','note','requestId'],prepare_payouts:['dealerId','requestId'],
+export const DEALER_FIELDS={mine:[],list:[],view:['dealerId'],link:['dealerId','potId','requestId'],prepare_payouts:['dealerId','requestId'],
+ confirm_costs:['dealerId','paymentId','requestId'],unconfirm_costs:['dealerId','paymentId','requestId'],save_draft:['dealerId','targetCents','paymentIds','requestId'],
+ lock_draft:['dealerId','convertedOn','note','requestId'],undo_lock:['dealerId','conversionId','reason','requestId'],
  add_car:CAR_FIELDS,edit_car:['carId','variant','colour','mileage','notes','photos','requestId']};
 const READS=new Set(['mine','list','view']);
 const DEALER_STOCK=new Set(['mine','add_car','edit_car']);
@@ -28,6 +30,11 @@ const id=v=>typeof v==='string'&&/^[A-Za-z0-9_.:-]{1,100}$/.test(v);
 const messages={NOT_ALLOWED:[403,'You cannot open or change this dealer account.'],DEALER_NOT_FOUND:[404,'This dealer no longer exists. Refresh the page.'],
  ALREADY_LINKED:[409,'This dealer or investor is already linked to another account.'],INVESTOR_LINK_REQUIRED:[409,'Link this dealer to an investor account first.'],
  CONVERSION_EXCEEDS_OWED:[409,'This is more than the unpaid dealer payouts. Update the disbursements and payouts first.'],
+ PAYOUT_LOCKED:[409,'This payout is already kept as investment. Undo that lock first.'],PAYOUT_NOT_OPEN:[409,'Only an unpaid payout can be confirmed.'],
+ COSTS_NOT_CONFIRMED:[409,'Every car in the draft must have its costs confirmed at its current payout. Refresh and check the draft.'],
+ DRAFT_EMPTY:[409,'Add cars to the draft first.'],DRAFT_SHORT:[409,'The cars in the draft do not add up to the target. Add more cars or lower the target.'],
+ LOCK_NOT_FOUND:[404,'This lock no longer exists. Refresh the page.'],INVESTMENT_IN_USE:[409,'The investor has already used part of this money, so the lock cannot be undone.'],
+ USE_DRAFT:[409,'Use the investment draft to lock payouts.'],
  REQUEST_CHANGED:[409,'Retry the original save before changing it.'],FUTURE_DATE:[400,'The date cannot be in the future.'],IMMUTABLE_HISTORY:[409,'Saved investment locks cannot be changed.'],
  PLATE_EXISTS:[409,'A car with this plate number is already in stock.'],PHOTOS_REQUIRED:[400,'Add at least one car photo.'],CAR_LOCKED:[409,'This car already has a deal. Ask AutoDream to change it.']};
 
@@ -40,8 +47,16 @@ export async function handleDealerAccounts(req,deps){return respond(req,deps,['P
  if(['add_car','edit_car'].includes(b.action))validateCar(b,deps.env);
  else if(b.action!=='mine'&&b.action!=='list'&&!id(b.dealerId))throw new ApiError(400,'INVALID','Open the dealer again.');
  if(b.action==='link'&&!uuid(b.potId))throw new ApiError(400,'INVALID','Choose an investor account.');
- if(b.action==='convert'){
-  if(!Number.isSafeInteger(b.amountCents)||b.amountCents<1||b.amountCents>1000000000000)throw new ApiError(400,'INVALID','Enter a valid amount.');
+ if(['confirm_costs','unconfirm_costs'].includes(b.action)&&!id(b.paymentId))throw new ApiError(400,'INVALID','Open the payout again.');
+ if(b.action==='save_draft'){
+  if(!Number.isSafeInteger(b.targetCents)||b.targetCents<1||b.targetCents>1000000000000)throw new ApiError(400,'INVALID','Enter a valid target amount.');
+  if(!Array.isArray(b.paymentIds)||b.paymentIds.length>200||!b.paymentIds.every(id)||new Set(b.paymentIds).size!==b.paymentIds.length)throw new ApiError(400,'INVALID','Check the cars in the draft.');
+ }
+ if(b.action==='undo_lock'){
+  if(!uuid(b.conversionId))throw new ApiError(400,'INVALID','Open the lock again.');
+  if(typeof b.reason!=='string'||b.reason.trim().length<5||b.reason.trim().length>1000||/[\u0000-\u001f\u007f]/.test(b.reason))throw new ApiError(400,'INVALID','Give a reason in 5 to 1000 characters.');
+ }
+ if(b.action==='lock_draft'){
   if(typeof b.convertedOn!=='string'||!/^20\d{2}-\d{2}-\d{2}$/.test(b.convertedOn))throw new ApiError(400,'INVALID','Choose the date of the agreement.');
   if(typeof b.note!=='string'||b.note.trim().length<5||b.note.trim().length>1000||/[\u0000-\u001f\u007f]/.test(b.note))throw new ApiError(400,'INVALID','Describe the agreement in 5 to 1000 characters.');
  }

@@ -1,14 +1,14 @@
 import { useState } from 'react';
-import { AlertTriangle, Pencil, Plus } from 'lucide-react';
+import { AlertTriangle, Pencil, Plus, Printer, Undo2 } from 'lucide-react';
 import { CarPhoto, Figure, Section } from './InvestorFinanceCar';
 import { formatCents, formatDay } from '../lib/investorFinance';
-import { dealerCarStatus, termsLabel, type DealerCar, type DealerView } from '../lib/dealerAccounts';
+import { dealerCarStatus, printAgreement, termsLabel, type DealerCar, type DealerConversion, type DealerView } from '../lib/dealerAccounts';
 
 // One dealer's consignment account: totals, cars and payouts. Read-only;
 // the Director's actions live on the Dealer accounts page. The dealer may add
 // stock and update their own cars that have no deal yet (onAdd / onEdit).
-export default function DealerAccountView({ view, audience, onAdd, onEdit }: {
-  view: DealerView; audience: 'director' | 'dealer'; onAdd?: () => void; onEdit?: (car: DealerCar) => void;
+export default function DealerAccountView({ view, audience, onAdd, onEdit, onUndo }: {
+  view: DealerView; audience: 'director' | 'dealer'; onAdd?: () => void; onEdit?: (car: DealerCar) => void; onUndo?: (lock: DealerConversion) => void;
 }) {
   const [tab, setTab] = useState<'stock' | 'sold'>('stock');
   const t = view.totals;
@@ -80,8 +80,19 @@ export default function DealerAccountView({ view, audience, onAdd, onEdit }: {
         <Section title="Kept as investment" hint={`${view.conversions.length}`} defaultOpen={audience === 'dealer' && view.conversions.length > 0}>
           {view.conversions.length === 0 ? <p className="text-gray-500 text-xs">Nothing locked as investment yet.</p> : view.conversions.map((v) => (
             <div key={v.id} className="flex justify-between gap-3 text-xs">
-              <div className="text-gray-300">{formatDay(v.convertedOn)} · {v.note}<span className="block text-gray-600">Recorded by {v.actorName} · {v.allocations.length} payout{v.allocations.length === 1 ? '' : 's'}</span></div>
+              <div className="text-gray-300">{formatDay(v.convertedOn)} · {v.note}<span className="block text-gray-600">Recorded by {v.actorName} · {v.allocations.length} payout{v.allocations.length === 1 ? '' : 's'}</span>
+                <span className="flex gap-3 pt-1">
+                  <button type="button" onClick={() => { if (!printAgreement(view, v)) alert('Allow pop-ups for this site to print the agreement.'); }} className="text-gold-300 text-[11px] flex items-center gap-1"><Printer size={11} /> Print agreement</button>
+                  {onUndo && <button type="button" onClick={() => onUndo(v)} className="text-red-300 text-[11px] flex items-center gap-1"><Undo2 size={11} /> Undo lock</button>}
+                </span>
+              </div>
               <span className="text-gold-300 font-medium shrink-0">{formatCents(v.amountCents)}</span>
+            </div>
+          ))}
+          {audience === 'director' && (view.reversals ?? []).map((r) => (
+            <div key={r.conversionId} className="flex justify-between gap-3 text-xs opacity-60">
+              <div className="text-gray-400">Undone lock from {formatDay(r.convertedOn)} · {r.reason}<span className="block text-gray-600">Undone by {r.actorName} · {formatDay(r.reversedAt)}</span></div>
+              <span className="text-gray-400 line-through shrink-0">{formatCents(r.amountCents)}</span>
             </div>
           ))}
         </Section>

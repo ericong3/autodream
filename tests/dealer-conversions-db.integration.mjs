@@ -36,8 +36,18 @@ try{
 
  // Only the Director links, and only once per dealer and per investor.
  await assert.rejects(()=>dealer('a','list'),/NOT_ALLOWED/);
- await assert.rejects(()=>dealer('d','convert',{dealerId:'2tn',amountCents:100,convertedOn:day,note:'Agreed in writing',requestId:req()}),/INVESTOR_LINK_REQUIRED/);
- let view=await dealer('d','link',{dealerId:'2tn',potId,requestId:req()});
+ const draftLock=async(ids,targetCents,lock={})=>{
+  const now=await dealer('d','view',{dealerId:'2tn'});
+  for(const id of ids)if(!now.payouts.find(p=>p.paymentId===id).costsConfirmed)await dealer('d','confirm_costs',{dealerId:'2tn',paymentId:id,requestId:req()});
+  await dealer('d','save_draft',{dealerId:'2tn',targetCents,paymentIds:ids,requestId:req()});
+  return dealer('d','lock_draft',{dealerId:'2tn',convertedOn:day,note:'Signed agreement 14 Nov: payouts kept as investment',requestId:req(),...lock});
+ };
+ // The old one-step lock is retired.
+ await assert.rejects(()=>dealer('d','convert',{dealerId:'2tn',amountCents:100,convertedOn:day,note:'Agreed in writing',requestId:req()}),/USE_DRAFT/);
+ let view=await dealer('d','confirm_costs',{dealerId:'2tn',paymentId:'p1',requestId:req()});
+ await dealer('d','save_draft',{dealerId:'2tn',targetCents:100,paymentIds:['p1'],requestId:req()});
+ await assert.rejects(()=>dealer('d','lock_draft',{dealerId:'2tn',convertedOn:day,note:'Agreed in writing',requestId:req()}),/INVESTOR_LINK_REQUIRED/);
+ view=await dealer('d','link',{dealerId:'2tn',potId,requestId:req()});
  assert.equal(view.investor.name,'Ting Ping Liang');
  await assert.rejects(()=>dealer('d','link',{dealerId:'bingo',potId,requestId:req()}),/ALREADY_LINKED/);
  await assert.rejects(()=>dealer('d','link',{dealerId:'2tn',potId:otherPot,requestId:req()}),/ALREADY_LINKED/);
@@ -45,37 +55,84 @@ try{
  assert.equal(view.totals.carsDelivered,3);assert.equal(view.totals.carsInStock,1);assert.equal(view.totals.deliveredWithoutPayout,1);assert.equal(view.totals.deliveredNotDisbursed,1);
  const list=await dealer('d','list');assert.equal(list.dealers.find(x=>x.id==='2tn').investorName,'Ting Ping Liang');assert.equal(list.investors.length,2);
 
- // Lock RM 50,000: oldest payout fully, the next one partially.
+ // Costs confirmed: only unpaid payouts of this dealer; the tick holds only at the confirmed amount.
+ assert.equal(view.payouts.find(p=>p.paymentId==='p1').costsConfirmed,true);assert.equal(view.payouts.find(p=>p.paymentId==='p1').confirmedVia,'director');
+ assert.equal(view.payouts.find(p=>p.paymentId==='p2').costsConfirmed,false);
+ await assert.rejects(()=>dealer('d','confirm_costs',{dealerId:'2tn',paymentId:'p0',requestId:req()}),/PAYOUT_NOT_OPEN/,'Already transferred');
+ await assert.rejects(()=>dealer('d','confirm_costs',{dealerId:'2tn',paymentId:'pb',requestId:req()}),/NOT_ALLOWED/,'Another dealer');
+ await assert.rejects(()=>dealer('i','confirm_costs',{dealerId:'2tn',paymentId:'p2',requestId:req()}),/NOT_ALLOWED/,'Investor cannot confirm');
+ await dealer('d','confirm_costs',{dealerId:'2tn',paymentId:'p2',requestId:req()});
+ await db.query("update payments set amount=79000 where id='p2'");
+ view=await dealer('d','view',{dealerId:'2tn'});assert.equal(view.payouts.find(p=>p.paymentId==='p2').costsConfirmed,false,'Cost change after the tick needs a new tick');
+ await assert.rejects(()=>dealer('d','save_draft',{dealerId:'2tn',targetCents:5000000,paymentIds:['p1','p2'],requestId:req()}),/COSTS_NOT_CONFIRMED/);
+ await db.query("update payments set amount=80000 where id='p2'");
+ view=await dealer('d','unconfirm_costs',{dealerId:'2tn',paymentId:'p2',requestId:req()});
+ assert.equal(view.payouts.find(p=>p.paymentId==='p2').costsConfirmed,false);assert.deepEqual(view.draft.paymentIds,['p1'],'Draft keeps only confirmed cars');
+ await assert.rejects(()=>dealer('d','save_draft',{dealerId:'2tn',targetCents:5000000,paymentIds:['pb'],requestId:req()}),/NOT_ALLOWED/);
+ await assert.rejects(()=>dealer('d','save_draft',{dealerId:'2tn',targetCents:5000000,paymentIds:['p1','p1'],requestId:req()}),/INVALID/);
+ // A short draft is refused and nothing is saved.
+ await dealer('d','save_draft',{dealerId:'2tn',targetCents:5000000,paymentIds:['p1'],requestId:req()});
+ await assert.rejects(()=>dealer('d','lock_draft',{dealerId:'2tn',convertedOn:day,note:'Too little in draft',requestId:req()}),/DRAFT_SHORT/);
+ assert.equal((await db.query('select count(*) n from uc_dealer_conversions')).rows[0].n,0);
+ // The investor never sees the Director's draft.
+ assert.equal('draft' in (await dealer('i','mine')),false);
+
+ // Lock RM 50,000 in the Director's order: p1 fully, p2 split (rest stays a payout).
  const before=await position(potId);
- const command={dealerId:'2tn',amountCents:5000000,convertedOn:day,note:'Signed agreement 14 Nov: payouts kept as investment',requestId:req()};
- view=await dealer('d','convert',command);
+ await dealer('d','confirm_costs',{dealerId:'2tn',paymentId:'p2',requestId:req()});
+ await dealer('d','save_draft',{dealerId:'2tn',targetCents:5000000,paymentIds:['p1','p2'],requestId:req()});
+ const command={dealerId:'2tn',convertedOn:day,note:'Signed agreement 14 Nov: payouts kept as investment',requestId:req()};
+ view=await dealer('d','lock_draft',command);
+ assert.equal(view.draft,null,'Locking clears the draft');
  assert.equal(view.totals.convertedCents,5000000);assert.equal(view.totals.owedCents,6000000);
  const alloc=view.conversions[0].allocations;assert.deepEqual(alloc,[{paymentId:'p1',amountCents:3000000},{paymentId:'p2',amountCents:2000000}]);
  assert.equal(view.payouts.find(p=>p.paymentId==='p1').balanceCents,0);assert.equal(view.payouts.find(p=>p.paymentId==='p2').balanceCents,6000000);
  const after=await position(potId);
  assert.equal(after.cashCents-before.cashCents,5000000);assert.equal(after.availableCents-before.availableCents,5000000);assert.equal(after.convertedCapitalCents,5000000);
  assert.equal((await position(otherPot)).availableCents,0,'Other investors are untouched');
- // Payout balances read everywhere through uc_company_paid_cents; no bank movement.
  assert.equal((await db.query("select uc_company_paid_cents('p1') v")).rows[0].v,3000000);
  assert.equal((await db.query("select uc_company_paid_cents('pb') v")).rows[0].v,0);
  assert.equal((await db.query('select count(*) n from uc_bank_movements')).rows[0].n,0);
  const journal=(await db.query("select lines from journal_entries where source_id like 'dealer-conversion:%'")).rows;assert.equal(journal.length,1);
  assert.deepEqual(journal[0].lines.map(l=>[l.accountId,Number(l.debit),Number(l.credit)]),[['acct-opening-review',50000,0],['acct-investor-payable',0,50000]]);
+ // Locked payouts are frozen: no untick, no amount change.
+ await assert.rejects(()=>dealer('d','unconfirm_costs',{dealerId:'2tn',paymentId:'p1',requestId:req()}),/PAYOUT_LOCKED/);
+ await assert.rejects(()=>db.query("update payments set amount=1 where id='p2'"),/BANK_PAYMENT_IMMUTABLE/);
 
  // Same save again returns the stored reply; a changed save is refused.
- const again=await dealer('d','convert',command);assert.equal(again.conversionId,view.conversionId);
+ const again=await dealer('d','lock_draft',command);assert.equal(again.conversionId,view.conversionId);
  assert.equal((await db.query('select count(*) n from uc_dealer_conversions')).rows[0].n,1);
- await assert.rejects(()=>dealer('d','convert',{...command,amountCents:100}),/REQUEST_CHANGED/);
- // Cannot lock more than is still owed; can lock more later.
- await assert.rejects(()=>dealer('d','convert',{...command,amountCents:6000001,requestId:req()}),/CONVERSION_EXCEEDS_OWED/);
- await assert.rejects(()=>dealer('d','convert',{...command,convertedOn:'2099-01-01',requestId:req()}),/FUTURE_DATE/);
- await assert.rejects(()=>dealer('d','convert',{...command,note:'x',requestId:req()}),/INVALID/);
- view=await dealer('d','convert',{...command,amountCents:6000000,note:'Second top-up: rest kept as investment',requestId:req()});
+ await assert.rejects(()=>dealer('d','lock_draft',{...command,note:'A different note here'}),/REQUEST_CHANGED/);
+ await assert.rejects(()=>dealer('d','lock_draft',{...command,requestId:req()}),/DRAFT_EMPTY/);
+ await dealer('d','save_draft',{dealerId:'2tn',targetCents:6000001,paymentIds:['p2'],requestId:req()});
+ await assert.rejects(()=>dealer('d','lock_draft',{...command,requestId:req()}),/DRAFT_SHORT/);
+ await assert.rejects(()=>dealer('d','lock_draft',{...command,convertedOn:'2099-01-01',requestId:req()}),/FUTURE_DATE/);
+ await assert.rejects(()=>dealer('d','lock_draft',{...command,note:'x',requestId:req()}),/INVALID/);
+
+ // Undo: removes the lock, reverses the journal, payouts owed again and editable.
+ await assert.rejects(()=>dealer('d','undo_lock',{dealerId:'2tn',conversionId:view.conversionId,reason:'x',requestId:req()}),/INVALID/);
+ await assert.rejects(()=>dealer('i','undo_lock',{dealerId:'2tn',conversionId:view.conversionId,reason:'Costs were not final',requestId:req()}),/NOT_ALLOWED/);
+ const undoCmd={dealerId:'2tn',conversionId:view.conversionId,reason:'Locked before the costs were final',requestId:req()};
+ view=await dealer('d','undo_lock',undoCmd);
+ assert.equal(view.conversions.length,0);assert.equal(view.totals.convertedCents,0);assert.equal(view.totals.owedCents,11000000);
+ assert.equal(view.reversals.length,1);assert.equal(view.reversals[0].amountCents,5000000);assert.equal(view.reversals[0].reason,'Locked before the costs were final');
+ assert.equal((await position(potId)).availableCents,before.availableCents);
+ assert.equal((await dealer('d','undo_lock',undoCmd)).reversals.length,1,'Same undo again is not repeated');
+ await assert.rejects(()=>dealer('d','undo_lock',{...undoCmd,requestId:req()}),/LOCK_NOT_FOUND/);
+ const undoJournal=(await db.query("select lines from journal_entries where source_id like 'dealer-conversion-undo:%'")).rows;assert.equal(undoJournal.length,1);
+ assert.deepEqual(undoJournal[0].lines.map(l=>[l.accountId,Number(l.debit),Number(l.credit)]),[['acct-opening-review',0,50000],['acct-investor-payable',50000,0]]);
+ view=await dealer('d','unconfirm_costs',{dealerId:'2tn',paymentId:'p1',requestId:req()});
+ assert.equal(view.payouts.find(p=>p.paymentId==='p1').costsConfirmed,false,'Payout editable again after undo');
+ await assert.rejects(()=>dealer('d','lock_draft',command),/REQUEST_CHANGED/,'An undone lock is not re-created by a retry');
+ await assert.rejects(()=>db.query('delete from uc_dealer_conversion_reversals'),/IMMUTABLE|immutable/i);
+
+ // Lock everything owed, in two locks.
+ view=await draftLock(['p1','p2'],5000000);
+ view=await draftLock(['p2'],6000000,{note:'Second top-up: rest kept as investment'});
  assert.equal(view.totals.owedCents,0);assert.equal(view.totals.convertedCents,11000000);assert.equal(view.conversions.length,2);
  assert.equal((await position(potId)).availableCents-before.availableCents,11000000);
- await assert.rejects(()=>dealer('d','convert',{...command,amountCents:1,requestId:req()}),/CONVERSION_EXCEEDS_OWED/);
 
- // History is permanent; converted payouts can no longer be deleted.
+ // History is permanent outside undo; converted payouts can no longer be deleted.
  await assert.rejects(()=>db.query('update uc_dealer_conversions set amount_cents=1'),/IMMUTABLE|immutable/i);
  await assert.rejects(()=>db.query('delete from uc_dealer_conversion_allocations'),/IMMUTABLE|immutable/i);
  await assert.rejects(()=>db.query("delete from payments where id='p1'"),/BANK_PAYMENT_IMMUTABLE/);
@@ -84,7 +141,7 @@ try{
  const mine=await dealer('i','mine');assert.equal(mine.dealer.name,'2TN');assert.equal(mine.totals.convertedCents,11000000);
  assert.equal((await dealer('other','mine')).dealer,null);
  await assert.rejects(()=>dealer('i','view',{dealerId:'2tn'}),/NOT_ALLOWED/);
- await assert.rejects(()=>dealer('i','convert',command),/NOT_ALLOWED/);
+ await assert.rejects(()=>dealer('i','lock_draft',command),/NOT_ALLOWED/);
  const snap=await call('uc_investor_capital','i','snapshot',{});
  assert.equal(snap.entries.filter(e=>e.kind==='capital_converted').length,2);assert.equal(snap.position.availableCents,11000000);
 
@@ -111,7 +168,10 @@ try{
  await db.query("insert into cars(id,make,model,year,status,purchase_price,investor_split,waive_commission) values('own1','Toyota','Veloz',2026,'available',60000,null,true)");
  await cap('fund_car',{carId:'own1',potId,purchaseCents:6000000,investorBasisPoints:4000});
  assert.equal((await position(potId)).availableCents,5000000);
+ // Money already in a car: that lock can no longer be undone.
+ const second=(await dealer('d','view',{dealerId:'2tn'})).conversions.find(c=>c.amountCents===6000000);
+ await assert.rejects(()=>dealer('d','undo_lock',{dealerId:'2tn',conversionId:second.id,reason:'Trying to undo after funding',requestId:req()}),/INVESTMENT_IN_USE/);
 
  const unbalanced=(await db.query("select count(*) n from journal_entries j where (select sum((l->>'debit')::numeric-(l->>'credit')::numeric) from jsonb_array_elements(j.lines) l)<>0")).rows[0].n;assert.equal(unbalanced,0);
- console.log('PASS dealer conversions: link once, totals, oldest-first partial lock, top-up, no bank movement, balanced journal, idempotent retry, owed limit, immutable history, investor isolation, money history, funding from converted capital.');
+ console.log('PASS dealer conversions: link once, totals, costs confirmed, drafts, ordered partial lock, undo with reversing journal, top-up, no bank movement, balanced journal, idempotent retry, owed limit, immutable history, investor isolation, money history, funding from converted capital.');
 }finally{await db.close();}

@@ -38,7 +38,8 @@ try{
  assert.ok(view.payouts.every(p=>p.needsPreparing&&!p.bankReady));
 
  // Lock RM 10,000 first: an unprepared payout is cleared from the opening review.
- view=await dealer('convert',{dealerId:'2tn',amountCents:1000000,convertedOn:day,note:'Kept as investment before preparing'});
+ await dealer('confirm_costs',{dealerId:'2tn',paymentId:'p1'});await dealer('save_draft',{dealerId:'2tn',targetCents:1000000,paymentIds:['p1']});
+ view=await dealer('lock_draft',{dealerId:'2tn',convertedOn:day,note:'Kept as investment before preparing'});
  assert.equal(view.totals.needsPreparingCents,10000000);
 
  // Prepare: each unpaid balance becomes a bill. Running it again adds nothing.
@@ -62,7 +63,8 @@ try{
  assert.deepEqual(out.map(l=>[l.accountId.startsWith('acct-bank-uc-')?'bank':l.accountId,Number(l.debit),Number(l.credit)]),[['acct-ap',20000,0],['bank',0,20000]]);
 
  // A lock after preparing clears the payable instead of the opening review.
- await dealer('convert',{dealerId:'2tn',amountCents:3000000,convertedOn:day,note:'Second lock after preparing'});
+ await dealer('confirm_costs',{dealerId:'2tn',paymentId:'p2'});await dealer('save_draft',{dealerId:'2tn',targetCents:3000000,paymentIds:['p2']});
+ await dealer('lock_draft',{dealerId:'2tn',convertedOn:day,note:'Second lock after preparing'});
  const lock=(await db.query("select lines from journal_entries where source_id like 'dealer-conversion:%' order by created_at desc, id desc limit 1")).rows[0].lines;
  assert.deepEqual(lock.map(l=>[l.accountId,Number(l.debit),Number(l.credit)]),[['acct-ap',30000,0],['acct-investor-payable',0,30000]]);
  await evidence('p2','invoice');
