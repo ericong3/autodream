@@ -70,6 +70,7 @@ try{
  await db.exec(migration('20261105140000_consignment_supplier_adjustments.sql'));
  await db.exec('alter table cars add column delivery_collected boolean');
  await db.exec(migration('20261105141201_outgoing_consignment_collections.sql'));await db.exec(migration('20261105150000_company_panel_bills.sql'));
+ await db.exec(migration('20261119000000_consignment_trade_ins.sql'));
  await assert.rejects(()=>db.exec("update cars set investor_id='i' where id='car-own'"),/USE_INVESTOR_ACCOUNTS/);
  await assert.rejects(()=>db.exec("insert into journal_entries(id,date,description,source_type,source_id,lines) values('legacy-investor-bypass',current_date,'Legacy investor write','car_sold','old','[{\"accountId\":\"acct-inv-investor\",\"debit\":1,\"credit\":0},{\"accountId\":\"acct-investor-payable\",\"debit\":0,\"credit\":1}]')"),/USE_INVESTOR_POSTING/);
  let n=0;const req=()=> 'consign_test_'+String(++n).padStart(8,'0');
@@ -146,6 +147,28 @@ try{
  assert.equal(Number((await db.query("select sum((l->>'debit')::numeric-(l->>'credit')::numeric) amount from journal_entries j cross join lateral jsonb_array_elements(j.lines) l where j.car_id='withheld-case' and l->>'accountId'='acct-inv-own'")).rows[0].amount),0);
  assert.equal((await db.query("select count(*) n from journal_entries j where (select sum((l->>'debit')::numeric-(l->>'credit')::numeric) from jsonb_array_elements(j.lines) l)<>0")).rows[0].n,0);
 
+ // A trade-in pays part of the invoice: the customer owes the rest, the dealer is still settled on the full invoice.
+ const tradeCase=async(id,wo,{incoming=true}={})=>{
+  await db.query("insert into cars(id,make,model,colour,status,purchase_price,settlement_amount,consignment,waive_commission) values($1,'Honda','City','White','delivered',50000,0,$2,true)",[id,{terms:'profit_split',splitPercent:30,dealer:'Dealer'}]);
+  await db.query('insert into customers(id,name,interested_car_id,cash_work_order) values($1,$2,$3,$4)',[id+'-buyer','Buyer',id,wo]);
+  if(incoming)await db.query("insert into cars(id,make,model,status,purchase_price,settlement_amount,trade_in_source_car_id) values($1,'Perodua','Myvi','coming_soon',$2,$3,$4)",[id+'-tradein',wo.tradeInPrice,wo.settlementFigure??0,id]);
+ };
+ await tradeCase('trade-case',{sellingPrice:70000,hasTradeIn:true,tradeInPrice:20000,settlementFigure:5000});
+ const tpv=(await cf('preview_open',{carId:'trade-case'})).preview;assert.equal(tpv.tradeInCents,1500000);assert.equal(tpv.tradeInCarId,'trade-case-tradein');assert.equal(tpv.revenueCents,7000000);
+ const topened=await cf('open',{carId:'trade-case',expectedRevision:tpv.sourceRevision,requestId:req()});
+ assert.equal(topened.payments.find(p=>p.id===topened.case.customer_payment_id).amount,55000);assert.equal(topened.tradeIn.creditCents,1500000);assert.equal(topened.tradeIn.incomingCarId,'trade-case-tradein');
+ const tj=(await db.query("select lines from journal_entries where id='uc:consign-open:trade-case'")).rows[0].lines;
+ assert.ok(tj.some(l=>l.accountId==='acct-trade-in-clearing'&&Number(l.debit)===15000));assert.ok(tj.some(l=>l.accountId==='acct-ar'&&Number(l.credit)===15000));
+ await assert.rejects(()=>db.exec("delete from uc_consignment_trade_ins where car_id='trade-case'"),/IMMUTABLE_HISTORY/);
+ const tdoc=await cf('proof_prepare',{carId:'trade-case',fileName:'agreement.pdf',mimeType:'application/pdf',sizeBytes:100,sha256:(++n).toString(16).padStart(64,'0')});await db.query("insert into storage.objects values('finance-evidence',$1)",[tdoc.path]);await cf('proof_confirm',{documentId:tdoc.documentId});
+ const tclosed=await approve('trade-case');assert.equal(tclosed.case.settlement.netProfitCents,2000000);assert.equal(tclosed.case.settlement.dealerPayableCents,5600000);
+ const tcp=await evidence(topened.case.customer_payment_id,'payment');assert.equal((await call('uc_company_bank_receipt','d','record',{paymentId:topened.case.customer_payment_id,amountCents:5500000,receiptDocumentId:tcp,...bankData(),requestId:req()})).car.money_received,true);
+ // With a bank loan the loan is capped so loan plus trade-in never exceed the invoice.
+ await tradeCase('trade-loan',{sellingPrice:70000,loanAmount:60000,hasTradeIn:true,tradeInPrice:20000,settlementFigure:0});await db.exec("update customers set loan_work_order=cash_work_order,cash_work_order=null where id='trade-loan-buyer'");
+ const tlp=(await cf('preview_open',{carId:'trade-loan'})).preview;assert.equal(tlp.loanCents,5000000);assert.equal(tlp.tradeInCents,2000000);
+ await tradeCase('trade-swap',{sellingPrice:70000,hasTradeIn:true,tradeInMode:'swap',tradeInPrice:20000});await assert.rejects(()=>cf('preview_open',{carId:'trade-swap'}),/CONSIGNMENT_TRADE_IN_REVIEW_REQUIRED/);
+ await tradeCase('trade-missing',{sellingPrice:70000,hasTradeIn:true,tradeInPrice:20000},{incoming:false});await assert.rejects(()=>cf('preview_open',{carId:'trade-missing'}),/TRADE_IN_CAR_REQUIRED/);
+ await tradeCase('trade-over',{sellingPrice:10000,hasTradeIn:true,tradeInPrice:20000});await assert.rejects(()=>cf('preview_open',{carId:'trade-over'}),/TRADE_IN_CREDIT_EXCEEDS_SALE/);
  // Exercise the real database permissions, not only the API's role switch.
  await db.exec("insert into garage_building_staff(id,name,username,password,role,business_access,registration_status) values('sh','Shareholder','shareholder','discarded','shareholder','used_car','active')");
  for(const actor of ['a','sh']){
