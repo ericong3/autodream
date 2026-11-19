@@ -3088,6 +3088,8 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   addMiscCost: async (carId, misc) => {
     const car = get().cars.find((c) => c.id === carId);
     if (!car) return;
+    // The same entry saved twice (a retry, or two screens) is added once.
+    if ((car.miscCosts ?? []).some((m) => m.id === misc.id)) return;
     const updated = [...(car.miscCosts ?? []), misc];
     set((s) => ({ cars: s.cars.map((c) => c.id === carId ? { ...c, miscCosts: updated } : c) }));
     const { error } = await supabase.from('cars').update({ misc_costs: updated }).eq('id', carId);
