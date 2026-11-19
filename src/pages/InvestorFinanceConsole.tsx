@@ -4,6 +4,7 @@ import { companyBankPaymentsEnabled } from '../lib/companyBankPayments';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Plus, Link2, Copy, Users, ChevronLeft, Eye, Search } from 'lucide-react';
 import { useStore } from '../store';
+import { calcCarNetProfitBreakdown } from '../utils/generatePayments';
 import InvestorMoneyDocuments, { type MoneyProofSelection } from '../components/InvestorMoneyDocuments';
 import InvestorFinanceCar, {
   ActionErrorBox, BankPaymentFields, CarCard, CarPhoto, CashConfirm, CASH_NOTE, Field, Figure, LoadState, PendingSaves, Section,
@@ -308,13 +309,13 @@ function AllocateCar(props: Shared & { potId: string; availableCents: number; na
       {results && (results.length === 0 ? <p className="text-gray-500 text-xs">No matching company cars.</p> : (
         <div className="grid sm:grid-cols-2 gap-2">
           {results.map((c) => {
-            const blocked = c.dealPotId ? (c.dealPotId === potId ? `Already in ${name}'s account` : 'Already in another investor account') : (!c.sold && c.blocker ? (MOVE_BLOCKER[c.blocker] ?? c.blocker) : null);
+            const blocked = c.dealPotId ? (c.dealPotId === potId ? `Already in ${name}'s account` : 'Already in another investor account') : (c.blocker ? (MOVE_BLOCKER[c.blocker] ?? c.blocker) : null);
             return (
               <button key={c.id} type="button" disabled={!!blocked} onClick={() => setChosen(c)} className="flex gap-3 items-center text-left rounded-lg border border-obsidian-400/50 p-2 hover:border-gold-500/40 disabled:opacity-60 disabled:hover:border-obsidian-400/50">
                 <CarPhoto src={c.photo} className="w-20 h-14 rounded-md shrink-0" />
                 <div className="min-w-0">
                   <p className="text-white text-sm font-medium truncate">{carTitle(c)}</p>
-                  <p className="text-gray-500 text-[11px]">{c.plate ?? ''} · {c.sold ? `Delivered · profit so far ${formatCents(c.profitCents)}` : `In stock · ${formatCents(c.stockCents)}`}</p>
+                  <p className="text-gray-500 text-[11px]">{c.plate ?? ''} · {c.sold ? 'Delivered' : `In stock · ${formatCents(c.stockCents)}`}</p>
                   {blocked && <p className="text-amber-300 text-[10px] mt-0.5">{blocked}</p>}
                 </div>
               </button>
@@ -369,38 +370,57 @@ function MoveForm({ car, onDone, onCancel, potId, availableCents, name, act, run
   );
 }
 
-function BreakdownFigures({ b, profitCents }: { b: Breakdown; profitCents: number }) {
-  const carCosts = b.costOfCarCents > 0 ? b.costOfCarCents - b.purchaseCents : 0;
+type CarResult = { purchaseCents: number; carCostsCents: number; otherCents: number; saleCents: number; profitCents: number; hasDeal: boolean };
+const toCents = (rm: number) => Math.round((rm || 0) * 100);
+// The car's own figures, the same as the Delivered tab (cars sold before the accounts started have no journals).
+function useCarResult(carId: string): CarResult | null {
+  const car = useStore((st) => st.cars.find((c) => c.id === carId));
+  const customers = useStore((st) => st.customers);
+  const repairs = useStore((st) => st.repairs);
+  if (!car) return null;
+  const b = calcCarNetProfitBreakdown(car, customers, repairs);
+  return {
+    purchaseCents: toCents(car.purchasePrice),
+    carCostsCents: toCents(b.repairCost + b.miscCost + b.disbursementCharges + b.otherCarCost),
+    otherCents: toCents(b.commission + b.intakeCommission + b.sourceCommission + b.panelCost),
+    saleCents: toCents(b.dealPrice + b.addOnRevenue),
+    profitCents: toCents(b.netProfit),
+    hasDeal: b.hasDeal,
+  };
+}
+function BreakdownFigures({ r }: { r: CarResult }) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-      <Figure label="Purchase" value={formatCents(b.purchaseCents)} />
-      <Figure label="Costs on car" value={formatCents(carCosts)} note="Repairs, misc" />
-      <Figure label="Other expenses" value={formatCents(b.expenseCents)} note="Commission etc." />
-      <Figure label="Sale" value={formatCents(b.saleCents)} />
-      <Figure label={profitCents >= 0 ? 'Profit' : 'Loss'} value={formatCents(profitCents)} tone={profitCents >= 0 ? 'text-emerald-300' : 'text-red-400'} />
+      <Figure label="Purchase" value={formatCents(r.purchaseCents)} />
+      <Figure label="Costs on car" value={formatCents(r.carCostsCents)} note="Repairs, misc, disbursements" />
+      <Figure label="Other expenses" value={formatCents(r.otherCents)} note="Commissions, panel" />
+      <Figure label="Sale" value={formatCents(r.saleCents)} note="Deal price + add-ons" />
+      <Figure label={r.profitCents >= 0 ? 'Profit' : 'Loss'} value={formatCents(r.profitCents)} tone={r.profitCents >= 0 ? 'text-emerald-300' : 'text-red-400'} />
     </div>
   );
 }
+const investorResult = (profitCents: number, bp: number) => profitCents > 0 ? Math.round(profitCents * bp / 10000) : profitCents;
 
 type DeliveredCarInfo = { id: string; make: string; model: string; year: number | null; plate: string | null; photo: string | null; profitCents: number; breakdown: Breakdown; saleRecorded: boolean };
 function DeliveredForm({ car, share: initialShare, note: initialNote, onDone, onCancel, potId, name, act, run, errorBox }: Shared & { car: DeliveredCarInfo; share: string; note: string; onDone: () => void; onCancel: () => void; potId: string; name: string }) {
   const [share, setShare] = useState(initialShare);
   const [note, setNote] = useState(initialNote);
   const bp = parsePercentToBasisPoints(share), slot = `deal:${car.id}`;
-  const result = bp === null ? null : car.profitCents > 0 ? Math.round(car.profitCents * bp / 10000) : car.profitCents;
+  const figures = useCarResult(car.id);
+  const result = bp === null || !figures ? null : investorResult(figures.profitCents, bp);
   return (
     <div className="space-y-3">
       <div className="flex gap-3 items-center">
         <CarPhoto src={car.photo} className="w-24 h-16 rounded-lg" />
         <div><p className="text-white text-sm font-semibold">{carTitle(car)}</p><p className="text-gray-500 text-xs">{car.plate ?? ''} · Delivered</p></div>
       </div>
-      <BreakdownFigures b={car.breakdown} profitCents={car.profitCents} />
-      {!car.saleRecorded && <p className="text-amber-300 text-[11px]">The sale is not in the accounts yet, so the profit is not complete.</p>}
+      {figures ? <BreakdownFigures r={figures} /> : <p className="text-gray-500 text-xs">Loading car figures…</p>}
+      {figures && !figures.hasDeal && <p className="text-amber-300 text-[11px]">No deal recorded on this car yet, so the sale figure may be incomplete.</p>}
       <div className="grid sm:grid-cols-2 gap-3">
         <Field label={`${name}'s profit share (%)`}><input inputMode="decimal" className="input w-full px-3 py-2 rounded-lg text-sm" value={share} onChange={(e) => setShare(e.target.value)} /></Field>
         <Field label="Note (optional)"><input className="input w-full px-3 py-2 rounded-lg text-sm" maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} placeholder={`e.g. Bought with ${name}'s money`} /></Field>
       </div>
-      {result !== null && <p className="text-gray-300 text-xs">{name} gets now: <span className={`font-semibold ${result >= 0 ? 'text-gold-300' : 'text-red-400'}`}>{formatCents(result)}</span>{car.profitCents <= 0 ? ` (a loss is ${name}'s in full)` : ''}</p>}
+      {result !== null && <p className="text-gray-300 text-xs">{name} gets now: <span className={`font-semibold ${result >= 0 ? 'text-gold-300' : 'text-red-400'}`}>{formatCents(result)}</span>{figures && figures.profitCents <= 0 ? ` (a loss is ${name}'s in full)` : ''}</p>}
       <p className="text-gray-500 text-[11px]">Purchase and costs were {name}'s money, and the sale money already paid them back. Saved as a draft: you can change the % or remove it until you confirm. Nothing moves in {name}'s account until then.</p>
       <div className="flex gap-2">
         <button type="button" disabled={bp === null || act.busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40"
@@ -413,65 +433,77 @@ function DeliveredForm({ car, share: initialShare, note: initialNote, onDone, on
 }
 
 function DeliveredCars({ deals, potId, name, ...shared }: Shared & { deals: DealsQuery; potId: string; name: string }) {
-  const { act, run, setConfirm, errorBox, canWrite } = shared;
   const [editing, setEditing] = useState<Deal | null>(null);
-  const [confirming, setConfirming] = useState<{ deal: Deal; amount: string; note: string } | null>(null);
+  const [confirming, setConfirming] = useState<Deal | null>(null);
   const done = () => { setEditing(null); setConfirming(null); void deals.reload(); };
   if (editing) return <DeliveredForm car={{ ...editing, id: editing.carId }} share={String(editing.investorBasisPoints / 100)} note={editing.note} onDone={done} onCancel={() => setEditing(null)} potId={potId} name={name} {...shared} />;
-  if (confirming) {
-    const d = confirming.deal, raw = confirming.amount.trim(), negative = raw.startsWith('-'), cents = parseRinggit(negative ? raw.slice(1) : raw), slot = `deal-confirm:${d.carId}`;
-    const amount = cents === null ? null : (negative ? -cents : cents);
-    const inRange = amount !== null && (d.profitCents >= 0 ? amount >= 0 && amount <= d.profitCents : amount >= d.profitCents && amount <= 0);
-    const ok = inRange && confirming.note.trim().length >= 3 && act.busy === null;
-    return (
-      <div className="space-y-3">
-        <p className="text-white text-sm font-semibold">Confirm final result · {carTitle(d)}</p>
-        <BreakdownFigures b={d.breakdown} profitCents={d.profitCents} />
-        <div className="grid sm:grid-cols-2 gap-3">
-          <Field label={`Final amount for ${name} (RM)`} hint={d.profitCents >= 0 ? 'You can adjust it, up to the car profit' : 'A loss is entered with a minus sign'}><input inputMode="decimal" className="input w-full px-3 py-2 rounded-lg text-sm" value={confirming.amount} onChange={(e) => setConfirming({ ...confirming, amount: e.target.value })} /></Field>
-          <Field label="Note"><input className="input w-full px-3 py-2 rounded-lg text-sm" maxLength={500} value={confirming.note} onChange={(e) => setConfirming({ ...confirming, note: e.target.value })} placeholder="e.g. All costs checked" /></Field>
-        </div>
-        <div className="flex gap-2">
-          <button type="button" disabled={!ok} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40"
-            onClick={() => amount !== null && setConfirm({ title: `Confirm ${name}'s result?`, label: 'Confirm',
-              message: `${formatCents(amount)} from ${carTitle(d)} goes ${amount >= 0 ? 'into' : 'out of'} ${name}'s account. No bank money moves. Once confirmed it cannot be changed.`,
-              go: async () => { if (await run(slot, 'confirm_deal', { potId, carId: d.carId, shareCents: amount, note: confirming.note.trim() }, `Confirm · ${carTitle(d)}`)) done(); } })}>{act.busy === slot ? 'Saving…' : 'Confirm'}</button>
-          <button type="button" onClick={() => setConfirming(null)} className="text-xs px-3 py-2 rounded-lg text-gray-400 border border-obsidian-400/60">Cancel</button>
-        </div>
-        {errorBox(slot)}
-      </div>
-    );
-  }
+  if (confirming) return <ConfirmDelivered d={confirming} onDone={done} onCancel={() => setConfirming(null)} potId={potId} name={name} {...shared} />;
   if (!deals.data || deals.data.deals.length === 0) return null;
   return (
     <div className="space-y-2">
       <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest">Delivered cars ({deals.data.deals.length})</p>
-      {deals.data.deals.map((d) => (
-        <div key={d.carId} className="bg-card-gradient border border-obsidian-400/70 rounded-xl p-3 space-y-2">
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex gap-3 items-center min-w-0">
-              <CarPhoto src={d.photo} className="w-16 h-11 rounded-md shrink-0" />
-              <div className="min-w-0">
-                <p className="text-white text-sm font-medium truncate">{carTitle(d)} <span className="text-gray-500 text-[11px]">{d.plate ?? ''}</span></p>
-                <p className="text-gray-500 text-[11px]">{basisPointsLabel(d.investorBasisPoints)} share{d.note ? ` · ${d.note}` : ''}</p>
-              </div>
-            </div>
-            <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${d.state === 'confirmed' ? 'border-emerald-500/40 text-emerald-300' : 'border-amber-500/40 text-amber-300'}`}>{d.state === 'confirmed' ? 'Confirmed' : 'Waiting to confirm'}</span>
+      {deals.data.deals.map((d) => <DeliveredRow key={d.carId} d={d} onEdit={() => setEditing(d)} onConfirm={() => setConfirming(d)} onDone={done} potId={potId} name={name} {...shared} />)}
+    </div>
+  );
+}
+
+function DeliveredRow({ d, onEdit, onConfirm, onDone, potId, name, act, run, setConfirm, errorBox, canWrite }: Shared & { d: Deal; onEdit: () => void; onConfirm: () => void; onDone: () => void; potId: string; name: string }) {
+  const figures = useCarResult(d.carId);
+  const confirmed = d.state === 'confirmed';
+  const estimate = figures ? investorResult(figures.profitCents, d.investorBasisPoints) : null;
+  return (
+    <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl p-3 space-y-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex gap-3 items-center min-w-0">
+          <CarPhoto src={d.photo} className="w-16 h-11 rounded-md shrink-0" />
+          <div className="min-w-0">
+            <p className="text-white text-sm font-medium truncate">{carTitle(d)} <span className="text-gray-500 text-[11px]">{d.plate ?? ''}</span></p>
+            <p className="text-gray-500 text-[11px]">{basisPointsLabel(d.investorBasisPoints)} share{d.note ? ` · ${d.note}` : ''}</p>
           </div>
-          <BreakdownFigures b={d.breakdown} profitCents={d.profitCents} />
-          {d.state === 'confirmed'
-            ? <p className={`text-xs ${(d.shareCents ?? 0) >= 0 ? 'text-emerald-300' : 'text-red-400'}`}>{formatCents(d.shareCents ?? 0)} {(d.shareCents ?? 0) >= 0 ? 'credited to' : 'charged to'} {name}{d.confirmNote ? ` · ${d.confirmNote}` : ''}</p>
-            : <>
-              {d.estimatedShareCents !== null && <p className="text-gray-300 text-xs">{name} gets now: <span className={`font-semibold ${d.estimatedShareCents >= 0 ? 'text-gold-300' : 'text-red-400'}`}>{formatCents(d.estimatedShareCents)}</span></p>}
-              {canWrite && <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={() => setEditing(d)} className="btn-ghost text-xs px-3 py-1.5 rounded-lg">Change %</button>
-                <button type="button" disabled={act.busy !== null} onClick={() => setConfirm({ title: 'Remove this car?', label: 'Remove', message: `${carTitle(d)} will no longer be in ${name}'s account.`, go: async () => { if (await run(`deal-remove:${d.carId}`, 'remove_deal', { potId, carId: d.carId }, `Remove · ${carTitle(d)}`)) done(); } })} className="text-xs px-3 py-1.5 rounded-lg text-gray-400 border border-obsidian-400/60">Remove</button>
-                {d.saleRecorded && <button type="button" onClick={() => setConfirming({ deal: d, amount: ((d.estimatedShareCents ?? 0) / 100).toFixed(2), note: '' })} className="btn-gold text-xs px-3 py-1.5 rounded-lg">Confirm final result</button>}
-              </div>}
-              {errorBox(`deal-remove:${d.carId}`)}
-            </>}
         </div>
-      ))}
+        <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${confirmed ? 'border-emerald-500/40 text-emerald-300' : 'border-amber-500/40 text-amber-300'}`}>{confirmed ? 'Confirmed' : 'Waiting to confirm'}</span>
+      </div>
+      {confirmed
+        ? <p className={`text-xs ${(d.shareCents ?? 0) >= 0 ? 'text-emerald-300' : 'text-red-400'}`}>Car {(d.profitCents ?? 0) >= 0 ? 'profit' : 'loss'} {formatCents(d.profitCents)} · {formatCents(d.shareCents ?? 0)} {(d.shareCents ?? 0) >= 0 ? 'credited to' : 'charged to'} {name}{d.confirmNote ? ` · ${d.confirmNote}` : ''}</p>
+        : <>
+          {figures ? <BreakdownFigures r={figures} /> : <p className="text-gray-500 text-xs">Loading car figures…</p>}
+          {estimate !== null && <p className="text-gray-300 text-xs">{name} gets now: <span className={`font-semibold ${estimate >= 0 ? 'text-gold-300' : 'text-red-400'}`}>{formatCents(estimate)}</span></p>}
+          {canWrite && <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={onEdit} className="btn-ghost text-xs px-3 py-1.5 rounded-lg">Change %</button>
+            <button type="button" disabled={act.busy !== null} onClick={() => setConfirm({ title: 'Remove this car?', label: 'Remove', message: `${carTitle(d)} will no longer be in ${name}'s account.`, go: async () => { if (await run(`deal-remove:${d.carId}`, 'remove_deal', { potId, carId: d.carId }, `Remove · ${carTitle(d)}`)) onDone(); } })} className="text-xs px-3 py-1.5 rounded-lg text-gray-400 border border-obsidian-400/60">Remove</button>
+            {figures && <button type="button" onClick={onConfirm} className="btn-gold text-xs px-3 py-1.5 rounded-lg">Confirm final result</button>}
+          </div>}
+          {errorBox(`deal-remove:${d.carId}`)}
+        </>}
+    </div>
+  );
+}
+
+function ConfirmDelivered({ d, onDone, onCancel, potId, name, act, run, setConfirm, errorBox }: Shared & { d: Deal; onDone: () => void; onCancel: () => void; potId: string; name: string }) {
+  const figures = useCarResult(d.carId);
+  const profit = figures?.profitCents ?? 0;
+  const [amountText, setAmountText] = useState(() => (figures ? investorResult(figures.profitCents, d.investorBasisPoints) / 100 : 0).toFixed(2));
+  const [note, setNote] = useState('');
+  const raw = amountText.trim(), negative = raw.startsWith('-'), cents = parseRinggit(negative ? raw.slice(1) : raw), slot = `deal-confirm:${d.carId}`;
+  const amount = cents === null ? null : (negative ? -cents : cents);
+  const inRange = amount !== null && (profit >= 0 ? amount >= 0 && amount <= profit : amount >= profit && amount <= 0);
+  const ok = !!figures && inRange && note.trim().length >= 3 && act.busy === null;
+  return (
+    <div className="space-y-3">
+      <p className="text-white text-sm font-semibold">Confirm final result · {carTitle(d)}</p>
+      {figures ? <BreakdownFigures r={figures} /> : <p className="text-gray-500 text-xs">Loading car figures…</p>}
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label={`Final amount for ${name} (RM)`} hint={profit >= 0 ? 'You can adjust it, up to the car profit' : 'A loss is entered with a minus sign'}><input inputMode="decimal" className="input w-full px-3 py-2 rounded-lg text-sm" value={amountText} onChange={(e) => setAmountText(e.target.value)} /></Field>
+        <Field label="Note"><input className="input w-full px-3 py-2 rounded-lg text-sm" maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. All costs checked" /></Field>
+      </div>
+      <div className="flex gap-2">
+        <button type="button" disabled={!ok} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40"
+          onClick={() => amount !== null && setConfirm({ title: `Confirm ${name}'s result?`, label: 'Confirm',
+            message: `Car ${profit >= 0 ? 'profit' : 'loss'} ${formatCents(profit)}. ${formatCents(amount)} goes ${amount >= 0 ? 'into' : 'out of'} ${name}'s account. No bank money moves. Once confirmed it cannot be changed.`,
+            go: async () => { if (await run(slot, 'confirm_deal', { potId, carId: d.carId, shareCents: amount, profitCents: profit, note: note.trim() }, `Confirm · ${carTitle(d)}`)) onDone(); } })}>{act.busy === slot ? 'Saving…' : 'Confirm'}</button>
+        <button type="button" onClick={onCancel} className="text-xs px-3 py-2 rounded-lg text-gray-400 border border-obsidian-400/60">Cancel</button>
+      </div>
+      {errorBox(slot)}
     </div>
   );
 }
