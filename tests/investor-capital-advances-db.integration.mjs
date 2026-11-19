@@ -7,7 +7,7 @@ import bcrypt from 'bcryptjs';
 import {productionFinanceFixture} from './helpers/production-finance-fixture.mjs';
 const db=await productionFinanceFixture(process.argv[2]);
 try{
- for(const f of ['20261120000100_investor_purchase_before_opening.sql','20261120000200_investor_capital_advances.sql'])await db.exec(readFileSync(new URL('../supabase/migrations/'+f,import.meta.url),'utf8'));
+ for(const f of ['20261120000100_investor_purchase_before_opening.sql','20261120000200_investor_capital_advances.sql','20261120000300_register_car_advance.sql'])await db.exec(readFileSync(new URL('../supabase/migrations/'+f,import.meta.url),'utf8'));
  const password=bcrypt.hashSync('Disposable-test-only',10);
  for(const [id,role] of [['d','director'],['a','admin'],['i','investor']]){await db.query("insert into users(id,name,username,password,role,business_access) values($1,$1,$1,$2,$3,case when $3='director' then 'both' else 'used_car' end)",[id,password,role]);await db.query("insert into garage_building_staff(id,name,username,password,role,business_access,registration_status,enabled) values($1,$1,$1,$2,$3,case when $3='director' then 'both' else 'used_car' end,'active',true)",[id,password,role]);}
  let serial=0;const req=()=>'inv_advance_'+String(++serial).padStart(8,'0');const call=async(fn,actor,action,data={})=>(await db.query('select '+fn+'($1,$2,$3) result',[actor,action,data])).rows[0].result;
@@ -43,5 +43,16 @@ try{
  assert.ok(snap.entries.some(e=>e.kind==='capital_advance'&&Number(e.amountCents)===9000000));
  assert.equal((await db.query("select count(*) n from journal_entries j where (select sum((l->>'debit')::numeric-(l->>'credit')::numeric) from jsonb_array_elements(j.lines) l)<>0")).rows[0].n,0);
  assert.equal((await db.query("select has_function_privilege('anon','uc_investor_capital(text,text,jsonb)','execute') allowed")).rows[0].allowed,false);
+ // Add Car: register a new car for the investor with money fronted.
+ const pot2=(await cap('create_profile',{name:'Second'})).potId;
+ const car={id:'newcar',make:'Perodua',model:'Myvi',colour:'White',year:2020,purchase_price:30000,status:'available'};
+ const reg=async data=>(await db.query('select uc_register_investor_car($1,$2) r',['d',data])).rows[0].r;
+ await assert.rejects(()=>reg({car,potId:pot2,investorBasisPoints:4000,requestId:req()}),/INSUFFICIENT_FUNDS/);
+ await assert.rejects(()=>reg({car,potId:pot2,investorBasisPoints:4000,advanceReason:'x|y',requestId:req()}),/INVALID/);
+ const regInput={car,potId:pot2,investorBasisPoints:4000,advanceReason:'Capital coming later',requestId:req()};
+ const done=await reg(regInput);assert.equal(done.car.investor_funded,true);
+ await reg(regInput);
+ const p2=await pos(pot2);assert.equal(Number(p2.advanceWaitingCents),3000000);
+ assert.equal(Number((await db.query("select count(*) n from uc_investor_advances where pot_id=$1",[pot2])).rows[0].n),1);
  console.log('PASS capital advances: director-only with reason, exact shortfall, replay-safe, purchase before opening, withdrawals blocked while waiting, capital fills the gap first, shown in history');
 }finally{await db.close();}

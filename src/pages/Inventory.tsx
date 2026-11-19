@@ -212,7 +212,7 @@ export default function Inventory() {
   // New investor-funded registration. Off unless VITE_INVESTOR_FINANCE==='1'; the server gates it too.
   const investorFinanceOn = import.meta.env.VITE_INVESTOR_FINANCE === '1' && isDirector;
   const loadAll = useStore((s) => s.loadAll);
-  const [funding, setFunding] = useState<{ potId: string; percent: string }>({ potId: '', percent: '40' });
+  const [funding, setFunding] = useState<{ potId: string; percent: string; advanceReason?: string }>({ potId: '', percent: '40' });
   const investorAct = useInvestorAction(investorFinanceOn || companyBankPaymentsEnabled ? currentUser?.id : undefined);
   const [companySeller, setCompanySeller] = useState('');
   const pendingRegistrations = investorAct.pending.filter((p) => p.slot.startsWith('car-registration:'));
@@ -689,13 +689,14 @@ export default function Inventory() {
       if (basisPoints === null) { setSubmitError('Enter an investor profit share between 0% and 100%.'); return; }
       if (!profile) { setSubmitError('Choose an investor account from the list.'); return; }
       if (purchaseCents <= 0) { setSubmitError('Enter the purchase price before funding from an investor account.'); return; }
-      if (profile.position.availableCents < purchaseCents) { setSubmitError(`${profile.name} has ${formatCents(profile.position.availableCents)} available, which is not enough for this purchase.`); return; }
+      const short = profile.position.availableCents < purchaseCents;
+      if (short && (funding.advanceReason ?? '').trim().length < 3) { setSubmitError(`${profile.name} has ${formatCents(profile.position.availableCents)} available. Write a reason for the company to front the rest, or choose company funding.`); return; }
       const row = carToRow({ ...newCar, investorId: undefined, investorSplit: undefined }) as Record<string, unknown>;
       const car = Object.fromEntries(Object.entries(row).filter(([k, v]) => INVESTOR_REGISTRATION_KEYS.has(k) && v !== undefined && v !== null));
       setSubmitting(true);
       setSubmitError('');
       try {
-        const result = await investorAct.run<{ car: { id: string } }>(`car-registration:${newCar.id}`, 'register_car', { car, potId: funding.potId, investorBasisPoints: basisPoints }, `Register ${newCar.year} ${newCar.make} ${newCar.model}`);
+        const result = await investorAct.run<{ car: { id: string } }>(`car-registration:${newCar.id}`, 'register_car', { car, potId: funding.potId, investorBasisPoints: basisPoints, ...(short ? { advanceReason: (funding.advanceReason ?? '').trim() } : {}) }, `Register ${newCar.year} ${newCar.make} ${newCar.model}`);
         if (result) await finishInvestorRegistration(result.car.id);
       } finally {
         setSubmitting(false);
@@ -2305,7 +2306,7 @@ export default function Inventory() {
                 >
                   <option value="">Company (AutoDream pays)</option>
                   {(investorProfiles.data?.profiles ?? []).map((p) => (
-                    <option key={p.potId} value={p.potId} disabled={p.position.availableCents < Math.round((form.purchasePrice || 0) * 100)}>
+                    <option key={p.potId} value={p.potId}>
                       {p.name} — {formatCents(p.position.availableCents)} available
                     </option>
                   ))}
@@ -2328,6 +2329,11 @@ export default function Inventory() {
                     />
                     <p className="text-gray-600 text-xs mt-1">AutoDream keeps the rest. The purchase price is reserved from this investor account; record the bank payment later on the investor car page.</p>
                   </FormField>
+                  {(() => { const prof = investorProfiles.data?.profiles.find((p) => p.potId === funding.potId); const need = Math.round((form.purchasePrice || 0) * 100) - (prof?.position.availableCents ?? 0); return prof && need > 0 ? (
+                    <FormField label="Reason for fronting the money">
+                      <p className="text-amber-300 text-xs mb-1">{prof.name} has only {formatCents(prof.position.availableCents)} available. The company fronts {formatCents(need)} until {prof.name}'s capital is locked or received. No withdrawals until then.</p>
+                      <input className={inputCls()} maxLength={500} value={funding.advanceReason ?? ''} onChange={(e) => setFunding({ ...funding, advanceReason: e.target.value.replace(/[|]/g, '') })} placeholder="e.g. Capital coming from 2TN payouts" />
+                    </FormField>) : null; })()}
                 </div>
               )}
               <PendingSaves pending={pendingRegistrations} busy={investorAct.busy} onRetry={(s) => void retryInvestorRegistration(s)} onDiscard={investorAct.discard} />

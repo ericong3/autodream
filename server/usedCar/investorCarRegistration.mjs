@@ -54,11 +54,12 @@ export function validateRegistrationCar(car){
 }
 
 export function validateRegistration(body){
- onlyKeys(body,['action','car','potId','investorBasisPoints','requestId']);
+ onlyKeys(body,['action','car','potId','investorBasisPoints','advanceReason','requestId']);
+ if(body.advanceReason!==undefined&&(typeof body.advanceReason!=='string'||body.advanceReason.trim().length<3||body.advanceReason.length>500||body.advanceReason.includes('|')))throw bad('Write a short reason for fronting the money.');
  if(!uuid(body.potId))throw bad('Choose an investor account.');
  if(!Number.isInteger(body.investorBasisPoints)||body.investorBasisPoints<0||body.investorBasisPoints>10000)throw bad('Enter an investor profit share between 0% and 100%.');
  if(typeof body.requestId!=='string'||!REQ.test(body.requestId))throw bad('A save reference is required.');
- return {car:validateRegistrationCar(body.car),potId:body.potId,investorBasisPoints:body.investorBasisPoints,requestId:body.requestId};
+ return {car:validateRegistrationCar(body.car),potId:body.potId,investorBasisPoints:body.investorBasisPoints,...(body.advanceReason!==undefined?{advanceReason:body.advanceReason.trim()}:{}),requestId:body.requestId};
 }
 
 const ERRORS={
