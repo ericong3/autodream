@@ -12,7 +12,7 @@ import InvestorFinanceCar, {
 import {
   basisPointsLabel, carTitle, entryLabel, formatCents, formatDay, investorRequest, parsePercentToBasisPoints, parseRinggit,
   useInvestorAction, useInvestorQuery, WITHDRAWAL_LABEL,
-  type Bank, type FundableCar, type InvestorProfile, type InvestorSnapshot, type ProfileList, type CarSummary, type Withdrawal, type WithdrawalDestination,
+  type Bank, type InvestorProfile, type InvestorSnapshot, type ProfileList, type CarSummary, type Withdrawal, type WithdrawalDestination,
 } from '../lib/investorFinance';
 
 type Act = ReturnType<typeof useInvestorAction>;
@@ -186,17 +186,7 @@ function Account({ profile, actorId, onBack, onChanged, ...shared }: Shared & { 
         )}
         {canWrite && (
           <Section title="Allocate a car">
-            <AllocateCar potId={profile.potId} availableCents={pos.availableCents} name={profile.name} {...s} />
-          </Section>
-        )}
-        {canWrite && (
-          <Section title={`Company cars bought with ${profile.name}'s money`}>
-            <InvestorDeals potId={profile.potId} name={profile.name} {...s} />
-          </Section>
-        )}
-        {canWrite && (
-          <Section title="Move a company stock car">
-            <MoveCompanyCar potId={profile.potId} availableCents={pos.availableCents} name={profile.name} {...s} />
+            <AllocateChoice potId={profile.potId} availableCents={pos.availableCents} name={profile.name} {...s} />
           </Section>
         )}
         <Section title="Withdrawals" hint={`${profile.withdrawals.filter((w) => w.state === 'requested' || w.state === 'approved').length} open`} defaultOpen={profile.withdrawals.some((w) => w.state === 'requested')}>
@@ -380,6 +370,27 @@ function InvestorDeals({ potId, name, act, run, setConfirm, errorBox }: Shared &
   );
 }
 
+function AllocateChoice(props: Shared & { potId: string; availableCents: number; name: string }) {
+  const [mode, setMode] = useState<'share' | 'move'>('share');
+  const options = [
+    { id: 'share' as const, title: 'Share profit only', note: `Car stays a company car. Mark it as bought with ${props.name}'s money; keep the share as a draft and confirm it when the profit is final. Use for sold or older cars.` },
+    { id: 'move' as const, title: `Move car into ${props.name}'s account`, note: `For a car still in stock. It moves with its purchase and costs, and later bills come from ${props.name}'s money.` },
+  ];
+  return (
+    <div className="space-y-3">
+      <div className="grid sm:grid-cols-2 gap-2">
+        {options.map((o) => (
+          <button key={o.id} type="button" onClick={() => setMode(o.id)} className={`text-left rounded-lg border p-3 transition-colors ${mode === o.id ? 'border-gold-500/60 bg-gold-500/10' : 'border-obsidian-400/50 hover:border-gold-500/30'}`}>
+            <p className={`text-sm font-semibold ${mode === o.id ? 'text-gold-300' : 'text-white'}`}>{o.title}</p>
+            <p className="text-gray-500 text-[11px] mt-0.5">{o.note}</p>
+          </button>
+        ))}
+      </div>
+      {mode === 'share' ? <InvestorDeals {...props} /> : <MoveCompanyCar {...props} />}
+    </div>
+  );
+}
+
 type MovableCar = { id: string; make: string; model: string; year: number | null; car_plate: string | null; photo: string | null; purchaseCents: number; stockCents: number; blocker: string | null };
 const MOVE_BLOCKER: Record<string, string> = {
   COMPANY_BILLS_UNPAID: 'Has unpaid company bills. Pay them, or mark them paid before the bank start date, first.',
@@ -450,59 +461,6 @@ function MoveCompanyCar({ potId, availableCents, name, act, run, setConfirm, err
   );
 }
 
-function AllocateCar({ potId, availableCents, name, act, run, setConfirm, errorBox }: Shared & { potId: string; availableCents: number; name: string }) {
-  const cars = useInvestorQuery<{ cars: FundableCar[] }>(`fundable:${potId}`, () => investorRequest<{ cars: FundableCar[] }>('fundable_cars', { page: 0 }));
-  const [chosen, setChosen] = useState<FundableCar | null>(null);
-  const [share, setShare] = useState('40');
-  const [advanceReason, setAdvanceReason] = useState('');
-  const bp = parsePercentToBasisPoints(share);
-  if (chosen) {
-    const purchaseCents = Math.round(chosen.purchase_price * 100), slot = `fund:${chosen.id}`;
-    const short = purchaseCents > availableCents;
-    return (
-      <div className="space-y-3">
-        <div className="flex gap-3 items-center">
-          <CarPhoto src={chosen.photo} className="w-24 h-16 rounded-lg" />
-          <div><p className="text-white text-sm font-semibold">{carTitle(chosen)}</p><p className="text-gray-500 text-xs">{chosen.car_plate ?? ''}</p></div>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Figure label="Purchase price" value={formatCents(purchaseCents)} note="From the car record" />
-          <Field label="Investor profit share (%)"><input inputMode="decimal" className="input w-full px-3 py-2 rounded-lg text-sm" value={share} onChange={(e) => setShare(e.target.value)} /></Field>
-        </div>
-        {short && (
-          <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 space-y-2">
-            <p className="text-amber-200 text-[11px]">{name} has only {formatCents(availableCents)} available. You can still allocate: the company fronts {formatCents(purchaseCents - availableCents)} until {name}'s capital is locked or received. No withdrawals are allowed until then.</p>
-            <Field label="Reason for fronting the money"><input className="input w-full px-3 py-2 rounded-lg text-sm" maxLength={500} value={advanceReason} onChange={(e) => setAdvanceReason(e.target.value)} placeholder="e.g. Capital coming from 2TN payouts" /></Field>
-          </div>
-        )}
-        <div className="flex gap-2">
-          <button type="button" disabled={bp === null || (short && advanceReason.trim().length < 3) || act.busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40"
-            onClick={() => bp !== null && setConfirm({ title: short ? 'Allocate before the money is in?' : 'Allocate this car?', label: 'Allocate car',
-              message: `${carTitle(chosen)} will be funded from ${name}'s account. ${formatCents(purchaseCents)} is reserved until the purchase payment is recorded. Investor share of profit: ${basisPointsLabel(bp)}.${short ? ` The company fronts ${formatCents(purchaseCents - availableCents)} until ${name}'s capital comes in. This cannot be undone.` : ''}`,
-              go: async () => { if (await run(slot, 'fund_car', { carId: chosen.id, potId, purchaseCents, investorBasisPoints: bp, ...(short ? { advanceReason: advanceReason.trim() } : {}) }, `Allocate ${carTitle(chosen)} · ${name}`)) { setChosen(null); setAdvanceReason(''); void cars.reload(); } } })}>
-            {act.busy === slot ? 'Saving…' : 'Allocate car'}
-          </button>
-          <button type="button" onClick={() => setChosen(null)} className="text-xs px-3 py-2 rounded-lg text-gray-400 border border-obsidian-400/60">Choose another</button>
-        </div>
-        {errorBox(slot)}
-      </div>
-    );
-  }
-  return (
-    <LoadState loading={cars.loading} error={cars.error} onRetry={() => void cars.reload()}>
-      {cars.data && (cars.data.cars.length === 0 ? <p className="text-gray-500 text-xs">No cars are available to fund right now.</p> : (
-        <div className="grid sm:grid-cols-2 gap-2">
-          {cars.data.cars.map((c) => (
-            <button key={c.id} type="button" onClick={() => setChosen(c)} className="flex gap-3 items-center text-left rounded-lg border border-obsidian-400/50 p-2 hover:border-gold-500/40">
-              <CarPhoto src={c.photo} className="w-20 h-14 rounded-md shrink-0" />
-              <div className="min-w-0"><p className="text-white text-sm font-medium truncate">{carTitle(c)}</p><p className="text-gray-500 text-[11px]">{c.car_plate ?? ''} · {formatCents(Math.round(c.purchase_price * 100))}</p></div>
-            </button>
-          ))}
-        </div>
-      ))}
-    </LoadState>
-  );
-}
 
 function WithdrawalRow({ w, destination, potId, name, act, run, canWrite, banks, setConfirm, errorBox }: Shared & { w: Withdrawal; destination?:WithdrawalDestination; potId: string; name: string }) {
   const [panel, setPanel] = useState<null | 'reject' | 'cancel' | 'paid' | 'destination'>(null);
