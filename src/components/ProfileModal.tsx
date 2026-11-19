@@ -116,7 +116,19 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
 
   const displayRole = currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1);
 
-  const changePasswordSection = (
+  // Secure sign-in keeps passwords on the server only; they change through the emailed reset link.
+  const changePasswordSection = currentUser.authSource === 'server' ? (
+    <div className="pt-2">
+      <div className="border-t border-white/[0.07] pt-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Lock size={13} className="text-gray-400" />
+          <span className="text-[11px] text-gray-400 font-semibold uppercase tracking-wider">Change Password</span>
+        </div>
+        <p className="text-gray-400 text-xs">For security, your password is changed by email. We send a link to the email on your account, and you choose a new password there.</p>
+        <a href="/account/forgot" className="block w-full text-center py-2.5 rounded-lg border border-white/10 bg-obsidian-700/60 hover:bg-obsidian-600/60 text-white text-sm font-medium transition-all">Email me a reset link</a>
+      </div>
+    </div>
+  ) : (
     <div className="pt-2">
       <div className="border-t border-white/[0.07] pt-4">
         <div className="flex items-center gap-2 mb-4">
