@@ -190,6 +190,11 @@ function Account({ profile, actorId, onBack, onChanged, ...shared }: Shared & { 
           </Section>
         )}
         {canWrite && (
+          <Section title={`Company cars bought with ${profile.name}'s money`}>
+            <InvestorDeals potId={profile.potId} name={profile.name} {...s} />
+          </Section>
+        )}
+        {canWrite && (
           <Section title="Move a company stock car">
             <MoveCompanyCar potId={profile.potId} availableCents={pos.availableCents} name={profile.name} {...s} />
           </Section>
@@ -256,6 +261,122 @@ function CapitalReceived({ potId, name, act, run, banks, setConfirm, errorBox }:
       <button type="submit" disabled={!ok || act.busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40">{act.busy === slot ? 'Saving…' : 'Record capital'}</button>
       {errorBox(slot)}
     </form>
+  );
+}
+
+type DealCar = { id: string; make: string; model: string; year: number | null; plate: string | null; photo: string | null; status: string | null; sold: boolean; profitCents: number; dealPotId: string | null };
+type Deal = { carId: string; make: string; model: string; year: number | null; plate: string | null; photo: string | null; status: string | null; sold: boolean; profitCents: number; investorBasisPoints: number; note: string; state: 'draft' | 'confirmed'; estimatedShareCents: number | null; shareCents: number | null; confirmNote: string | null; confirmedAt: string | null };
+function InvestorDeals({ potId, name, act, run, setConfirm, errorBox }: Shared & { potId: string; name: string }) {
+  const deals = useInvestorQuery<{ deals: Deal[] }>(`deals:${potId}`, () => investorRequest<{ deals: Deal[] }>('deals_list', { potId }));
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<DealCar[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const [editing, setEditing] = useState<{ carId: string; title: string; share: string; note: string } | null>(null);
+  const [confirming, setConfirming] = useState<{ deal: Deal; amount: string; note: string } | null>(null);
+  const search = async () => {
+    setSearching(true); setSearchError('');
+    try { setResults((await investorRequest<{ cars: DealCar[] }>('deal_search', { potId, query: query.trim() })).cars); }
+    catch (e) { setSearchError(e instanceof Error ? e.message : 'Could not search.'); }
+    finally { setSearching(false); }
+  };
+  const done = () => { setEditing(null); setConfirming(null); setResults(null); setQuery(''); void deals.reload(); };
+  if (editing) {
+    const bp = parsePercentToBasisPoints(editing.share), slot = `deal:${editing.carId}`;
+    return (
+      <div className="space-y-3">
+        <p className="text-white text-sm font-semibold">{editing.title}</p>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <Field label={`${name}'s profit share (%)`}><input inputMode="decimal" className="input w-full px-3 py-2 rounded-lg text-sm" value={editing.share} onChange={(e) => setEditing({ ...editing, share: e.target.value })} /></Field>
+          <Field label="Note (optional)"><input className="input w-full px-3 py-2 rounded-lg text-sm" maxLength={500} value={editing.note} onChange={(e) => setEditing({ ...editing, note: e.target.value })} placeholder={`e.g. Bought with ${name}'s money`} /></Field>
+        </div>
+        <p className="text-gray-500 text-[11px]">Saved as a draft. You can change or remove it any time until you confirm the final share. Nothing moves in {name}'s account until then.</p>
+        <div className="flex gap-2">
+          <button type="button" disabled={bp === null || act.busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40"
+            onClick={async () => { if (bp !== null && await run(slot, 'save_deal', { potId, carId: editing.carId, investorBasisPoints: bp, note: editing.note.trim() }, `Deal draft · ${editing.title}`)) done(); }}>{act.busy === slot ? 'Saving…' : 'Save draft'}</button>
+          <button type="button" onClick={() => setEditing(null)} className="text-xs px-3 py-2 rounded-lg text-gray-400 border border-obsidian-400/60">Cancel</button>
+        </div>
+        {errorBox(slot)}
+      </div>
+    );
+  }
+  if (confirming) {
+    const d = confirming.deal, cents = parseRinggit(confirming.amount), slot = `deal-confirm:${d.carId}`;
+    const ok = cents !== null && confirming.note.trim().length >= 3 && cents <= Math.max(0, d.profitCents) && act.busy === null;
+    return (
+      <div className="space-y-3">
+        <p className="text-white text-sm font-semibold">Confirm {name}'s share · {carTitle(d)}</p>
+        <div className="grid grid-cols-3 gap-3">
+          <Figure label="Car profit (from the accounts)" value={formatCents(d.profitCents)} />
+          <Figure label="Share" value={basisPointsLabel(d.investorBasisPoints)} />
+          <Figure label="Calculated" value={formatCents(d.estimatedShareCents ?? 0)} />
+        </div>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <Field label={`Final amount for ${name} (RM)`} hint="You can adjust it, up to the car profit"><input inputMode="decimal" className="input w-full px-3 py-2 rounded-lg text-sm" value={confirming.amount} onChange={(e) => setConfirming({ ...confirming, amount: e.target.value })} /></Field>
+          <Field label="Note"><input className="input w-full px-3 py-2 rounded-lg text-sm" maxLength={500} value={confirming.note} onChange={(e) => setConfirming({ ...confirming, note: e.target.value })} placeholder="e.g. All costs checked" /></Field>
+        </div>
+        <div className="flex gap-2">
+          <button type="button" disabled={!ok} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40"
+            onClick={() => cents !== null && setConfirm({ title: `Confirm ${name}'s share?`, label: 'Confirm share',
+              message: `${formatCents(cents)} from ${carTitle(d)} goes into ${name}'s account as profit. No bank money moves. Once confirmed it cannot be changed.`,
+              go: async () => { if (await run(slot, 'confirm_deal', { potId, carId: d.carId, shareCents: cents, note: confirming.note.trim() }, `Confirm share · ${carTitle(d)}`)) done(); } })}>{act.busy === slot ? 'Saving…' : 'Confirm share'}</button>
+          <button type="button" onClick={() => setConfirming(null)} className="text-xs px-3 py-2 rounded-lg text-gray-400 border border-obsidian-400/60">Cancel</button>
+        </div>
+        {errorBox(slot)}
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      <p className="text-gray-500 text-[11px]">Mark company cars that were bought with {name}'s money. Keep the share as a draft while the profit is not final, then confirm it.</p>
+      <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (query.trim().length >= 2) void search(); }}>
+        <input className="input flex-1 px-3 py-2 rounded-lg text-sm" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search plate or model, e.g. VLM6465" />
+        <button type="submit" disabled={query.trim().length < 2 || searching} className="btn-ghost text-xs px-3 py-2 rounded-lg disabled:opacity-40">{searching ? 'Searching…' : 'Search'}</button>
+      </form>
+      {searchError && <p className="text-red-400 text-xs">{searchError}</p>}
+      {results && (results.length === 0 ? <p className="text-gray-500 text-xs">No matching company cars.</p> : (
+        <div className="grid sm:grid-cols-2 gap-2">
+          {results.map((c) => (
+            <button key={c.id} type="button" disabled={!!c.dealPotId} onClick={() => setEditing({ carId: c.id, title: carTitle(c), share: '40', note: '' })} className="flex gap-3 items-center text-left rounded-lg border border-obsidian-400/50 p-2 hover:border-gold-500/40 disabled:opacity-60">
+              <CarPhoto src={c.photo} className="w-20 h-14 rounded-md shrink-0" />
+              <div className="min-w-0">
+                <p className="text-white text-sm font-medium truncate">{carTitle(c)}</p>
+                <p className="text-gray-500 text-[11px]">{c.plate ?? ''} · {c.sold ? `Sold · profit ${formatCents(c.profitCents)}` : 'Not sold yet'}</p>
+                {c.dealPotId && <p className="text-amber-300 text-[10px]">Already marked{c.dealPotId === potId ? '' : ' for another investor'}</p>}
+              </div>
+            </button>
+          ))}
+        </div>
+      ))}
+      <LoadState loading={deals.loading} error={deals.error} onRetry={() => void deals.reload()}>
+        {deals.data && deals.data.deals.length > 0 && (
+          <div className="space-y-2">
+            {deals.data.deals.map((d) => (
+              <div key={d.carId} className="rounded-lg border border-obsidian-400/50 p-3 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-white text-sm font-medium truncate">{carTitle(d)} <span className="text-gray-500 text-[11px]">{d.plate ?? ''}</span></p>
+                    <p className="text-gray-500 text-[11px]">{d.sold ? `Sold · profit so far ${formatCents(d.profitCents)}` : 'Not sold yet'} · {basisPointsLabel(d.investorBasisPoints)} share{d.note ? ` · ${d.note}` : ''}</p>
+                  </div>
+                  <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${d.state === 'confirmed' ? 'border-emerald-500/40 text-emerald-300' : 'border-amber-500/40 text-amber-300'}`}>{d.state === 'confirmed' ? 'Confirmed' : 'Draft'}</span>
+                </div>
+                {d.state === 'confirmed'
+                  ? <p className="text-emerald-300 text-xs">{formatCents(d.shareCents ?? 0)} credited to {name}{d.confirmNote ? ` · ${d.confirmNote}` : ''}</p>
+                  : <>
+                    {d.sold && d.estimatedShareCents !== null && <p className="text-gray-300 text-xs">Estimated share now: <span className="text-gold-300 font-semibold">{formatCents(d.estimatedShareCents)}</span></p>}
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={() => setEditing({ carId: d.carId, title: carTitle(d), share: String(d.investorBasisPoints / 100), note: d.note })} className="btn-ghost text-xs px-3 py-1.5 rounded-lg">Change</button>
+                      <button type="button" disabled={act.busy !== null} onClick={() => setConfirm({ title: 'Remove this draft?', label: 'Remove', message: `${carTitle(d)} will no longer be marked as bought with ${name}'s money.`, go: async () => { if (await run(`deal-remove:${d.carId}`, 'remove_deal', { potId, carId: d.carId }, `Remove deal · ${carTitle(d)}`)) done(); } })} className="text-xs px-3 py-1.5 rounded-lg text-gray-400 border border-obsidian-400/60">Remove</button>
+                      {d.sold && <button type="button" onClick={() => setConfirming({ deal: d, amount: ((d.estimatedShareCents ?? 0) / 100).toFixed(2), note: '' })} className="btn-gold text-xs px-3 py-1.5 rounded-lg">Confirm final share</button>}
+                    </div>
+                    {errorBox(`deal-remove:${d.carId}`)}
+                  </>}
+              </div>
+            ))}
+          </div>
+        )}
+      </LoadState>
+    </div>
   );
 }
 
