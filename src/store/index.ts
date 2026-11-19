@@ -609,7 +609,7 @@ export function carToRow(c: Partial<Car>) {
   if ('finalDeal' in c) row.final_deal = c.finalDeal ?? null;
   if (c.deliveryPhoto !== undefined) row.delivery_photo = c.deliveryPhoto;
   if (c.deliveryCollected !== undefined) row.delivery_collected = c.deliveryCollected;
-  if (c.consignment !== undefined) row.consignment = c.consignment;
+  if ('consignment' in c) row.consignment = c.consignment ?? null;
   if ('outgoingConsignment' in c) row.outgoing_consignment = c.outgoingConsignment ?? null;
   if ('moneyReceived' in c) row.money_received = c.moneyReceived ?? null;
   if (c.priceFloor !== undefined) row.price_floor = c.priceFloor;
