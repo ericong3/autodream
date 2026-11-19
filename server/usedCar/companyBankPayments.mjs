@@ -8,15 +8,18 @@ errors.RECEIPT_ALREADY_USED=[409,'This receipt already records an earlier bank p
 errors.COMPANY_FUNDS_REQUIRED=[409,'There is not enough available company money for this payment. Investor money and amounts owed back to investors are protected.'];
 errors.SEPARATE_SALARY_PAYMENTS=[409,'Record salary and bonus payments separately from ordinary bills to keep payroll private.'];
 errors.PAYROLL_FULL_PAYMENT_REQUIRED=[409,'Record the full confirmed payroll amount. Partial payroll payments are not supported.'];
+errors.AFTER_BANK_OPENING=[409,'This date is on or after the bank’s opening date. Record it as a normal bank payment instead.'];
+errors.CONSIGNMENT_COST_CORRECTION_REQUIRED??=[409,'Correct the consignment costs before settling this payout.'];
 export async function handleCompanyBankPayments(req,deps){return respond(req,deps,['POST'],async(ctx,res)=>{
  const {user}=await authenticate(req,ctx,res,canUseApp);
  const raw=readJson(req,20000);
  if(!(user.role==='director'||user.role==='admin'&&raw.action==='history')||user.registration_status!=='active'||!['used_car','both'].includes(user.business_access))throw new ApiError(403,'FORBIDDEN',errors.NOT_ALLOWED[1]);
- if(raw.scope!=='company_bank_payments'||!['banks','record','history','month','company'].includes(raw.action))throw new ApiError(400,'INVALID','Choose a valid payment action.');
- onlyKeys(raw,['scope','action',...(raw.action==='record'?['bankAccountId','paidOn','bankReference','notes','allocations','requestId']:raw.action==='history'?['paymentId']:raw.action==='company'?['page']:[])]);const {scope,action,...data}=raw;
+ if(raw.scope!=='company_bank_payments'||!['banks','record','record_before_opening','history','month','company'].includes(raw.action))throw new ApiError(400,'INVALID','Choose a valid payment action.');
+ onlyKeys(raw,['scope','action',...(raw.action==='record_before_opening'?['paymentId','bankAccountId','paidOn','bankReference','notes','documentId','requestId']:raw.action==='record'?['bankAccountId','paidOn','bankReference','notes','allocations','requestId']:raw.action==='history'?['paymentId']:raw.action==='company'?['page']:[])]);const {scope,action,...data}=raw;
  const invalid=()=>new ApiError(400,'INVALID','Check the bank payment details.');
  if(action==='history'&&!text(data.paymentId,180))throw invalid();
  if(action==='company'&&data.page!==undefined&&(!Number.isInteger(data.page)||data.page<0||data.page>999999))throw invalid();
+ if(action==='record_before_opening'&&(!text(data.paymentId,180)||!uuid(data.bankAccountId)||!uuid(data.documentId)||!day(data.paidOn)||!text(data.bankReference,200)||typeof data.requestId!=='string'||!/^[A-Za-z0-9_-]{16,80}$/.test(data.requestId)||data.notes!==undefined&&(typeof data.notes!=='string'||data.notes.length>2000)))throw invalid();
  if(action==='record'){
   if(!uuid(data.bankAccountId)||!day(data.paidOn)||!text(data.bankReference,200)||typeof data.requestId!=='string'||!/^[A-Za-z0-9_-]{16,80}$/.test(data.requestId)||data.notes!==undefined&&(typeof data.notes!=='string'||data.notes.length>2000))throw invalid();
   if(!Array.isArray(data.allocations)||data.allocations.length<1||data.allocations.length>50)throw invalid();
@@ -32,6 +35,7 @@ export async function handleCompanyBankPayments(req,deps){return respond(req,dep
  if(action==='banks'){if(!Array.isArray(r?.banks)||!r?.company)throw new ApiError(503,'UNAVAILABLE','Could not load company banks.');}
  else if(action==='company'){if(!r?.company||!Array.isArray(r.cars)||r.cars.length>25||typeof r.hasMore!=='boolean')throw new ApiError(503,'UNAVAILABLE','Could not load the company pot.');}
  else if(action==='month'){if(!Number.isSafeInteger(r?.month?.receivedCents)||!Number.isSafeInteger(r?.month?.paidCents))throw new ApiError(503,'UNAVAILABLE','Could not load monthly bank movements.');}
+ else if(action==='record_before_opening'){if(!uuid(r?.beforeOpeningId)||r?.paymentId!==data.paymentId||!Array.isArray(r?.payments)||r.payments.length!==1||!Array.isArray(r?.journals)||r.journals.length!==1)throw new ApiError(503,'UNAVAILABLE','Could not confirm this record. Retry the original save.');}
  else if(action==='history'){if(r?.paymentId!==data.paymentId||!Array.isArray(r?.entries))throw new ApiError(503,'UNAVAILABLE','Could not load the payment history.');}
  else if(!uuid(r?.bankPaymentId)||!Array.isArray(r?.payments)||!Array.isArray(r?.journals)||r.journals.length!==data.allocations.length||r.payments.length!==data.allocations.length||r.payments.some(p=>!data.allocations.some(a=>a.paymentId===p.id)))throw new ApiError(503,'UNAVAILABLE','Could not confirm this payment. Retry the original save.');
  return {status:200,body:r};

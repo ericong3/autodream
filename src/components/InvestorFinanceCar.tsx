@@ -180,7 +180,7 @@ export function CarCard({ car, onOpen }: { car: CarSummary; onOpen: () => void }
 // ── Car detail ───────────────────────────────────────────────────────────────
 const categoryLabel = (c: BillCategory) => BILL_CATEGORIES.find((x) => x.value === c)?.label ?? c;
 const ACTIVITY_LABEL: Record<string, string> = {
-  fund_car: 'Car allocated to account', purchase_paid: 'Purchase payment recorded', add_car_bill: 'Bill added', approve_car_bill: 'Bill approved',
+  fund_car: 'Car allocated to account', set_share: 'Investor share changed', purchase_paid: 'Purchase payment recorded', add_car_bill: 'Bill added', approve_car_bill: 'Bill approved',
   void_car_bill: 'Bill voided', pay_car_bill: 'Bill payment recorded', agree_sale: 'Sale price agreed', sale_received: 'Sale money recorded', settle_car: 'Profit confirmed', proof_upload: 'Document uploaded', payment_receipt_linked: 'Payment receipt attached',
   claim_submit: 'Staff claim submitted', claim_approve: 'Staff claim approved', claim_reject: 'Staff claim rejected', commission_bills_created: 'Commission bills added', record_misc: 'Car cost recorded',
 };
@@ -223,12 +223,26 @@ export default function InvestorFinanceCar({ carId, actorId, mode, banks = [], o
                   <Figure label="Expenses" value={formatCents(car.costCents ?? 0)} note={car.pendingBills ? `${car.pendingBills} bill${car.pendingBills > 1 ? 's' : ''} waiting` : undefined} />
                   <Figure label={p.label} value={p.value} tone={p.tone} note={car.investorBasisPoints !== undefined ? `${basisPointsLabel(car.investorBasisPoints)} share` : undefined} />
                 </div>); })()}
+              {director && car.state !== 'settled' && !car.settlement && car.investorBasisPoints !== undefined && (
+                <>
+                  <ChangeShare current={car.investorBasisPoints} busy={act.busy === `share:${carId}`} onSubmit={(investorBasisPoints, note) => setConfirm({
+                    title: 'Change investor share?', label: 'Change share',
+                    message: `Investor share changes from ${basisPointsLabel(car.investorBasisPoints)} to ${basisPointsLabel(investorBasisPoints)}. It is used when this car's profit is confirmed. The change is kept in the history.`,
+                    go: () => void mutate(`share:${carId}`, 'set_share', { carId, investorBasisPoints, note }, `Share · ${carTitle(car)}`),
+                  })} />
+                  {errorBox(`share:${carId}`)}
+                </>
+              )}
               <PendingSaves pending={act.pending.filter((p) => p.slot.endsWith(`:${carId}`) || p.slot.includes(`:${carId}:`))} busy={act.busy} onRetry={(s) => void retry(s)} onDiscard={act.discard} />
             </div>
 
             {director && car.state === 'reserved' && !car.tradeInApplicationId && (
               <Section title="Purchase payment" hint="Not recorded" defaultOpen>
-                <PurchasePaid car={car} banks={banks} busy={act.busy} onSubmit={(pay) => setConfirm({
+                <PurchasePaid car={car} banks={banks} busy={act.busy} onSubmit={(pay) => setConfirm(beforeOpening(banks, pay) ? {
+                  title: 'Record purchase paid before the bank start date?', label: 'Record payment',
+                  message: `Record that ${formatCents(car.purchaseCents)} was paid for this car on ${formatDay(pay.paidOn)}, before the bank's starting balance. It comes out of the investor's money, but no bank money moves again. This cannot be undone.`,
+                  go: () => void mutate(`purchase:${carId}`, 'purchase_paid', { carId, ...pay, bankReference: pay.bankReference.trim() }, `Purchase payment · ${carTitle(car)}`),
+                } : {
                   title: 'Record purchase payment?', label: 'Record payment',
                   message: `Record that ${formatCents(car.purchaseCents)} was paid for this car on ${formatDay(pay.paidOn)}. ${CASH_NOTE}`,
                   go: () => void mutate(`purchase:${carId}`, 'purchase_paid', { carId, ...pay, bankReference: pay.bankReference.trim() }, `Purchase payment · ${carTitle(car)}`),
@@ -344,6 +358,30 @@ export default function InvestorFinanceCar({ carId, actorId, mode, banks = [], o
 }
 
 // ── Forms ────────────────────────────────────────────────────────────────────
+const beforeOpening = (banks: Bank[], pay: BankPayment) => { const b = banks.find((x) => x.id === pay.bankAccountId); return !!b && /^\d{4}-\d{2}-\d{2}$/.test(pay.paidOn) && pay.paidOn < b.openingDate; };
+
+function ChangeShare({ current, busy, onSubmit }: { current: number; busy: boolean; onSubmit: (bp: number, note: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [pct, setPct] = useState(String(current / 100));
+  const [note, setNote] = useState('');
+  const n = Number(pct), bp = Math.round(n * 100);
+  const ok = pct.trim() !== '' && Number.isFinite(n) && n >= 0 && n <= 100 && bp !== current && note.trim().length >= 3;
+  if (!open) return <button type="button" onClick={() => { setPct(String(current / 100)); setNote(''); setOpen(true); }} className="btn-ghost text-xs px-3 py-1.5 rounded-lg">Change investor share</button>;
+  return (
+    <form className="space-y-2 bg-obsidian-800/50 rounded-lg p-3" onSubmit={(e) => { e.preventDefault(); if (ok) { onSubmit(bp, note.trim()); setOpen(false); } }}>
+      <div className="grid sm:grid-cols-2 gap-2">
+        <Field label="Investor share (%)" hint={Number.isFinite(n) && n >= 0 && n <= 100 ? `Company keeps ${(100 - n).toLocaleString('en-MY', { maximumFractionDigits: 2 })}%` : 'Between 0 and 100'}><input inputMode="decimal" className="input w-full px-3 py-2 rounded-lg text-sm" value={pct} onChange={(e) => setPct(e.target.value)} /></Field>
+        <Field label="Reason"><input className="input w-full px-3 py-2 rounded-lg text-sm" maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Agreed 50/50 with investor" /></Field>
+      </div>
+      <p className="text-gray-600 text-[10px]">You can change this any time until the car's profit is confirmed.</p>
+      <div className="flex gap-2">
+        <button type="submit" disabled={!ok || busy} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40">{busy ? 'Saving…' : 'Save share'}</button>
+        <button type="button" onClick={() => setOpen(false)} className="text-xs px-3 py-2 rounded-lg text-gray-400 border border-obsidian-400/60">Cancel</button>
+      </div>
+    </form>
+  );
+}
+
 function PurchasePaid({ car, banks, busy, onSubmit }: { car: CarSummary; banks: Bank[]; busy: string | null; onSubmit: (p: BankPayment & MoneyProofSelection) => void }) {
   const [pay, setPay] = useState(emptyBankPayment);
   const [proof, setProof] = useState<MoneyProofSelection>({});
@@ -352,6 +390,7 @@ function PurchasePaid({ car, banks, busy, onSubmit }: { car: CarSummary; banks: 
     <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); if (ready) onSubmit({ ...pay, ...proof }); }}>
       <p className="text-gray-400 text-xs">Amount: <span className="text-white font-medium">{formatCents(car.purchaseCents)}</span> (the allocated purchase price)</p>
       <BankPaymentFields banks={banks} value={pay} onChange={setPay} />
+      {beforeOpening(banks, pay) && <p className="text-amber-300 text-[11px] rounded-lg border border-amber-400/30 bg-amber-400/10 p-2">Paid before the bank's start date. The purchase comes out of the investor's money, but no money is taken from the bank again because the starting balance already includes this transfer.</p>}
       <InvestorMoneyDocuments key={car.carId} source={{ target: 'purchase', carId: car.carId }} amountCents={car.purchaseCents ?? 0} editable onChoose={setProof} />
       <button type="submit" disabled={!ready || busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40">Record purchase payment</button>
     </form>

@@ -19,8 +19,9 @@ const fields={
  pay_car_bill:['carId','billId','amountCents','bankAccount','bankReference','paidOn','receiptDocumentId','requestId'],
  agree_sale:['carId','amountCents','requestId'],sale_received:['carId','amountCents','bankAccount','bankReference','paidOn','requestId'],
  settle_car:['carId','confirmCosts','requestId'],
+ set_share:['carId','investorBasisPoints','note','requestId'],
 };
-const carActions=new Set(['fund_car','car_snapshot','purchase_paid','add_car_bill','approve_car_bill','void_car_bill','pay_car_bill','agree_sale','sale_received','settle_car']);
+const carActions=new Set(['fund_car','car_snapshot','purchase_paid','add_car_bill','approve_car_bill','void_car_bill','pay_car_bill','agree_sale','sale_received','settle_car','set_share']);
 const uuid=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 // The investor's payout account, typed and confirmed by the Director. Never read from a profile.
 const DESTINATION_ACTIONS=new Set(['approve_withdrawal','confirm_withdrawal_destination']);
@@ -76,6 +77,7 @@ export async function handleInvestorCapital(req,deps){return respond(req,deps,['
  if(carAction&&deps.env.USED_CAR_INVESTOR_CARS_ONLINE!=='1')throw new ApiError(503,'SETUP','Investor car saving is not activated yet. No changes were made.');
  const hit=await ctx.repo.throttleHit('invest:'+createHash('sha256').update(user.id).digest('hex'),90,900);
  if(!hit.allowed)throw new ApiError(429,'RATE_LIMITED','Wait a moment and try again.');
+ if(body.action==='set_share'&&(typeof body.note!=='string'||body.note.trim().length<3||body.note.length>500||body.investorBasisPoints===undefined))throw new ApiError(400,'INVALID','Enter the new share and a short reason.');
  const {action,...data}=body;
  const out=await ctx.repo.rpc('uc_investor_capital',{p_actor:user.id,p_action:action,p_data:data});
  if(out.error){
@@ -84,7 +86,7 @@ export async function handleInvestorCapital(req,deps){return respond(req,deps,['
   if(moneyError)throw moneyError;
   const known=scoped?activationError(out.error):null;
   if(known)throw known;
-  const carErrors={SUPPLIER_REFUND_STILL_DUE:'Receive the outstanding supplier refund before confirming the final profit.',REPAIR_BUSY:'This repair is being updated. Retry the original save.',CAR_REPAIR_HISTORY_REVIEW_REQUIRED:'This car has completed repairs. Review those costs before investor funding.',CAR_NOT_ELIGIBLE:'This car cannot be funded from an investor account.',CAR_ALREADY_FUNDED:'This car already has a funding account.',PURCHASE_PRICE_CHANGED:'The car purchase price has changed. Check it again.',PURCHASE_ALREADY_PAID:'The car payment is already recorded.',CAR_SETTLED_ADJUSTMENT_REQUIRED:'Profit is already confirmed. The Director must review a correction.',PAID_BILL_ADJUSTMENT_REQUIRED:'This bill has a payment. The Director must review a correction.',PAYMENT_EXCEEDS_BALANCE:'The payment is more than the amount still owing.',SALE_AGREEMENT_LOCKED:'The sale price is already agreed, or the car purchase is not yet paid.',SETTLEMENT_NOT_READY:'Receive all sale money and check every car bill before confirming profit.'};
+ const carErrors={CAR_SETTLED_ADJUSTMENT_REQUIRED:'This car is already settled, so its share can no longer change.',SUPPLIER_REFUND_STILL_DUE:'Receive the outstanding supplier refund before confirming the final profit.',REPAIR_BUSY:'This repair is being updated. Retry the original save.',CAR_REPAIR_HISTORY_REVIEW_REQUIRED:'This car has completed repairs. Review those costs before investor funding.',CAR_NOT_ELIGIBLE:'This car cannot be funded from an investor account.',CAR_ALREADY_FUNDED:'This car already has a funding account.',PURCHASE_PRICE_CHANGED:'The car purchase price has changed. Check it again.',PURCHASE_ALREADY_PAID:'The car payment is already recorded.',CAR_SETTLED_ADJUSTMENT_REQUIRED:'Profit is already confirmed. The Director must review a correction.',PAID_BILL_ADJUSTMENT_REQUIRED:'This bill has a payment. The Director must review a correction.',PAYMENT_EXCEEDS_BALANCE:'The payment is more than the amount still owing.',SALE_AGREEMENT_LOCKED:'The sale price is already agreed, or the car purchase is not yet paid.',SETTLEMENT_NOT_READY:'Receive all sale money and check every car bill before confirming profit.'};
   for(const [code,message] of Object.entries(carErrors))if(out.error.message?.includes(code))throw new ApiError(409,code,message);
   const mappings={NOT_ALLOWED:[403,'You cannot open or change this record.'],REQUEST_CHANGED:[409,'Retry the original save before changing it.'],INSUFFICIENT_FUNDS:[409,'There is not enough money available.'],ALREADY_LINKED:[409,'This investor already has a linked account.'],INVALID_INVESTOR_ACCOUNT:[400,'Choose an active investor account.'],ALREADY_REVIEWED:[409,'This request has already been checked.'],APPROVAL_REQUIRED:[409,'The Director must approve this first.'],REASON_REQUIRED:[400,'Enter a reason.'],FUTURE_PAYMENT:[400,'Choose the date the payment was made.'],INVALID:[400,'Check the details and try again.']};
   for(const [code,[status,message]] of Object.entries(mappings))if(out.error.message?.includes(code))throw new ApiError(status,code,message);
