@@ -634,7 +634,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     const savedConsignment = editForm.consignment?.terms === 'fixed_amount' && (editForm.purchasePrice!==car.purchasePrice || car.consignment?.terms!=='fixed_amount' || editForm.consignment.fixedAmount==null)
       ? { ...editForm.consignment, fixedAmount: editForm.purchasePrice || 0 }
       : editForm.consignment;
-    await updateCar(car.id, { ...editForm, consignment: savedConsignment });
+    try { await updateCar(car.id, { ...editForm, consignment: savedConsignment }); }
+    catch (err) { setShowEditModal(true); toast.error('Car not saved: ' + (err instanceof Error ? err.message : 'please try again.')); return; }
     // A calculation change must not silently rewrite an existing dealer bill.
     // A reviewed settlement correction will reconcile that difference.
     if (savedConsignment) {

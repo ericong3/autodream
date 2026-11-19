@@ -9,7 +9,7 @@ import InvestorMoneyDocuments from '../components/InvestorMoneyDocuments';
 import InvestorFinanceCar, { ActionErrorBox, CarPhoto, Field, LoadState, PendingSaves, Section, StateChip, profitFigure } from '../components/InvestorFinanceCar';
 import {
   carTitle, earnedProfit, entryLabel, formatCents, formatDay, investorRequest, isInStock, malaysiaToday, parseRinggit, useInvestorAction, useInvestorQuery,
-  WITHDRAWAL_LABEL, type CarSummary, type CashEntry, type InvestorSnapshot,
+  basisPointsLabel, WITHDRAWAL_LABEL, type CarSummary, type CashEntry, type InvestorSnapshot,
 } from '../lib/investorFinance';
 import DealerAccountView from '../components/DealerAccountView';
 import DealerStockForm from '../components/DealerStockForm';
@@ -288,6 +288,26 @@ export default function InvestorAccountPortal({ preview }: { preview?: { potId: 
           </div>
         )}
       </div>
+
+      {(snap.deliveredCars?.length ?? 0) > 0 && (
+        <div className="space-y-3">
+          <Heading title="Delivered cars" note="Bought with your money and already sold" />
+          <div className="space-y-2">
+            {snap.deliveredCars!.map((d) => (
+              <div key={d.carId} className="flex items-center gap-3 bg-card-gradient border border-obsidian-400/70 rounded-2xl p-3">
+                <CarPhoto src={d.photo} className="w-20 h-14 rounded-xl shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-white text-sm font-semibold truncate">{carTitle(d)}</p>
+                  <p className="text-gray-500 text-xs">{d.plate ?? ''}</p>
+                </div>
+                {d.state === 'confirmed'
+                  ? <div className="text-right shrink-0"><p className={`text-sm font-semibold ${(d.shareCents ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{(d.shareCents ?? 0) >= 0 ? '+' : ''}{formatCents(d.shareCents ?? 0)}</p><p className="text-gray-500 text-[11px]">{d.investorBasisPoints !== null ? `Your ${basisPointsLabel(d.investorBasisPoints)} share` : 'Your share'}</p></div>
+                  : <span className="shrink-0 text-[11px] font-medium px-2.5 py-1 rounded-full border border-amber-500/40 text-amber-300">Result being finalised</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="space-y-3">
         <Heading title="Recent activity" action={entries.length > 4 ? <button type="button" onClick={() => setTab('activity')} className="text-gold-300 text-sm">See all</button> : undefined} />
