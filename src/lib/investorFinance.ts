@@ -9,7 +9,7 @@ export type CarState = 'reserved' | 'in_stock' | 'sold' | 'settled';
 export type BillCategory = 'repair' | 'petrol' | 'transport' | 'invoicing' | 'commission' | 'misc';
 export type WithdrawalState = 'requested' | 'approved' | 'rejected' | 'paid' | 'cancelled';
 
-export type Position = { potId?: string; cashCents: number; reservedCents: number; availableCents: number; investedCents: number; purchaseReservedCents?: number; billReservedCents?: number; profitHeldCents?: number; customerRefundReservedCents?: number };
+export type Position = { potId?: string; cashCents: number; reservedCents: number; availableCents: number; investedCents: number; purchaseReservedCents?: number; advanceWaitingCents?: number; billReservedCents?: number; profitHeldCents?: number; customerRefundReservedCents?: number };
 export type Settlement = { investor_result_cents: number; company_profit_cents: number; profit_cents: number; cost_cents: number; approved_at: string };
 export type CarSummary = {
   carId: string; potId?: string; make: string; model: string; year: number | null; plate: string | null; photo: string | null;
@@ -203,7 +203,7 @@ export const BILL_CATEGORIES: { value: BillCategory; label: string }[] = [
 ];
 export const CAR_STATE_LABEL: Record<CarState, string> = { reserved: 'Waiting for purchase payment', in_stock: 'In stock', sold: 'Sold', settled: 'Profit confirmed' };
 export const WITHDRAWAL_LABEL: Record<WithdrawalState, string> = { requested: 'Waiting for Director', approved: 'Approved — payment not yet recorded', rejected: 'Not approved', paid: 'Paid', cancelled: 'Cancelled' };
-const ENTRY_LABEL: Record<string, string> = { capital_converted: 'Dealer payouts kept as investment (no bank transfer)', car_expense_refund: 'Supplier refund received', profit_adjustment_in: 'Profit balance increased (no bank transfer)', profit_adjustment_out: 'Profit balance reduced (no bank transfer)', capital_in: 'Capital received', trade_in_lender_out: 'Lender settlement paid', trade_in_value_in: 'Trade-in value received (no bank transfer)', trade_in_value_out: 'Trade-in car funded (no bank transfer)', customer_refund_out: 'Customer refund paid', withdrawal_out: 'Withdrawal paid', car_purchase: 'Car purchase paid', car_sale: 'Sale money received', car_expense: 'Car bill paid', profit_in: 'Profit confirmed', profit_out: 'Loss confirmed' };
+const ENTRY_LABEL: Record<string, string> = { capital_advance: 'Company fronted money for a car (waiting for capital)', capital_converted: 'Dealer payouts kept as investment (no bank transfer)', car_expense_refund: 'Supplier refund received', profit_adjustment_in: 'Profit balance increased (no bank transfer)', profit_adjustment_out: 'Profit balance reduced (no bank transfer)', capital_in: 'Capital received', trade_in_lender_out: 'Lender settlement paid', trade_in_value_in: 'Trade-in value received (no bank transfer)', trade_in_value_out: 'Trade-in car funded (no bank transfer)', customer_refund_out: 'Customer refund paid', withdrawal_out: 'Withdrawal paid', car_purchase: 'Car purchase paid', car_sale: 'Sale money received', car_expense: 'Car bill paid', profit_in: 'Profit confirmed', profit_out: 'Loss confirmed' };
 export const entryLabel = (kind: string) => ENTRY_LABEL[kind] ?? kind.replace(/_/g, ' ').replace(/^./, (s) => s.toUpperCase());
 
 // ── Proof files ──────────────────────────────────────────────────────────────

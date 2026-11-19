@@ -174,6 +174,7 @@ function Account({ profile, actorId, onBack, onChanged, ...shared }: Shared & { 
           <Figure label="Cash held" value={formatCents(pos.cashCents)} />
           <Figure label="Reserved" value={formatCents(pos.reservedCents)} note="Withdrawals, purchases, bills, unconfirmed profit" />
           <Figure label="In cars" value={formatCents(pos.investedCents)} />
+          {(pos.advanceWaitingCents ?? 0) > 0 && <Figure label="Waiting for capital" value={formatCents(pos.advanceWaitingCents)} tone="text-red-400" note="Fronted by the company. Locked or received capital fills this first. No withdrawals until it is zero." />}
         </div>
       </div>
 
@@ -257,6 +258,7 @@ function AllocateCar({ potId, availableCents, name, act, run, setConfirm, errorB
   const cars = useInvestorQuery<{ cars: FundableCar[] }>(`fundable:${potId}`, () => investorRequest<{ cars: FundableCar[] }>('fundable_cars', { page: 0 }));
   const [chosen, setChosen] = useState<FundableCar | null>(null);
   const [share, setShare] = useState('40');
+  const [advanceReason, setAdvanceReason] = useState('');
   const bp = parsePercentToBasisPoints(share);
   if (chosen) {
     const purchaseCents = Math.round(chosen.purchase_price * 100), slot = `fund:${chosen.id}`;
@@ -271,12 +273,17 @@ function AllocateCar({ potId, availableCents, name, act, run, setConfirm, errorB
           <Figure label="Purchase price" value={formatCents(purchaseCents)} note="From the car record" />
           <Field label="Investor profit share (%)"><input inputMode="decimal" className="input w-full px-3 py-2 rounded-lg text-sm" value={share} onChange={(e) => setShare(e.target.value)} /></Field>
         </div>
-        {short && <p className="text-red-400 text-[11px]">{name} has only {formatCents(availableCents)} available.</p>}
+        {short && (
+          <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 space-y-2">
+            <p className="text-amber-200 text-[11px]">{name} has only {formatCents(availableCents)} available. You can still allocate: the company fronts {formatCents(purchaseCents - availableCents)} until {name}'s capital is locked or received. No withdrawals are allowed until then.</p>
+            <Field label="Reason for fronting the money"><input className="input w-full px-3 py-2 rounded-lg text-sm" maxLength={500} value={advanceReason} onChange={(e) => setAdvanceReason(e.target.value)} placeholder="e.g. Capital coming from 2TN payouts" /></Field>
+          </div>
+        )}
         <div className="flex gap-2">
-          <button type="button" disabled={bp === null || short || act.busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40"
-            onClick={() => bp !== null && setConfirm({ title: 'Allocate this car?', label: 'Allocate car',
-              message: `${carTitle(chosen)} will be funded from ${name}'s account. ${formatCents(purchaseCents)} is reserved until the purchase payment is recorded. Investor share of profit: ${basisPointsLabel(bp)}.`,
-              go: async () => { if (await run(slot, 'fund_car', { carId: chosen.id, potId, purchaseCents, investorBasisPoints: bp }, `Allocate ${carTitle(chosen)} · ${name}`)) { setChosen(null); void cars.reload(); } } })}>
+          <button type="button" disabled={bp === null || (short && advanceReason.trim().length < 3) || act.busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40"
+            onClick={() => bp !== null && setConfirm({ title: short ? 'Allocate before the money is in?' : 'Allocate this car?', label: 'Allocate car',
+              message: `${carTitle(chosen)} will be funded from ${name}'s account. ${formatCents(purchaseCents)} is reserved until the purchase payment is recorded. Investor share of profit: ${basisPointsLabel(bp)}.${short ? ` The company fronts ${formatCents(purchaseCents - availableCents)} until ${name}'s capital comes in. This cannot be undone.` : ''}`,
+              go: async () => { if (await run(slot, 'fund_car', { carId: chosen.id, potId, purchaseCents, investorBasisPoints: bp, ...(short ? { advanceReason: advanceReason.trim() } : {}) }, `Allocate ${carTitle(chosen)} · ${name}`)) { setChosen(null); setAdvanceReason(''); void cars.reload(); } } })}>
             {act.busy === slot ? 'Saving…' : 'Allocate car'}
           </button>
           <button type="button" onClick={() => setChosen(null)} className="text-xs px-3 py-2 rounded-lg text-gray-400 border border-obsidian-400/60">Choose another</button>

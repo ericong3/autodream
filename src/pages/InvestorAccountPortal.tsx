@@ -27,7 +27,7 @@ const greeting = () => {
 };
 
 function entryIcon(e: CashEntry) {
-  if (e.kind === 'capital_converted' || e.kind === 'capital_in') return { icon: Lock, cls: 'bg-gold-500/15 text-gold-300' };
+  if (e.kind === 'capital_converted' || e.kind === 'capital_in' || e.kind === 'capital_advance') return { icon: Lock, cls: 'bg-gold-500/15 text-gold-300' };
   if (e.kind === 'withdrawal_out') return { icon: ArrowUp, cls: 'bg-obsidian-700 text-gray-300' };
   if (e.kind === 'car_purchase' || e.kind === 'car_expense') return { icon: CarIcon, cls: 'bg-obsidian-700 text-gray-300' };
   if (e.amountCents > 0) return { icon: TrendingUp, cls: 'bg-emerald-500/15 text-emerald-400' };
@@ -175,8 +175,9 @@ export default function InvestorAccountPortal({ preview }: { preview?: { potId: 
   if (!actorId) return null;
   const potId = snap?.position.potId;
   const pos = snap?.position;
-  const available = pos?.availableCents ?? 0;
-  const investedValue = (pos?.cashCents ?? 0) + (pos?.investedCents ?? 0);
+  const waiting = pos?.advanceWaitingCents ?? 0;
+  const available = waiting > 0 ? 0 : pos?.availableCents ?? 0;
+  const investedValue = (pos?.cashCents ?? 0) + (pos?.investedCents ?? 0) - waiting;
   const owed = dv?.totals.owedCents ?? 0;
   const total = investedValue + owed;
   const openWithdrawal = snap?.withdrawals.find((w) => w.state === 'requested' || w.state === 'approved');
@@ -250,6 +251,7 @@ export default function InvestorAccountPortal({ preview }: { preview?: { potId: 
           <div className="flex items-center justify-between"><p className="text-sm font-semibold">Invested account</p><TrendingUp size={18} /></div>
           <p className="font-display font-bold text-2xl mt-3">{formatCents(investedValue)}</p>
           <p className="text-xs mt-0.5">{formatCents(available)} free to withdraw · {formatCents(earned)} profit</p>
+          {waiting > 0 && <p className="text-[11px] mt-0.5 text-amber-200">{formatCents(waiting)} fronted by AutoDream, waiting for your capital</p>}
           <ProfitLine cars={snap.cars} />
         </div>
         {dv && (
