@@ -7,7 +7,7 @@ import bcrypt from 'bcryptjs';
 import {productionFinanceFixture} from './helpers/production-finance-fixture.mjs';
 const db=await productionFinanceFixture(process.argv[2]);
 try{
- for(const f of ['20261120000000_paid_before_bank_opening.sql','20261120000100_investor_purchase_before_opening.sql','20261120000200_investor_capital_advances.sql','20261120000300_register_car_advance.sql','20261120000400_move_car_to_investor.sql','20261120000500_investor_company_car_deals.sql','20261120000600_allocate_any_car.sql'])
+ for(const f of ['20261120000000_paid_before_bank_opening.sql','20261120000100_investor_purchase_before_opening.sql','20261120000200_investor_capital_advances.sql','20261120000300_register_car_advance.sql','20261120000400_move_car_to_investor.sql','20261120000500_investor_company_car_deals.sql','20261120000600_allocate_any_car.sql','20261120000700_allocate_search_all.sql'])
   await db.exec(readFileSync(new URL('../supabase/migrations/'+f,import.meta.url),'utf8'));
  const password=bcrypt.hashSync('Disposable-test-only',10);
  for(const [id,role] of [['d','director'],['a','admin'],['i','investor']]){await db.query("insert into users(id,name,username,password,role,business_access) values($1,$1,$1,$2,$3,case when $3='director' then 'both' else 'used_car' end)",[id,password,role]);await db.query("insert into garage_building_staff(id,name,username,password,role,business_access,registration_status,enabled) values($1,$1,$1,$2,$3,case when $3='director' then 'both' else 'used_car' end,'active',true)",[id,password,role]);}
@@ -36,6 +36,16 @@ try{
  assert.equal(v.sold,true);assert.equal(Number(v.profitCents),850000);
  assert.deepEqual([v.breakdown.saleCents,v.breakdown.costOfCarCents,v.breakdown.expenseCents,v.breakdown.purchaseCents].map(Number),[10000000,9000000,150000,9000000]);
  assert.equal(m.sold,false);assert.equal(m.blocker,'COMPANY_PURCHASE_NOT_RECORDED');
+ // Search shows every match, ignores plate spaces, and explains blocked cars.
+ await db.exec("set session_replication_role=replica");
+ await db.exec(`insert into cars(id,make,model,year,status,purchase_price,car_plate,investor_id,investor_split,consignment) values
+  ('vios','Toyota','Vios',2022,'delivered',60000,'QM 7788','legacy-user',50,'{}'::jsonb),('alza','Perodua','Alza',2022,'delivered',60000,'QM 7799',null,50,'{"owner":"x"}'::jsonb)`);
+ await db.exec("set session_replication_role=origin");
+ const qm=(await call('uc_investor_capital','d','deal_search',{potId,query:'qm77'})).cars;
+ assert.equal(qm.length,2);assert.equal(qm.find(c=>c.id==='vios').blocker,null);assert.equal(qm.find(c=>c.id==='alza').blocker,'CONSIGNMENT_CAR');
+ await cap('save_deal',{potId,carId:'vios',investorBasisPoints:5000});
+ await assert.rejects(()=>cap('save_deal',{potId,carId:'alza',investorBasisPoints:5000}),/CAR_NOT_ELIGIBLE/);
+ await cap('remove_deal',{potId,carId:'vios'});
  // A car in stock is moved, not marked.
  await assert.rejects(()=>cap('save_deal',{potId,carId:'myvi',investorBasisPoints:4000}),/CAR_IN_STOCK/);
  // Draft on a delivered car: save, change, remove, save again.

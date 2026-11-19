@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import CompanyPot from '../components/CompanyPot';
 import { companyBankPaymentsEnabled } from '../lib/companyBankPayments';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Plus, Link2, Copy, Users, ChevronLeft, Eye } from 'lucide-react';
+import { Plus, Link2, Copy, Users, ChevronLeft, Eye, Search } from 'lucide-react';
 import { useStore } from '../store';
 import InvestorMoneyDocuments, { type MoneyProofSelection } from '../components/InvestorMoneyDocuments';
 import InvestorFinanceCar, {
@@ -267,6 +267,9 @@ const MOVE_BLOCKER: Record<string, string> = {
   PURCHASE_PRICE_REQUIRED: 'Enter the purchase price on the car first.',
   COMPANY_STOCK_REVIEW_REQUIRED: 'Stock value in the accounts is below the purchase price. Check the car first.',
   CAR_NOT_ELIGIBLE: 'This car cannot be allocated (status, trade-in or consignment).',
+  ALREADY_INVESTOR_CAR: 'Already an investor car.',
+  CONSIGNMENT_CAR: 'Consignment car, not company money.',
+  OUTGOING_CONSIGNMENT_CAR: 'Sent out on consignment.',
 };
 
 function AllocateCar(props: Shared & { potId: string; availableCents: number; name: string; deals: DealsQuery }) {
@@ -276,12 +279,19 @@ function AllocateCar(props: Shared & { potId: string; availableCents: number; na
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState('');
   const [chosen, setChosen] = useState<FoundCar | null>(null);
-  const search = async () => {
-    setSearching(true); setSearchError('');
-    try { setResults((await investorRequest<{ cars: FoundCar[] }>('deal_search', { potId, query: query.trim() })).cars); }
-    catch (e) { setSearchError(e instanceof Error ? e.message : 'Could not search.'); }
-    finally { setSearching(false); }
-  };
+  const ticket = useRef(0);
+  useEffect(() => {
+    const text = query.trim();
+    const mine = ++ticket.current;
+    if (text.length < 2) { setResults(null); setSearching(false); setSearchError(''); return; }
+    setSearching(true);
+    const timer = window.setTimeout(async () => {
+      try { const r = await investorRequest<{ cars: FoundCar[] }>('deal_search', { potId, query: text }); if (mine === ticket.current) { setResults(r.cars); setSearchError(''); } }
+      catch (e) { if (mine === ticket.current) setSearchError(e instanceof Error ? e.message : 'Could not search.'); }
+      finally { if (mine === ticket.current) setSearching(false); }
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [query, potId]);
   const done = () => { setChosen(null); setResults(null); setQuery(''); void props.deals.reload(); };
   if (chosen) return chosen.sold
     ? <DeliveredForm car={chosen} share="40" note="" onDone={done} onCancel={() => setChosen(null)} {...props} />
@@ -289,10 +299,11 @@ function AllocateCar(props: Shared & { potId: string; availableCents: number; na
   return (
     <div className="space-y-3">
       <p className="text-gray-500 text-[11px]">Search any company car bought with {name}'s money. A car in stock moves into {name}'s account with its purchase and costs. A delivered car becomes {name}'s car with its sale result, kept as a draft until you confirm.</p>
-      <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (query.trim().length >= 2) void search(); }}>
-        <input className="input flex-1 px-3 py-2 rounded-lg text-sm" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search plate or model, e.g. VLM6465" />
-        <button type="submit" disabled={query.trim().length < 2 || searching} className="btn-ghost text-xs px-3 py-2 rounded-lg disabled:opacity-40">{searching ? 'Searching…' : 'Search'}</button>
-      </form>
+      <div className="relative">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+        <input type="search" autoComplete="off" className="input w-full pl-9 pr-20 py-2 rounded-lg text-sm" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Type plate, make or model, e.g. VLM6465 or Veloz" />
+        {searching && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-[11px]">Searching…</span>}
+      </div>
       {searchError && <p className="text-red-400 text-xs">{searchError}</p>}
       {results && (results.length === 0 ? <p className="text-gray-500 text-xs">No matching company cars.</p> : (
         <div className="grid sm:grid-cols-2 gap-2">
