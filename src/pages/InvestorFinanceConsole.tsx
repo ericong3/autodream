@@ -189,6 +189,11 @@ function Account({ profile, actorId, onBack, onChanged, ...shared }: Shared & { 
             <AllocateCar potId={profile.potId} availableCents={pos.availableCents} name={profile.name} {...s} />
           </Section>
         )}
+        {canWrite && (
+          <Section title="Move a company stock car">
+            <MoveCompanyCar potId={profile.potId} availableCents={pos.availableCents} name={profile.name} {...s} />
+          </Section>
+        )}
         <Section title="Withdrawals" hint={`${profile.withdrawals.filter((w) => w.state === 'requested' || w.state === 'approved').length} open`} defaultOpen={profile.withdrawals.some((w) => w.state === 'requested')}>
           {profile.withdrawals.length === 0 ? <p className="text-gray-500 text-xs">No withdrawals.</p> : profile.withdrawals.map((w) => <WithdrawalRow key={w.id} w={w} destination={snap.data?.withdrawalDestinations?.find(d=>d.withdrawalId===w.id)} potId={profile.potId} name={profile.name} {...s} />)}
         </Section>
@@ -251,6 +256,76 @@ function CapitalReceived({ potId, name, act, run, banks, setConfirm, errorBox }:
       <button type="submit" disabled={!ok || act.busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40">{act.busy === slot ? 'Saving…' : 'Record capital'}</button>
       {errorBox(slot)}
     </form>
+  );
+}
+
+type MovableCar = { id: string; make: string; model: string; year: number | null; car_plate: string | null; photo: string | null; purchaseCents: number; stockCents: number; blocker: string | null };
+const MOVE_BLOCKER: Record<string, string> = {
+  COMPANY_BILLS_UNPAID: 'Has unpaid company bills. Pay them, or mark them paid before the bank start date, first.',
+  REPAIR_IN_PROGRESS: 'Has an open repair. Finish or cancel it first.',
+};
+function MoveCompanyCar({ potId, availableCents, name, act, run, setConfirm, errorBox }: Shared & { potId: string; availableCents: number; name: string }) {
+  const cars = useInvestorQuery<{ cars: MovableCar[] }>(`movable:${potId}`, () => investorRequest<{ cars: MovableCar[] }>('transferable_cars', { potId }));
+  const [chosen, setChosen] = useState<MovableCar | null>(null);
+  const [share, setShare] = useState('40');
+  const [reason, setReason] = useState('');
+  const [advanceReason, setAdvanceReason] = useState('');
+  const bp = parsePercentToBasisPoints(share);
+  if (chosen) {
+    const slot = `move:${chosen.id}`, carried = chosen.stockCents - chosen.purchaseCents, short = chosen.stockCents > availableCents;
+    const ok = bp !== null && reason.trim().length >= 3 && (!short || advanceReason.trim().length >= 3) && act.busy === null;
+    return (
+      <div className="space-y-3">
+        <div className="flex gap-3 items-center">
+          <CarPhoto src={chosen.photo} className="w-24 h-16 rounded-lg" />
+          <div><p className="text-white text-sm font-semibold">{carTitle(chosen)}</p><p className="text-gray-500 text-xs">{chosen.car_plate ?? ''}</p></div>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <Figure label="Purchase price" value={formatCents(chosen.purchaseCents)} />
+          <Figure label="Costs already on car" value={formatCents(carried)} note="Repairs and misc costs" />
+          <Figure label={`Charged to ${name}`} value={formatCents(chosen.stockCents)} tone="text-gold-300" />
+        </div>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <Field label="Investor profit share (%)"><input inputMode="decimal" className="input w-full px-3 py-2 rounded-lg text-sm" value={share} onChange={(e) => setShare(e.target.value)} /></Field>
+          <Field label="Why this car moves"><input className="input w-full px-3 py-2 rounded-lg text-sm" maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={`e.g. Bought with ${name}'s money`} /></Field>
+        </div>
+        {short && (
+          <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 space-y-2">
+            <p className="text-amber-200 text-[11px]">{name} has only {formatCents(availableCents)} available. The company fronts {formatCents(chosen.stockCents - availableCents)} until {name}'s capital is locked or received. No withdrawals until then.</p>
+            <Field label="Reason for fronting the money"><input className="input w-full px-3 py-2 rounded-lg text-sm" maxLength={500} value={advanceReason} onChange={(e) => setAdvanceReason(e.target.value)} placeholder="e.g. Capital coming from 2TN payouts" /></Field>
+          </div>
+        )}
+        <p className="text-gray-500 text-[11px]">No bank money moves. The car leaves company stock with its purchase and costs, and later bills on it come from {name}'s account.</p>
+        <div className="flex gap-2">
+          <button type="button" disabled={!ok} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40"
+            onClick={() => bp !== null && setConfirm({ title: `Move this car to ${name}?`, label: 'Move car',
+              message: `${carTitle(chosen)} moves from company stock to ${name} for ${formatCents(chosen.stockCents)} (purchase ${formatCents(chosen.purchaseCents)} + costs ${formatCents(carried)}). Investor share of profit: ${basisPointsLabel(bp)}.${short ? ` The company fronts ${formatCents(chosen.stockCents - availableCents)}.` : ''} This cannot be undone.`,
+              go: async () => { if (await run(slot, 'transfer_car', { carId: chosen.id, potId, investorBasisPoints: bp, reason: reason.trim(), ...(short ? { advanceReason: advanceReason.trim() } : {}) }, `Move ${carTitle(chosen)} · ${name}`)) { setChosen(null); setReason(''); setAdvanceReason(''); void cars.reload(); } } })}>
+            {act.busy === slot ? 'Saving…' : 'Move car'}
+          </button>
+          <button type="button" onClick={() => setChosen(null)} className="text-xs px-3 py-2 rounded-lg text-gray-400 border border-obsidian-400/60">Choose another</button>
+        </div>
+        {errorBox(slot)}
+      </div>
+    );
+  }
+  return (
+    <LoadState loading={cars.loading} error={cars.error} onRetry={() => void cars.reload()}>
+      {cars.data && (cars.data.cars.length === 0 ? <p className="text-gray-500 text-xs">No company stock cars can be moved right now.</p> : (
+        <div className="grid sm:grid-cols-2 gap-2">
+          {cars.data.cars.map((c) => (
+            <button key={c.id} type="button" disabled={!!c.blocker} onClick={() => setChosen(c)} className="flex gap-3 items-center text-left rounded-lg border border-obsidian-400/50 p-2 hover:border-gold-500/40 disabled:opacity-60 disabled:hover:border-obsidian-400/50">
+              <CarPhoto src={c.photo} className="w-20 h-14 rounded-md shrink-0" />
+              <div className="min-w-0">
+                <p className="text-white text-sm font-medium truncate">{carTitle(c)}</p>
+                <p className="text-gray-500 text-[11px]">{c.car_plate ?? ''} · {formatCents(c.stockCents)}</p>
+                {c.blocker && <p className="text-amber-300 text-[10px] mt-0.5">{MOVE_BLOCKER[c.blocker] ?? c.blocker}</p>}
+              </div>
+            </button>
+          ))}
+        </div>
+      ))}
+    </LoadState>
   );
 }
 
