@@ -143,6 +143,7 @@ function CreateProfile({ act, run, errorBox, onCreated }: Shared & { onCreated: 
 function Account({ profile, actorId, onBack, onChanged, ...shared }: Shared & { profile: InvestorProfile; actorId: string; onBack: () => void; onChanged: () => void }) {
   const { canWrite, banks } = shared;
   const snap = useInvestorQuery<InvestorSnapshot>(`${actorId}:${profile.potId}`, () => investorRequest<InvestorSnapshot>('snapshot', { potId: profile.potId }));
+  const deals = useInvestorQuery<{ deals: Deal[] }>(canWrite ? `deals:${actorId}:${profile.potId}` : null, () => investorRequest<{ deals: Deal[] }>('deals_list', { potId: profile.potId }));
   const [openCar, setOpenCar] = useState<string | null>(null);
   const pos = profile.position;
   const refresh = () => { onChanged(); void snap.reload(); };
@@ -186,7 +187,7 @@ function Account({ profile, actorId, onBack, onChanged, ...shared }: Shared & { 
         )}
         {canWrite && (
           <Section title="Allocate a car">
-            <AllocateChoice potId={profile.potId} availableCents={pos.availableCents} name={profile.name} {...s} />
+            <AllocateCar potId={profile.potId} availableCents={pos.availableCents} name={profile.name} deals={deals} {...s} />
           </Section>
         )}
         <Section title="Withdrawals" hint={`${profile.withdrawals.filter((w) => w.state === 'requested' || w.state === 'approved').length} open`} defaultOpen={profile.withdrawals.some((w) => w.state === 'requested')}>
@@ -210,6 +211,7 @@ function Account({ profile, actorId, onBack, onChanged, ...shared }: Shared & { 
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">{profile.cars.map((c) => <CarCard key={c.carId} car={c} onOpen={() => setOpenCar(c.carId)} />)}</div>
         )}
       </div>
+      {canWrite && <DeliveredCars deals={deals} potId={profile.potId} name={profile.name} {...s} />}
     </div>
   );
 }
@@ -254,71 +256,39 @@ function CapitalReceived({ potId, name, act, run, banks, setConfirm, errorBox }:
   );
 }
 
-type DealCar = { id: string; make: string; model: string; year: number | null; plate: string | null; photo: string | null; status: string | null; sold: boolean; profitCents: number; dealPotId: string | null };
-type Deal = { carId: string; make: string; model: string; year: number | null; plate: string | null; photo: string | null; status: string | null; sold: boolean; profitCents: number; investorBasisPoints: number; note: string; state: 'draft' | 'confirmed'; estimatedShareCents: number | null; shareCents: number | null; confirmNote: string | null; confirmedAt: string | null };
-function InvestorDeals({ potId, name, act, run, setConfirm, errorBox }: Shared & { potId: string; name: string }) {
-  const deals = useInvestorQuery<{ deals: Deal[] }>(`deals:${potId}`, () => investorRequest<{ deals: Deal[] }>('deals_list', { potId }));
+type Breakdown = { saleCents: number; costOfCarCents: number; expenseCents: number; purchaseCents: number };
+type FoundCar = { id: string; make: string; model: string; year: number | null; plate: string | null; photo: string | null; status: string | null; sold: boolean; saleRecorded: boolean; profitCents: number; breakdown: Breakdown; dealPotId: string | null; purchaseCents: number; stockCents: number; blocker: string | null };
+type Deal = { carId: string; make: string; model: string; year: number | null; plate: string | null; photo: string | null; status: string | null; sold: boolean; saleRecorded: boolean; profitCents: number; breakdown: Breakdown; investorBasisPoints: number; note: string; state: 'draft' | 'confirmed'; estimatedShareCents: number | null; shareCents: number | null; confirmNote: string | null; confirmedAt: string | null };
+type DealsQuery = { data: { deals: Deal[] } | null; loading: boolean; error: unknown; reload: () => Promise<void> };
+const MOVE_BLOCKER: Record<string, string> = {
+  COMPANY_BILLS_UNPAID: 'Has unpaid company bills. Pay them, or mark them paid before the bank start date, first.',
+  REPAIR_IN_PROGRESS: 'Has an open repair. Finish or cancel it first.',
+  COMPANY_PURCHASE_NOT_RECORDED: 'Purchase not recorded in the accounts yet.',
+  PURCHASE_PRICE_REQUIRED: 'Enter the purchase price on the car first.',
+  COMPANY_STOCK_REVIEW_REQUIRED: 'Stock value in the accounts is below the purchase price. Check the car first.',
+  CAR_NOT_ELIGIBLE: 'This car cannot be allocated (status, trade-in or consignment).',
+};
+
+function AllocateCar(props: Shared & { potId: string; availableCents: number; name: string; deals: DealsQuery }) {
+  const { potId, name } = props;
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<DealCar[] | null>(null);
+  const [results, setResults] = useState<FoundCar[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState('');
-  const [editing, setEditing] = useState<{ carId: string; title: string; share: string; note: string } | null>(null);
-  const [confirming, setConfirming] = useState<{ deal: Deal; amount: string; note: string } | null>(null);
+  const [chosen, setChosen] = useState<FoundCar | null>(null);
   const search = async () => {
     setSearching(true); setSearchError('');
-    try { setResults((await investorRequest<{ cars: DealCar[] }>('deal_search', { potId, query: query.trim() })).cars); }
+    try { setResults((await investorRequest<{ cars: FoundCar[] }>('deal_search', { potId, query: query.trim() })).cars); }
     catch (e) { setSearchError(e instanceof Error ? e.message : 'Could not search.'); }
     finally { setSearching(false); }
   };
-  const done = () => { setEditing(null); setConfirming(null); setResults(null); setQuery(''); void deals.reload(); };
-  if (editing) {
-    const bp = parsePercentToBasisPoints(editing.share), slot = `deal:${editing.carId}`;
-    return (
-      <div className="space-y-3">
-        <p className="text-white text-sm font-semibold">{editing.title}</p>
-        <div className="grid sm:grid-cols-2 gap-3">
-          <Field label={`${name}'s profit share (%)`}><input inputMode="decimal" className="input w-full px-3 py-2 rounded-lg text-sm" value={editing.share} onChange={(e) => setEditing({ ...editing, share: e.target.value })} /></Field>
-          <Field label="Note (optional)"><input className="input w-full px-3 py-2 rounded-lg text-sm" maxLength={500} value={editing.note} onChange={(e) => setEditing({ ...editing, note: e.target.value })} placeholder={`e.g. Bought with ${name}'s money`} /></Field>
-        </div>
-        <p className="text-gray-500 text-[11px]">Saved as a draft. You can change or remove it any time until you confirm the final share. Nothing moves in {name}'s account until then.</p>
-        <div className="flex gap-2">
-          <button type="button" disabled={bp === null || act.busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40"
-            onClick={async () => { if (bp !== null && await run(slot, 'save_deal', { potId, carId: editing.carId, investorBasisPoints: bp, note: editing.note.trim() }, `Deal draft · ${editing.title}`)) done(); }}>{act.busy === slot ? 'Saving…' : 'Save draft'}</button>
-          <button type="button" onClick={() => setEditing(null)} className="text-xs px-3 py-2 rounded-lg text-gray-400 border border-obsidian-400/60">Cancel</button>
-        </div>
-        {errorBox(slot)}
-      </div>
-    );
-  }
-  if (confirming) {
-    const d = confirming.deal, cents = parseRinggit(confirming.amount), slot = `deal-confirm:${d.carId}`;
-    const ok = cents !== null && confirming.note.trim().length >= 3 && cents <= Math.max(0, d.profitCents) && act.busy === null;
-    return (
-      <div className="space-y-3">
-        <p className="text-white text-sm font-semibold">Confirm {name}'s share · {carTitle(d)}</p>
-        <div className="grid grid-cols-3 gap-3">
-          <Figure label="Car profit (from the accounts)" value={formatCents(d.profitCents)} />
-          <Figure label="Share" value={basisPointsLabel(d.investorBasisPoints)} />
-          <Figure label="Calculated" value={formatCents(d.estimatedShareCents ?? 0)} />
-        </div>
-        <div className="grid sm:grid-cols-2 gap-3">
-          <Field label={`Final amount for ${name} (RM)`} hint="You can adjust it, up to the car profit"><input inputMode="decimal" className="input w-full px-3 py-2 rounded-lg text-sm" value={confirming.amount} onChange={(e) => setConfirming({ ...confirming, amount: e.target.value })} /></Field>
-          <Field label="Note"><input className="input w-full px-3 py-2 rounded-lg text-sm" maxLength={500} value={confirming.note} onChange={(e) => setConfirming({ ...confirming, note: e.target.value })} placeholder="e.g. All costs checked" /></Field>
-        </div>
-        <div className="flex gap-2">
-          <button type="button" disabled={!ok} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40"
-            onClick={() => cents !== null && setConfirm({ title: `Confirm ${name}'s share?`, label: 'Confirm share',
-              message: `${formatCents(cents)} from ${carTitle(d)} goes into ${name}'s account as profit. No bank money moves. Once confirmed it cannot be changed.`,
-              go: async () => { if (await run(slot, 'confirm_deal', { potId, carId: d.carId, shareCents: cents, note: confirming.note.trim() }, `Confirm share · ${carTitle(d)}`)) done(); } })}>{act.busy === slot ? 'Saving…' : 'Confirm share'}</button>
-          <button type="button" onClick={() => setConfirming(null)} className="text-xs px-3 py-2 rounded-lg text-gray-400 border border-obsidian-400/60">Cancel</button>
-        </div>
-        {errorBox(slot)}
-      </div>
-    );
-  }
+  const done = () => { setChosen(null); setResults(null); setQuery(''); void props.deals.reload(); };
+  if (chosen) return chosen.sold
+    ? <DeliveredForm car={chosen} share="40" note="" onDone={done} onCancel={() => setChosen(null)} {...props} />
+    : <MoveForm car={chosen} onDone={done} onCancel={() => setChosen(null)} {...props} />;
   return (
     <div className="space-y-3">
-      <p className="text-gray-500 text-[11px]">Mark company cars that were bought with {name}'s money. Keep the share as a draft while the profit is not final, then confirm it.</p>
+      <p className="text-gray-500 text-[11px]">Search any company car bought with {name}'s money. A car in stock moves into {name}'s account with its purchase and costs. A delivered car becomes {name}'s car with its sale result, kept as a draft until you confirm.</p>
       <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (query.trim().length >= 2) void search(); }}>
         <input className="input flex-1 px-3 py-2 rounded-lg text-sm" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search plate or model, e.g. VLM6465" />
         <button type="submit" disabled={query.trim().length < 2 || searching} className="btn-ghost text-xs px-3 py-2 rounded-lg disabled:opacity-40">{searching ? 'Searching…' : 'Search'}</button>
@@ -326,138 +296,172 @@ function InvestorDeals({ potId, name, act, run, setConfirm, errorBox }: Shared &
       {searchError && <p className="text-red-400 text-xs">{searchError}</p>}
       {results && (results.length === 0 ? <p className="text-gray-500 text-xs">No matching company cars.</p> : (
         <div className="grid sm:grid-cols-2 gap-2">
-          {results.map((c) => (
-            <button key={c.id} type="button" disabled={!!c.dealPotId} onClick={() => setEditing({ carId: c.id, title: carTitle(c), share: '40', note: '' })} className="flex gap-3 items-center text-left rounded-lg border border-obsidian-400/50 p-2 hover:border-gold-500/40 disabled:opacity-60">
-              <CarPhoto src={c.photo} className="w-20 h-14 rounded-md shrink-0" />
-              <div className="min-w-0">
-                <p className="text-white text-sm font-medium truncate">{carTitle(c)}</p>
-                <p className="text-gray-500 text-[11px]">{c.plate ?? ''} · {c.sold ? `Sold · profit ${formatCents(c.profitCents)}` : 'Not sold yet'}</p>
-                {c.dealPotId && <p className="text-amber-300 text-[10px]">Already marked{c.dealPotId === potId ? '' : ' for another investor'}</p>}
-              </div>
-            </button>
-          ))}
+          {results.map((c) => {
+            const blocked = c.dealPotId ? (c.dealPotId === potId ? `Already in ${name}'s account` : 'Already in another investor account') : (!c.sold && c.blocker ? (MOVE_BLOCKER[c.blocker] ?? c.blocker) : null);
+            return (
+              <button key={c.id} type="button" disabled={!!blocked} onClick={() => setChosen(c)} className="flex gap-3 items-center text-left rounded-lg border border-obsidian-400/50 p-2 hover:border-gold-500/40 disabled:opacity-60 disabled:hover:border-obsidian-400/50">
+                <CarPhoto src={c.photo} className="w-20 h-14 rounded-md shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-white text-sm font-medium truncate">{carTitle(c)}</p>
+                  <p className="text-gray-500 text-[11px]">{c.plate ?? ''} · {c.sold ? `Delivered · profit so far ${formatCents(c.profitCents)}` : `In stock · ${formatCents(c.stockCents)}`}</p>
+                  {blocked && <p className="text-amber-300 text-[10px] mt-0.5">{blocked}</p>}
+                </div>
+              </button>
+            );
+          })}
         </div>
       ))}
-      <LoadState loading={deals.loading} error={deals.error} onRetry={() => void deals.reload()}>
-        {deals.data && deals.data.deals.length > 0 && (
-          <div className="space-y-2">
-            {deals.data.deals.map((d) => (
-              <div key={d.carId} className="rounded-lg border border-obsidian-400/50 p-3 space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-white text-sm font-medium truncate">{carTitle(d)} <span className="text-gray-500 text-[11px]">{d.plate ?? ''}</span></p>
-                    <p className="text-gray-500 text-[11px]">{d.sold ? `Sold · profit so far ${formatCents(d.profitCents)}` : 'Not sold yet'} · {basisPointsLabel(d.investorBasisPoints)} share{d.note ? ` · ${d.note}` : ''}</p>
-                  </div>
-                  <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${d.state === 'confirmed' ? 'border-emerald-500/40 text-emerald-300' : 'border-amber-500/40 text-amber-300'}`}>{d.state === 'confirmed' ? 'Confirmed' : 'Draft'}</span>
-                </div>
-                {d.state === 'confirmed'
-                  ? <p className="text-emerald-300 text-xs">{formatCents(d.shareCents ?? 0)} credited to {name}{d.confirmNote ? ` · ${d.confirmNote}` : ''}</p>
-                  : <>
-                    {d.sold && d.estimatedShareCents !== null && <p className="text-gray-300 text-xs">Estimated share now: <span className="text-gold-300 font-semibold">{formatCents(d.estimatedShareCents)}</span></p>}
-                    <div className="flex flex-wrap gap-2">
-                      <button type="button" onClick={() => setEditing({ carId: d.carId, title: carTitle(d), share: String(d.investorBasisPoints / 100), note: d.note })} className="btn-ghost text-xs px-3 py-1.5 rounded-lg">Change</button>
-                      <button type="button" disabled={act.busy !== null} onClick={() => setConfirm({ title: 'Remove this draft?', label: 'Remove', message: `${carTitle(d)} will no longer be marked as bought with ${name}'s money.`, go: async () => { if (await run(`deal-remove:${d.carId}`, 'remove_deal', { potId, carId: d.carId }, `Remove deal · ${carTitle(d)}`)) done(); } })} className="text-xs px-3 py-1.5 rounded-lg text-gray-400 border border-obsidian-400/60">Remove</button>
-                      {d.sold && <button type="button" onClick={() => setConfirming({ deal: d, amount: ((d.estimatedShareCents ?? 0) / 100).toFixed(2), note: '' })} className="btn-gold text-xs px-3 py-1.5 rounded-lg">Confirm final share</button>}
-                    </div>
-                    {errorBox(`deal-remove:${d.carId}`)}
-                  </>}
-              </div>
-            ))}
-          </div>
-        )}
-      </LoadState>
     </div>
   );
 }
 
-function AllocateChoice(props: Shared & { potId: string; availableCents: number; name: string }) {
-  const [mode, setMode] = useState<'share' | 'move'>('share');
-  const options = [
-    { id: 'share' as const, title: 'Share profit only', note: `Car stays a company car. Mark it as bought with ${props.name}'s money; keep the share as a draft and confirm it when the profit is final. Use for sold or older cars.` },
-    { id: 'move' as const, title: `Move car into ${props.name}'s account`, note: `For a car still in stock. It moves with its purchase and costs, and later bills come from ${props.name}'s money.` },
-  ];
-  return (
-    <div className="space-y-3">
-      <div className="grid sm:grid-cols-2 gap-2">
-        {options.map((o) => (
-          <button key={o.id} type="button" onClick={() => setMode(o.id)} className={`text-left rounded-lg border p-3 transition-colors ${mode === o.id ? 'border-gold-500/60 bg-gold-500/10' : 'border-obsidian-400/50 hover:border-gold-500/30'}`}>
-            <p className={`text-sm font-semibold ${mode === o.id ? 'text-gold-300' : 'text-white'}`}>{o.title}</p>
-            <p className="text-gray-500 text-[11px] mt-0.5">{o.note}</p>
-          </button>
-        ))}
-      </div>
-      {mode === 'share' ? <InvestorDeals {...props} /> : <MoveCompanyCar {...props} />}
-    </div>
-  );
-}
-
-type MovableCar = { id: string; make: string; model: string; year: number | null; car_plate: string | null; photo: string | null; purchaseCents: number; stockCents: number; blocker: string | null };
-const MOVE_BLOCKER: Record<string, string> = {
-  COMPANY_BILLS_UNPAID: 'Has unpaid company bills. Pay them, or mark them paid before the bank start date, first.',
-  REPAIR_IN_PROGRESS: 'Has an open repair. Finish or cancel it first.',
-};
-function MoveCompanyCar({ potId, availableCents, name, act, run, setConfirm, errorBox }: Shared & { potId: string; availableCents: number; name: string }) {
-  const cars = useInvestorQuery<{ cars: MovableCar[] }>(`movable:${potId}`, () => investorRequest<{ cars: MovableCar[] }>('transferable_cars', { potId }));
-  const [chosen, setChosen] = useState<MovableCar | null>(null);
+function MoveForm({ car, onDone, onCancel, potId, availableCents, name, act, run, setConfirm, errorBox }: Shared & { car: FoundCar; onDone: () => void; onCancel: () => void; potId: string; availableCents: number; name: string }) {
   const [share, setShare] = useState('40');
   const [reason, setReason] = useState('');
   const [advanceReason, setAdvanceReason] = useState('');
   const bp = parsePercentToBasisPoints(share);
-  if (chosen) {
-    const slot = `move:${chosen.id}`, carried = chosen.stockCents - chosen.purchaseCents, short = chosen.stockCents > availableCents;
-    const ok = bp !== null && reason.trim().length >= 3 && (!short || advanceReason.trim().length >= 3) && act.busy === null;
+  const slot = `move:${car.id}`, carried = car.stockCents - car.purchaseCents, short = car.stockCents > availableCents;
+  const ok = bp !== null && reason.trim().length >= 3 && (!short || advanceReason.trim().length >= 3) && act.busy === null;
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-3 items-center">
+        <CarPhoto src={car.photo} className="w-24 h-16 rounded-lg" />
+        <div><p className="text-white text-sm font-semibold">{carTitle(car)}</p><p className="text-gray-500 text-xs">{car.plate ?? ''} · In stock</p></div>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <Figure label="Purchase price" value={formatCents(car.purchaseCents)} />
+        <Figure label="Costs already on car" value={formatCents(carried)} note="Repairs and misc costs" />
+        <Figure label={`Charged to ${name}`} value={formatCents(car.stockCents)} tone="text-gold-300" />
+      </div>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label={`${name}'s profit share (%)`}><input inputMode="decimal" className="input w-full px-3 py-2 rounded-lg text-sm" value={share} onChange={(e) => setShare(e.target.value)} /></Field>
+        <Field label="Why this car moves"><input className="input w-full px-3 py-2 rounded-lg text-sm" maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={`e.g. Bought with ${name}'s money`} /></Field>
+      </div>
+      {short && (
+        <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 space-y-2">
+          <p className="text-amber-200 text-[11px]">{name} has only {formatCents(availableCents)} available. The company fronts {formatCents(car.stockCents - availableCents)} until {name}'s capital is locked or received. No withdrawals until then.</p>
+          <Field label="Reason for fronting the money"><input className="input w-full px-3 py-2 rounded-lg text-sm" maxLength={500} value={advanceReason} onChange={(e) => setAdvanceReason(e.target.value)} placeholder="e.g. Capital coming from 2TN payouts" /></Field>
+        </div>
+      )}
+      <p className="text-gray-500 text-[11px]">No bank money moves. The car leaves company stock with its purchase and costs. Later bills come from {name}'s money and the sale money goes back to {name}.</p>
+      <div className="flex gap-2">
+        <button type="button" disabled={!ok} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40"
+          onClick={() => bp !== null && setConfirm({ title: `Move this car to ${name}?`, label: 'Move car',
+            message: `${carTitle(car)} moves from company stock to ${name} for ${formatCents(car.stockCents)} (purchase ${formatCents(car.purchaseCents)} + costs ${formatCents(carried)}). ${name}'s share of profit: ${basisPointsLabel(bp)}.${short ? ` The company fronts ${formatCents(car.stockCents - availableCents)}.` : ''} This cannot be undone.`,
+            go: async () => { if (await run(slot, 'transfer_car', { carId: car.id, potId, investorBasisPoints: bp, reason: reason.trim(), ...(short ? { advanceReason: advanceReason.trim() } : {}) }, `Move ${carTitle(car)} · ${name}`)) onDone(); } })}>
+          {act.busy === slot ? 'Saving…' : 'Move car'}
+        </button>
+        <button type="button" onClick={onCancel} className="text-xs px-3 py-2 rounded-lg text-gray-400 border border-obsidian-400/60">Choose another</button>
+      </div>
+      {errorBox(slot)}
+    </div>
+  );
+}
+
+function BreakdownFigures({ b, profitCents }: { b: Breakdown; profitCents: number }) {
+  const carCosts = b.costOfCarCents > 0 ? b.costOfCarCents - b.purchaseCents : 0;
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <Figure label="Purchase" value={formatCents(b.purchaseCents)} />
+      <Figure label="Costs on car" value={formatCents(carCosts)} note="Repairs, misc" />
+      <Figure label="Other expenses" value={formatCents(b.expenseCents)} note="Commission etc." />
+      <Figure label="Sale" value={formatCents(b.saleCents)} />
+      <Figure label={profitCents >= 0 ? 'Profit' : 'Loss'} value={formatCents(profitCents)} tone={profitCents >= 0 ? 'text-emerald-300' : 'text-red-400'} />
+    </div>
+  );
+}
+
+type DeliveredCarInfo = { id: string; make: string; model: string; year: number | null; plate: string | null; photo: string | null; profitCents: number; breakdown: Breakdown; saleRecorded: boolean };
+function DeliveredForm({ car, share: initialShare, note: initialNote, onDone, onCancel, potId, name, act, run, errorBox }: Shared & { car: DeliveredCarInfo; share: string; note: string; onDone: () => void; onCancel: () => void; potId: string; name: string }) {
+  const [share, setShare] = useState(initialShare);
+  const [note, setNote] = useState(initialNote);
+  const bp = parsePercentToBasisPoints(share), slot = `deal:${car.id}`;
+  const result = bp === null ? null : car.profitCents > 0 ? Math.round(car.profitCents * bp / 10000) : car.profitCents;
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-3 items-center">
+        <CarPhoto src={car.photo} className="w-24 h-16 rounded-lg" />
+        <div><p className="text-white text-sm font-semibold">{carTitle(car)}</p><p className="text-gray-500 text-xs">{car.plate ?? ''} · Delivered</p></div>
+      </div>
+      <BreakdownFigures b={car.breakdown} profitCents={car.profitCents} />
+      {!car.saleRecorded && <p className="text-amber-300 text-[11px]">The sale is not in the accounts yet, so the profit is not complete.</p>}
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label={`${name}'s profit share (%)`}><input inputMode="decimal" className="input w-full px-3 py-2 rounded-lg text-sm" value={share} onChange={(e) => setShare(e.target.value)} /></Field>
+        <Field label="Note (optional)"><input className="input w-full px-3 py-2 rounded-lg text-sm" maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} placeholder={`e.g. Bought with ${name}'s money`} /></Field>
+      </div>
+      {result !== null && <p className="text-gray-300 text-xs">{name} gets now: <span className={`font-semibold ${result >= 0 ? 'text-gold-300' : 'text-red-400'}`}>{formatCents(result)}</span>{car.profitCents <= 0 ? ` (a loss is ${name}'s in full)` : ''}</p>}
+      <p className="text-gray-500 text-[11px]">Purchase and costs were {name}'s money, and the sale money already paid them back. Saved as a draft: you can change the % or remove it until you confirm. Nothing moves in {name}'s account until then.</p>
+      <div className="flex gap-2">
+        <button type="button" disabled={bp === null || act.busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40"
+          onClick={async () => { if (bp !== null && await run(slot, 'save_deal', { potId, carId: car.id, investorBasisPoints: bp, note: note.trim() }, `Draft · ${carTitle(car)}`)) onDone(); }}>{act.busy === slot ? 'Saving…' : 'Save draft'}</button>
+        <button type="button" onClick={onCancel} className="text-xs px-3 py-2 rounded-lg text-gray-400 border border-obsidian-400/60">Cancel</button>
+      </div>
+      {errorBox(slot)}
+    </div>
+  );
+}
+
+function DeliveredCars({ deals, potId, name, ...shared }: Shared & { deals: DealsQuery; potId: string; name: string }) {
+  const { act, run, setConfirm, errorBox, canWrite } = shared;
+  const [editing, setEditing] = useState<Deal | null>(null);
+  const [confirming, setConfirming] = useState<{ deal: Deal; amount: string; note: string } | null>(null);
+  const done = () => { setEditing(null); setConfirming(null); void deals.reload(); };
+  if (editing) return <DeliveredForm car={{ ...editing, id: editing.carId }} share={String(editing.investorBasisPoints / 100)} note={editing.note} onDone={done} onCancel={() => setEditing(null)} potId={potId} name={name} {...shared} />;
+  if (confirming) {
+    const d = confirming.deal, raw = confirming.amount.trim(), negative = raw.startsWith('-'), cents = parseRinggit(negative ? raw.slice(1) : raw), slot = `deal-confirm:${d.carId}`;
+    const amount = cents === null ? null : (negative ? -cents : cents);
+    const inRange = amount !== null && (d.profitCents >= 0 ? amount >= 0 && amount <= d.profitCents : amount >= d.profitCents && amount <= 0);
+    const ok = inRange && confirming.note.trim().length >= 3 && act.busy === null;
     return (
       <div className="space-y-3">
-        <div className="flex gap-3 items-center">
-          <CarPhoto src={chosen.photo} className="w-24 h-16 rounded-lg" />
-          <div><p className="text-white text-sm font-semibold">{carTitle(chosen)}</p><p className="text-gray-500 text-xs">{chosen.car_plate ?? ''}</p></div>
-        </div>
-        <div className="grid grid-cols-3 gap-3">
-          <Figure label="Purchase price" value={formatCents(chosen.purchaseCents)} />
-          <Figure label="Costs already on car" value={formatCents(carried)} note="Repairs and misc costs" />
-          <Figure label={`Charged to ${name}`} value={formatCents(chosen.stockCents)} tone="text-gold-300" />
-        </div>
+        <p className="text-white text-sm font-semibold">Confirm final result · {carTitle(d)}</p>
+        <BreakdownFigures b={d.breakdown} profitCents={d.profitCents} />
         <div className="grid sm:grid-cols-2 gap-3">
-          <Field label="Investor profit share (%)"><input inputMode="decimal" className="input w-full px-3 py-2 rounded-lg text-sm" value={share} onChange={(e) => setShare(e.target.value)} /></Field>
-          <Field label="Why this car moves"><input className="input w-full px-3 py-2 rounded-lg text-sm" maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={`e.g. Bought with ${name}'s money`} /></Field>
+          <Field label={`Final amount for ${name} (RM)`} hint={d.profitCents >= 0 ? 'You can adjust it, up to the car profit' : 'A loss is entered with a minus sign'}><input inputMode="decimal" className="input w-full px-3 py-2 rounded-lg text-sm" value={confirming.amount} onChange={(e) => setConfirming({ ...confirming, amount: e.target.value })} /></Field>
+          <Field label="Note"><input className="input w-full px-3 py-2 rounded-lg text-sm" maxLength={500} value={confirming.note} onChange={(e) => setConfirming({ ...confirming, note: e.target.value })} placeholder="e.g. All costs checked" /></Field>
         </div>
-        {short && (
-          <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 space-y-2">
-            <p className="text-amber-200 text-[11px]">{name} has only {formatCents(availableCents)} available. The company fronts {formatCents(chosen.stockCents - availableCents)} until {name}'s capital is locked or received. No withdrawals until then.</p>
-            <Field label="Reason for fronting the money"><input className="input w-full px-3 py-2 rounded-lg text-sm" maxLength={500} value={advanceReason} onChange={(e) => setAdvanceReason(e.target.value)} placeholder="e.g. Capital coming from 2TN payouts" /></Field>
-          </div>
-        )}
-        <p className="text-gray-500 text-[11px]">No bank money moves. The car leaves company stock with its purchase and costs, and later bills on it come from {name}'s account.</p>
         <div className="flex gap-2">
           <button type="button" disabled={!ok} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40"
-            onClick={() => bp !== null && setConfirm({ title: `Move this car to ${name}?`, label: 'Move car',
-              message: `${carTitle(chosen)} moves from company stock to ${name} for ${formatCents(chosen.stockCents)} (purchase ${formatCents(chosen.purchaseCents)} + costs ${formatCents(carried)}). Investor share of profit: ${basisPointsLabel(bp)}.${short ? ` The company fronts ${formatCents(chosen.stockCents - availableCents)}.` : ''} This cannot be undone.`,
-              go: async () => { if (await run(slot, 'transfer_car', { carId: chosen.id, potId, investorBasisPoints: bp, reason: reason.trim(), ...(short ? { advanceReason: advanceReason.trim() } : {}) }, `Move ${carTitle(chosen)} · ${name}`)) { setChosen(null); setReason(''); setAdvanceReason(''); void cars.reload(); } } })}>
-            {act.busy === slot ? 'Saving…' : 'Move car'}
-          </button>
-          <button type="button" onClick={() => setChosen(null)} className="text-xs px-3 py-2 rounded-lg text-gray-400 border border-obsidian-400/60">Choose another</button>
+            onClick={() => amount !== null && setConfirm({ title: `Confirm ${name}'s result?`, label: 'Confirm',
+              message: `${formatCents(amount)} from ${carTitle(d)} goes ${amount >= 0 ? 'into' : 'out of'} ${name}'s account. No bank money moves. Once confirmed it cannot be changed.`,
+              go: async () => { if (await run(slot, 'confirm_deal', { potId, carId: d.carId, shareCents: amount, note: confirming.note.trim() }, `Confirm · ${carTitle(d)}`)) done(); } })}>{act.busy === slot ? 'Saving…' : 'Confirm'}</button>
+          <button type="button" onClick={() => setConfirming(null)} className="text-xs px-3 py-2 rounded-lg text-gray-400 border border-obsidian-400/60">Cancel</button>
         </div>
         {errorBox(slot)}
       </div>
     );
   }
+  if (!deals.data || deals.data.deals.length === 0) return null;
   return (
-    <LoadState loading={cars.loading} error={cars.error} onRetry={() => void cars.reload()}>
-      {cars.data && (cars.data.cars.length === 0 ? <p className="text-gray-500 text-xs">No company stock cars can be moved right now.</p> : (
-        <div className="grid sm:grid-cols-2 gap-2">
-          {cars.data.cars.map((c) => (
-            <button key={c.id} type="button" disabled={!!c.blocker} onClick={() => setChosen(c)} className="flex gap-3 items-center text-left rounded-lg border border-obsidian-400/50 p-2 hover:border-gold-500/40 disabled:opacity-60 disabled:hover:border-obsidian-400/50">
-              <CarPhoto src={c.photo} className="w-20 h-14 rounded-md shrink-0" />
+    <div className="space-y-2">
+      <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest">Delivered cars ({deals.data.deals.length})</p>
+      {deals.data.deals.map((d) => (
+        <div key={d.carId} className="bg-card-gradient border border-obsidian-400/70 rounded-xl p-3 space-y-2">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex gap-3 items-center min-w-0">
+              <CarPhoto src={d.photo} className="w-16 h-11 rounded-md shrink-0" />
               <div className="min-w-0">
-                <p className="text-white text-sm font-medium truncate">{carTitle(c)}</p>
-                <p className="text-gray-500 text-[11px]">{c.car_plate ?? ''} · {formatCents(c.stockCents)}</p>
-                {c.blocker && <p className="text-amber-300 text-[10px] mt-0.5">{MOVE_BLOCKER[c.blocker] ?? c.blocker}</p>}
+                <p className="text-white text-sm font-medium truncate">{carTitle(d)} <span className="text-gray-500 text-[11px]">{d.plate ?? ''}</span></p>
+                <p className="text-gray-500 text-[11px]">{basisPointsLabel(d.investorBasisPoints)} share{d.note ? ` · ${d.note}` : ''}</p>
               </div>
-            </button>
-          ))}
+            </div>
+            <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${d.state === 'confirmed' ? 'border-emerald-500/40 text-emerald-300' : 'border-amber-500/40 text-amber-300'}`}>{d.state === 'confirmed' ? 'Confirmed' : 'Waiting to confirm'}</span>
+          </div>
+          <BreakdownFigures b={d.breakdown} profitCents={d.profitCents} />
+          {d.state === 'confirmed'
+            ? <p className={`text-xs ${(d.shareCents ?? 0) >= 0 ? 'text-emerald-300' : 'text-red-400'}`}>{formatCents(d.shareCents ?? 0)} {(d.shareCents ?? 0) >= 0 ? 'credited to' : 'charged to'} {name}{d.confirmNote ? ` · ${d.confirmNote}` : ''}</p>
+            : <>
+              {d.estimatedShareCents !== null && <p className="text-gray-300 text-xs">{name} gets now: <span className={`font-semibold ${d.estimatedShareCents >= 0 ? 'text-gold-300' : 'text-red-400'}`}>{formatCents(d.estimatedShareCents)}</span></p>}
+              {canWrite && <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => setEditing(d)} className="btn-ghost text-xs px-3 py-1.5 rounded-lg">Change %</button>
+                <button type="button" disabled={act.busy !== null} onClick={() => setConfirm({ title: 'Remove this car?', label: 'Remove', message: `${carTitle(d)} will no longer be in ${name}'s account.`, go: async () => { if (await run(`deal-remove:${d.carId}`, 'remove_deal', { potId, carId: d.carId }, `Remove · ${carTitle(d)}`)) done(); } })} className="text-xs px-3 py-1.5 rounded-lg text-gray-400 border border-obsidian-400/60">Remove</button>
+                {d.saleRecorded && <button type="button" onClick={() => setConfirming({ deal: d, amount: ((d.estimatedShareCents ?? 0) / 100).toFixed(2), note: '' })} className="btn-gold text-xs px-3 py-1.5 rounded-lg">Confirm final result</button>}
+              </div>}
+              {errorBox(`deal-remove:${d.carId}`)}
+            </>}
         </div>
       ))}
-    </LoadState>
+    </div>
   );
 }
 
