@@ -666,9 +666,13 @@ export default function Payments({ embedded }: PaymentsProps) {
   // Confirming is also the moment a claim starts counting toward the car's
   // profit numbers — it writes into the same repair/misc-cost records every
   // other page already reads, so nothing else needs to change to pick it up.
+  // A claim being approved right now: a second tap must not add its cost twice.
+  const confirmingClaims = useRef(new Set<string>());
   const handleConfirmClaim = async (id: string) => {
     const claim = payments.find(p => p.id === id);
-    if (!claim || claim.claimConfirmedBy) return;
+    if (!claim || claim.claimConfirmedBy || confirmingClaims.current.has(id)) return;
+    confirmingClaims.current.add(id);
+    try {
     await updatePayment(id, { claimConfirmedBy: currentUser?.id, claimConfirmedAt: new Date().toISOString() });
     if (currentUser) {
       const claimCar = claim.carId ? cars.find(c => c.id === claim.carId) : undefined;
@@ -708,6 +712,7 @@ export default function Payments({ embedded }: PaymentsProps) {
       });
       await updatePayment(id, { miscCostId });
     }
+    } finally { confirmingClaims.current.delete(id); }
   };
 
   // ── Link an unregistered claim to a real Workshop/Merchant ─────────────────────

@@ -275,6 +275,10 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const [showMiscModal, setShowMiscModal] = useState(false);
   const [miscForm, setMiscForm] = useState({ category: '', merchantName: '', description: '', amount: '', notes: '' });
   const [miscErrors, setMiscErrors] = useState<Record<string, string>>({});
+  // One save at a time (a double tap used to add the cost twice), and a
+  // same-amount cost already on this car needs a second tap to add anyway.
+  const [miscSaving, setMiscSaving] = useState(false);
+  const [miscDupeOk, setMiscDupeOk] = useState(false);
 
   // ── Panel Dealer Popup ──
   const [showPanelPopup, setShowPanelPopup] = useState(false);
@@ -964,7 +968,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           )}
           {(isAdmin || isDirector) && (
             <button
-              onClick={() => { setMiscForm({ category: '', merchantName: '', description: '', amount: '', notes: '' }); setMiscErrors({}); setShowMiscModal(true); }}
+              onClick={() => { setMiscForm({ category: '', merchantName: '', description: '', amount: '', notes: '' }); setMiscErrors({}); setMiscDupeOk(false); setShowMiscModal(true); }}
               className="flex items-center gap-2 bg-obsidian-700/60 hover:bg-obsidian-600/60 border border-obsidian-400/60 text-gray-300 hover:text-white px-4 py-2 rounded-lg text-sm transition-colors"
             >
               <Receipt size={15} />
@@ -3123,7 +3127,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               className={inputCls(miscErrors.amount)}
               placeholder="0.00"
               value={miscForm.amount}
-              onChange={(e) => setMiscForm({ ...miscForm, amount: e.target.value })}
+              onChange={(e) => { setMiscForm({ ...miscForm, amount: e.target.value }); setMiscDupeOk(false); }}
             />
           </FormField>
 
@@ -3139,12 +3143,22 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
         <div className="flex gap-3 mt-5">
           <button onClick={() => setShowMiscModal(false)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
           <button
+            disabled={miscSaving}
             onClick={async () => {
+              if (miscSaving) return;
               const errs: Record<string, string> = {};
               const amt = parseFloat(miscForm.amount);
               if (!miscForm.amount || isNaN(amt) || amt <= 0) errs.amount = 'Enter a valid amount';
               if (car?.investorFunded && !miscForm.merchantName.trim()) errs.merchantName = 'Choose the supplier';
+              const dupe = !errs.amount && (car?.miscCosts ?? []).find((m) => Math.round(m.amount * 100) === Math.round(amt * 100));
+              if (dupe && !miscDupeOk && !Object.keys(errs).length) {
+                setMiscDupeOk(true);
+                setMiscErrors({ amount: `This car already has ${formatRM(dupe.amount)} for "${dupe.description}"${dupe.createdAt ? ` (added ${new Date(dupe.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })})` : ''}. If this is a different charge, tap Add Misc Cost again.` });
+                return;
+              }
               if (Object.keys(errs).length) { setMiscErrors(errs); return; }
+              setMiscSaving(true);
+              try {
               const miscEntry = {
                 id: generateId(),
                 description: miscForm.description.trim() || miscForm.merchantName || miscForm.category || 'Misc',
@@ -3178,10 +3192,11 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               }
               setShowMiscModal(false);
               setJobTab('misc');
+              } finally { setMiscSaving(false); }
             }}
-            className="flex-1 bg-purple-600 hover:bg-purple-500 px-4 py-2.5 rounded-lg text-sm text-white"
+            className="flex-1 bg-purple-600 hover:bg-purple-500 px-4 py-2.5 rounded-lg text-sm text-white disabled:opacity-50"
           >
-            Add Misc Cost
+            {miscSaving ? 'Saving…' : 'Add Misc Cost'}
           </button>
         </div>
         {car?.investorFunded && currentUser && readPending(currentUser.id).some((p) => p.slot === 'misc-record:' + car.id) && <button className="text-gold-400 text-xs mt-3" onClick={async () => {
