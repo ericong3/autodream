@@ -3,6 +3,7 @@ import { AlertTriangle, Lock } from 'lucide-react';
 import Modal from './Modal';
 import { useStore } from '../store';
 import { verifyPassword } from '../utils/password';
+import { confirmOwnSessionPassword } from '../lib/garageSession';
 
 interface DeleteConfirmModalProps {
   isOpen: boolean;
@@ -28,9 +29,22 @@ export default function DeleteConfirmModal({ isOpen, onClose, onConfirm, itemNam
   }, [isOpen]);
 
   const handleConfirm = async () => {
-    if (!currentUser?.password || !(await verifyPassword(password, currentUser.password))) {
-      setError('Incorrect password.');
+    if (!currentUser || loading || !password) return;
+    const actorId = currentUser.id;
+    setLoading(true);
+    setError('');
+    try {
+      // Secure sign-in keeps no password in the browser: the server checks it.
+      const confirmed = currentUser.authSource === 'server'
+        ? await confirmOwnSessionPassword(password) === actorId
+        : !!currentUser.password && await verifyPassword(password, currentUser.password);
+      if (useStore.getState().currentUser?.id !== actorId) return;
+      if (!confirmed) { setError('Incorrect password.'); return; }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not confirm your password.');
       return;
+    } finally {
+      setLoading(false);
     }
     setLoading(true);
     try {
