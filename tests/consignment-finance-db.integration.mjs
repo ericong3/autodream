@@ -72,6 +72,7 @@ try{
  await db.exec(migration('20261105141201_outgoing_consignment_collections.sql'));await db.exec(migration('20261105150000_company_panel_bills.sql'));
  await db.exec(migration('20261119000000_consignment_trade_ins.sql'));
  await db.exec(migration('20261120001100_consignment_commission_id_types.sql'));
+ await db.exec(migration('20261120001200_consignment_blank_salesperson.sql'));
  await assert.rejects(()=>db.exec("update cars set investor_id='i' where id='car-own'"),/USE_INVESTOR_ACCOUNTS/);
  await assert.rejects(()=>db.exec("insert into journal_entries(id,date,description,source_type,source_id,lines) values('legacy-investor-bypass',current_date,'Legacy investor write','car_sold','old','[{\"accountId\":\"acct-inv-investor\",\"debit\":1,\"credit\":0},{\"accountId\":\"acct-investor-payable\",\"debit\":0,\"credit\":1}]')"),/USE_INVESTOR_POSTING/);
  let n=0;const req=()=> 'consign_test_'+String(++n).padStart(8,'0');
