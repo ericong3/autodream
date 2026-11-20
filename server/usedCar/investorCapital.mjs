@@ -21,7 +21,7 @@ const fields={
  settle_car:['carId','confirmCosts','requestId'],
  set_share:['carId','investorBasisPoints','note','requestId'],
  transfer_car:['carId','potId','investorBasisPoints','reason','advanceReason','requestId'],transferable_cars:['potId'],
- deal_search:['potId','query'],deals_list:['potId'],save_deal:['potId','carId','investorBasisPoints','note','requestId'],remove_deal:['potId','carId','requestId'],confirm_deal:['potId','carId','shareCents','profitCents','note','requestId'],
+ deal_search:['potId','query'],deals_list:['potId'],save_deal:['potId','carId','investorBasisPoints','capitalCents','note','requestId'],remove_deal:['potId','carId','requestId'],confirm_deal:['potId','carId','shareCents','profitCents','note','requestId'],
 };
 const carActions=new Set(['fund_car','car_snapshot','purchase_paid','add_car_bill','approve_car_bill','void_car_bill','pay_car_bill','agree_sale','sale_received','settle_car','set_share','transfer_car']);
 const uuid=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);

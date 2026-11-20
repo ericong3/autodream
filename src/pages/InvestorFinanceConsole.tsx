@@ -259,7 +259,7 @@ function CapitalReceived({ potId, name, act, run, banks, setConfirm, errorBox }:
 
 type Breakdown = { saleCents: number; costOfCarCents: number; expenseCents: number; purchaseCents: number };
 type FoundCar = { id: string; make: string; model: string; year: number | null; plate: string | null; photo: string | null; status: string | null; sold: boolean; saleRecorded: boolean; profitCents: number; breakdown: Breakdown; dealPotId: string | null; purchaseCents: number; stockCents: number; blocker: string | null };
-type Deal = { carId: string; make: string; model: string; year: number | null; plate: string | null; photo: string | null; status: string | null; sold: boolean; saleRecorded: boolean; profitCents: number; breakdown: Breakdown; investorBasisPoints: number; note: string; state: 'draft' | 'confirmed'; estimatedShareCents: number | null; shareCents: number | null; confirmNote: string | null; confirmedAt: string | null };
+type Deal = { carId: string; make: string; model: string; year: number | null; plate: string | null; photo: string | null; status: string | null; sold: boolean; saleRecorded: boolean; profitCents: number; breakdown: Breakdown; investorBasisPoints: number; capitalCents: number; note: string; state: 'draft' | 'confirmed'; estimatedShareCents: number | null; shareCents: number | null; confirmNote: string | null; confirmedAt: string | null };
 type DealsQuery = { data: { deals: Deal[] } | null; loading: boolean; error: unknown; reload: () => Promise<void> };
 const MOVE_BLOCKER: Record<string, string> = {
   COMPANY_BILLS_UNPAID: 'Has unpaid company bills. Pay them, or mark them paid before the bank start date, first.',
@@ -421,10 +421,11 @@ function DeliveredForm({ car, share: initialShare, note: initialNote, onDone, on
         <Field label="Note (optional)"><input className="input w-full px-3 py-2 rounded-lg text-sm" maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} placeholder={`e.g. Bought with ${name}'s money`} /></Field>
       </div>
       {result !== null && <p className="text-gray-300 text-xs">{name} gets now: <span className={`font-semibold ${result >= 0 ? 'text-gold-300' : 'text-red-400'}`}>{formatCents(result)}</span>{figures && figures.profitCents <= 0 ? ` (a loss is ${name}'s in full)` : ''}</p>}
-      <p className="text-gray-500 text-[11px]">Purchase and costs were {name}'s money, and the sale money already paid them back. Saved as a draft: you can change the % or remove it until you confirm. Nothing moves in {name}'s account until then.</p>
+      {figures && <p className="text-sky-300 text-[11px]">{formatCents(figures.purchaseCents + figures.carCostsCents)} of {name}'s money is in this car (purchase + car costs). It stays in the car until the sale money comes in. On confirm it comes back to {name} first, then the remaining profit is split.</p>}
+      <p className="text-gray-500 text-[11px]">Purchase and costs are {name}'s money. Saved as a draft: you can change the % or remove it until you confirm. Nothing moves in {name}'s account until then.</p>
       <div className="flex gap-2">
-        <button type="button" disabled={bp === null || act.busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40"
-          onClick={async () => { if (bp !== null && await run(slot, 'save_deal', { potId, carId: car.id, investorBasisPoints: bp, note: note.trim() }, `Draft · ${carTitle(car)}`)) onDone(); }}>{act.busy === slot ? 'Saving…' : 'Save draft'}</button>
+        <button type="button" disabled={bp === null || !figures || act.busy !== null} className="btn-gold text-xs px-4 py-2 rounded-lg disabled:opacity-40"
+          onClick={async () => { if (bp !== null && figures && await run(slot, 'save_deal', { potId, carId: car.id, investorBasisPoints: bp, capitalCents: Math.max(0, figures.purchaseCents + figures.carCostsCents), note: note.trim() }, `Draft · ${carTitle(car)}`)) onDone(); }}>{act.busy === slot ? 'Saving…' : 'Save draft'}</button>
         <button type="button" onClick={onCancel} className="text-xs px-3 py-2 rounded-lg text-gray-400 border border-obsidian-400/60">Cancel</button>
       </div>
       {errorBox(slot)}
@@ -458,10 +459,10 @@ function DeliveredRow({ d, onEdit, onConfirm, onDone, potId, name, act, run, set
           <CarPhoto src={d.photo} className="w-16 h-11 rounded-md shrink-0" />
           <div className="min-w-0">
             <p className="text-white text-sm font-medium truncate">{carTitle(d)} <span className="text-gray-500 text-[11px]">{d.plate ?? ''}</span></p>
-            <p className="text-gray-500 text-[11px]">{basisPointsLabel(d.investorBasisPoints)} share{d.note ? ` · ${d.note}` : ''}</p>
+            <p className="text-gray-500 text-[11px]">{basisPointsLabel(d.investorBasisPoints)} share{!confirmed ? ` · ${formatCents(d.capitalCents)} of ${name}'s money in the car` : ''}{d.note ? ` · ${d.note}` : ''}</p>
           </div>
         </div>
-        <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${confirmed ? 'border-emerald-500/40 text-emerald-300' : 'border-amber-500/40 text-amber-300'}`}>{confirmed ? 'Confirmed' : 'Waiting to confirm'}</span>
+        <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${confirmed ? 'border-emerald-500/40 text-emerald-300' : 'border-amber-500/40 text-amber-300'}`}>{confirmed ? 'Confirmed' : 'Waiting for sale money'}</span>
       </div>
       {confirmed
         ? <p className={`text-xs ${(d.shareCents ?? 0) >= 0 ? 'text-emerald-300' : 'text-red-400'}`}>Car {(d.profitCents ?? 0) >= 0 ? 'profit' : 'loss'} {formatCents(d.profitCents)} · {formatCents(d.shareCents ?? 0)} {(d.shareCents ?? 0) >= 0 ? 'credited to' : 'charged to'} {name}{d.confirmNote ? ` · ${d.confirmNote}` : ''}</p>

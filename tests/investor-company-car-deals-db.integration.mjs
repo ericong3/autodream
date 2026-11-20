@@ -7,7 +7,7 @@ import bcrypt from 'bcryptjs';
 import {productionFinanceFixture} from './helpers/production-finance-fixture.mjs';
 const db=await productionFinanceFixture(process.argv[2]);
 try{
- for(const f of ['20261120000000_paid_before_bank_opening.sql','20261120000100_investor_purchase_before_opening.sql','20261120000200_investor_capital_advances.sql','20261120000300_register_car_advance.sql','20261120000400_move_car_to_investor.sql','20261120000500_investor_company_car_deals.sql','20261120000600_allocate_any_car.sql','20261120000700_allocate_search_all.sql','20261120000800_delivered_car_app_profit.sql','20261120000900_investor_delivered_cars_view.sql'])
+ for(const f of ['20261120000000_paid_before_bank_opening.sql','20261120000100_investor_purchase_before_opening.sql','20261120000200_investor_capital_advances.sql','20261120000300_register_car_advance.sql','20261120000400_move_car_to_investor.sql','20261120000500_investor_company_car_deals.sql','20261120000600_allocate_any_car.sql','20261120000700_allocate_search_all.sql','20261120000800_delivered_car_app_profit.sql','20261120000900_investor_delivered_cars_view.sql','20261120001000_delivered_car_capital_held.sql'])
   await db.exec(readFileSync(new URL('../supabase/migrations/'+f,import.meta.url),'utf8'));
  const password=bcrypt.hashSync('Disposable-test-only',10);
  for(const [id,role] of [['d','director'],['a','admin'],['i','investor']]){await db.query("insert into users(id,name,username,password,role,business_access) values($1,$1,$1,$2,$3,case when $3='director' then 'both' else 'used_car' end)",[id,password,role]);await db.query("insert into garage_building_staff(id,name,username,password,role,business_access,registration_status,enabled) values($1,$1,$1,$2,$3,case when $3='director' then 'both' else 'used_car' end,'active',true)",[id,password,role]);}
@@ -43,38 +43,41 @@ try{
  await db.exec("set session_replication_role=origin");
  const qm=(await call('uc_investor_capital','d','deal_search',{potId,query:'qm77'})).cars;
  assert.equal(qm.length,2);assert.equal(qm.find(c=>c.id==='vios').blocker,null);assert.equal(qm.find(c=>c.id==='alza').blocker,'CONSIGNMENT_CAR');
- await cap('save_deal',{potId,carId:'vios',investorBasisPoints:5000});
- await assert.rejects(()=>cap('save_deal',{potId,carId:'alza',investorBasisPoints:5000}),/CONSIGNMENT_CAR/);
+ await cap('save_deal',{potId,carId:'vios',investorBasisPoints:5000,capitalCents:0});
+ await assert.rejects(()=>cap('save_deal',{potId,carId:'alza',investorBasisPoints:5000,capitalCents:0}),/CONSIGNMENT_CAR/);
  await cap('remove_deal',{potId,carId:'vios'});
  // A car in stock is moved, not marked.
- await assert.rejects(()=>cap('save_deal',{potId,carId:'myvi',investorBasisPoints:4000}),/CAR_IN_STOCK/);
+ await assert.rejects(()=>cap('save_deal',{potId,carId:'myvi',investorBasisPoints:4000,capitalCents:0}),/CAR_IN_STOCK/);
  // Draft on a delivered car: save, change, remove, save again.
- let saved=await cap('save_deal',{potId,carId:'veloz',investorBasisPoints:4000,note:'Bought with Ting money 26 Sep'});
+ let saved=await cap('save_deal',{potId,carId:'veloz',investorBasisPoints:4000,capitalCents:9000000,note:'Bought with Ting money 26 Sep'});
  assert.equal(saved.deal.state,'draft');assert.equal(Number(saved.deal.estimatedShareCents),340000);
- saved=await cap('save_deal',{potId,carId:'veloz',investorBasisPoints:5000,note:'Changed to 50/50'});
+ saved=await cap('save_deal',{potId,carId:'veloz',investorBasisPoints:5000,capitalCents:9000000,note:'Changed to 50/50'});
  assert.equal(Number(saved.deal.estimatedShareCents),425000);
- await assert.rejects(()=>cap('save_deal',{potId:other,carId:'veloz',investorBasisPoints:5000}),/DEAL_OTHER_INVESTOR/);
+ await assert.rejects(()=>cap('save_deal',{potId:other,carId:'veloz',investorBasisPoints:5000,capitalCents:9000000}),/DEAL_OTHER_INVESTOR/);
  await cap('remove_deal',{potId,carId:'veloz'});
  assert.equal((await call('uc_investor_capital','d','deals_list',{potId})).deals.length,0);
- await cap('save_deal',{potId,carId:'veloz',investorBasisPoints:5000,note:'Bought with Ting money'});
+ await cap('save_deal',{potId,carId:'veloz',investorBasisPoints:5000,capitalCents:9000000,note:'Bought with Ting money'});
  assert.equal(Number((await pos(potId)).cashCents),0);
+ // Capital held in the waiting car: not free; the company fronts it until capital is in.
+ let held=await pos(potId);assert.equal(Number(held.availableCents),0);assert.equal(Number(held.deliveredCapitalCents),9000000);assert.equal(Number(held.advanceWaitingCents),9000000);
+ await assert.rejects(()=>cap('save_deal',{potId,carId:'veloz',investorBasisPoints:5000}),/INVALID/);
  // The investor sees the draft car with no amounts.
  let mine=(await call('uc_investor_capital','i','snapshot',{})).deliveredCars;
  assert.equal(mine.length,1);assert.equal(mine[0].state,'draft');assert.equal(mine[0].shareCents,null);assert.equal(mine[0].investorBasisPoints,null);
  // A loss is the investor's in full, whatever the %.
- const loss=await cap('save_deal',{potId,carId:'axia',investorBasisPoints:4000});
+ const loss=await cap('save_deal',{potId,carId:'axia',investorBasisPoints:4000,capitalCents:0});
  assert.equal(Number(loss.deal.estimatedShareCents),-100000);
  // Confirm with an adjusted share, within the profit.
  await assert.rejects(()=>cap('confirm_deal',{potId,carId:'veloz',shareCents:900000,profitCents:850000,note:'Too much'}),/SHARE_OUT_OF_RANGE/);
  const conf=await cap('confirm_deal',{potId,carId:'veloz',shareCents:400000,profitCents:850000,note:'Final after costs checked'});
- assert.equal(conf.deal.state,'confirmed');
+ assert.equal(conf.deal.state,'confirmed');assert.equal(conf.position.deliveredCapitalCents,undefined);assert.equal(Number(conf.position.availableCents),400000);
  mine=(await call('uc_investor_capital','i','snapshot',{})).deliveredCars;assert.equal(Number(mine.find(c=>c.carId==='veloz').shareCents),400000);assert.equal(Number(conf.position.cashCents),400000);
  const j=(await db.query("select lines from journal_entries where id='uc:deal:veloz'")).rows[0].lines;
  assert.deepEqual(j.map(l=>[l.accountId,Number(l.debit),Number(l.credit)]),[['acct-exp-investor-profit-share',4000,0],['acct-investor-payable',0,4000]]);
  await cap('confirm_deal',{potId,carId:'axia',shareCents:-100000,profitCents:-100000,note:'Loss confirmed'});
  assert.equal(Number((await pos(potId)).cashCents),300000);
  assert.equal(Number((await db.query("select uc_car_book_profit_cents('veloz') n")).rows[0].n),850000);
- await assert.rejects(()=>cap('save_deal',{potId,carId:'veloz',investorBasisPoints:6000}),/DEAL_CONFIRMED/);
+ await assert.rejects(()=>cap('save_deal',{potId,carId:'veloz',investorBasisPoints:6000,capitalCents:9000000}),/DEAL_CONFIRMED/);
  await assert.rejects(()=>cap('remove_deal',{potId,carId:'veloz'}),/DEAL_CONFIRMED/);
  await assert.rejects(()=>db.exec("delete from uc_investor_deals where car_id='veloz'"),/DEAL_CONFIRMED/);
  assert.ok((await call('uc_investor_capital','d','snapshot',{potId})).entries.some(e=>e.kind==='deal_profit_in'&&Number(e.amountCents)===400000));

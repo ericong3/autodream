@@ -298,11 +298,11 @@ export default function InvestorAccountPortal({ preview }: { preview?: { potId: 
                 <CarPhoto src={d.photo} className="w-20 h-14 rounded-xl shrink-0" />
                 <div className="min-w-0 flex-1">
                   <p className="text-white text-sm font-semibold truncate">{carTitle(d)}</p>
-                  <p className="text-gray-500 text-xs">{d.plate ?? ''}</p>
+                  <p className="text-gray-500 text-xs">{d.plate ?? ''}{d.state === 'draft' && d.capitalCents ? ` · Your money in car ${formatCents(d.capitalCents)}` : ''}</p>
                 </div>
                 {d.state === 'confirmed'
                   ? <div className="text-right shrink-0"><p className={`text-sm font-semibold ${(d.shareCents ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{(d.shareCents ?? 0) >= 0 ? '+' : ''}{formatCents(d.shareCents ?? 0)}</p><p className="text-gray-500 text-[11px]">{d.investorBasisPoints !== null ? `Your ${basisPointsLabel(d.investorBasisPoints)} share` : 'Your share'}</p></div>
-                  : <span className="shrink-0 text-[11px] font-medium px-2.5 py-1 rounded-full border border-amber-500/40 text-amber-300">Result being finalised</span>}
+                  : <span className="shrink-0 text-[11px] font-medium px-2.5 py-1 rounded-full border border-amber-500/40 text-amber-300">Waiting for sale money</span>}
               </div>
             ))}
           </div>
