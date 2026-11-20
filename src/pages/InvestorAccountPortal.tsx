@@ -9,7 +9,7 @@ import InvestorMoneyDocuments from '../components/InvestorMoneyDocuments';
 import InvestorFinanceCar, { ActionErrorBox, CarPhoto, Field, LoadState, PendingSaves, Section, StateChip, profitFigure } from '../components/InvestorFinanceCar';
 import {
   carTitle, earnedProfit, entryLabel, formatCents, formatDay, investorRequest, isInStock, malaysiaToday, parseRinggit, useInvestorAction, useInvestorQuery,
-  basisPointsLabel, WITHDRAWAL_LABEL, type CarSummary, type CashEntry, type InvestorSnapshot,
+  basisPointsLabel, WITHDRAWAL_LABEL, type CarSummary, type DeliveredCar, type CashEntry, type InvestorSnapshot,
 } from '../lib/investorFinance';
 import DealerAccountView from '../components/DealerAccountView';
 import DealerStockForm from '../components/DealerStockForm';
@@ -137,6 +137,21 @@ function Heading({ title, note, action }: { title: string; note?: string; action
 // preview: the Director sees an investor's portal as that investor would,
 // read-only. Same screens, loaded with the Director's own login; every button
 // that saves (withdraw, add or update dealer stock) is hidden.
+function DeliveredCarRow({ d }: { d: DeliveredCar }) {
+  return (
+    <div className="flex items-center gap-3 bg-card-gradient border border-obsidian-400/70 rounded-2xl p-3">
+      <CarPhoto src={d.photo} className="w-20 h-14 rounded-xl shrink-0" />
+      <div className="min-w-0 flex-1">
+        <p className="text-white text-sm font-semibold truncate">{carTitle(d)}</p>
+        <p className="text-gray-500 text-xs">{d.plate ?? ''}{d.state === 'draft' && d.capitalCents ? ` · Your money in car ${formatCents(d.capitalCents)}` : ''}</p>
+      </div>
+      {d.state === 'confirmed'
+        ? <div className="text-right shrink-0"><p className={`text-sm font-semibold ${(d.shareCents ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{(d.shareCents ?? 0) >= 0 ? '+' : ''}{formatCents(d.shareCents ?? 0)}</p><p className="text-gray-500 text-[11px]">{d.investorBasisPoints !== null ? `Your ${basisPointsLabel(d.investorBasisPoints)} share` : 'Your share'}</p></div>
+        : <span className="shrink-0 text-[11px] font-medium px-2.5 py-1 rounded-full border border-amber-500/40 text-amber-300">Waiting for sale money</span>}
+    </div>
+  );
+}
+
 export default function InvestorAccountPortal({ preview }: { preview?: { potId: string } } = {}) {
   const actorId = useStore((s) => s.currentUser?.id);
   const potKey = preview ? ':' + preview.potId : '';
@@ -293,18 +308,7 @@ export default function InvestorAccountPortal({ preview }: { preview?: { potId: 
         <div className="space-y-3">
           <Heading title="Delivered cars" note="Bought with your money and already sold" />
           <div className="space-y-2">
-            {snap.deliveredCars!.map((d) => (
-              <div key={d.carId} className="flex items-center gap-3 bg-card-gradient border border-obsidian-400/70 rounded-2xl p-3">
-                <CarPhoto src={d.photo} className="w-20 h-14 rounded-xl shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-white text-sm font-semibold truncate">{carTitle(d)}</p>
-                  <p className="text-gray-500 text-xs">{d.plate ?? ''}{d.state === 'draft' && d.capitalCents ? ` · Your money in car ${formatCents(d.capitalCents)}` : ''}</p>
-                </div>
-                {d.state === 'confirmed'
-                  ? <div className="text-right shrink-0"><p className={`text-sm font-semibold ${(d.shareCents ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{(d.shareCents ?? 0) >= 0 ? '+' : ''}{formatCents(d.shareCents ?? 0)}</p><p className="text-gray-500 text-[11px]">{d.investorBasisPoints !== null ? `Your ${basisPointsLabel(d.investorBasisPoints)} share` : 'Your share'}</p></div>
-                  : <span className="shrink-0 text-[11px] font-medium px-2.5 py-1 rounded-full border border-amber-500/40 text-amber-300">Waiting for sale money</span>}
-              </div>
-            ))}
+            {snap.deliveredCars!.map((d) => <DeliveredCarRow key={d.carId} d={d} />)}
           </div>
         </div>
       )}
@@ -318,7 +322,9 @@ export default function InvestorAccountPortal({ preview }: { preview?: { potId: 
     </div>
   );
 
-  const filters: [CarFilter, string][] = [['invested', `Invested ${stock.length}`], ...(dv ? [['dealer', `${dealerName} stock ${dealerStock.length}`] as [CarFilter, string]] : []), ['sold', `Sold ${sold.length}`]];
+  const waitingDelivered = (snap?.deliveredCars ?? []).filter((d) => d.state === 'draft');
+  const doneDelivered = (snap?.deliveredCars ?? []).filter((d) => d.state === 'confirmed');
+  const filters: [CarFilter, string][] = [['invested', `Invested ${stock.length + waitingDelivered.length}`], ...(dv ? [['dealer', `${dealerName} stock ${dealerStock.length}`] as [CarFilter, string]] : []), ['sold', `Sold ${sold.length + doneDelivered.length}`]];
   const cars = snap && (
     <div className="space-y-5">
       <div className={`grid gap-2 ${dv ? 'grid-cols-3' : 'grid-cols-2'}`}>
@@ -332,13 +338,19 @@ export default function InvestorAccountPortal({ preview }: { preview?: { potId: 
         ))}
         {addCar && <button type="button" onClick={addCar} aria-label="Add car" className="btn-gold ml-auto w-10 h-10 rounded-full flex items-center justify-center"><Plus size={18} /></button>}
       </div>
-      {carFilter === 'invested' && (stock.length === 0 ? <p className="text-gray-500 text-sm text-center py-10">No cars in stock right now</p>
-        : <div className="grid sm:grid-cols-2 gap-4">{stock.map((car) => <InvestedCarCard key={car.carId} car={car} wide onOpen={() => setOpenCar(car.carId)} />)}</div>)}
+      {carFilter === 'invested' && (stock.length + waitingDelivered.length === 0 ? <p className="text-gray-500 text-sm text-center py-10">No cars in stock right now</p>
+        : <div className="space-y-3">
+          {stock.length > 0 && <div className="grid sm:grid-cols-2 gap-4">{stock.map((car) => <InvestedCarCard key={car.carId} car={car} wide onOpen={() => setOpenCar(car.carId)} />)}</div>}
+          {waitingDelivered.length > 0 && <div className="space-y-2">{waitingDelivered.map((d) => <DeliveredCarRow key={d.carId} d={d} />)}</div>}
+        </div>)}
       {carFilter === 'dealer' && dv && (dealerStock.length === 0 ? <p className="text-gray-500 text-sm text-center py-10">No {dealerName} cars in stock</p>
         : <div className="grid sm:grid-cols-2 gap-4">{dealerStock.map((car) => <DealerCarCard key={car.carId} car={car} dealerName={dealerName ?? 'dealer'} onEdit={preview ? undefined : () => setStockForm(car)} />)}</div>)}
       {carFilter === 'dealer' && dv && <button type="button" onClick={() => setDealerOpen(true)} className="w-full text-center text-gold-300 text-sm py-2">Sold {dealerName} cars and payouts</button>}
-      {carFilter === 'sold' && (sold.length === 0 ? <p className="text-gray-500 text-sm text-center py-10">No sold cars yet</p>
-        : <div className="grid sm:grid-cols-2 gap-3">{sold.map((car) => <SoldRow key={car.carId} car={car} onOpen={() => setOpenCar(car.carId)} />)}</div>)}
+      {carFilter === 'sold' && (sold.length + doneDelivered.length === 0 ? <p className="text-gray-500 text-sm text-center py-10">No sold cars yet</p>
+        : <div className="space-y-3">
+          {sold.length > 0 && <div className="grid sm:grid-cols-2 gap-3">{sold.map((car) => <SoldRow key={car.carId} car={car} onOpen={() => setOpenCar(car.carId)} />)}</div>}
+          {doneDelivered.length > 0 && <div className="space-y-2">{doneDelivered.map((d) => <DeliveredCarRow key={d.carId} d={d} />)}</div>}
+        </div>)}
     </div>
   );
 
