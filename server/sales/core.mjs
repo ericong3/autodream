@@ -25,6 +25,7 @@ import {handleInvestorBillAdjustments} from '../usedCar/investorBillAdjustments.
 import {handleOutgoingCollections} from '../usedCar/outgoingCollections.mjs';
 import {handleConsignmentFinance} from '../usedCar/consignmentFinance.mjs';
 import {handleDealerAccounts} from '../usedCar/dealerAccounts.mjs';
+import {handleMoneyReceived} from '../usedCar/moneyReceived.mjs';
 export async function handleSales(req,deps){
  let scope,action;try{const body=typeof req.body==='string'?JSON.parse(req.body):req.body;scope=body?.scope;action=body?.action;}catch{}
  if(scope==='investor_finance'&&action==='complete_repair')return handleInvestorRepairCompletion(req,deps);
@@ -35,6 +36,7 @@ export async function handleSales(req,deps){
  if(scope==='investor_bill_adjustments')return handleInvestorBillAdjustments(req,deps);
  if(scope==='outgoing_collections')return handleOutgoingCollections(req,deps);
  if(scope==='company_evidence')return handleCompanyEvidence(req,deps);
+ if(scope==='money_received')return handleMoneyReceived(req,deps);
  if(scope==='investor_money_evidence')return handleInvestorMoneyEvidence(req,deps);
  if(scope==='investor_claims')return handleInvestorClaims(req,deps);
  if(scope==='trade_in_funding')return handleTradeInFunding(req,deps);

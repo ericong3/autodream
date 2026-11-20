@@ -75,6 +75,7 @@ import { recordInvestorMiscCost } from '../utils/completeInvestorMisc';
 import TradeInFundingChoice from '../components/TradeInFundingChoice';
 import CompanyPurchaseStart from '../components/CompanyPurchaseStart';
 import ConsignmentFinancePanel from '../components/ConsignmentFinancePanel';
+import MoneyReceivedPanel from '../components/MoneyReceivedPanel';
 import { buildCarSaleEntry, buildPayableRecognizedEntry, buildCarCostRecognizedEntry, buildSettlementRecognizedEntry, buildTradeInAcquiredEntry, LEDGER_ACCOUNTS } from '../utils/generateJournalEntries';
 import { getCaseCompletion } from '../utils/caseCompletion';
 import { buildDealReceiptPdf, uploadDealReceipt } from '../utils/generateDealReceipt';
@@ -940,6 +941,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
         </span>
       </nav>
 
+      {companyBankPaymentsEnabled && currentUser && (isDirector || isAdmin) && <MoneyReceivedPanel key={currentUser.id + ':' + car.id} car={car} actorId={currentUser.id} role={currentUser.role} />}
       {car.investorFunded && (isDirector || isAdmin) && <button className="w-full rounded-xl border border-gold-400/30 bg-gold-400/10 px-4 py-3 text-left text-gold-400" onClick={() => navigate('/investor-finance?carId='+encodeURIComponent(car.id))}>{isAdmin ? 'View current car bills in investor account →' : 'View current costs and profit in investor account →'}</button>}
       {car.investorFunded && isShareHolder && <p className="text-sm text-gray-400">Investor car totals are shown in investor accounts.</p>}
       {companyBankPaymentsEnabled && car.consignment && !car.outgoingConsignment && currentUser && (isDirector||isAdmin||isShareHolder) && <ConsignmentFinancePanel key={currentUser.id+':'+currentUser.role+':'+car.id} car={car} actorId={currentUser.id} role={currentUser.role}/>}

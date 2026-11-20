@@ -74,6 +74,7 @@ try{
  await db.exec(migration('20261120001100_consignment_commission_id_types.sql'));
  await db.exec(migration('20261120001200_consignment_blank_salesperson.sql'));
  await db.exec(migration('20261120001300_documents_to_follow.sql'));
+ await db.exec(migration('20261120001400_money_received.sql'));
  await assert.rejects(()=>db.exec("update cars set investor_id='i' where id='car-own'"),/USE_INVESTOR_ACCOUNTS/);
  await assert.rejects(()=>db.exec("insert into journal_entries(id,date,description,source_type,source_id,lines) values('legacy-investor-bypass',current_date,'Legacy investor write','car_sold','old','[{\"accountId\":\"acct-inv-investor\",\"debit\":1,\"credit\":0},{\"accountId\":\"acct-investor-payable\",\"debit\":0,\"credit\":1}]')"),/USE_INVESTOR_POSTING/);
  let n=0;const req=()=> 'consign_test_'+String(++n).padStart(8,'0');
@@ -297,6 +298,29 @@ try{
  await assert.rejects(()=>db.exec("update payments set account_number='wrong' where id='ordinary-panel-bill'"),/PANEL_BILL_ADJUSTMENT_REQUIRED/);
  const pp=await evidence('ordinary-panel-bill','payment');await call('uc_company_bank_money','d','record',{...bankData(),allocations:[{paymentId:'ordinary-panel-bill',amountCents:20000,documentId:pp}],requestId:req()});const wp=await evidence('ordinary-panel-bill','payment'),cp=await evidence('ordinary-panel-customer','payment');await call('uc_company_bank_receipt','d','record',{paymentId:'ordinary-panel-customer',amountCents:6970000,receiptDocumentId:cp,withheldBills:[{paymentId:'ordinary-panel-bill',amountCents:30000,documentId:wp}],...bankData(),requestId:req()});assert.equal((await db.query("select status from payments where id='ordinary-panel-bill'")).rows[0].status,'transferred');assert.equal(Number((await db.query("select uc_company_paid_cents('ordinary-panel-bill') cents")).rows[0].cents),50000);
  assert.equal(Number((await db.query("select coalesce(sum(((l->>'credit')::numeric-(l->>'debit')::numeric)*100),0) cents from journal_entries j cross join lateral jsonb_array_elements(j.lines) l where j.car_id='ordinary-panel' and l->>'accountId'='acct-ap'")).rows[0].cents),0);
+ // Money received: any car, only amount, date and bank. Slip can follow.
+ const moneyIn=(actor,action,data)=>call('uc_money_received_action',actor,action,data);
+ const position=async()=>Number((await db.query('select uc_registered_bank_position($1) cents',[bank.id])).rows[0].cents);
+ const before=await position(),mrReq=req();
+ await assert.rejects(()=>moneyIn('a','record',{carId:'consign-one',amountCents:5320000,receivedOn:day,bankAccountId:bank.id,requestId:req()}),/NOT_ALLOWED/);
+ const got=(await moneyIn('d','record',{carId:'consign-one',amountCents:5320000,receivedOn:day,bankAccountId:bank.id,requestId:mrReq})).entry;
+ assert.equal(got.state,'to_match');assert.equal(got.beforeOpening,false);assert.equal(got.hasSlip,false);assert.equal(await position(),before+5320000);
+ assert.equal((await moneyIn('d','record',{carId:'consign-one',amountCents:5320000,receivedOn:day,bankAccountId:bank.id,requestId:mrReq})).entry.id,got.id);
+ assert.equal(Number((await db.query("select coalesce(sum(((l->>'credit')::numeric-(l->>'debit')::numeric)*100),0) c from journal_entries j cross join lateral jsonb_array_elements(j.lines) l where l->>'accountId'='acct-money-to-match'")).rows[0].c),5320000);
+ const yesterday=(await db.query("select to_char((now() at time zone 'Asia/Kuala_Lumpur')::date-1,'YYYY-MM-DD') d")).rows[0].d;
+ const early=(await moneyIn('d','record',{carId:'consign-one',amountCents:100000,receivedOn:yesterday,bankAccountId:bank.id,bankReference:'OCT-1',requestId:req()})).entry;
+ assert.equal(early.beforeOpening,true);assert.equal(await position(),before+5320000);
+ await assert.rejects(()=>moneyIn('d','record',{carId:'consign-one',amountCents:1,receivedOn:day,bankAccountId:bank.id,bankReference:'oct-1 ',requestId:req()}),/DUPLICATE_REFERENCE/);
+ await assert.rejects(()=>moneyIn('d','record',{carId:'consign-one',amountCents:1,receivedOn:'2999-01-01',bankAccountId:bank.id,requestId:req()}),/INVALID_DATE/);
+ const summary=(await moneyIn('a','summary',{})).cars['consign-one'];assert.equal(summary.amountCents,5420000);assert.equal(summary.noSlip,2);
+ const slip=await moneyIn('a','slip_prepare',{id:got.id,fileName:'slip.png',mimeType:'image/png',sha256:'c'.repeat(64)});
+ await assert.rejects(()=>moneyIn('a','slip_confirm',{id:got.id,path:slip.path}),/UPLOAD_MISSING/);
+ await db.query("insert into storage.objects values('finance-evidence',$1)",[slip.path]);
+ assert.equal((await moneyIn('a','slip_confirm',{id:got.id,path:slip.path,fileName:'slip.png'})).entry.hasSlip,true);
+ await assert.rejects(()=>moneyIn('a','slip_prepare',{id:got.id,fileName:'x.png',mimeType:'image/png',sha256:'d'.repeat(64)}),/SLIP_ALREADY_SAVED/);
+ await assert.rejects(()=>db.exec("update uc_money_received set amount_cents=1 where id='"+got.id+"'"),/IMMUTABLE_HISTORY/);
+ await assert.rejects(()=>db.exec("delete from uc_money_received where id='"+got.id+"'"),/IMMUTABLE_HISTORY/);
+ assert.equal((await moneyIn('a','list',{carId:'consign-one'})).entries.length,2);
  if(db.isPostgres){
   const a=await db.connection(),b=await db.connection();try{
    await makeCase('race-receipt',{price:70000});const rr=await cf('snapshot',{carId:'race-receipt'}),rd=await evidence(rr.case.customer_payment_id,'payment');
