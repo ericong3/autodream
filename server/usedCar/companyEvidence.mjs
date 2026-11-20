@@ -10,7 +10,7 @@ import {decodeProof,cleanFileName} from './investorActivation.mjs';
 
 export const SCOPE='company_evidence';
 const BODY_MAX=4096,UPLOAD_BODY_MAX=2_100_000;
-export const FIELDS={upload:['paymentId','kind','fileName','mimeType','base64','requestId'],list:['paymentId'],open:['documentId']};
+export const FIELDS={upload:['paymentId','kind','fileName','mimeType','base64','requestId'],list:['paymentId'],open:['documentId'],missing:[]};
 const uuid=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 const paymentId=value=>typeof value==='string'&&value.length>=1&&value.length<=180&&!/[\u0000-\u001f\u007f]/.test(value);
 const REQUEST=/^[A-Za-z0-9_-]{16,80}$/;
@@ -55,6 +55,7 @@ const safeDocument=d=>({documentId:d.documentId,kind:d.kind,fileName:d.fileName,
 /** Input checks before rollout flags and rate limits. Returns cleaned data. */
 export function validateEvidence(user,action,data){
  if(action==='open'){if(!uuid(data.documentId))throw invalid('Open the document again.');return data;}
+ if(action==='missing'){if(!['director','admin'].includes(user.role))throw new ApiError(403,'FORBIDDEN','Only the Director or admin can see missing documents.');return {};}
  if(!paymentId(data.paymentId))throw invalid('Open the payment again.');
  if(action==='list')return data;
  if(!['invoice','payment'].includes(data.kind))throw invalid('Choose a supplier invoice or a payment receipt.');
@@ -108,6 +109,11 @@ export async function handleCompanyEvidence(req,deps){return respond(req,deps,['
   try{url=await ctx.repo.investorProofUrl(out.path);}catch{throw new ApiError(503,'UNAVAILABLE','Could not open the file. Try again.');}
   if(typeof url!=='string'||!url.startsWith('https://'))throw new ApiError(503,'UNAVAILABLE','Could not open the file. Try again.');
   return {status:200,body:{url,name:out.fileName,mimeType:out.mimeType}};
+ }
+ if(action==='missing'){
+  const out=await call(ctx,user.id,'missing',{});
+  if(!Array.isArray(out?.items)||!Array.isArray(out?.agreements))throw new ApiError(503,'UNAVAILABLE','Could not load the missing documents. Try again.');
+  return {status:200,body:{items:out.items,agreements:out.agreements,total:Number(out.total)||0}};
  }
  const out=await call(ctx,user.id,'list',{paymentId:data.paymentId});
  return {status:200,body:{...out,documents:(Array.isArray(out?.documents)?out.documents:[]).map(safeDocument)}};

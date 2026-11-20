@@ -37,3 +37,8 @@ export async function prepareDisbursementEvidence(options: { car: Car; amount: n
   await uploadCompanyEvidence(payment.id, 'payment', file);
   return [...payments.filter((p) => p.id !== payment!.id), payment];
 }
+
+export type MissingDocument = { paymentId: string; type: string; status: string; carId: string | null; car: string | null; recipientName: string | null; amountCents: number | null; date: string | null; needInvoice: boolean; needReceipt: boolean };
+export type MissingAgreement = { carId: string; car: string | null; dealer: string | null; approved: boolean };
+export type MissingDocuments = { items: MissingDocument[]; agreements: MissingAgreement[]; total: number };
+export const missingDocuments = () => companyEvidence<MissingDocuments>('missing', {});

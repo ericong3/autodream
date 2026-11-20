@@ -9,7 +9,9 @@ import {
   Users, Wrench, Building2, UserCircle, DollarSign, RefreshCw, TrendingDown, TrendingUp,
   Clock, AlertTriangle, Check, FileText, Landmark,
   ChevronLeft, ChevronRight, MoreVertical,
+  FileWarning,
 } from 'lucide-react';
+import MissingDocuments from '../components/MissingDocuments';
 import { useStore } from '../store';
 import { Payment, PaymentType, RecipientType } from '../types';
 import { formatRM, generateId } from '../utils/format';
@@ -117,7 +119,7 @@ const RECIPIENT_TYPE_LABELS: Record<RecipientType, string> = {
   customer:         'Customer',
 };
 
-type StatusTab = 'to_pay' | 'to_collect' | 'transferred' | 'all' | 'refund_claims' | 'expense_claims';
+type StatusTab = 'to_pay' | 'to_collect' | 'transferred' | 'all' | 'refund_claims' | 'expense_claims' | 'documents';
 
 const EMPTY_ADD = {
   type: '' as PaymentType | '',
@@ -489,6 +491,7 @@ export default function Payments({ embedded }: PaymentsProps) {
   // ── Filters ─────────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     return payments.filter(p => {
+      if (tab === 'documents') return false;
       if(p.obligationReplaced&&p.status==='pending')return false;
       if (tab === 'to_pay'    && (p.status !== 'pending' || INBOUND_TYPES.has(p.type))) return false;
       if (tab === 'to_collect'&& (p.status !== 'pending' || !INBOUND_TYPES.has(p.type))) return false;
@@ -1536,6 +1539,7 @@ export default function Payments({ embedded }: PaymentsProps) {
               { key: 'expense_claims', label: 'Expense Claims', icon: CreditCard, count: pendingExpenseClaims.length },
               { key: 'transferred',label: 'Done',       icon: CheckCircle2, count: 0 },
               { key: 'all',        label: 'All',        icon: null,         count: 0 },
+              ...(currentUser?.role === 'director' || currentUser?.role === 'admin' ? [{ key: 'documents', label: 'Missing Docs', icon: FileWarning, count: 0 }] : []),
             ] as { key: StatusTab; label: string; icon: any; count: number }[]).map(({ key, label, icon: Icon, count }) => (
               <button
                 key={key}
@@ -1659,7 +1663,7 @@ export default function Payments({ embedded }: PaymentsProps) {
           </div>
         )}
 
-        {filtered.length === 0 ? (
+        {tab === 'documents' ? <MissingDocuments /> : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
             <Wallet size={40} className="text-gray-700" />
             <p className="text-gray-500 text-sm">No payments found</p>

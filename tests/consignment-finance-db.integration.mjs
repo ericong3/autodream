@@ -73,6 +73,7 @@ try{
  await db.exec(migration('20261119000000_consignment_trade_ins.sql'));
  await db.exec(migration('20261120001100_consignment_commission_id_types.sql'));
  await db.exec(migration('20261120001200_consignment_blank_salesperson.sql'));
+ await db.exec(migration('20261120001300_documents_to_follow.sql'));
  await assert.rejects(()=>db.exec("update cars set investor_id='i' where id='car-own'"),/USE_INVESTOR_ACCOUNTS/);
  await assert.rejects(()=>db.exec("insert into journal_entries(id,date,description,source_type,source_id,lines) values('legacy-investor-bypass',current_date,'Legacy investor write','car_sold','old','[{\"accountId\":\"acct-inv-investor\",\"debit\":1,\"credit\":0},{\"accountId\":\"acct-investor-payable\",\"debit\":0,\"credit\":1}]')"),/USE_INVESTOR_POSTING/);
  let n=0;const req=()=> 'consign_test_'+String(++n).padStart(8,'0');
@@ -97,7 +98,11 @@ try{
  const held=(await call('uc_company_bank_money','d','banks',{})).company;assert.equal(held.consignmentHeldCents,2000000);assert.equal(held.availableCents,10000000);
  const contract=await cf('proof_prepare',{carId:'consign-one',fileName:'agreement.pdf',mimeType:'application/pdf',sizeBytes:100,sha256:(++n).toString(16).padStart(64,'0')});await db.query("insert into storage.objects values('finance-evidence',$1)",[contract.path]);await cf('proof_confirm',{documentId:contract.documentId});
  await db.exec("insert into repairs(id,car_id,status,actual_cost,total_cost) values('consign-repair','consign-one','done',3500,3500);insert into payments(id,car_id,type,status,amount,recipient_type,recipient_id,recipient_name,repair_job_id) values('consign-repair-bill','consign-one','repair','pending',3500,'workshop','workshop','Workshop','consign-repair')");
- assert.equal((await cf('snapshot',{carId:'consign-one'})).reviewIssue,'SUPPLIER_INVOICE_REQUIRED');await evidence('consign-repair-bill','invoice');
+ // The invoice can follow: the review passes and the bill shows on the missing list until it is uploaded.
+ assert.equal((await cf('snapshot',{carId:'consign-one'})).reviewIssue,null);
+ const missingBill=async()=>(await call('uc_company_evidence','d','missing',{})).items.find(x=>x.paymentId==='consign-repair-bill');
+ assert.equal((await missingBill())?.needInvoice,true);
+ await evidence('consign-repair-bill','invoice');assert.equal(await missingBill(),undefined);
  const review=(await cf('snapshot',{carId:'consign-one'})).review;assert.equal(review.costCents,350000);assert.equal(review.dealerPayableCents,5495000);assert.equal(review.companyResultCents,1155000);
  await assert.rejects(()=>cf('approve',{carId:'consign-one',expectedRevision:'0'.repeat(32),costsConfirmed:true,requestId:req()}),/SOURCE_CHANGED/);
  // Withholding cannot bypass the unapproved panel bill gate.
@@ -112,10 +117,21 @@ try{
  const forgedReview=(await cf('snapshot',{carId:'consign-one'})).review;
  await assert.rejects(()=>cf('approve',{carId:'consign-one',expectedRevision:forgedReview.sourceRevision,costsConfirmed:true,requestId:req()}),/EXISTING_PAYMENT_REVIEW_REQUIRED/);
  await db.exec('ROLLBACK');
+ // Without an agreement only the Director can approve, and only with it marked to follow.
+ const rejectsIn=async(fn,re)=>{await db.exec('savepoint follow');await assert.rejects(fn,re);await db.exec('rollback to savepoint follow');};
+ await db.exec('BEGIN');await db.exec('set local session_replication_role=replica');await db.exec("delete from uc_consignment_documents where car_id='consign-one'");await db.exec('set local session_replication_role=origin');const noAgreement=(await cf('snapshot',{carId:'consign-one'})).review.sourceRevision;
+ await rejectsIn(()=>cf('approve',{carId:'consign-one',expectedRevision:noAgreement,costsConfirmed:true,requestId:req()}),/CONSIGNMENT_CONTRACT_REQUIRED/);
+ await rejectsIn(()=>call('uc_consignment_finance','a','approve',{carId:'consign-one',expectedRevision:noAgreement,costsConfirmed:true,documentsToFollow:true,requestId:req()}),/NOT_ALLOWED/);
+ await rejectsIn(()=>cf('approve',{carId:'consign-one',expectedRevision:noAgreement,costsConfirmed:true,documentsToFollow:false,requestId:req()}),/INVALID/);
+ const followed=await cf('approve',{carId:'consign-one',expectedRevision:noAgreement,costsConfirmed:true,documentsToFollow:true,requestId:req()});assert.equal(followed.case.approved_by,'d');
+ assert.equal((await cf('snapshot',{carId:'consign-one'})).agreementToFollow.approvedByName,'Director');
+ assert.ok((await call('uc_company_evidence','a','missing',{})).agreements.some(x=>x.carId==='consign-one'&&x.approved));
+ assert.equal((await db.query("select current_setting('autodream.agreement_to_follow',true) v")).rows[0].v,'');
+ await db.exec('ROLLBACK');
  const approved=await cf('approve',{carId:'consign-one',expectedRevision:review.sourceRevision,costsConfirmed:true,requestId:req()});assert.equal(approved.case.approved_by,'d');assert.equal(approved.case.settlement.companyResultCents,1155000);
  assert.equal(Number((await db.query("select coalesce(sum((l->>'credit')::numeric-(l->>'debit')::numeric),0) amount from journal_entries j cross join lateral jsonb_array_elements(j.lines) l where j.car_id='consign-one' and l->>'accountId'='acct-consign-clearing'")).rows[0].amount),0);
  const dealerPay=approved.case.dealer_payment_id,proof=await evidence(dealerPay,'payment');const pay={...bankData(),allocations:[{paymentId:dealerPay,amountCents:1000000,documentId:proof}],requestId:req()};
- await assert.rejects(()=>call('uc_company_bank_money','d','record',pay),/SUPPLIER_INVOICE_REQUIRED/);await evidence(dealerPay,'invoice');const paid=await call('uc_company_bank_money','d','record',pay);assert.equal(paid.payments[0].bank_paid_cents,1000000);assert.equal(paid.payments[0].status,'pending');
+ const paid=await call('uc_company_bank_money','d','record',pay);await evidence(dealerPay,'invoice');assert.equal(paid.payments[0].bank_paid_cents,1000000);assert.equal(paid.payments[0].status,'pending');
  assert.equal((await db.query('select uc_registered_bank_position($1) cents',[bank.id])).rows[0].cents,11000000);
  await assert.rejects(()=>db.exec("update payments set amount=1 where id='"+dealerPay+"'"),/CONSIGNMENT_HISTORY_LOCKED|EVIDENCE_REVIEW_REQUIRED|BANK_PAYMENT_IMMUTABLE/);
  await assert.rejects(()=>db.exec("update cars set consignment='{}' where id='consign-one'"),/USE_CONSIGNMENT_FINANCE/);

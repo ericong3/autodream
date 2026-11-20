@@ -141,3 +141,13 @@ test('throttle keys fit the installed prefix rule and stay distinct per limit',a
  for(const key of w.keys)assert.match(key,/^[a-z]{1,8}:[A-Za-z0-9_-]{16,128}$/);
  assert.equal(new Set(w.keys.filter(k=>k.startsWith('compev:'))).size,2);
 });
+test('missing documents list: Director and admin only, nothing else accepted',async()=>{
+ const s=fixture('salesperson'),cookie=await s.login();
+ assert.equal((await s.call({scope,action:'missing'},cookie)).status,403);assert.equal(s.calls.length,0);
+ const a=fixture('admin'),adminCookie=await a.login();
+ a.repo.rpc=async(fn,args)=>{a.calls.push({fn,args});return {data:{items:[{paymentId,needInvoice:true,needReceipt:false}],agreements:[],total:1}};};
+ const out=await a.call({scope,action:'missing'},adminCookie);
+ assert.equal(out.status,200);assert.equal(out.body.items.length,1);assert.equal(out.body.total,1);
+ assert.equal(a.calls[0].args.p_action,'missing');assert.deepEqual(a.calls[0].args.p_data,{});
+ assert.equal((await a.call({scope,action:'missing',paymentId},adminCookie)).status,400);
+});
