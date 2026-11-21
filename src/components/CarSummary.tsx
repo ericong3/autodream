@@ -9,6 +9,7 @@ import { paymentBalanceCents } from '../lib/companyBankPayments';
 import { moneyRequest, type MoneyEntry } from '../lib/moneyReceived';
 import { loadCarCases, todoRequest, type CarCase, type DocTodoList } from '../lib/docTodo';
 import { RecordMoney, type LoanContext } from './MoneyReceivedPanel';
+import { PANEL_TBC } from '../utils/tradeIn';
 import CompanyBankPaymentDialog from './CompanyBankPaymentDialog';
 import CompanyPaymentDocuments from './CompanyPaymentDocuments';
 
@@ -19,7 +20,7 @@ export type DealCard = {
   approval: 'approved' | 'pending' | 'rejected';
   payment: string; bank: string; sellingPrice: number;
   plus: DealLine[]; minus: DealLine[]; balance: number;
-  tradeIn: { label: string; amount: number; swap: boolean } | null;
+  tradeIn: { label: string; amount: number; swap: boolean; settlement?: number; topUp?: number; credit?: number; carId?: string; carStatus?: string; settleBill?: Payment; settleTo?: string } | null;
   submittedBy?: string; submittedAt?: string; approvedBy?: string; approvedAt?: string;
   notes?: string; rejectionNotes?: string; receiptUrl?: string;
 };
@@ -64,13 +65,13 @@ const cents = (rm: number) => Math.round(rm * 100);
  * (Sold → Money in → Bills paid → Dealer → Paperwork → Closed). Any stage can
  * be opened at any time; each one ends with a button to the next.
  */
-export default function CarSummary({ car, actorId, role, profit, costs, buyerName, salespersonName, detailsOpen, onOpenDetails, onOpenMedia, onEditDeal, onAddRepair, onAddMisc, deal, generatingReceipt, onReceipt, delivery, dealerPanel, refund, billCosts, onPanelCharge, records, investorLink, moneyPlan }: {
+export default function CarSummary({ car, actorId, role, profit, costs, buyerName, salespersonName, detailsOpen, onOpenDetails, onOpenMedia, onEditDeal, onAddRepair, onAddMisc, deal, generatingReceipt, onReceipt, delivery, dealerPanel, refund, billCosts, onPanelCharge, records, investorLink, moneyPlan, onRecordSettlement }: {
   car: Car; actorId: string; role: string; profit: number | null; costs: ProfitRow[];
   buyerName?: string; salespersonName?: string; detailsOpen: boolean;
   onOpenDetails: (section?: string) => void; onOpenMedia: (tab: 'photos' | 'card') => void;
   onEditDeal?: () => void; onAddRepair?: () => void; onAddMisc?: () => void;
   deal?: DealCard | null; generatingReceipt?: boolean; onReceipt?: () => void;
-  delivery?: DeliveryInfo; dealerPanel?: ReactNode; refund?: RefundInfo; billCosts?: BillCost[]; onPanelCharge?: () => void; records?: CarRecords; investorLink?: () => void; moneyPlan?: MoneyPlan;
+  delivery?: DeliveryInfo; dealerPanel?: ReactNode; refund?: RefundInfo; billCosts?: BillCost[]; onPanelCharge?: () => void; records?: CarRecords; investorLink?: () => void; moneyPlan?: MoneyPlan; onRecordSettlement?: (lender: string) => Promise<string>;
 }) {
   const director = role === 'director';
   const cases = useInvestorQuery(`car-cases:${actorId}`, loadCarCases);
@@ -91,13 +92,37 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
   const [setupError, setSetupError] = useState('');
   const synced = useRef(false);
   const addPayment = useStore((s) => s.addPayment);
+  const updatePayment = useStore((s) => s.updatePayment);
+  const dealers = useStore((s) => s.dealers);
+  const [lender, setLender] = useState<string | null>(null);
+  const [settleBusy, setSettleBusy] = useState(false);
+  const [settleError, setSettleError] = useState('');
+  const [panelError, setPanelError] = useState('');
   const moneyCard = useRef<HTMLElement>(null);
   const admin = role === 'admin';
   const todo = useInvestorQuery<DocTodoList>(director || role === 'admin' ? `doc-todo:${actorId}` : null, () => todoRequest('list'));
   const reload = () => { void money.reload(); void cases.reload(); void todo.reload(); };
 
   const c: CarCase | undefined = cases.data?.cars[car.id];
-  const mine = payments.filter((p) => p.carId === car.id && !p.obligationReplaced && (p.status === 'pending' || p.status === 'transferred'));
+  const tradeCarId = deal?.tradeIn?.carId;
+  const mine = payments.filter((p) => (p.carId === car.id || (!!tradeCarId && p.carId === tradeCarId && p.type === 'purchase_settlement')) && !p.obligationReplaced && (p.status === 'pending' || p.status === 'transferred'));
+  const recordSettlement = async () => {
+    if (!onRecordSettlement || !lender?.trim()) return;
+    setSettleBusy(true); setSettleError('');
+    try {
+      const id = await onRecordSettlement(lender.trim());
+      const bill = useStore.getState().payments.find((p) => p.id === id);
+      setLender(null);
+      if (bill && bill.status === 'pending') setPaying(bill);
+    } catch (e) { setSettleError(e instanceof Error ? e.message : 'Could not record the old loan payment.'); }
+    finally { setSettleBusy(false); }
+  };
+  const choosePanel = async (p: Payment, dealerId: string) => {
+    const dl = dealers.find((x) => x.id === dealerId); if (!dl) return;
+    setPanelError('');
+    try { await updatePayment(p.id, { recipientType: 'dealer', recipientId: dl.id, recipientName: dl.name, bankName: dl.bankName, accountNumber: dl.bankAccountNumber, accountHolder: dl.bankAccountHolder }); }
+    catch (e) { setPanelError(e instanceof Error ? e.message : 'Could not save the panel.'); }
+  };
   const entries = money.data?.entries ?? [];
   const consignmentIn = !!car.consignment && !car.outgoingConsignment;
   const paperwork = c ? c.missingDocs + c.moneyNoSlip + c.sentBack + (c.agreementMissing ? 1 : 0) : 0;
@@ -204,20 +229,28 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
   const pill = (state: 'ok' | 'missing' | 'later', label: string) => <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${state === 'ok' ? 'bg-emerald-950 text-emerald-300' : state === 'missing' ? 'bg-[#2A2210] text-[#F3C969]' : 'bg-white/[0.05] text-gray-500'}`}>{label} {state === 'ok' ? '✓' : state === 'missing' ? '✗' : '·'}</span>;
   const billRow = (p: Payment, paid: boolean) => {
     const x = costByBill.get(p.id), d = docOf.get(p.id), known = !!todo.data;
+    const needsPanel = p.recipientName === PANEL_TBC;
     const fromLoan = !!x?.fromLoan, invoiceOk = fromLoan || !d?.needInvoice, proofOk = fromLoan || !d?.needReceipt;
     const adminTodo = known && (!invoiceOk || (paid && !proofOk));
     return <div key={p.id} className={`${row} space-y-2`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="flex-1 min-w-[140px]"><p className="text-sm text-white truncate">{x?.name ?? (p.recipientName || words(p.type))}</p><p className="text-xs text-gray-400 truncate">{fromLoan ? 'Paid from the bank loan' : paid ? (p.status === 'transferred' ? `Paid${p.transferredAt ? ' ' + day(p.transferredAt) : ''}` : 'Settled') : (x?.sub ?? words(p.type))}</p></div>
+        <div className="flex-1 min-w-[140px]"><p className="text-sm text-white truncate">{x ? `${x.name.split(' · ')[0]}${p.recipientName && !x.fromLoan ? ' · ' + p.recipientName : ''}` : p.type === 'purchase_settlement' ? `Pay off trade-in old loan · ${p.recipientName}` : (p.recipientName || words(p.type))}</p><p className="text-xs text-gray-400 truncate">{fromLoan ? 'Paid from the bank loan' : paid ? (p.status === 'transferred' ? `Paid${p.transferredAt ? ' ' + day(p.transferredAt) : ''}` : 'Settled') : (x?.sub ?? words(p.type))}</p></div>
         <p className={`text-sm font-semibold whitespace-nowrap ${paid ? 'text-emerald-300' : 'text-white'}`}>{formatCents(paid ? cents(p.amount) : paymentBalanceCents(p))}</p>
         <span className="flex gap-2">
           {(director || admin) && <button type="button" className={ghostBtn} onClick={() => setDocs(p.id)}>{!invoiceOk ? 'Upload invoice' : paid && !proofOk ? 'Upload proof' : 'Documents'}</button>}
-          {!paid && director && <button type="button" className="btn-gold rounded-xl px-4 min-h-[40px] text-sm font-bold" onClick={() => setPaying(p)}>Pay</button>}
+          {!paid && director && !needsPanel && <button type="button" className="btn-gold rounded-xl px-4 min-h-[40px] text-sm font-bold" onClick={() => setPaying(p)}>Pay</button>}
           {x && moreBtn(x)}
         </span>
       </div>
+      {needsPanel && !paid && <div className="flex flex-wrap items-center gap-2">
+        {(director || admin) ? <select aria-label="Which panel" className="input rounded-lg px-2 py-2 text-sm min-w-0 flex-1" value="" onChange={(e) => void choosePanel(p, e.target.value)}>
+          <option value="">Choose the panel who opened the insurance…</option>
+          {dealers.map((dl) => <option key={dl.id} value={dl.id}>{dl.name}</option>)}
+        </select> : <span className="text-xs text-[#F3C969]">Waiting for the admin to choose the panel</span>}
+        {panelError && <span role="alert" className="text-xs text-red-400">{panelError}</span>}
+      </div>}
       {known && <div className="flex flex-wrap items-center gap-1.5">
-        {pill(invoiceOk ? 'ok' : 'missing', 'Invoice')}{pill(paid ? 'ok' : 'later', 'Paid')}{pill(!paid ? 'later' : proofOk ? 'ok' : 'missing', 'Proof')}
+        {pill(invoiceOk ? 'ok' : 'missing', p.type === 'purchase_settlement' ? 'Settlement letter' : 'Invoice')}{pill(paid ? 'ok' : 'later', 'Paid')}{pill(!paid ? 'later' : proofOk ? 'ok' : 'missing', 'Proof')}
         {adminTodo && <span className="text-xs text-gray-400">· in the admin's to-do</span>}
       </div>}
       {x && openCost === x.id && menu(x)}
@@ -464,7 +497,28 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
                   <button type="button" className={`${goldBtn} w-full disabled:opacity-40`} disabled={refund.saving || !refund.form.bank.trim() || !refund.form.accountNo.trim() || !refund.form.accountName.trim()} onClick={refund.onSubmit}>{refund.saving ? 'Sending…' : 'Send refund to Payments'}</button>
                 </> : <p className="text-xs text-gray-400">No bank details yet.</p>}
               </div>}
-              {deal.tradeIn && <div className="rounded-xl bg-white/[0.04] px-3 py-2.5 flex justify-between gap-3 text-sm"><span className="text-gray-300 min-w-0 truncate">{deal.tradeIn.swap ? 'Swapped for' : 'Trade-in'} · {deal.tradeIn.label}</span><span className="text-white flex-shrink-0">{formatCents(cents(deal.tradeIn.amount))}</span></div>}
+              {deal.tradeIn && (() => {
+                const ti = deal.tradeIn, bill = ti.settleBill, settlement = ti.settlement ?? 0;
+                return <div className="rounded-xl border border-white/[0.08] bg-black/20 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-white min-w-0 truncate">{ti.swap ? 'Swapped for' : 'Trade-in'} · {ti.label}</p>
+                    {ti.carId && <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 flex-shrink-0">{ti.carStatus === 'sold' || ti.carStatus === 'delivered' ? 'Sold' : 'In stock'}</span>}
+                  </div>
+                  <div className="flex justify-between text-sm"><span className="text-gray-300">Trade-in value</span><span className="text-white">{formatCents(cents(ti.amount))}</span></div>
+                  {settlement > 0 && <div className="flex justify-between text-sm"><span className="text-gray-300">− Old loan{bill?.recipientName ? ` paid to ${bill.recipientName}` : ti.settleTo ? ` to ${ti.settleTo}` : ''}</span><span className="text-white">− {formatCents(cents(settlement))}</span></div>}
+                  {settlement > 0 && <div className="flex justify-between pt-2 border-t border-white/[0.08] text-sm font-semibold"><span className="text-white">{(ti.topUp ?? 0) > 0 ? 'Customer tops up' : 'Trade-in credit'}</span><span className="text-[#F3C969]">{formatCents(cents((ti.topUp ?? 0) > 0 ? ti.topUp! : ti.credit ?? 0))}</span></div>}
+                  {settlement > 0 && <p className="text-xs text-gray-400">{bill ? (bill.status === 'transferred' ? `Old loan paid${bill.transferredAt ? ' ' + day(bill.transferredAt) : ''} ✓` : 'Old loan payment is in Bills, waiting to be paid.') : 'Old loan payment is not recorded in the app yet.'}</p>}
+                  {settlement > 0 && !bill && onRecordSettlement && (lender === null
+                    ? <button type="button" className={`${goldBtn} w-full`} onClick={() => { setSettleError(''); setLender(ti.settleTo ?? ''); }}>Record old loan payment</button>
+                    : <div className="space-y-2">
+                      <label className="block text-xs text-gray-400">Paid to which bank<input className="input w-full rounded-lg px-3 py-2 mt-1 text-sm" placeholder="e.g. CIMB" value={lender} onChange={(e) => setLender(e.target.value)} /></label>
+                      <p className="text-xs text-gray-400">Next: the date, which of our banks paid it (or paid before opening), and the proof.</p>
+                      {settleError && <p role="alert" className="text-xs text-red-400">{settleError}</p>}
+                      <div className="flex gap-2"><button type="button" className={ghostBtn} onClick={() => setLender(null)}>Cancel</button><button type="button" className={`${goldBtn} flex-1 disabled:opacity-40`} disabled={settleBusy || !lender.trim()} onClick={() => void recordSettlement()}>{settleBusy ? 'Saving…' : 'Continue'}</button></div>
+                    </div>)}
+                  {ti.carId && <Link to={`/inventory/${ti.carId}`} className={`${ghostBtn} w-full`}>Open the {ti.label.split(' ').slice(0, 2).join(' ')} →</Link>}
+                </div>;
+              })()}
               {deal.rejectionNotes && <p className="text-sm text-red-300">Rejected: {deal.rejectionNotes}</p>}
               {deal.notes && <p className="text-sm text-gray-300">Note: {deal.notes}</p>}
               <p className="text-xs text-gray-400">{[deal.submittedBy && `Submitted by ${deal.submittedBy}${deal.submittedAt ? ' · ' + day(deal.submittedAt) : ''}`, deal.approvedBy && `approved by ${deal.approvedBy}${deal.approvedAt ? ' · ' + day(deal.approvedAt) : ''}`].filter(Boolean).join(' · ')}</p>

@@ -1,4 +1,5 @@
 import { salesCommission } from '../utils/salesCommission';
+import { tradeInFigures } from '../utils/tradeIn';
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
@@ -4004,9 +4005,10 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
           || workOrderCustomer?.loanWorkOrder?.bookingFee
           || workOrderCustomer?.cashWorkOrder?.bookingFee
           || 0;
-        const netResult = workOrderType === 'loan'
+        const formTrade = tradeInFigures(woForm);
+        const netResult = (workOrderType === 'loan'
           ? totalFinalDeal - woForm.loanAmount - effectiveBookingFee
-          : totalFinalDeal - effectiveBookingFee - woForm.downpayment;
+          : totalFinalDeal - effectiveBookingFee - woForm.downpayment) + formTrade.autoTopUp;
         const netTradeIn = woForm.tradeInPrice - woForm.settlementFigure;
 
         return createPortal(
@@ -4226,6 +4228,12 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                           <span className="text-red-400 font-mono">− {formatRM(woForm.discount)}</span>
                         </div>
                       )}
+                      {formTrade.autoTopUp > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-400">Trade-in old loan top-up (added by the app)</span>
+                          <span className="text-amber-300 font-mono">+ {formatRM(formTrade.autoTopUp)}</span>
+                        </div>
+                      )}
                       <div className="border-t border-obsidian-400/40 pt-2 mt-1 flex items-center justify-between pb-2">
                         <span className={`text-sm font-bold ${netResult < 0 ? 'text-green-400' : netResult > 0 ? 'text-amber-300' : 'text-gold-400'}`}>
                           {netResult < 0 ? 'Refund to Customer' : netResult > 0 ? 'Balance Due' : 'Fully Settled'}
@@ -4375,6 +4383,9 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                             {netTradeIn >= 0 ? '+' : ''}{formatRM(netTradeIn)}
                           </span>
                         </div>
+                      )}
+                      {formTrade.topUp > 0 && (
+                        <p className="px-4 pb-3 text-[11px] text-gray-400">{formTrade.manualIndex >= 0 ? 'The old loan top-up is already in the extra items, so the app does not add it again.' : `The old loan is bigger than the trade-in, so the customer tops up ${formatRM(formTrade.topUp)}. The app adds it to the balance. Do not type it as an extra item.`}</p>
                       )}
                     </div>
 

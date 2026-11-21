@@ -55,3 +55,24 @@ export function buildTradeInCar(opts: {
       + (mode === 'swap' ? ' — swap, price finalizes when that deal is delivered' : ''),
   };
 }
+
+/** The panel that opened the insurance is picked by the admin later. */
+export const PANEL_TBC = 'Panel (to be chosen)';
+
+// Trade-in figures for a deal. When the old loan (settlement) is bigger than
+// the trade-in value, the customer tops up the difference; that top-up is part
+// of what the customer pays but is not car-sale income (it goes to the old lender).
+// Older deals typed the top-up by hand as an extra item: if an extra item has
+// exactly that amount it is the top-up, and nothing is added a second time.
+export function tradeInFigures(wo?: {
+  hasTradeIn?: boolean; tradeInPrice?: number; settlementFigure?: number; tradeInMode?: 'trade_in' | 'swap';
+  additionalItems?: { label: string; amount: number }[];
+} | null) {
+  const has = !!wo?.hasTradeIn;
+  const value = has ? wo?.tradeInPrice ?? 0 : 0;
+  const settlement = has ? wo?.settlementFigure ?? 0 : 0;
+  const credit = Math.max(0, Math.round((value - settlement) * 100) / 100);
+  const topUp = has && wo?.tradeInMode !== 'swap' ? Math.max(0, Math.round((settlement - value) * 100) / 100) : 0;
+  const manualIndex = topUp > 0 ? (wo?.additionalItems ?? []).findIndex((i) => Math.abs((i.amount || 0) - topUp) < 0.005) : -1;
+  return { has, value, settlement, credit, topUp, manualIndex, autoTopUp: manualIndex >= 0 ? 0 : topUp };
+}

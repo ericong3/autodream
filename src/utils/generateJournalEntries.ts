@@ -196,6 +196,28 @@ export function buildTradeInAcquiredEntry(opts: {
   };
 }
 
+// The customer's top-up for a trade-in whose old loan is bigger than its value
+// was booked inside the sale price. It is not sales: it is owed to the old
+// lender together with the trade-in's own settlement (see buildTradeInAcquiredEntry,
+// which only owes up to the trade-in value).
+export function buildTradeInTopUpEntry(opts: { car: Car; amount: number; createdBy: string; date?: string }): JournalEntry {
+  const { car, amount, createdBy } = opts;
+  return {
+    id: generateId(),
+    date: opts.date ?? today(),
+    description: `Trade-in old loan top-up — ${carLabel(car)}`,
+    lines: [
+      { accountId: LEDGER_ACCOUNTS.revCarSales, debit: amount, credit: 0 },
+      { accountId: LEDGER_ACCOUNTS.accountsPayable, debit: 0, credit: amount },
+    ],
+    sourceType: 'trade_in_topup',
+    sourceId: car.id,
+    carId: car.id,
+    createdBy,
+    createdAt: new Date().toISOString(),
+  };
+}
+
 // Reclassifies part of an already-posted car purchase from "paid in cash" to
 // "still owed" — used when a settlement is discovered/added after the car
 // was already booked in full (buildCarPurchaseEntry credited Bank for the

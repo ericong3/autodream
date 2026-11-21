@@ -78,7 +78,8 @@ import ConsignmentFinancePanel from '../components/ConsignmentFinancePanel';
 import MoneyReceivedPanel from '../components/MoneyReceivedPanel';
 import CarCaseBadge from '../components/CarCaseBadge';
 import CarSummary, { type BillCost, type CarRecords } from '../components/CarSummary';
-import { buildCarSaleEntry, buildPayableRecognizedEntry, buildCarCostRecognizedEntry, buildSettlementRecognizedEntry, buildTradeInAcquiredEntry, LEDGER_ACCOUNTS } from '../utils/generateJournalEntries';
+import { buildCarSaleEntry, buildPayableRecognizedEntry, buildCarCostRecognizedEntry, buildSettlementRecognizedEntry, buildTradeInAcquiredEntry, buildTradeInTopUpEntry, LEDGER_ACCOUNTS } from '../utils/generateJournalEntries';
+import { tradeInFigures, PANEL_TBC } from '../utils/tradeIn';
 import { getCaseCompletion } from '../utils/caseCompletion';
 import { buildDealReceiptPdf, uploadDealReceipt } from '../utils/generateDealReceipt';
 import { buildConsignmentSettlementPdf, buildConsignmentSummaryPdf, ConsignmentSettlementInput } from '../utils/generateConsignmentSettlement';
@@ -210,6 +211,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const payments = useStore((s) => s.payments);
   const addPayment = useStore((s) => s.addPayment);
   const updatePayment = useStore((s) => s.updatePayment);
+  const journalEntries = useStore((s) => s.journalEntries);
   const addJournalEntry = useStore((s) => s.addJournalEntry);
   const markNotificationsReadByRef = useStore((s) => s.markNotificationsReadByRef);
 
@@ -346,7 +348,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     const addItems = (wo.additionalItems ?? []).reduce((s: number, i: WorkOrderItem) => s + i.amount, 0);
     if (companyBankPaymentsEnabled && !car.investorFunded && (!car.consignment || car.consignmentFinanceOpen) && !car.outgoingConsignment) {
       const price = deliveredDealPrice(car, wo).netPrice + (wo.insurance ?? 0) + (wo.bankProduct ?? 0) + addItems;
-      const trade = wo.hasTradeIn ? Math.max(0, (wo.tradeInPrice ?? 0) - (wo.settlementFigure ?? 0)) : 0;
+      const tf = tradeInFigures(wo);
+      const trade = tf.credit - tf.autoTopUp;
       const loan = dealCustomer.loanWorkOrder ? car.consignmentFinanceOpen ? Math.min(dealCustomer.loanWorkOrder.loanAmount??0,Math.max(0,price-Math.min(price,wo.bookingFee??0))) : (car.disbursementExpectedAmount ?? dealCustomer.loanWorkOrder.loanAmount ?? car.disbursementAmount ?? 0) : 0;
       if (balanceUnavailable) return 0;
       const customerCovered = collectionBalance.data!.customerCoveredCents / 100;
@@ -598,6 +601,52 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     const { data } = supabase.storage.from('car-photos').getPublicUrl(path);
     return data.publicUrl;
   };
+
+  // Trade-in car from this deal, and the payment that clears its old loan.
+  const tradeInChild = car ? cars.find((c) => c.tradeInSourceCarId === car.id) : undefined;
+  const tradeInSettlement = tradeInChild ? payments.find((p) => p.carId === tradeInChild.id && p.type === 'purchase_settlement' && !p.obligationReplaced) : undefined;
+  const recordTradeInSettlement = async (lender: string): Promise<string> => {
+    if (!car || !tradeInChild || !currentUser || !dealWo) throw new Error('Trade-in car not found.');
+    const tf = tradeInFigures(dealWo);
+    if (tf.settlement <= 0) throw new Error('This trade-in has no old loan.');
+    // The top-up was booked as sales; it is owed to the old lender. Book that once.
+    if (tf.topUp > 0 && !journalEntries.some((e) => e.sourceType === 'trade_in_topup' && e.sourceId === car.id && !e.voided)) {
+      // Same day as the sale it corrects, but never inside the books from before the bank opened.
+      const saleDate = journalEntries.find((e) => e.sourceType === 'car_sold' && e.carId === car.id && !e.voided)?.date;
+      const date = saleDate ? (saleDate < '2026-11-01' ? '2026-11-01' : saleDate.slice(0, 10)) : undefined;
+      await addJournalEntry(buildTradeInTopUpEntry({ car, amount: tf.topUp, createdBy: currentUser.id, date }));
+    }
+    if (tradeInSettlement) return tradeInSettlement.id;
+    const id = 'tradein-settle-' + tradeInChild.id;
+    await addPayment({
+      id, type: 'purchase_settlement', carId: tradeInChild.id,
+      recipientType: 'merchant', recipientId: lender, recipientName: lender,
+      amount: tf.settlement, description: `Pay off old loan — ${tradeInChild.year} ${tradeInChild.make} ${tradeInChild.model}${tradeInChild.carPlate ? ' ' + tradeInChild.carPlate : ''}`,
+      status: 'pending', createdAt: new Date().toISOString(),
+    });
+    return id;
+  };
+
+  // A sold car with "+ Insurance" in the deal owes that insurance to the panel. Add the bill once (deals from 1 Nov).
+  useEffect(() => {
+    if (!car || !companyBankPaymentsEnabled || !isDirector || car.investorFunded || car.consignment || car.outgoingConsignment || !phase2Loaded || !currentUser) return;
+    if (car.status !== 'sold' && car.status !== 'delivered') return;
+    const wo = dealCustomer?.loanWorkOrder ?? dealCustomer?.cashWorkOrder;
+    const amount = wo?.insurance ?? 0;
+    const dealDate = car.finalDeal?.submittedAt ?? (wo as { createdAt?: string } | undefined)?.createdAt ?? '';
+    if (amount <= 0 || dealDate < '2026-11-01' || autoBilled.current.has('ins:' + car.id)) return;
+    const already = (car.miscCosts ?? []).some((m) => /insur/i.test(`${m.description} ${m.category ?? ''}`)) || payments.some((p) => p.carId === car.id && /insur/i.test(p.description ?? ''));
+    if (already) return;
+    autoBilled.current.add('ins:' + car.id);
+    void (async () => {
+      try {
+        const misc = { id: 'ins-' + car.id, description: 'Insurance', category: 'Insurance', merchant: PANEL_TBC, amount, createdAt: new Date().toISOString(), createdBy: currentUser.id };
+        await addMiscCost(car.id, misc);
+        const billId = await generateMiscCostPayment({ carId: car.id, misc, payments, merchants, addPayment, id: 'insurance-bill-' + car.id });
+        if (billId) await addJournalEntry(buildCarCostRecognizedEntry({ car, amount, description: 'Misc cost recognized — Insurance', sourceType: 'misc_cost', sourceId: billId, createdBy: currentUser.id }));
+      } catch (e) { console.warn('Could not add the insurance bill', car.id, e); }
+    })();
+  }, [car, dealCustomer, isDirector, phase2Loaded, currentUser, payments, merchants, addMiscCost, addPayment, addJournalEntry]);
 
   if (!car) {
     return (
@@ -917,7 +966,11 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       const loanAmount = dealIsLoan ? (car.disbursementExpectedAmount ?? car.disbursementAmount ?? dealCustomer?.loanWorkOrder?.loanAmount ?? 0) : 0;
       const bookingFee = dealWo?.bookingFee ?? 0;
       const tradeInValue = dealWo?.hasTradeIn ? Math.max(0, (dealWo.tradeInPrice ?? 0) - (dealWo.settlementFigure ?? 0)) : 0;
-      await addJournalEntry(buildCarSaleEntry({ bankReceiptMode: companyBankPaymentsEnabled, car, dealPrice, cost, isLoan: dealIsLoan, loanAmount, bookingFee, tradeInValue, createdBy: currentUser.id }));
+      const saleTrade = tradeInFigures(dealWo);
+      await addJournalEntry(buildCarSaleEntry({ bankReceiptMode: companyBankPaymentsEnabled, car, dealPrice: dealPrice + saleTrade.autoTopUp, cost, isLoan: dealIsLoan, loanAmount, bookingFee, tradeInValue, createdBy: currentUser.id }));
+      if (saleTrade.topUp > 0 && !journalEntries.some((x) => x.sourceType === 'trade_in_topup' && x.sourceId === car.id && !x.voided)) {
+        await addJournalEntry(buildTradeInTopUpEntry({ car, amount: saleTrade.topUp, createdBy: currentUser.id }));
+      }
 
       if (car.assignedSalesperson && !car.isStaffSale && !car.waiveCommission) {
         await addJournalEntry(buildPayableRecognizedEntry({
@@ -1051,14 +1104,18 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     const additionalTotal = additionalItems.reduce((s, i) => s + i.amount, 0);
     const loanAmount = dealIsLoan ? (car.disbursementExpectedAmount ?? car.disbursementAmount ?? dealCustomer?.loanWorkOrder?.loanAmount ?? 0) : 0;
     const bookingFee = dealWo.bookingFee ?? 0;
-    const balance = sellingPrice - discount + insurance + bankProduct + additionalTotal - loanAmount - bookingFee;
+    const trade = tradeInFigures(dealWo);
+    const tradeName = [dealWo.tradeInMake, dealWo.tradeInModel].filter(Boolean).join(' ') || 'Trade-in';
+    const balance = sellingPrice - discount + insurance + bankProduct + additionalTotal + trade.autoTopUp - trade.credit - loanAmount - bookingFee;
     const plusLines = [
       ...(insurance > 0 ? [{ label: 'Insurance', amount: insurance }] : []),
       ...(bankProduct > 0 ? [{ label: 'Bank Product', amount: bankProduct }] : []),
-      ...additionalItems.map(i => ({ label: i.label, amount: i.amount })),
+      ...additionalItems.map((i, k) => ({ label: k === trade.manualIndex ? `${tradeName} old loan top-up` : i.label, amount: i.amount })).filter(l => l.amount > 0 && l.label.trim()),
+      ...(trade.autoTopUp > 0 ? [{ label: `${tradeName} old loan top-up`, amount: trade.autoTopUp }] : []),
     ];
     const minusLines = [
       ...(discount > 0 ? [{ label: 'Discount', amount: discount }] : []),
+      ...(trade.credit > 0 ? [{ label: 'Trade-in', amount: trade.credit }] : []),
       ...(bookingFee > 0 ? [{ label: 'Deposit / Booking Fee', amount: bookingFee }] : []),
       ...(loanAmount > 0 ? [{ label: 'Loan Amount', amount: loanAmount }] : []),
     ];
@@ -1102,11 +1159,14 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     plus: dealFig.plusLines,
     minus: dealFig.minusLines.map(l => l.label === 'Loan Amount' ? { ...l, label: 'Loan from the bank' } : l),
     balance: dealFig.balance,
-    tradeIn: dealWo?.hasTradeIn ? {
-      label: [dealWo.tradeInMake, dealWo.tradeInModel, dealWo.tradeInPlate].filter(Boolean).join(' ') || 'Trade-in car',
-      amount: Math.max(0, (dealWo.tradeInPrice ?? 0) - (dealWo.settlementFigure ?? 0)),
-      swap: dealWo.tradeInMode === 'swap',
-    } : null,
+    tradeIn: dealWo?.hasTradeIn ? (() => {
+      const tf = tradeInFigures(dealWo);
+      return {
+        label: [dealWo.tradeInMake, dealWo.tradeInModel, dealWo.tradeInPlate].filter(Boolean).join(' ') || 'Trade-in car',
+        amount: tf.value, swap: dealWo.tradeInMode === 'swap', settlement: tf.settlement, topUp: tf.topUp, credit: tf.credit,
+        carId: tradeInChild?.id, carStatus: tradeInChild?.status, settleBill: tradeInSettlement, settleTo: tradeInChild?.settlementRecipient,
+      };
+    })() : null,
     submittedBy: (dealWo as any)?.submittedBy ? users.find(u => u.id === (dealWo as any).submittedBy)?.name ?? (dealWo as any).submittedBy : users.find(u => u.id === car.finalDeal!.submittedBy)?.name,
     submittedAt: car.finalDeal.submittedAt,
     approvedBy: car.finalDeal.approvedBy ? users.find(u => u.id === car.finalDeal!.approvedBy)?.name ?? car.finalDeal.approvedBy : undefined,
@@ -1146,6 +1206,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             photo: car.deliveryPhoto, dealReceiptUrl: car.dealReceiptUrl,
           }}
           dealerPanel={consignmentPanel}
+          onRecordSettlement={isDirector && tradeInChild ? recordTradeInSettlement : undefined}
           moneyPlan={car.outgoingConsignment || car.consignmentFinanceOpen ? undefined : (() => {
             const lwo = dealCustomer?.loanWorkOrder;
             const bank = lwo?.bank ?? (car.finalDeal?.bank && car.finalDeal.bank.toLowerCase() !== 'cash' ? car.finalDeal.bank : undefined);
@@ -3810,8 +3871,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           {(() => {
             const { sellingPrice, discount, insurance, bankProduct, loanAmount, downpayment, bookingFee, additionalItems } = editDealForm;
             const addTotal = additionalItems.reduce((s, x) => s + x.amount, 0);
-            const netTradeIn = editDealForm.hasTradeIn ? (editDealForm.tradeInPrice - editDealForm.settlementFigure) : 0;
-            const bal = sellingPrice - discount + insurance + bankProduct + addTotal - loanAmount - downpayment - bookingFee - netTradeIn;
+            const editTrade = tradeInFigures(editDealForm);
+            const bal = sellingPrice - discount + insurance + bankProduct + addTotal + editTrade.autoTopUp - editTrade.credit - loanAmount - downpayment - bookingFee;
             const rowCls = "flex items-center justify-between py-2.5 border-b border-obsidian-400/30 gap-4";
             const inputCls = "bg-transparent text-right text-sm font-medium text-white w-32 outline-none focus:text-gold-300 placeholder-gray-700";
             return (
@@ -3901,8 +3962,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                         <input type="number" min={0} placeholder="0" value={editDealForm.settlementFigure || ''} onChange={e => setEditDealForm(f => ({ ...f, settlementFigure: Number(e.target.value) }))} className={inputCls} />
                       </div>
                       <div className="flex items-center justify-between px-1 pt-1">
-                        <span className="text-gray-400 text-xs">Net Trade-In</span>
-                        <span className="text-white font-semibold text-sm">{formatRM(netTradeIn)}</span>
+                        <span className="text-gray-400 text-xs">{editTrade.autoTopUp > 0 ? 'Customer tops up the old loan (added to balance)' : editTrade.topUp > 0 ? 'Old loan top-up (already in extra items)' : 'Net Trade-In'}</span>
+                        <span className="text-white font-semibold text-sm">{formatRM(editTrade.topUp > 0 ? editTrade.topUp : editTrade.credit)}</span>
                       </div>
                     </div>
                   )}

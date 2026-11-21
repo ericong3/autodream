@@ -1,4 +1,5 @@
 import { deliveredDealPrice } from './deliveredDealPrice';
+import { tradeInFigures } from './tradeIn';
 import { salesCommission } from './salesCommission';
 import { Car, Payment, RepairJob, MiscCost, User, ExternalSalesman, Workshop, Dealer, Merchant, Customer } from '../types';
 import { generateId } from './format';
@@ -69,7 +70,9 @@ export function calcCarNetProfitBreakdown(car: Car, customers: Customer[], repai
   const dealPrice = car.consignment ? deliveredDealPrice(car, wo).netPrice : wo && wo.sellingPrice > 0
     ? (wo.sellingPrice - (wo.discount ?? 0))
     : (car.finalDeal?.dealPrice || car.sellingPrice);
-  const addOnRevenue = (wo?.insurance ?? 0) + (wo?.bankProduct ?? 0) + (wo?.additionalItems ?? []).reduce((s, i) => s + i.amount, 0);
+  // A hand-typed trade-in top-up line is the customer paying off the old loan, not income.
+  const trade = tradeInFigures(wo);
+  const addOnRevenue = (wo?.insurance ?? 0) + (wo?.bankProduct ?? 0) + (wo?.additionalItems ?? []).reduce((s, i) => s + i.amount, 0) - (trade.manualIndex >= 0 ? trade.topUp : 0);
   const repairCost = repairs
     .filter(r => r.carId === car.id && r.status === 'done')
     .reduce((s, r) => s + (r.actualCost ?? r.totalCost), 0);
@@ -333,12 +336,13 @@ export async function generateMiscCostPayment(opts: {
   payments: Payment[];
   merchants: Merchant[];
   addPayment: AddPayment;
+  id?: string;
 }): Promise<string | undefined> {
   const { carId, misc, payments, merchants, addPayment } = opts;
   if (!misc.merchant) return;
   if (exists(payments, 'misc_cost', { miscCostId: misc.id })) return;
   const merchant = merchants.find(m => m.name.toLowerCase() === misc.merchant!.toLowerCase());
-  const id = generateId();
+  const id = opts.id ?? generateId();
   await addPayment({
     id, type: 'misc_cost', carId, miscCostId: misc.id,
     recipientType: 'merchant', recipientId: merchant?.id ?? misc.merchant, recipientName: misc.merchant,
