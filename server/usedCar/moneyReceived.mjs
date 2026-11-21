@@ -6,8 +6,9 @@ import {ApiError,authenticate,canUseApp,respond,readJson,onlyKeys} from '../gara
 import {decodeProof,cleanFileName} from './investorActivation.mjs';
 
 export const SCOPE='money_received';
-const BODY_MAX=4096,UPLOAD_BODY_MAX=2_100_000;
-export const FIELDS={record:['carId','amountCents','receivedOn','bankAccountId','bankReference','note','requestId'],list:['carId'],summary:[],slip:['id','fileName','mimeType','base64'],open_slip:['id']};
+const BODY_MAX=4096,RECORD_BODY_MAX=16384,UPLOAD_BODY_MAX=2_100_000;
+const GROUPS=['panel_fee','bank_fee','insurance','jpj_road_tax','runner','other'];
+export const FIELDS={record:['carId','amountCents','receivedOn','bankAccountId','bankReference','note','requestId','loanPaymentId','deductions'],list:['carId'],summary:[],slip:['id','fileName','mimeType','base64'],open_slip:['id']};
 const READ_ONLY=new Set(['list','summary','open_slip']);
 const uuid=v=>typeof v==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 const invalid=m=>new ApiError(400,'INVALID',m);
@@ -20,6 +21,14 @@ const ERRORS={
  SLIP_ALREADY_SAVED:[409,'A slip is already saved for this money.'],
  UPLOAD_MISSING:[503,'The slip did not finish uploading. Retry the same file.'],
  IMMUTABLE_HISTORY:[409,'This record cannot be changed.'],
+ LOAN_PAYMENT_REQUIRED:[409,'This bank loan is already settled or changed. Reload the car.'],
+ PAYMENT_EXCEEDS_BALANCE:[409,'The money plus the deductions is more than the loan still to receive.'],
+ WITHHELD_BILL_REQUIRED:[409,'A bill picked for a deduction is already paid or smaller than the deduction. Reload the car.'],
+ BILL_LEDGER_REVIEW_REQUIRED:[409,'A bill picked for a deduction is not in the accounts yet. Leave it as a new cost or ask the developer.'],
+ CONSIGNMENT_COST_CORRECTION_REQUIRED:[409,'The dealer amount is already approved, so costs cannot be added here. Use a cost correction.'],
+ USE_INVESTOR_CAR_BILLS:[409,'Investor cars use investor bills for deductions.'],
+ COLLECTION_WORKFLOW_REQUIRED:[409,'This car uses the dealer collection workflow.'],
+ PAYMENT_WORKFLOW_REQUIRED:[409,'This panel bill must be approved before it is paid.'],
 };
 export function moneyError(error){
  const message=String(error?.message??'');
@@ -50,6 +59,17 @@ export function validateMoney(user,action,data){
   if(!uuid(data.bankAccountId))throw invalid(ERRORS.BANK_REQUIRED[1]);
   for(const k of ['bankReference','note'])if(data[k]!==undefined&&(typeof data[k]!=='string'||data[k].length>(k==='note'?500:200)))throw invalid('Check the reference and note.');
   if(typeof data.requestId!=='string'||!/^[A-Za-z0-9_-]{16,80}$/.test(data.requestId))throw invalid('A save reference is required.');
+  if(data.loanPaymentId!==undefined||data.deductions!==undefined){
+   if(typeof data.loanPaymentId!=='string'||!/^[A-Za-z0-9_:.-]{1,180}$/.test(data.loanPaymentId))throw invalid('Open the car again.');
+   if(!Array.isArray(data.deductions)||data.deductions.length<1||data.deductions.length>30)throw invalid('Add each deduction (up to 30).');
+   for(const d of data.deductions){
+    if(!d||typeof d!=='object'||Array.isArray(d)||Object.keys(d).some(k=>!['label','group','amountCents','paymentId'].includes(k)))throw invalid('Check the deductions.');
+    if(typeof d.label!=='string'||!d.label.trim()||d.label.length>120)throw invalid('Give each deduction a name.');
+    if(!GROUPS.includes(d.group))throw invalid('Choose a group for each deduction.');
+    if(!Number.isSafeInteger(d.amountCents)||d.amountCents<=0||d.amountCents>99999999999)throw invalid('Enter each deduction amount.');
+    if(d.paymentId!==undefined&&(typeof d.paymentId!=='string'||!/^[A-Za-z0-9_:.-]{1,180}$/.test(d.paymentId)))throw invalid('Check the deductions.');
+   }
+  }
   return data;
  }
  if(!['director','admin'].includes(user.role))throw new ApiError(403,'FORBIDDEN','Only the Director or admin can see this.');
@@ -67,7 +87,7 @@ export async function handleMoneyReceived(req,deps){return respond(req,deps,['PO
  if(user.role==='investor'||!['used_car','both'].includes(user.business_access)||user.registration_status!=='active')throw new ApiError(403,'FORBIDDEN','Used Car access is required.');
  const body=readJson(req,UPLOAD_BODY_MAX);
  if(body.scope!==SCOPE||typeof body.action!=='string'||!Object.hasOwn(FIELDS,body.action))throw invalid('Choose a valid action.');
- if(body.action!=='slip'&&Buffer.byteLength(typeof req.body==='string'?req.body:JSON.stringify(body))>BODY_MAX)throw new ApiError(413,'INVALID','Request is too large.');
+ if(body.action!=='slip'&&Buffer.byteLength(typeof req.body==='string'?req.body:JSON.stringify(body))>(body.action==='record'?RECORD_BODY_MAX:BODY_MAX))throw new ApiError(413,'INVALID','Request is too large.');
  onlyKeys(body,['scope','action',...FIELDS[body.action]]);
  const {scope:_,action,...input}=body;
  const data=validateMoney(user,action,input);

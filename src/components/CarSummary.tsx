@@ -8,7 +8,7 @@ import { formatCents, useInvestorQuery } from '../lib/investorFinance';
 import { paymentBalanceCents } from '../lib/companyBankPayments';
 import { moneyRequest, type MoneyEntry } from '../lib/moneyReceived';
 import { loadCarCases, type CarCase } from '../lib/docTodo';
-import { RecordMoney } from './MoneyReceivedPanel';
+import { RecordMoney, type LoanContext } from './MoneyReceivedPanel';
 import CompanyBankPaymentDialog from './CompanyBankPaymentDialog';
 import CompanyPaymentDocuments from './CompanyPaymentDocuments';
 
@@ -48,7 +48,7 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
   const money = useInvestorQuery<{ entries: MoneyEntry[] }>(`money-received:${actorId}:${car.id}`, () => moneyRequest('list', { carId: car.id }));
   const payments = useStore((s) => s.payments);
   const [view, setView] = useState<StageId | null>(null);
-  const [recording, setRecording] = useState<{ amountCents?: number; note?: string } | null>(null);
+  const [recording, setRecording] = useState<{ amountCents?: number; note?: string; loan?: LoanContext } | null>(null);
   const [paying, setPaying] = useState<Payment | null>(null);
   const [docs, setDocs] = useState<string | null>(null);
   const [moneyTab, setMoneyTab] = useState<'profit' | 'deal'>('profit');
@@ -66,7 +66,7 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
   const tab = showProfit ? (deal ? moneyTab : 'profit') : 'deal';
 
   // Money in: money recorded under "Money received" covers the expected payments in order.
-  let unallocated = entries.filter((e) => e.state === 'to_match').reduce((s, e) => s + e.amountCents, 0);
+  let unallocated = entries.filter((e) => e.state === 'to_match').reduce((s, e) => s + e.amountCents + (e.deductionsCents ?? 0), 0);
   const moneyItems = mine.filter((p) => INBOUND.has(p.type)).map((p) => {
     const left = paymentBalanceCents(p);
     const covered = left === 0 || unallocated >= left;
@@ -155,12 +155,16 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
                 <div className="flex-1 min-w-[140px]"><p className="text-sm text-white truncate">{IN_LABEL[p.type] ?? words(p.type)}{p.recipientName ? ` · ${p.recipientName}` : ''}</p>
                   <p className="text-xs text-gray-400">{covered ? 'Received' : left < cents(p.amount) ? `${formatCents(left)} still to come` : 'Waiting'}</p></div>
                 <p className="text-sm font-semibold text-white whitespace-nowrap">{formatCents(cents(p.amount))}</p>
-                {director && !covered && <button type="button" className={goldBtn} onClick={() => setRecording({ amountCents: left, note: `${IN_LABEL[p.type] ?? words(p.type)}${p.recipientName ? ' · ' + p.recipientName : ''}` })}>Mark received</button>}
+                {director && !covered && <button type="button" className={goldBtn} onClick={() => setRecording({ amountCents: left, note: `${IN_LABEL[p.type] ?? words(p.type)}${p.recipientName ? ' · ' + p.recipientName : ''}`, ...(p.type === 'loan_disbursement' ? { loan: {
+                  paymentId: p.id, leftCents: left,
+                  bills: mine.filter((b) => ['repair', 'misc_cost', 'panel_charge'].includes(b.type) && b.status === 'pending' && paymentBalanceCents(b) > 0).map((b) => ({ id: b.id, label: [b.recipientName, b.description].filter(Boolean).join(' · ') || words(b.type), leftCents: paymentBalanceCents(b) })),
+                  addOns: (deal?.plus ?? []).map((a) => ({ label: a.label, amountCents: cents(a.amount) })),
+                } } : {}) })}>Mark received</button>}
               </div>)}
               {entries.length > 0 && <div className="pt-1 space-y-1.5">
                 <p className="text-xs text-gray-400">Recorded</p>
                 {entries.map((e) => <div key={e.id} className="flex items-center justify-between gap-3 rounded-xl bg-emerald-500/[0.06] border border-emerald-500/20 px-4 py-2.5">
-                  <p className="text-sm text-white min-w-0 truncate">{new Date(e.receivedOn).toLocaleDateString('en-MY')} · {e.bankName}{e.note ? ` · ${e.note}` : ''}</p>
+                  <div className="min-w-0"><p className="text-sm text-white truncate">{new Date(e.receivedOn).toLocaleDateString('en-MY')} · {e.bankName}{e.note ? ` · ${e.note}` : ''}</p>{!!e.deductionsCents && <p className="text-xs text-gray-400 truncate" title={(e.deductions ?? []).map((d) => `${d.label} ${formatCents(d.amountCents)}`).join(', ')}>+ {formatCents(e.deductionsCents)} deducted ({(e.deductions ?? []).length} items) · loan covered {formatCents(e.amountCents + e.deductionsCents)}</p>}</div>
                   <span className="flex items-center gap-2 flex-shrink-0"><span className={`text-[11px] px-2 py-0.5 rounded-full ${e.hasSlip ? 'bg-emerald-900/70 text-emerald-200' : 'bg-[#3A2C0E] text-[#F3C969]'}`}>{e.hasSlip ? 'Slip ✓' : 'No slip'}</span><span className="text-sm font-semibold text-emerald-300">{formatCents(e.amountCents)}</span></span>
                 </div>)}
               </div>}
@@ -273,7 +277,7 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
       </div>
 
       <button type="button" className="w-full min-h-[48px] rounded-xl border border-white/10 bg-white/[0.02] text-sm text-gray-300 hover:text-white" onClick={() => onOpenDetails()}>{detailsOpen ? 'Hide full details' : 'Show full details · edit car, repairs, deal, dealer'}</button>
-      {recording && <RecordMoney car={car} actorId={actorId} defaultAmountCents={recording.amountCents} defaultNote={recording.note} onClose={() => setRecording(null)} onSaved={reload} />}
+      {recording && <RecordMoney car={car} actorId={actorId} defaultAmountCents={recording.amountCents} defaultNote={recording.note} loan={recording.loan} onClose={() => setRecording(null)} onSaved={reload} />}
       {paying && <CompanyBankPaymentDialog key={actorId + ':' + paying.id} payments={[paying]} actorId={actorId} onClose={() => { setPaying(null); reload(); }} />}
       {docs && <CompanyPaymentDocuments paymentId={docs} onClose={() => { setDocs(null); reload(); }} />}
     </div>

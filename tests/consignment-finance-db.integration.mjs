@@ -79,6 +79,7 @@ try{
  // Investor deals live in the investor migrations; a stand-in is enough here.
  await db.exec("create table if not exists uc_investor_deals(car_id text primary key,state text not null)");
  await db.exec(migration('20261120001600_car_cases.sql'));
+ await db.exec(migration('20261121000200_loan_deductions.sql'));
  await assert.rejects(()=>db.exec("update cars set investor_id='i' where id='car-own'"),/USE_INVESTOR_ACCOUNTS/);
  await assert.rejects(()=>db.exec("insert into journal_entries(id,date,description,source_type,source_id,lines) values('legacy-investor-bypass',current_date,'Legacy investor write','car_sold','old','[{\"accountId\":\"acct-inv-investor\",\"debit\":1,\"credit\":0},{\"accountId\":\"acct-investor-payable\",\"debit\":0,\"credit\":1}]')"),/USE_INVESTOR_POSTING/);
  let n=0;const req=()=> 'consign_test_'+String(++n).padStart(8,'0');
@@ -364,6 +365,33 @@ try{
  assert.equal((await cases())['case-clean'].state,'closed');
  await db.exec("insert into uc_investor_deals values('case-clean','draft')");assert.equal((await cases())['case-clean'].investorOpen,true);
  await assert.rejects(()=>call('uc_doc_todo','s','cases',{}),/NOT_ALLOWED/);
+ // Bank loan through the panel: money in plus deductions covers the loan.
+ await db.exec(`insert into cars(id,make,model,status,purchase_price,misc_costs) values('ded-car','Proton','Persona','delivered',20000,'[{"id":"ded-ins-misc","description":"Insurance","amount":802.87}]');
+  insert into payments(id,car_id,type,status,amount,recipient_type,recipient_id,recipient_name) values('ded-loan','ded-car','loan_disbursement','pending',24000,'customer','ded-car','Chailease');
+  insert into payments(id,car_id,type,status,amount,recipient_type,recipient_id,recipient_name,misc_cost_id) values('ded-ins','ded-car','misc_cost','pending',802.87,'merchant','lonpac','Lonpac','ded-ins-misc');
+  insert into journal_entries(id,date,description,source_type,source_id,car_id,lines) values('ded-ins-cost',current_date,'Insurance','misc_cost','ded-ins','ded-car','[{"accountId":"acct-inv-own","debit":802.87,"credit":0},{"accountId":"acct-ap","debit":0,"credit":802.87}]')`);
+ const matchCents=async()=>Number((await db.query("select coalesce(sum(((l->>'credit')::numeric-(l->>'debit')::numeric)*100),0) c from journal_entries j cross join lateral jsonb_array_elements(j.lines) l where l->>'accountId'='acct-money-to-match'")).rows[0].c);
+ const beforeMatch=await matchCents(),beforeBank=await position();
+ const lines=[['Invoice service charge','panel_fee',60000],['Loan submission service charge','panel_fee',20000],['Chailease processing fees','bank_fee',54000],['Auto Life','insurance',31200],
+  ['Car insurance','insurance',80287,'ded-ins'],['JPJ','jpj_road_tax',22000],['Road tax','jpj_road_tax',7200],['Runner fee','runner',3000]].map(([label,group,amountCents,paymentId])=>({label,group,amountCents,...(paymentId?{paymentId}:{})}));
+ const dedReq=req(),dedBody={carId:'ded-car',amountCents:2122313,receivedOn:day,bankAccountId:bank.id,loanPaymentId:'ded-loan',deductions:lines,requestId:dedReq};
+ await assert.rejects(()=>moneyIn('a','record',dedBody),/NOT_ALLOWED/);
+ await assert.rejects(()=>moneyIn('d','record',{...dedBody,requestId:req(),deductions:[{label:'x',group:'nope',amountCents:1}]}),/INVALID/);
+ await assert.rejects(()=>moneyIn('d','record',{...dedBody,requestId:req(),amountCents:2122314}),/PAYMENT_EXCEEDS_BALANCE/);
+ const ded=(await moneyIn('d','record',dedBody)).entry;
+ assert.equal(ded.deductionsCents,277687);assert.equal(ded.deductions.length,8);assert.equal(ded.loanPaymentId,'ded-loan');
+ assert.equal((await moneyIn('d','record',dedBody)).entry.id,ded.id);
+ await assert.rejects(()=>moneyIn('d','record',{...dedBody,deductions:lines.slice(1)}),/REQUEST_CHANGED/);
+ assert.equal(await matchCents(),beforeMatch+2400000);assert.equal(await position(),beforeBank+2122313);
+ assert.equal((await db.query("select status from payments where id='ded-ins'")).rows[0].status,'transferred');
+ assert.equal((await db.query("select count(*)::int n from payments where car_id='ded-car' and type='misc_cost' and status='transferred'")).rows[0].n,8);
+ assert.equal((await db.query("select jsonb_array_length(misc_costs) n from cars where id='ded-car'")).rows[0].n,8);
+ assert.equal(Number((await db.query("select coalesce(sum(((l->>'credit')::numeric-(l->>'debit')::numeric)*100),0) c from journal_entries j cross join lateral jsonb_array_elements(j.lines) l where j.car_id='ded-car' and l->>'accountId'='acct-ap'")).rows[0].c),0);
+ let dedCase=(await cases())['ded-car'];assert.equal(dedCase.toCollectCents,0);assert.equal(dedCase.toPay,0);assert.equal(dedCase.missingDocs,0);assert.equal(dedCase.moneyNoSlip,1);
+ assert.ok(!(await todo('a','list')).items.some(x=>x.carId==='ded-car'));
+ await assert.rejects(()=>moneyIn('d','record',{...dedBody,requestId:req(),amountCents:1,deductions:[{label:'Extra',group:'other',amountCents:1}]}),/PAYMENT_EXCEEDS_BALANCE|LOAN_PAYMENT_REQUIRED/);
+ await assert.rejects(()=>db.exec("delete from uc_money_deductions"),/IMMUTABLE|immutable/i);
+ await assert.rejects(()=>db.exec("update payments set status='pending' where id='ded-ins'"),/USE_COMPANY_BANK_PAYMENT|BANK_PAYMENT_IMMUTABLE/);
  if(db.isPostgres){
   const a=await db.connection(),b=await db.connection();try{
    await makeCase('race-receipt',{price:70000});const rr=await cf('snapshot',{carId:'race-receipt'}),rd=await evidence(rr.case.customer_payment_id,'payment');

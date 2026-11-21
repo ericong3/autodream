@@ -44,3 +44,14 @@ test('database refusals become plain messages',()=>{
  for(const [code,status] of [['DUPLICATE_REFERENCE',409],['INVALID_DATE',400],['BANK_REQUIRED',400],['NOT_ALLOWED',403]]){const e=moneyError({message:code});assert.equal(e.status,status);assert.equal(e.code,code);}
  assert.match(moneyError({message:'SOMETHING_NEW'}).message,/SOMETHING_NEW/);
 });
+test('bank loan money can carry its deductions; bad deductions never reach the database',async()=>{
+ const f=fixture(),c=await f.login();
+ const deductions=[{label:'Invoice service charge',group:'panel_fee',amountCents:60000},{label:'Car insurance',group:'insurance',amountCents:80287,paymentId:'bill-1'}];
+ const out=await f.call(record({loanPaymentId:'loan-1',deductions}),c);
+ assert.equal(out.status,200);assert.deepEqual(f.calls[0].args.p_data.deductions,deductions);assert.equal(f.calls[0].args.p_data.loanPaymentId,'loan-1');
+ for(const bad of [{deductions},{loanPaymentId:'loan-1'},{loanPaymentId:'loan-1',deductions:[]},{loanPaymentId:'loan-1',deductions:[{label:'x',group:'nope',amountCents:1}]},
+  {loanPaymentId:'loan-1',deductions:[{label:'',group:'other',amountCents:1}]},{loanPaymentId:'loan-1',deductions:[{label:'x',group:'other',amountCents:0}]},{loanPaymentId:'loan-1',deductions:[{label:'x',group:'other',amountCents:1,extra:1}]}])
+  assert.equal((await f.call(record(bad),c)).status,400);
+ assert.equal(f.calls.length,1);
+ assert.equal(moneyError({message:'PAYMENT_EXCEEDS_BALANCE'}).status,409);
+});
