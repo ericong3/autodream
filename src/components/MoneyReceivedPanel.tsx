@@ -59,7 +59,7 @@ export default function MoneyReceivedPanel({ car, actorId, role }: { car: Car; a
   );
 }
 
-function RecordMoney({ car, actorId, onClose, onSaved }: { car: Car; actorId: string; onClose: () => void; onSaved: () => void }) {
+export function RecordMoney({ car, actorId, onClose, onSaved }: { car: Car; actorId: string; onClose: () => void; onSaved: () => void }) {
   const banks = useInvestorQuery<{ banks: Bank[] }>(`company-banks:${actorId}`, () => companyBankRequest('banks'));
   const [amount, setAmount] = useState(''), [day, setDay] = useState(today()), [bankId, setBankId] = useState(''), [reference, setReference] = useState(''), [note, setNote] = useState('');
   const [file, setFile] = useState<File | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState(''), [savedId, setSavedId] = useState<string | null>(null);

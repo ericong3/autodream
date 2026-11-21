@@ -77,6 +77,7 @@ import CompanyPurchaseStart from '../components/CompanyPurchaseStart';
 import ConsignmentFinancePanel from '../components/ConsignmentFinancePanel';
 import MoneyReceivedPanel from '../components/MoneyReceivedPanel';
 import CarCaseBadge from '../components/CarCaseBadge';
+import CarSummary from '../components/CarSummary';
 import { buildCarSaleEntry, buildPayableRecognizedEntry, buildCarCostRecognizedEntry, buildSettlementRecognizedEntry, buildTradeInAcquiredEntry, LEDGER_ACCOUNTS } from '../utils/generateJournalEntries';
 import { getCaseCompletion } from '../utils/caseCompletion';
 import { buildDealReceiptPdf, uploadDealReceipt } from '../utils/generateDealReceipt';
@@ -230,6 +231,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
 
   // ── Edit Car Modal ──
   const [showEditModal, setShowEditModal] = useState(false);
+  // Sold cars open on the simple summary; the full page stays one tap away.
+  const [showDetails, setShowDetails] = useState(false);
+  useEffect(() => { setShowDetails(false); }, [id]);
   const [editForm, setEditForm] = useState<Partial<Car>>({});
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
 
@@ -922,14 +926,38 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     setDeliverySubmitting(false);
   };
 
+  const summaryMode = companyBankPaymentsEnabled && !!currentUser && (isDirector || isAdmin || isShareHolder) && (car.status === 'delivered' || car.status === 'sold');
+  const openDetails = (section?: string) => {
+    if (!section) { setShowDetails(v => !v); return; }
+    setShowDetails(true);
+    setTimeout(() => document.getElementById('car-' + section)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+  };
+  const profitCosts = [
+    { label: 'Bought for', amount: car.purchasePrice + _sourceCommission },
+    { label: 'Repairs', amount: totalRepairCost },
+    { label: 'Misc costs', amount: totalMiscCost },
+    { label: 'Disbursement charges', amount: _disbursementCharges },
+    { label: 'Panel charge', amount: car.consignment ? (car.panelChargeAmount ?? 0) : 0 },
+    { label: 'Commission', amount: car.isStaffSale || car.waiveCommission ? 0 : _commission },
+    { label: 'Intake bonus', amount: _intakeCommission },
+  ];
+
   return (
-    <div className="max-w-6xl">
-      <div className="xl:grid xl:grid-cols-[1fr_380px] xl:gap-6 xl:items-start space-y-6 xl:space-y-0">
+    <div className="max-w-6xl space-y-6">
+      {summaryMode && currentUser && <>
+        <nav className="flex items-center gap-1.5 text-xs text-gray-500">
+          <span className="hover:text-gold-400 cursor-pointer transition-colors" onClick={onBack}>{breadcrumbLabel ?? (fromHistory ? 'Delivered' : 'Inventory')}</span>
+          <ChevronRight size={12} className="text-gray-600" />
+          <span className="text-gray-300 truncate max-w-[200px]">{car.year} {car.make} {car.model}</span>
+        </nav>
+        <CarSummary car={car} actorId={currentUser.id} role={currentUser.role} profit={isDirectorView && !car.investorFunded ? netProfit : null} costs={profitCosts} detailsOpen={showDetails} onOpenDetails={openDetails} />
+      </>}
+      {(!summaryMode || showDetails) && <div className="xl:grid xl:grid-cols-[1fr_380px] xl:gap-6 xl:items-start space-y-6 xl:space-y-0">
         {/* ── Left Column ── */}
         <div className="space-y-6 min-w-0">
 
       {/* Breadcrumb */}
-      <nav className="flex items-center gap-1.5 text-xs text-gray-500 mb-4">
+      {!summaryMode && <nav className="flex items-center gap-1.5 text-xs text-gray-500 mb-4">
         <span
           className="hover:text-gold-400 cursor-pointer transition-colors"
           onClick={() => breadcrumbLabel ? onBack() : navigate(fromHistory ? '/history' : inventoryBackUrl, fromTab ? { state: { inventoryTab: fromTab } } : undefined)}
@@ -940,13 +968,13 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
         <span className="text-gray-300 truncate max-w-[200px]">
           {car.year} {car.make} {car.model}
         </span>
-      </nav>
+      </nav>}
 
-      {companyBankPaymentsEnabled && currentUser && (isDirector || isAdmin || isShareHolder) && <CarCaseBadge carId={car.id} actorId={currentUser.id} />}
-      {companyBankPaymentsEnabled && currentUser && (isDirector || isAdmin) && <MoneyReceivedPanel key={currentUser.id + ':' + car.id} car={car} actorId={currentUser.id} role={currentUser.role} />}
+      {!summaryMode && companyBankPaymentsEnabled && currentUser && (isDirector || isAdmin || isShareHolder) && <CarCaseBadge carId={car.id} actorId={currentUser.id} />}
+      {!summaryMode && companyBankPaymentsEnabled && currentUser && (isDirector || isAdmin) && <MoneyReceivedPanel key={currentUser.id + ':' + car.id} car={car} actorId={currentUser.id} role={currentUser.role} />}
       {car.investorFunded && (isDirector || isAdmin) && <button className="w-full rounded-xl border border-gold-400/30 bg-gold-400/10 px-4 py-3 text-left text-gold-400" onClick={() => navigate('/investor-finance?carId='+encodeURIComponent(car.id))}>{isAdmin ? 'View current car bills in investor account →' : 'View current costs and profit in investor account →'}</button>}
       {car.investorFunded && isShareHolder && <p className="text-sm text-gray-400">Investor car totals are shown in investor accounts.</p>}
-      {companyBankPaymentsEnabled && car.consignment && !car.outgoingConsignment && currentUser && (isDirector||isAdmin||isShareHolder) && <ConsignmentFinancePanel key={currentUser.id+':'+currentUser.role+':'+car.id} car={car} actorId={currentUser.id} role={currentUser.role}/>}
+      {companyBankPaymentsEnabled && car.consignment && !car.outgoingConsignment && currentUser && (isDirector||isAdmin||isShareHolder) && <div id="car-consignment" className="scroll-mt-24"><ConsignmentFinancePanel key={currentUser.id+':'+currentUser.role+':'+car.id} car={car} actorId={currentUser.id} role={currentUser.role}/></div>}
       {companyBankPaymentsEnabled && car.outgoingConsignment && isDirector && currentUser && payments.filter(p=>p.carId===car.id&&p.type==='consignment_collection'&&!p.obligationReplaced).map(p=><details key={p.id} className="rounded-xl border border-orange-500/30 p-4"><summary className="text-sm font-medium text-orange-300 cursor-pointer">Dealer collection &amp; car costs</summary><div className="mt-3"><OutgoingCollectionApproval paymentId={p.id} actorId={currentUser.id} onApproved={()=>{}}/></div></details>)}
       {companyBankPaymentsEnabled&&currentUser&&outgoingAction.pending.filter(p=>p.slot==='outgoing-send:'+car.id).map(p=><button key={p.slot} type="button" disabled={!!outgoingAction.busy} className="text-amber-300 underline py-2 text-sm" onClick={()=>void outgoingAction.retry<{payments:Record<string,unknown>[];journals:Record<string,unknown>[];car:Record<string,unknown>}>(p.slot).then(saved=>{if(saved){useStore.getState().applyCompanyBankPayment(currentUser.id,saved);setOutgoingConsignModal(null);}})}>Retry original dealer sale</button>)}
       {outgoingAction.error&&<p role="alert" className="text-red-400 text-sm">{outgoingAction.error.message}</p>}
@@ -2471,7 +2499,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
         {/* ── Right Column ── */}
         <div className="space-y-4 xl:sticky xl:top-24">
           {/* Financial Summary Card */}
-          {isDirectorView && !car.investorFunded && (
+          {isDirectorView && !car.investorFunded && !summaryMode && (
             <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl p-5 space-y-4">
               <p className="text-white font-semibold text-sm flex items-center gap-2">
                 <TrendingUp size={15} className="text-gold-400" /> Financial Summary
@@ -2546,7 +2574,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           )}
         </div>{/* end right column */}
 
-      </div>{/* end two-column grid */}
+      </div>}{/* end two-column grid */}
 
       {/* ── Edit Car Modal ── */}
       <Modal isOpen={showEditModal} onClose={() => setShowEditModal(false)} title="Edit Car" maxWidth="max-w-2xl"

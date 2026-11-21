@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef } from 'react';
 import { CreditCard, FileText, CheckCircle, Clock, ClipboardCheck, Fingerprint, Contact, Upload, Wrench, Trash2, Plus, MapPin, FileWarning } from 'lucide-react';
 import DocTodo from '../components/DocTodo';
+import { useLocation } from 'react-router-dom';
 import { companyBankPaymentsEnabled } from '../lib/companyBankPayments';
 import { useStore } from '../store';
 import LoanCaseDetail from './LoanCaseDetail';
@@ -53,7 +54,8 @@ export default function AdminDashboard() {
   const addPayment = useStore(s => s.addPayment);
   const addJournalEntry = useStore(s => s.addJournalEntry);
 
-  const [tab, setTab] = useState<TabType>('loans');
+  const location = useLocation();
+  const [tab, setTab] = useState<TabType>(() => new URLSearchParams(location.search).get('tab') === 'paperwork' ? 'paperwork' : 'loans');
   const [repairFilter, setRepairFilter] = useState<'pending' | 'done'>('pending');
   const [billTarget, setBillTarget] = useState<RepairJob | null>(null);
   const [billForm, setBillForm] = useState<{ parts: { name: string; cost: number }[]; labourCost: number; receiptPhoto: string }>({ parts: [{ name: '', cost: 0 }], labourCost: 0, receiptPhoto: '' });
