@@ -77,7 +77,7 @@ import CompanyPurchaseStart from '../components/CompanyPurchaseStart';
 import ConsignmentFinancePanel from '../components/ConsignmentFinancePanel';
 import MoneyReceivedPanel from '../components/MoneyReceivedPanel';
 import CarCaseBadge from '../components/CarCaseBadge';
-import CarSummary from '../components/CarSummary';
+import CarSummary, { type CarRecords, type CostGroup, type CostItem } from '../components/CarSummary';
 import { buildCarSaleEntry, buildPayableRecognizedEntry, buildCarCostRecognizedEntry, buildSettlementRecognizedEntry, buildTradeInAcquiredEntry, LEDGER_ACCOUNTS } from '../utils/generateJournalEntries';
 import { getCaseCompletion } from '../utils/caseCompletion';
 import { buildDealReceiptPdf, uploadDealReceipt } from '../utils/generateDealReceipt';
@@ -774,15 +774,15 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   };
 
   // ── Refund claim submit — just records bank details; director transfers, admin uploads the receipt in Payments ──
-  const handleSubmitRefundClaim = async () => {
+  const handleSubmitRefundClaim = async (form = refundForm) => {
     if (!dealCustomer || !car) return;
     if(balanceUnavailable){toast.error('Refresh the customer balance first.');return;}
     setSavingRefundClaim(true);
     try {
       const bankFields = {
-        bankName: refundForm.bank.trim(),
-        accountNumber: refundForm.accountNo.trim(),
-        accountHolder: refundForm.accountName.trim(),
+        bankName: form.bank.trim(),
+        accountNumber: form.accountNo.trim(),
+        accountHolder: form.accountName.trim(),
       };
       if (refundClaim) {
         await updatePayment(refundClaim.id, bankFields);
@@ -946,6 +946,75 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   };
 
   const summaryMode = companyBankPaymentsEnabled && !!currentUser && (isDirector || isAdmin || isShareHolder) && (car.status === 'delivered' || car.status === 'sold');
+  const consignmentPanel = companyBankPaymentsEnabled && car.consignment && !car.outgoingConsignment && currentUser && (isDirector||isAdmin||isShareHolder)
+    ? <ConsignmentFinancePanel key={currentUser.id+':'+currentUser.role+':'+car.id} car={car} actorId={currentUser.id} role={currentUser.role}/> : null;
+
+  // Costs tab on the sold-car page: every repair, misc cost and the panel charge, paid or not.
+  const costGroups: CostGroup[] | undefined = summaryMode ? (() => {
+    const canEdit = isDirector || isAdmin;
+    const billFor = (match: (p: (typeof payments)[number]) => boolean) => payments.find((p) => p.carId === car.id && !p.obligationReplaced && match(p));
+    const billTone = (b: ReturnType<typeof billFor>): Pick<CostItem, 'status' | 'tone'> =>
+      !b ? { status: 'No bill', tone: 'none' } : b.status === 'transferred' ? { status: 'Paid', tone: 'paid' } : b.status === 'pending' ? { status: 'Unpaid', tone: 'unpaid' } : { status: String(b.status).replace(/_/g, ' '), tone: 'none' };
+    const short = (iso?: string) => iso ? new Date(iso).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+    const repairItems: CostItem[] = carRepairs.map((r) => {
+      const active = r.status === 'pending' || r.status === 'in_progress' || r.status === 'awaiting_bill';
+      const queued = r.status === 'queued';
+      const can = isMechanic || isDirector || isAdmin;
+      return {
+        id: 'r:' + r.id, name: r.typeOfRepair,
+        sub: [r.location, r.completedAt ? 'Finished ' + short(r.completedAt) : short(r.createdAt), r.notes].filter(Boolean).join(' · '),
+        ...(r.status === 'done' ? billTone(billFor((p) => p.repairJobId === r.id)) : { status: REPAIR_STATUS_LABEL[r.status] ?? r.status, tone: 'open' as const }),
+        amount: isDirectorView ? (r.status === 'done' ? (r.actualCost ?? r.totalCost) : r.totalCost) : null,
+        receiptUrl: r.receiptPhoto,
+        actions: [
+          ...(queued && can ? [{ label: 'Proceed', run: () => handleProceedRepair(r), disabled: hasSentOutRepair, title: hasSentOutRepair ? 'Complete the current active job first' : undefined }] : []),
+          ...(active && can ? [{ label: 'Complete repair', run: () => openCompleteRepair(r) }] : []),
+          ...(isDirector ? [{ label: 'Delete', danger: true, run: () => setDeleteTarget({ label: `repair job "${r.typeOfRepair}"`, action: () => deleteRepair(r.id) }) }] : []),
+        ],
+      };
+    });
+    const miscItems: CostItem[] = (car.miscCosts ?? []).map((m) => {
+      const fromLoan = !!(m as { loanDeduction?: boolean }).loanDeduction;
+      return {
+        id: 'm:' + m.id, name: m.description,
+        sub: [m.category, m.merchant, short(m.createdAt), car.investorFunded ? 'originally recorded' : ''].filter(Boolean).join(' · '),
+        ...(fromLoan ? { status: 'Loan deduction', tone: 'loan' as const } : billTone(billFor((p) => p.miscCostId === m.id))),
+        amount: m.amount,
+        actions: canEdit && !car.investorFunded ? [{ label: 'Delete', danger: true, run: () => setDeleteTarget({ label: `misc cost "${m.description}"`, action: () => deleteMiscCost(car.id, m.id) }) }] : [],
+      };
+    });
+    const panelDealer = car.panelDealerId ? dealers.find((d) => d.id === car.panelDealerId) : undefined;
+    const openPanel = () => { setPanelForm({ dealerId: car.panelDealerId ?? '', chargeAmount: car.panelChargeAmount ? String(car.panelChargeAmount) : '' }); setShowPanelPopup(true); };
+    const panelItems: CostItem[] = car.panelDealerId ? [{
+      id: 'panel', name: panelDealer?.name ?? 'Unknown dealer',
+      sub: panelDealer?.bankName ? `${panelDealer.bankName} · ${panelDealer.bankAccountNumber ?? ''}` : 'No bank details',
+      ...billTone(billFor((p) => p.type === 'panel_charge')), amount: car.panelChargeAmount ?? 0,
+      actions: canEdit ? [{ label: 'Edit panel charge', run: openPanel }] : [],
+    }] : [];
+    return [
+      { name: 'Repairs', total: isDirectorView && !car.investorFunded ? totalRepairCost : null, items: repairItems },
+      { name: 'Misc costs', total: (car.miscCosts ?? []).reduce((t, m) => t + m.amount, 0), items: miscItems },
+      { name: 'Panel charge', total: car.panelDealerId ? car.panelChargeAmount ?? 0 : null, items: panelItems, ...(canEdit && !car.panelDealerId ? { add: { label: '+ Set panel charge', run: openPanel } } : {}) },
+    ];
+  })() : undefined;
+
+  // Car records card: what is left of the old full page.
+  const carRecords: CarRecords | undefined = summaryMode ? {
+    info: [
+      ['Plate', car.carPlate || '—'], ['Car', `${car.year} ${car.make} ${car.model}${car.variant ? ' ' + car.variant : ''}`],
+      ['Colour', car.colour || '—'], ['Mileage', car.mileage ? `${car.mileage.toLocaleString('en-MY')} km` : '—'],
+      ['Gearbox', car.transmission === 'manual' ? 'Manual' : 'Auto'], ['Location', car.currentLocation || '—'],
+    ],
+    notes: car.notes, onEdit: isDirector || isAdmin ? () => openEdit() : undefined,
+    loans: customers.filter((cu) => cu.interestedCarId === car.id && cu.loanApplications?.length)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .map((cu) => ({ id: cu.id, name: cu.name, by: users.find((u) => u.id === cu.assignedSalesId)?.name ?? '—', inactive: !!cu.isTrashed, apps: (cu.loanApplications ?? []).map((a) => ({ bank: a.bank, status: a.status })) })),
+    moves: car.consignment ? carMovements.filter((m) => m.carId === car.id || (!!car.carPlate && m.carPlate === car.carPlate)).slice(0, 20).map((m) => ({
+      id: m.id, type: m.type,
+      text: m.destinationName ? (m.type === 'out' ? `AutoDream → ${m.destinationName}` : `${m.destinationName} → AutoDream`) : (m.reason || (m.type === 'out' ? 'Out' : 'In')),
+      when: `${new Date(m.createdAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })} · ${m.userName}`, notes: m.notes,
+    })) : null,
+  } : undefined;
   const openDetails = (section?: string) => {
     if (!section) { setShowDetails(v => !v); return; }
     setShowDetails(true);
@@ -1049,6 +1118,17 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           onEditDeal={dealCustomer ? openEditDeal : undefined}
           deal={finalDealCard} generatingReceipt={generatingReceipt} onReceipt={isDirector || isAdmin ? generateDealReceipt : undefined}
           onAddRepair={isDirector || isAdmin ? openAddRepair : undefined}
+          delivery={{
+            done: car.status !== 'sold' || !!car.deliveryCollected, balance: dealWo ? customerBalance : 0, checking: !!balanceUnavailable, onRefresh: () => void collectionBalance.reload(),
+            receiptUrl: car.collectionReceiptUrl,
+            onUploadReceipt: isDirector || isAdmin ? async (file) => { try { const url = await uploadToStorage(file, 'receipts'); await updateCar(car.id, { collectionReceiptUrl: url }); } catch (err: any) { toast.error(err?.message ?? 'Could not upload the receipt.'); } } : undefined,
+            onDeliver: isDirector && car.status === 'sold' ? () => { setDeliveryPhoto(''); setShowDeliveryModal(true); } : undefined,
+            photo: car.deliveryPhoto, dealReceiptUrl: car.dealReceiptUrl,
+          }}
+          dealerPanel={consignmentPanel}
+          refund={dealCustomer ? { claim: refundClaim, form: refundForm, setForm: setRefundForm, onSubmit: () => void handleSubmitRefundClaim(), saving: savingRefundClaim } : undefined}
+          costGroups={costGroups} records={carRecords}
+          investorLink={car.investorFunded && (isDirector || isAdmin) ? () => navigate('/investor-finance?carId=' + encodeURIComponent(car.id)) : undefined}
           onAddMisc={isDirector || isAdmin ? () => { setMiscForm({ category: '', merchantName: '', description: '', amount: '', notes: '' }); setMiscErrors({}); setMiscDupeOk(false); setShowMiscModal(true); } : undefined} />
       </>}
       {(!summaryMode || showDetails) && <div className="xl:grid xl:grid-cols-[1fr_380px] xl:gap-6 xl:items-start space-y-6 xl:space-y-0">
@@ -1073,7 +1153,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       {!summaryMode && companyBankPaymentsEnabled && currentUser && (isDirector || isAdmin) && <MoneyReceivedPanel key={currentUser.id + ':' + car.id} car={car} actorId={currentUser.id} role={currentUser.role} />}
       {car.investorFunded && (isDirector || isAdmin) && <button className="w-full rounded-xl border border-gold-400/30 bg-gold-400/10 px-4 py-3 text-left text-gold-400" onClick={() => navigate('/investor-finance?carId='+encodeURIComponent(car.id))}>{isAdmin ? 'View current car bills in investor account →' : 'View current costs and profit in investor account →'}</button>}
       {car.investorFunded && isShareHolder && <p className="text-sm text-gray-400">Investor car totals are shown in investor accounts.</p>}
-      {companyBankPaymentsEnabled && car.consignment && !car.outgoingConsignment && currentUser && (isDirector||isAdmin||isShareHolder) && <div id="car-consignment" className="scroll-mt-24"><ConsignmentFinancePanel key={currentUser.id+':'+currentUser.role+':'+car.id} car={car} actorId={currentUser.id} role={currentUser.role}/></div>}
+      {!summaryMode && consignmentPanel && <div id="car-consignment" className="scroll-mt-24">{consignmentPanel}</div>}
       {companyBankPaymentsEnabled && car.outgoingConsignment && isDirector && currentUser && payments.filter(p=>p.carId===car.id&&p.type==='consignment_collection'&&!p.obligationReplaced).map(p=><details key={p.id} className="rounded-xl border border-orange-500/30 p-4"><summary className="text-sm font-medium text-orange-300 cursor-pointer">Dealer collection &amp; car costs</summary><div className="mt-3"><OutgoingCollectionApproval paymentId={p.id} actorId={currentUser.id} onApproved={()=>{}}/></div></details>)}
       {companyBankPaymentsEnabled&&currentUser&&outgoingAction.pending.filter(p=>p.slot==='outgoing-send:'+car.id).map(p=><button key={p.slot} type="button" disabled={!!outgoingAction.busy} className="text-amber-300 underline py-2 text-sm" onClick={()=>void outgoingAction.retry<{payments:Record<string,unknown>[];journals:Record<string,unknown>[];car:Record<string,unknown>}>(p.slot).then(saved=>{if(saved){useStore.getState().applyCompanyBankPayment(currentUser.id,saved);setOutgoingConsignModal(null);}})}>Retry original dealer sale</button>)}
       {outgoingAction.error&&<p role="alert" className="text-red-400 text-sm">{outgoingAction.error.message}</p>}
@@ -2193,7 +2273,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                             className="w-full px-3 py-2 rounded-lg bg-obsidian-700/40 border border-obsidian-400/40 text-white text-xs placeholder-gray-600 focus:outline-none focus:border-sky-500/50 transition-colors"
                           />
                           <button
-                            onClick={handleSubmitRefundClaim}
+                            onClick={() => void handleSubmitRefundClaim()}
                             disabled={savingRefundClaim || !refundForm.bank.trim() || !refundForm.accountNo.trim() || !refundForm.accountName.trim()}
                             className="flex items-center gap-2 w-full justify-center px-3 py-2 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/30 text-sky-300 text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                           >
