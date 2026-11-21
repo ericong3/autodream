@@ -338,6 +338,7 @@ function rowToCar(r: any): Car {
     waiveCommission: r.waive_commission ?? false,
     commissionCreditedEarly: r.commission_credited_early ?? false,
     commissionCreditedMonth: r.commission_credited_month ?? undefined,
+    commissionSettledOutside: r.commission_settled_outside === true,
     miscCosts: parseJsonField<any[]>(r.misc_costs) ?? [],
     investorId: r.investor_id ?? undefined,
     investorSplit: r.investor_split ?? undefined,
@@ -2038,6 +2039,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     if (error) {
       if (prev) set((s) => ({ cars: s.cars.map((c) => (c.id === id ? prev : c)) }));
       console.error('updateCar failed:', error.message);
+      if (error.message.includes('SALESPERSON_REQUIRED')) throw new Error('Choose the salesperson for this car first. Every sold car needs one.');
       throw new Error(error.message);
     }
     const dirs = dirIds(get().users);

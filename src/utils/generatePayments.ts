@@ -452,7 +452,7 @@ export function collectMissingPayments(data: {
     const dealPrice = calcDealPrice(car, customers);
 
     // Salesman commission
-    if (car.assignedSalesperson && !car.outgoingConsignment && !car.isStaffSale && !car.waiveCommission && !alreadyExists('salesman_commission', { carId: car.id })) {
+    if (car.assignedSalesperson && !car.commissionSettledOutside && !car.outgoingConsignment && !car.isStaffSale && !car.waiveCommission && !alreadyExists('salesman_commission', { carId: car.id })) {
       const sp = users.find(u => u.id === car.assignedSalesperson);
       if (sp) {
         const amount = salesCommission(car, customers);
@@ -466,7 +466,7 @@ export function collectMissingPayments(data: {
     }
 
     // Intake bonus
-    if ((car.intakeCommission ?? 0) > 0 && car.assignedSalesperson && !alreadyExists('intake_bonus', { carId: car.id })) {
+    if ((car.intakeCommission ?? 0) > 0 && car.assignedSalesperson && !car.commissionSettledOutside && !alreadyExists('intake_bonus', { carId: car.id })) {
       const sp = users.find(u => u.id === car.assignedSalesperson);
       if (sp) result.push({
         id: generateId(), type: 'intake_bonus', carId: car.id,
@@ -725,7 +725,7 @@ export function collectMonthlyPayroll(opts: {
   );
   for (const car of monthCars) {
     if (car.investorFunded || car.consignmentFinanceOpen) continue; // Commission must be an approved car bill before payout.
-    if (car.outgoingConsignment || car.isStaffSale || car.waiveCommission || hasCommissionPayment(car.id)) continue;
+    if (car.outgoingConsignment || car.isStaffSale || car.waiveCommission || car.commissionSettledOutside || hasCommissionPayment(car.id)) continue;
     const dealCustomer = customers.find(c => c.interestedCarId === car.id && (c.cashWorkOrder || c.loanWorkOrder));
     const spId = car.assignedSalesperson || dealCustomer?.assignedSalesId;
     const sp = spId ? users.find(u => u.id === spId) : undefined;

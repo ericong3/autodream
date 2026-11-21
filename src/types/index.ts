@@ -830,6 +830,8 @@ export interface Car {
   // reusing dateAdded/finalDeal, since those mean other things (inventory
   // intake date, days-in-stock) that shouldn't shift just for this.
   commissionCreditedEarly?: boolean;
+  /** Commission for this sale was paid outside the app; never create it again. */
+  commissionSettledOutside?: boolean;
   commissionCreditedMonth?: string;
   sellerThumbprintSaved?: boolean;
   dealProgress?: DealProgress;

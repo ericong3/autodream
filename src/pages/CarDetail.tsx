@@ -970,7 +970,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           <span className="text-gray-300 truncate max-w-[200px]">{car.year} {car.make} {car.model}</span>
         </nav>
         <CarSummary car={car} actorId={currentUser.id} role={currentUser.role} profit={isDirectorView && !car.investorFunded ? netProfit : null} costs={profitCosts} detailsOpen={showDetails} onOpenDetails={openDetails} onOpenMedia={(tab) => openGallery(0, tab)}
-          buyerName={dealCustomer?.name} salespersonName={users.find((u) => u.id === car.assignedSalesperson)?.name}
+          buyerName={dealCustomer?.name} salespersonName={assignedSalesperson?.name}
           onEditDeal={dealCustomer ? openEditDeal : undefined}
           onAddRepair={isDirector || isAdmin ? openAddRepair : undefined}
           onAddMisc={isDirector || isAdmin ? () => { setMiscForm({ category: '', merchantName: '', description: '', amount: '', notes: '' }); setMiscErrors({}); setMiscDupeOk(false); setShowMiscModal(true); } : undefined} />
