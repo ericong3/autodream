@@ -76,6 +76,9 @@ try{
  await db.exec(migration('20261120001300_documents_to_follow.sql'));
  await db.exec(migration('20261120001400_money_received.sql'));
  await db.exec(migration('20261120001500_document_todo.sql'));
+ // Investor deals live in the investor migrations; a stand-in is enough here.
+ await db.exec("create table if not exists uc_investor_deals(car_id text primary key,state text not null)");
+ await db.exec(migration('20261120001600_car_cases.sql'));
  await assert.rejects(()=>db.exec("update cars set investor_id='i' where id='car-own'"),/USE_INVESTOR_ACCOUNTS/);
  await assert.rejects(()=>db.exec("insert into journal_entries(id,date,description,source_type,source_id,lines) values('legacy-investor-bypass',current_date,'Legacy investor write','car_sold','old','[{\"accountId\":\"acct-inv-investor\",\"debit\":1,\"credit\":0},{\"accountId\":\"acct-investor-payable\",\"debit\":0,\"credit\":1}]')"),/USE_INVESTOR_POSTING/);
  let n=0;const req=()=> 'consign_test_'+String(++n).padStart(8,'0');
@@ -348,6 +351,19 @@ try{
  await evidence('todo-bill-a','invoice');const docBack=(await todo('a','send_back',{paymentId:'todo-bill-a',reason:'Check amount'})).entry;
  await assert.rejects(()=>todo('d','delete_bill',{id:docBack.id}),/BILL_HAS_DOCUMENTS/);
  await assert.rejects(()=>db.exec("update uc_doc_returns set reason='changed' where id='"+docBack.id+"'"),/IMMUTABLE_HISTORY/);
+ // Active / Closed: open while anything is left, closed by itself when done.
+ const cases=async()=>(await todo('a','cases')).cars;
+ let todoCase=(await cases())['todo-car'];assert.equal(todoCase.state,'active');assert.ok(todoCase.missingDocs>0||todoCase.toPay>0);assert.equal(todoCase.dealerNotApproved,true);
+ await db.exec("insert into cars(id,make,model,status,purchase_price) values('case-clean','Toyota','Vios','delivered',1000)");
+ assert.equal((await cases())['case-clean'].state,'closed');
+ await db.exec("insert into payments(id,car_id,type,status,amount,recipient_type,recipient_id,recipient_name) values('case-loan','case-clean','loan_disbursement','pending',500,'customer','case-clean','Bank')");
+ let clean=(await cases())['case-clean'];assert.equal(clean.state,'active');assert.equal(clean.toCollectCents,50000);
+ const caseMoney=(await moneyIn('d','record',{carId:'case-clean',amountCents:50000,receivedOn:day,bankAccountId:bank.id,requestId:req()})).entry;
+ clean=(await cases())['case-clean'];assert.equal(clean.toCollectCents,0);assert.equal(clean.moneyNoSlip,1);assert.equal(clean.state,'active');
+ const caseSlip=await moneyIn('a','slip_prepare',{id:caseMoney.id,fileName:'s.png',mimeType:'image/png',sha256:'e'.repeat(64)});await db.query("insert into storage.objects values('finance-evidence',$1)",[caseSlip.path]);await moneyIn('a','slip_confirm',{id:caseMoney.id,path:caseSlip.path});
+ assert.equal((await cases())['case-clean'].state,'closed');
+ await db.exec("insert into uc_investor_deals values('case-clean','draft')");assert.equal((await cases())['case-clean'].investorOpen,true);
+ await assert.rejects(()=>call('uc_doc_todo','s','cases',{}),/NOT_ALLOWED/);
  if(db.isPostgres){
   const a=await db.connection(),b=await db.connection();try{
    await makeCase('race-receipt',{price:70000});const rr=await cf('snapshot',{carId:'race-receipt'}),rd=await evidence(rr.case.customer_payment_id,'payment');

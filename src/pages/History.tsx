@@ -2,6 +2,8 @@ import CompanyLoanReceiptStart from '../components/CompanyLoanReceiptStart';
 import CompanyBankReceiptDialog from '../components/CompanyBankReceiptDialog';
 import CompanyBankPaymentDialog from '../components/CompanyBankPaymentDialog';
 import { companyBankPaymentsEnabled } from '../lib/companyBankPayments';
+import { useInvestorQuery } from '../lib/investorFinance';
+import { loadCarCases } from '../lib/docTodo';
 import { reviewConsignmentPayout } from '../../shared/consignmentRules.mjs';
 import { toast } from '../utils/toast';
 import { salesCommission } from '../utils/salesCommission';
@@ -425,8 +427,14 @@ export default function History() {
     for (const c of soldCars) counts[getMoneyStage(c)]++;
     return counts;
   }, [soldCars, payments, customers]);
+  // Active / Closed case: closed by itself once all paperwork and money are done.
+  const showCases = companyBankPaymentsEnabled && !!currentUser && (isDirectorView || currentUser.role === 'admin');
+  const caseQuery = useInvestorQuery(showCases && currentUser ? `car-cases:${currentUser.id}` : null, loadCarCases);
+  const caseOf = (id: string) => caseQuery.data?.cars[id]?.state;
+  const [caseFilter, setCaseFilter] = useState<'all' | 'active' | 'closed'>('all');
+  const caseCounts = useMemo(() => ({ active: soldCars.filter(c => caseOf(c.id) === 'active').length, closed: soldCars.filter(c => caseOf(c.id) === 'closed').length }), [soldCars, caseQuery.data]);
   const filterByStage = <T extends typeof cars[0]>(list: T[]): T[] =>
-    moneyStageFilter === 'all' ? list : list.filter(c => getMoneyStage(c) === moneyStageFilter);
+    list.filter(c => (moneyStageFilter === 'all' || getMoneyStage(c) === moneyStageFilter) && (caseFilter === 'all' || caseOf(c.id) === caseFilter));
 
   const getSalesperson = (id?: string) => {
     const name = id ? users.find((u) => u.id === id)?.name : undefined;
@@ -437,7 +445,7 @@ export default function History() {
     ? new Date(monthFilter + '-01').toLocaleString('en-MY', { month: 'long', year: 'numeric' })
     : '';
 
-  const hasFilters = search || filterMake !== 'All' || moneyStageFilter !== 'all';
+  const hasFilters = search || filterMake !== 'All' || moneyStageFilter !== 'all' || caseFilter !== 'all';
 
   if (selectedCarId) {
     return (
@@ -547,6 +555,16 @@ export default function History() {
         </div>
       )}
 
+      {showCases && caseQuery.data && (
+        <div className="flex gap-1 rounded-xl bg-obsidian-800/60 border border-obsidian-400/40 p-1">
+          {([['all', 'All cases', soldCars.length], ['active', 'Active', caseCounts.active], ['closed', 'Closed', caseCounts.closed]] as const).map(([key, label, count]) => (
+            <button key={key} onClick={() => setCaseFilter(key)} className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${caseFilter === key ? 'bg-gold-gradient text-obsidian-950 font-bold' : 'text-gray-400 hover:text-white'}`}>
+              {label} <span className="opacity-70">{count}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* ── Sticky filter bar ── */}
       <div className="sticky top-0 z-10 bg-obsidian-950/95 backdrop-blur-sm -mx-4 px-4 md:-mx-6 md:px-6 py-3 border-b border-obsidian-400/20">
         <div className="flex flex-wrap gap-3 items-center">
@@ -648,7 +666,7 @@ export default function History() {
           </p>
           {hasFilters && (
             <button
-              onClick={() => { setSearch(''); setFilterMake('All'); setMoneyStageFilter('all'); }}
+              onClick={() => { setSearch(''); setFilterMake('All'); setMoneyStageFilter('all'); setCaseFilter('all'); }}
               className="mt-4 px-4 py-2 rounded-lg bg-obsidian-700/60 border border-obsidian-400/40 text-gray-300 hover:text-white hover:border-gold-500/30 text-sm transition-colors flex items-center gap-2"
             >
               <SlidersHorizontal size={14} /> Clear Filters
@@ -698,9 +716,9 @@ export default function History() {
 
                 {/* Top badges */}
                 <div className="absolute top-2 left-2 right-2 flex items-start justify-between gap-1">
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/80 text-white">
+                  <span className="flex gap-1"><span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/80 text-white">
                     {car.finalDeal?.bank ? car.finalDeal.bank : 'Delivered'}
-                  </span>
+                  </span>{caseOf(car.id) && <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${caseOf(car.id) === 'closed' ? 'bg-emerald-500/80 text-white' : 'bg-amber-500/80 text-obsidian-950'}`}>{caseOf(car.id) === 'closed' ? 'Closed' : 'Active'}</span>}</span>
                   {car.carPlate && (
                     <span className="text-[10px] font-mono text-gold-300 bg-black/60 backdrop-blur-sm px-1.5 py-0.5 rounded border border-gold-500/20">
                       {car.carPlate}
@@ -860,6 +878,7 @@ export default function History() {
                     <span className="text-white font-semibold text-sm">
                       {car.year} {car.make} {car.model}{car.variant ? ` ${car.variant}` : ''}
                     </span>
+                    {caseOf(car.id) && <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${caseOf(car.id) === 'closed' ? 'bg-emerald-500/80 text-white' : 'bg-amber-500/80 text-obsidian-950'}`}>{caseOf(car.id) === 'closed' ? 'Closed' : 'Active'}</span>}
                     {car.carPlate && (
                       <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-[#2C2415] text-gold-300 border border-[#3C321E] tracking-wider">
                         {car.carPlate}

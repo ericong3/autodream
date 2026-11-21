@@ -18,3 +18,7 @@ test('database refusals become plain messages',()=>{
  assert.match(todoError({message:'CONSIGNMENT_APPROVED_CORRECTION_REQUIRED'}).message,/Adjust approved bill/);
  assert.match(todoError({message:'NEW_THING_HAPPENED'}).message,/NEW_THING_HAPPENED/);
 });
+test('Active / Closed list is open to Director, admin and shareholders only',()=>{
+ for(const role of ['director','admin','shareholder'])assert.doesNotThrow(()=>validateTodo({role},'cases',{}));
+ assert.throws(()=>validateTodo({role:'salesperson'},'cases',{}),e=>e.status===403);
+});

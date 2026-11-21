@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import {ApiError,authenticate,canUseApp,respond,readJson,onlyKeys} from '../garageBuilding/core.mjs';
 
 export const SCOPE='doc_todo';
-export const FIELDS={list:[],send_back:['paymentId','moneyId','carId','reason'],resolve:['id','resolution','note'],delete_bill:['id','note'],edit_bill:['id','amountCents','note']};
+export const FIELDS={list:[],cases:[],send_back:['paymentId','moneyId','carId','reason'],resolve:['id','resolution','note'],delete_bill:['id','note'],edit_bill:['id','amountCents','note']};
 const DIRECTOR_ONLY=new Set(['resolve','delete_bill','edit_bill']);
 const uuid=v=>typeof v==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 const invalid=m=>new ApiError(400,'INVALID',m);
@@ -31,6 +31,7 @@ export function todoError(error){
  return new ApiError(503,'UNAVAILABLE','Could not save. Try again.'+(code?` (${code})`:/^[0-9A-Z]{5}$/.test(error?.code??'')?` (error ${error.code})`:''));
 }
 export function validateTodo(user,action,data){
+ if(action==='cases'){if(!['director','admin','shareholder'].includes(user.role))throw new ApiError(403,'FORBIDDEN','Only the Director, admin or shareholders can see this.');return data;}
  if(!['director','admin'].includes(user.role))throw new ApiError(403,'FORBIDDEN','Only the Director or admin can use this list.');
  if(DIRECTOR_ONLY.has(action)&&user.role!=='director')throw new ApiError(403,'FORBIDDEN',ERRORS.NOT_ALLOWED[1]);
  if(action==='send_back'){
@@ -53,12 +54,13 @@ export async function handleDocTodo(req,deps){return respond(req,deps,['POST'],a
  const {scope:_,action,...input}=body;
  const data=validateTodo(user,action,input);
  if(deps.env.USED_CAR_PRIVATE_FINANCE_ONLINE!=='1')throw new ApiError(503,'SETUP','Private finance saving is waiting for activation.');
- const hit=await ctx.repo.throttleHit('todo:'+createHash('sha256').update(action+'\n'+user.id).digest('hex'),action==='list'?240:60,900);
+ const hit=await ctx.repo.throttleHit('todo:'+createHash('sha256').update(action+'\n'+user.id).digest('hex'),action==='list'||action==='cases'?240:60,900);
  if(!hit.allowed)throw new ApiError(429,'RATE_LIMITED','Wait a moment and try again.');
  let out;
  try{out=await ctx.repo.rpc('uc_doc_todo',{p_actor:user.id,p_action:action,p_data:data});}
  catch{throw new ApiError(503,'UNAVAILABLE','Could not save. Try again.');}
  if(out?.error)throw todoError(out.error);
+ if(action==='cases'){if(!out?.data?.cars||typeof out.data.cars!=='object')throw new ApiError(503,'UNAVAILABLE','Could not load. Try again.');return {status:200,body:out.data};}
  if(action==='list'?!Array.isArray(out?.data?.items)||!Array.isArray(out?.data?.open):!out?.data?.entry?.id)throw new ApiError(503,'UNAVAILABLE','Could not confirm. Refresh and try again.');
  return {status:200,body:out.data};
 });}
