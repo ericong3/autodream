@@ -450,14 +450,33 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   // ── Photo Gallery ──
   const [showGallery, setShowGallery] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(0);
-  const [editingPhotos, setEditingPhotos] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
   const replacePhotoRef = useRef<HTMLInputElement>(null);
   const addPhotoRef = useRef<HTMLInputElement>(null);
   const addPhotoMainRef = useRef<HTMLInputElement>(null);
   const allPhotos = car?.photos?.length ? car.photos : (car?.photo ? [car.photo] : []);
 
-  const openGallery = (idx = 0) => { setGalleryIndex(idx); setShowGallery(true); setEditingPhotos(false); };
+  const [galleryTab, setGalleryTab] = useState<'photos' | 'card'>('photos');
+  const openGallery = (idx = 0, tab: 'photos' | 'card' = 'photos') => { setGalleryIndex(idx); setGalleryTab(tab); setShowGallery(true); };
+  const canEditPhotos = isDirector || isAdmin || isSalesperson;
+  const canEditGreenCard = isDirector || isAdmin;
+  const greenCardIsImage = !!car?.greenCard && /\.(jpe?g|png|webp)(\?|$)/i.test(car.greenCard);
+  const downloadGreenCard = async () => {
+    if (!car?.greenCard) return;
+    const res = await fetch(car.greenCard);
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${car.make}-${car.model}-${car.year}-greencard${greenCardIsImage ? '.jpg' : '.pdf'}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const handleMakeCover = async () => {
+    if (!car || galleryIndex <= 0) return;
+    const reordered = [allPhotos[galleryIndex], ...allPhotos.filter((_, i) => i !== galleryIndex)];
+    setGalleryIndex(0);
+    await updateCar(car.id, { photos: reordered, photo: reordered[0] });
+  };
   const galleryPrev = () => setGalleryIndex((i) => (i - 1 + allPhotos.length) % allPhotos.length);
   const galleryNext = () => setGalleryIndex((i) => (i + 1) % allPhotos.length);
   const downloadPhoto = (src: string, idx: number) => {
@@ -950,7 +969,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           <ChevronRight size={12} className="text-gray-600" />
           <span className="text-gray-300 truncate max-w-[200px]">{car.year} {car.make} {car.model}</span>
         </nav>
-        <CarSummary car={car} actorId={currentUser.id} role={currentUser.role} profit={isDirectorView && !car.investorFunded ? netProfit : null} costs={profitCosts} detailsOpen={showDetails} onOpenDetails={openDetails} />
+        <CarSummary car={car} actorId={currentUser.id} role={currentUser.role} profit={isDirectorView && !car.investorFunded ? netProfit : null} costs={profitCosts} detailsOpen={showDetails} onOpenDetails={openDetails} onOpenMedia={(tab) => openGallery(0, tab)} />
       </>}
       {(!summaryMode || showDetails) && <div className="xl:grid xl:grid-cols-[1fr_380px] xl:gap-6 xl:items-start space-y-6 xl:space-y-0">
         {/* ── Left Column ── */}
@@ -1394,8 +1413,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
         </div>
       </div>
 
-      {/* ── Green Card ── */}
-      {(car.greenCard || isAdmin) && (
+      {/* ── Green Card ── (sold cars: in the photo viewer instead) */}
+      {!summaryMode && (car.greenCard || isAdmin) && (
         <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card">
           <SectionHeader icon={FileText} title="Green Card" color="text-green-400" />
           <div className="p-5">
@@ -3490,130 +3509,89 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
         document.body,
       )}
 
-      {/* ── Photo Gallery Modal ── */}
-      {showGallery && allPhotos.length > 0 && createPortal(
-        <div className="fixed inset-0 z-[400] flex flex-col bg-black/95" onClick={() => { setShowGallery(false); setEditingPhotos(false); }}>
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 flex-shrink-0" onClick={(e) => e.stopPropagation()}
+      {/* ── Photos & Green card viewer (tap the car card) ── */}
+      {showGallery && createPortal(
+        <div className="fixed inset-0 z-[400] flex flex-col bg-[#050507]" role="dialog" aria-label="Car photos and green card">
+          <div className="flex items-center justify-between gap-3 px-4 sm:px-6 border-b border-white/[0.06] flex-shrink-0 flex-wrap"
             style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top, 0px))', paddingBottom: '0.75rem' }}>
-            <span className="text-white font-semibold text-sm">{car.year} {car.make} {car.model}</span>
-            <div className="flex items-center gap-2">
-              <span className="text-gray-400 text-sm">{galleryIndex + 1} / {allPhotos.length}</span>
-              {(isDirector || isSalesperson) && (
-                <button
-                  onClick={() => setEditingPhotos((v) => !v)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${editingPhotos ? 'bg-gold-500 text-black' : 'bg-obsidian-700 text-gray-300 hover:text-white'}`}
-                >
-                  <Edit size={13} /> {editingPhotos ? 'Done' : 'Edit'}
-                </button>
-              )}
-              <button
-                onClick={() => downloadPhoto(allPhotos[galleryIndex], galleryIndex)}
-                className="p-1.5 text-gray-400 hover:text-white transition-colors"
-              >
-                <Download size={18} />
-              </button>
-              <button onClick={() => { setShowGallery(false); setEditingPhotos(false); }} className="p-1.5 text-gray-400 hover:text-white transition-colors">
-                <X size={20} />
-              </button>
+            <div className="min-w-0 flex items-center gap-3">
+              <p className="font-display text-white font-semibold truncate">{car.year} {car.make} {car.model}</p>
+              {car.carPlate && <span className="hidden sm:inline text-xs font-mono font-semibold px-2 py-1 rounded-md bg-white/[0.06] text-gold-300">{car.carPlate}</span>}
             </div>
+            <div className="order-3 sm:order-none w-full sm:w-auto grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#15151A] border border-white/[0.08]" role="tablist">
+              {([['photos', `Photos · ${allPhotos.length}`], ['card', 'Green card']] as const).map(([key, label]) => (
+                <button key={key} type="button" role="tab" aria-selected={galleryTab === key} onClick={() => setGalleryTab(key)}
+                  className={`min-h-[40px] px-4 rounded-lg text-sm transition-colors ${galleryTab === key ? 'bg-gold-400 text-obsidian-950 font-bold' : 'text-gray-300 hover:text-white'}`}>{label}</button>
+              ))}
+            </div>
+            <button type="button" aria-label="Close" onClick={() => setShowGallery(false)} className="w-11 h-11 rounded-xl bg-[#15151A] text-gray-200 hover:text-white flex items-center justify-center"><X size={20} /></button>
           </div>
 
-          {/* Edit toolbar */}
-          {editingPhotos && (
-            <div className="flex items-center gap-2 px-4 pb-3 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-              <button
-                onClick={() => replacePhotoRef.current?.click()}
-                disabled={photoUploading}
-                className="flex items-center gap-1.5 bg-blue-500/20 border border-blue-500/40 text-blue-300 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-blue-500/30 transition-colors disabled:opacity-50"
-              >
-                <Upload size={13} /> Replace
-              </button>
-              {!(car.consignment && allPhotos.length >= 1) && (
-                <button
-                  onClick={() => addPhotoRef.current?.click()}
-                  disabled={photoUploading}
-                  className="flex items-center gap-1.5 bg-green-500/20 border border-green-500/40 text-green-300 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-green-500/30 transition-colors disabled:opacity-50"
-                >
-                  <Plus size={13} /> Add Photos
-                </button>
-              )}
-              <button
-                onClick={handleDeletePhoto}
-                disabled={photoUploading}
-                className="flex items-center gap-1.5 bg-red-500/20 border border-red-500/40 text-red-300 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-red-500/30 transition-colors disabled:opacity-50"
-              >
-                <Trash2 size={13} /> Delete
-              </button>
-              {photoUploading && (
-                <div className="flex items-center gap-1.5 text-gold-400 text-xs">
-                  <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                  </svg>
-                  Uploading...
+          {galleryTab === 'photos' && (
+            <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
+              <div className="flex-1 min-h-0 flex flex-col p-4 sm:p-6 gap-4">
+                <div className="flex-1 min-h-0 relative rounded-2xl bg-[#0E0E12] flex items-center justify-center overflow-hidden">
+                  {allPhotos.length > 0 ? <>
+                    <img src={thumbUrl(allPhotos[galleryIndex], 1400, 85)!} alt={`Photo ${galleryIndex + 1}`} className="max-w-full max-h-full object-contain" />
+                    {galleryIndex === 0 && <span className="absolute top-3 left-3 text-xs font-semibold px-2.5 py-1 rounded-full bg-gold-400 text-obsidian-950">Cover photo</span>}
+                    <span className="absolute bottom-3 left-1/2 -translate-x-1/2 text-xs px-3 py-1 rounded-full bg-black/70 text-white">{galleryIndex + 1} of {allPhotos.length}</span>
+                    {allPhotos.length > 1 && <>
+                      <button type="button" aria-label="Previous photo" onClick={galleryPrev} className="absolute left-3 w-12 h-12 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center"><ChevronLeft size={22} /></button>
+                      <button type="button" aria-label="Next photo" onClick={galleryNext} className="absolute right-3 w-12 h-12 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center"><ChevronRight size={22} /></button>
+                    </>}
+                  </> : <div className="text-center text-gray-400 text-sm space-y-2"><Camera size={36} className="mx-auto text-gray-600" /><p>No photos yet.</p></div>}
                 </div>
-              )}
-              <input ref={replacePhotoRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleReplacePhoto(e.target.files)} />
-              <input ref={addPhotoRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleAddPhotos(e.target.files)} />
+                {allPhotos.length > 1 && (
+                  <DndContext sensors={photoDragSensors} collisionDetection={closestCenter} onDragEnd={handlePhotoReorder}>
+                    <SortableContext items={allPhotos} strategy={horizontalListSortingStrategy}>
+                      <div className="flex gap-2 overflow-x-auto flex-shrink-0 pb-1">
+                        {allPhotos.map((src, i) => (
+                          <SortableThumb key={src} id={src} dragEnabled={canEditPhotos}>
+                            <button type="button" aria-label={`Photo ${i + 1}`} onClick={() => setGalleryIndex(i)}
+                              className={`flex-shrink-0 w-20 h-14 sm:w-24 sm:h-16 rounded-lg overflow-hidden border-2 transition-colors ${i === galleryIndex ? 'border-gold-400' : 'border-transparent opacity-60 hover:opacity-90'}`}>
+                              <img src={thumbUrl(src, 200, 70)!} alt="" className="w-full h-full object-cover pointer-events-none" loading="lazy" />
+                            </button>
+                          </SortableThumb>
+                        ))}
+                      </div>
+                    </SortableContext>
+                  </DndContext>
+                )}
+              </div>
+              <div className="lg:w-[300px] flex-shrink-0 border-t lg:border-t-0 lg:border-l border-white/[0.06] p-4 sm:p-5 flex flex-col gap-2.5" style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}>
+                {canEditPhotos && allPhotos.length > 1 && <p className="hidden lg:block text-xs text-gray-400">Drag the small photos to change the order. The first one is the cover.</p>}
+                <div className="grid grid-cols-2 lg:grid-cols-1 gap-2.5">
+                  {canEditPhotos && !(car.consignment && allPhotos.length >= 1) && <button type="button" disabled={photoUploading} onClick={() => addPhotoRef.current?.click()} className="btn-gold min-h-[44px] rounded-xl text-sm font-bold disabled:opacity-50">{photoUploading ? 'Uploading…' : '+ Add photos'}</button>}
+                  {allPhotos.length > 0 && <button type="button" onClick={() => downloadPhoto(allPhotos[galleryIndex], galleryIndex)} className="min-h-[44px] rounded-xl border border-white/10 text-sm text-gray-200 hover:text-white flex items-center justify-center gap-2"><Download size={15} />Download</button>}
+                  {canEditPhotos && allPhotos.length > 1 && galleryIndex > 0 && <button type="button" disabled={photoUploading} onClick={() => void handleMakeCover()} className="min-h-[44px] rounded-xl border border-white/10 text-sm text-gray-200 hover:text-white disabled:opacity-50">Set as cover photo</button>}
+                  {canEditPhotos && allPhotos.length > 0 && <button type="button" disabled={photoUploading} onClick={() => replacePhotoRef.current?.click()} className="min-h-[44px] rounded-xl border border-white/10 text-sm text-gray-200 hover:text-white disabled:opacity-50">Replace this photo</button>}
+                  {canEditPhotos && allPhotos.length > 0 && <button type="button" disabled={photoUploading} onClick={handleDeletePhoto} className="min-h-[44px] rounded-xl border border-red-500/30 text-sm text-red-300 hover:bg-red-500/10 disabled:opacity-50">Delete this photo</button>}
+                </div>
+                <input ref={replacePhotoRef} type="file" accept="image/*" className="hidden" onChange={(e) => { void handleReplacePhoto(e.target.files); e.target.value = ''; }} />
+                <input ref={addPhotoRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => { void handleAddPhotos(e.target.files); e.target.value = ''; }} />
+              </div>
             </div>
           )}
 
-          {/* Main image */}
-          <div className="flex-1 flex items-center justify-center relative px-14 min-h-0" onClick={(e) => e.stopPropagation()}>
-            <img
-              src={thumbUrl(allPhotos[galleryIndex], 1400, 85)!}
-              alt={`Photo ${galleryIndex + 1}`}
-              className="max-w-full max-h-full object-contain rounded-lg"
-            />
-            {allPhotos.length > 1 && (
-              <>
-                <button
-                  onClick={galleryPrev}
-                  className="absolute left-3 p-2.5 bg-black/60 hover:bg-black/80 text-white rounded-full transition-colors"
-                >
-                  <ChevronLeft size={22} />
-                </button>
-                <button
-                  onClick={galleryNext}
-                  className="absolute right-3 p-2.5 bg-black/60 hover:bg-black/80 text-white rounded-full transition-colors"
-                >
-                  <ChevronRight size={22} />
-                </button>
-              </>
-            )}
-          </div>
-
-          {/* Thumbnail strip — draggable to reorder while editing; drag[0] becomes the cover photo */}
-          {allPhotos.length > 1 && (
-            <DndContext sensors={photoDragSensors} collisionDetection={closestCenter} onDragEnd={handlePhotoReorder}>
-              <SortableContext items={allPhotos} strategy={horizontalListSortingStrategy}>
-                {editingPhotos && (
-                  <p className="text-gray-500 text-xs px-5 pt-3 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                    Drag a photo to reorder — the first photo is used as the cover.
-                  </p>
-                )}
-                <div className="flex gap-2 px-5 pt-2 overflow-x-auto flex-shrink-0" onClick={(e) => e.stopPropagation()}
-                  style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}>
-                  {allPhotos.map((src, i) => (
-                    <SortableThumb key={src} id={src} dragEnabled={editingPhotos}>
-                      <button
-                        onClick={() => setGalleryIndex(i)}
-                        className={`flex-shrink-0 w-16 h-12 rounded-lg overflow-hidden border-2 transition-colors ${i === galleryIndex ? 'border-gold-400' : 'border-transparent opacity-50 hover:opacity-80'}`}
-                      >
-                        <img
-                          src={thumbUrl(src, 200, 70)!}
-                          alt={`thumb-${i}`}
-                          className="w-full h-full object-cover opacity-0 transition-opacity duration-200 pointer-events-none"
-                          loading="lazy"
-                          onLoad={(e) => e.currentTarget.classList.replace('opacity-0', 'opacity-100')}
-                        />
-                      </button>
-                    </SortableThumb>
-                  ))}
+          {galleryTab === 'card' && (
+            <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
+              <div className="flex-1 min-h-0 p-4 sm:p-6 flex items-center justify-center">
+                {car.greenCard
+                  ? (greenCardIsImage
+                    ? <button type="button" aria-label="Open green card full size" onClick={() => setShowGreenCardPreview(true)} className="max-w-full max-h-full"><img src={car.greenCard} alt="Green card" className="max-w-full max-h-[70vh] object-contain rounded-xl shadow-2xl" /></button>
+                    : <div className="text-center space-y-3"><FileText size={48} className="mx-auto text-green-400" /><p className="text-sm text-gray-300">The green card is a PDF.</p><a href={car.greenCard} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center px-5 rounded-xl border border-white/10 text-sm text-white">Open PDF</a></div>)
+                  : <div className="text-center space-y-2 text-gray-400"><FileText size={40} className="mx-auto text-gray-600" /><p className="text-sm">No green card uploaded yet.</p></div>}
+              </div>
+              <div className="lg:w-[300px] flex-shrink-0 border-t lg:border-t-0 lg:border-l border-white/[0.06] p-4 sm:p-5 flex flex-col gap-2.5" style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}>
+                <span className={`self-start text-xs font-semibold px-2.5 py-1 rounded-full ${car.greenCard ? 'bg-emerald-900/70 text-emerald-200' : 'bg-[#3A2C0E] text-[#F3C969]'}`}>{car.greenCard ? 'Green card uploaded' : 'Green card missing'}</span>
+                <div className="grid grid-cols-2 lg:grid-cols-1 gap-2.5">
+                  {car.greenCard && greenCardIsImage && <button type="button" onClick={() => setShowGreenCardPreview(true)} className="min-h-[44px] rounded-xl border border-white/10 text-sm text-gray-200 hover:text-white">Open full size</button>}
+                  {car.greenCard && <button type="button" onClick={() => void downloadGreenCard()} className="min-h-[44px] rounded-xl border border-white/10 text-sm text-gray-200 hover:text-white flex items-center justify-center gap-2"><Download size={15} />Download</button>}
+                  {canEditGreenCard && <button type="button" disabled={uploadingGreenCard} onClick={() => adminGreenCardRef.current?.click()} className="btn-gold min-h-[44px] rounded-xl text-sm font-bold disabled:opacity-50">{uploadingGreenCard ? 'Uploading…' : car.greenCard ? 'Replace green card' : 'Upload green card'}</button>}
                 </div>
-              </SortableContext>
-            </DndContext>
+                <p className="text-xs text-gray-500">Everyone can view. Director and admin can upload or replace.</p>
+              </div>
+            </div>
           )}
         </div>,
         document.body,

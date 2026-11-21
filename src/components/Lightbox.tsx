@@ -64,7 +64,7 @@ export default function Lightbox({
 
   return createPortal(
     <div
-      className="fixed inset-0 bg-black/95 z-[90] flex flex-col"
+      className="fixed inset-0 bg-black/95 z-[450] flex flex-col"
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >

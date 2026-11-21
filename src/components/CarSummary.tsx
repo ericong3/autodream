@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Car as CarIcon, ChevronRight, FileText } from 'lucide-react';
+import { Camera, Car as CarIcon, ChevronRight, FileText } from 'lucide-react';
 import type { Car } from '../types';
 import { useStore } from '../store';
 import { thumbUrl } from '../utils/photoUrl';
@@ -16,8 +16,8 @@ const IN_LABEL: Record<string, string> = { customer_collection: 'Customer', loan
 const words = (t: string) => t.split('_').join(' ');
 
 /** Plain summary of a sold car: where it is, the one next step, money in, bills out and profit. */
-export default function CarSummary({ car, actorId, role, profit, costs, detailsOpen, onOpenDetails }: {
-  car: Car; actorId: string; role: string; profit: number | null; costs: ProfitRow[]; detailsOpen: boolean; onOpenDetails: (section?: string) => void;
+export default function CarSummary({ car, actorId, role, profit, costs, detailsOpen, onOpenDetails, onOpenMedia }: {
+  car: Car; actorId: string; role: string; profit: number | null; costs: ProfitRow[]; detailsOpen: boolean; onOpenDetails: (section?: string) => void; onOpenMedia: (tab: 'photos' | 'card') => void;
 }) {
   const director = role === 'director';
   const cases = useInvestorQuery(`car-cases:${actorId}`, loadCarCases);
@@ -33,6 +33,7 @@ export default function CarSummary({ car, actorId, role, profit, costs, detailsO
   const entries = money.data?.entries ?? [];
   const paperwork = c ? c.missingDocs + c.moneyNoSlip + c.sentBack + (c.agreementMissing ? 1 : 0) : 0;
   const todoLink = director ? '/dashboard' : role === 'admin' ? '/admin-dashboard?tab=paperwork' : null;
+  const photoCount = car.photos?.length || (car.photo ? 1 : 0);
   const soldFor = profit === null ? null : profit + costs.reduce((s, r) => s + r.amount, 0);
 
   // Progress, in the order a sold car normally goes.
@@ -60,12 +61,14 @@ export default function CarSummary({ car, actorId, role, profit, costs, detailsO
     <div className="space-y-4">
       <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
         <div className="space-y-4 min-w-0">
-          <section className={`${card} overflow-hidden`}>
-            <div className="relative h-44 bg-gradient-to-br from-[#2A2A33] to-[#17171C] flex items-center justify-center">
+          <section className={`${card} overflow-hidden relative`}>
+            <button type="button" aria-label="Open photos and green card" onClick={() => onOpenMedia('photos')} className="relative block w-full h-44 bg-gradient-to-br from-[#2A2A33] to-[#17171C] flex items-center justify-center group">
               {car.photo ? <img src={thumbUrl(car.photo, 900, 75)!} alt="" className="absolute inset-0 w-full h-full object-cover" /> : <CarIcon size={56} className="text-gray-600" />}
               {c && <span className={`absolute top-3 left-3 text-xs font-semibold px-2.5 py-1 rounded-full ${c.state === 'closed' ? 'bg-emerald-900/90 text-emerald-200' : 'bg-[#3A2C0E]/95 text-[#F3C969]'}`}>{c.state === 'closed' ? 'Closed case' : 'Active case'}</span>}
               {car.carPlate && <span className="absolute top-3 right-3 text-xs font-mono font-semibold px-2 py-1 rounded-md bg-black/70 text-gold-300">{car.carPlate}</span>}
-            </div>
+              <span className="absolute bottom-3 left-3 flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-black/70 text-white group-hover:bg-black/85"><Camera size={13} />{photoCount ? `${photoCount} photo${photoCount > 1 ? 's' : ''}` : 'Add photos'}</span>
+            </button>
+            <button type="button" onClick={() => onOpenMedia('card')} className={`absolute top-[8.75rem] right-3 flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full ${car.greenCard ? 'bg-emerald-900/90 text-emerald-200' : 'bg-[#3A2C0E]/95 text-[#F3C969]'}`}><FileText size={13} />{car.greenCard ? 'Green card ✓' : 'Green card missing'}</button>
             <div className="p-5 space-y-3">
               <div>
                 <h1 className="font-display text-white text-2xl font-semibold">{car.year} {car.make} {car.model}</h1>
