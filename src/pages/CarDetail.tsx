@@ -978,15 +978,15 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     const out: BillCost[] = [];
     for (const r of carRepairs) {
       const bill = billOf((p) => p.repairJobId === r.id);
-      const done = r.status === 'done', cost = r.actualCost ?? r.totalCost;
+      const done = r.status === 'done', cost = r.actualCost ?? r.totalCost, oldRepair = (r.completedAt ?? r.createdAt) < '2026-11-01';
       const active = r.status === 'pending' || r.status === 'in_progress' || r.status === 'awaiting_bill';
       const can = isMechanic || isDirector || isAdmin;
       out.push({
         id: 'r:' + r.id, name: [r.typeOfRepair, r.location].filter(Boolean).join(' · '),
-        sub: done ? (bill || !r.location ? `Repair · finished ${short(r.completedAt ?? r.createdAt)}` : 'Repair · adding it to Payments…') : `Repair · ${REPAIR_STATUS_LABEL[r.status] ?? r.status}`,
+        sub: done ? (bill || !r.location || oldRepair ? `Repair · finished ${short(r.completedAt ?? r.createdAt)}` : 'Repair · adding it to Payments…') : `Repair · ${REPAIR_STATUS_LABEL[r.status] ?? r.status}`,
         amount: isDirectorView ? (done ? cost : r.totalCost) : null, receiptUrl: r.receiptPhoto, billId: bill?.id,
-        state: !done ? 'open' : bill ? 'billed' : cost <= 0 ? 'free' : r.location ? 'open' : 'nobill',
-        noBillWhy: r.location ? undefined : 'No workshop name, so no one to pay.',
+        state: !done ? 'open' : bill ? 'billed' : cost <= 0 ? 'free' : r.location && !oldRepair ? 'open' : 'nobill',
+        noBillWhy: !r.location ? 'No workshop name, so no one to pay.' : 'Finished before 1 Nov · not in Payments',
         actions: [
           ...(r.status === 'queued' && can ? [{ label: 'Proceed', run: () => handleProceedRepair(r), disabled: hasSentOutRepair, title: hasSentOutRepair ? 'Complete the current active job first' : undefined }] : []),
           ...(active && can ? [{ label: 'Complete repair', run: () => openCompleteRepair(r) }] : []),
@@ -3968,5 +3968,8 @@ export default function CarDetail() {
   const location = useLocation();
   const fromTab = (location.state as any)?.inventoryTab;
   const backUrl = fromTab && fromTab !== 'stock' ? `/inventory?tab=${fromTab}` : '/inventory';
+  // Opened from somewhere other than Inventory (dashboard to-do, Payments, a link): go back to that page.
+  const cameFromElsewhere = !fromTab && (location.state as any)?.from !== 'history' && location.key !== 'default';
+  if (cameFromElsewhere) return <CarDetailContent id={id!} onBack={() => navigate(-1)} breadcrumbLabel="Back" />;
   return <CarDetailContent id={id!} onBack={() => navigate(backUrl, { state: { inventoryTab: fromTab } })} />;
 }

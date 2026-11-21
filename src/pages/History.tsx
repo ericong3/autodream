@@ -453,6 +453,7 @@ export default function History() {
         id={selectedCarId}
         onBack={() => navigate('/history')}
         backLabel="Back to Delivered"
+        breadcrumbLabel="Delivered"
         initialTab="final_deal"
       />
     );

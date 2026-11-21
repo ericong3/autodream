@@ -343,7 +343,7 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
               {([
                 { key: 'pay', name: 'To pay', tone: 'text-[#F3C969]', count: unpaid.length + inProgress.length },
                 { key: 'paid', name: 'Paid', tone: 'text-emerald-300', count: paidBills.length + freeCosts.length },
-                { key: 'none', name: 'No one to pay', tone: 'text-gray-300', count: noBill.length },
+                { key: 'none', name: 'Not in Payments', tone: 'text-gray-300', count: noBill.length },
               ]).filter((g) => g.key !== 'none' || g.count > 0).map((g) => {
                 const open = (billOpen[g.key] ?? true) && g.count > 0;
                 return <div key={g.key} className="space-y-2">
@@ -360,7 +360,7 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
                     {freeCosts.map((x) => costRow(x, <span className="text-xs text-gray-400">No cost</span>))}
                   </>}
                   {open && g.key === 'none' && <>
-                    <p className="text-xs text-gray-400">These costs have no shop or workshop name, so there is no one to pay. Add the name, or delete the cost if it was entered by mistake.</p>
+                    <p className="text-xs text-gray-400">These costs are on the car but have no line in Payments. Old ones were usually paid outside the app.</p>
                     {noBill.map((x) => costRow(x, <span className="text-xs text-gray-400">{x.noBillWhy}</span>))}
                   </>}
                 </div>;
