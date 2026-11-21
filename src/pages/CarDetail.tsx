@@ -1126,6 +1126,20 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             photo: car.deliveryPhoto, dealReceiptUrl: car.dealReceiptUrl,
           }}
           dealerPanel={consignmentPanel}
+          moneyPlan={car.outgoingConsignment || car.consignmentFinanceOpen ? undefined : (() => {
+            const lwo = dealCustomer?.loanWorkOrder;
+            const bank = lwo?.bank ?? (car.finalDeal?.bank && car.finalDeal.bank.toLowerCase() !== 'cash' ? car.finalDeal.bank : undefined);
+            const status = car.disbursementStatus ?? 'pending';
+            return bank ? {
+              kind: 'loan' as const, bank, status, received: !!car.moneyReceived || status === 'disbursed',
+              expected: car.disbursementExpectedAmount ?? lwo?.loanAmount ?? 0,
+              onProcessing: () => void updateCar(car.id, { disbursementStatus: 'processing' }),
+              onReceived: () => void updateCar(car.id, { disbursementStatus: 'disbursed', moneyReceived: true, disbursementDate: car.disbursementDate ?? new Date().toISOString().slice(0, 10) }),
+            } : {
+              kind: 'cash' as const, status, received: !!car.moneyReceived, expected: 0,
+              onReceived: () => void updateCar(car.id, { moneyReceived: true }),
+            };
+          })()}
           refund={dealCustomer ? { claim: refundClaim, form: refundForm, setForm: setRefundForm, onSubmit: () => void handleSubmitRefundClaim(), saving: savingRefundClaim } : undefined}
           costGroups={costGroups} records={carRecords}
           investorLink={car.investorFunded && (isDirector || isAdmin) ? () => navigate('/investor-finance?carId=' + encodeURIComponent(car.id)) : undefined}

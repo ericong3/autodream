@@ -1,10 +1,10 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Camera, Car as CarIcon, Check, ChevronRight, FileText } from 'lucide-react';
 import type { Car, Payment } from '../types';
 import { useStore } from '../store';
 import { thumbUrl } from '../utils/photoUrl';
-import { formatCents, useInvestorQuery } from '../lib/investorFinance';
+import { formatCents, parseRinggit, useInvestorQuery } from '../lib/investorFinance';
 import { paymentBalanceCents } from '../lib/companyBankPayments';
 import { moneyRequest, type MoneyEntry } from '../lib/moneyReceived';
 import { loadCarCases, type CarCase } from '../lib/docTodo';
@@ -28,6 +28,11 @@ export type DeliveryInfo = {
   done: boolean; balance: number; checking: boolean; onRefresh: () => void;
   receiptUrl?: string; onUploadReceipt?: (file: File) => Promise<void>;
   onDeliver?: () => void; photo?: string; dealReceiptUrl?: string;
+};
+/** How the buyer pays, from the deal and the Delivered tab's disbursement button. Amounts in RM. */
+export type MoneyPlan = {
+  kind: 'loan' | 'cash'; bank?: string; expected: number; status: 'pending' | 'processing' | 'disbursed'; received: boolean;
+  onProcessing?: () => void; onReceived?: () => void;
 };
 export type RefundForm = { bank: string; accountNo: string; accountName: string };
 export type RefundInfo = {
@@ -60,13 +65,13 @@ const cents = (rm: number) => Math.round(rm * 100);
  * (Sold → Money in → Bills paid → Dealer → Paperwork → Closed). Any stage can
  * be opened at any time; each one ends with a button to the next.
  */
-export default function CarSummary({ car, actorId, role, profit, costs, buyerName, salespersonName, detailsOpen, onOpenDetails, onOpenMedia, onEditDeal, onAddRepair, onAddMisc, deal, generatingReceipt, onReceipt, delivery, dealerPanel, refund, costGroups, records, investorLink }: {
+export default function CarSummary({ car, actorId, role, profit, costs, buyerName, salespersonName, detailsOpen, onOpenDetails, onOpenMedia, onEditDeal, onAddRepair, onAddMisc, deal, generatingReceipt, onReceipt, delivery, dealerPanel, refund, costGroups, records, investorLink, moneyPlan }: {
   car: Car; actorId: string; role: string; profit: number | null; costs: ProfitRow[];
   buyerName?: string; salespersonName?: string; detailsOpen: boolean;
   onOpenDetails: (section?: string) => void; onOpenMedia: (tab: 'photos' | 'card') => void;
   onEditDeal?: () => void; onAddRepair?: () => void; onAddMisc?: () => void;
   deal?: DealCard | null; generatingReceipt?: boolean; onReceipt?: () => void;
-  delivery?: DeliveryInfo; dealerPanel?: ReactNode; refund?: RefundInfo; costGroups?: CostGroup[]; records?: CarRecords; investorLink?: () => void;
+  delivery?: DeliveryInfo; dealerPanel?: ReactNode; refund?: RefundInfo; costGroups?: CostGroup[]; records?: CarRecords; investorLink?: () => void; moneyPlan?: MoneyPlan;
 }) {
   const director = role === 'director';
   const cases = useInvestorQuery(`car-cases:${actorId}`, loadCarCases);
@@ -80,6 +85,11 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
   const [openCost, setOpenCost] = useState<string | null>(null);
   const [recTab, setRecTab] = useState<'info' | 'loans' | 'moves'>('info');
   const [uploading, setUploading] = useState(false);
+  const [setup, setSetup] = useState<string | null>(null);
+  const [setupBusy, setSetupBusy] = useState(false);
+  const [setupError, setSetupError] = useState('');
+  const synced = useRef(false);
+  const addPayment = useStore((s) => s.addPayment);
   const moneyCard = useRef<HTMLElement>(null);
   const admin = role === 'admin';
   const reload = () => { void money.reload(); void cases.reload(); };
@@ -108,15 +118,40 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
   });
   const expectedCents = moneyItems.reduce((s, m) => s + cents(m.p.amount), 0);
   const bills = mine.filter((p) => !INBOUND.has(p.type));
+
+  // The car's own disbursement status (Delivered tab) must agree with Money in.
+  const loanLine = mine.find((p) => p.type === 'loan_disbursement');
+  const loanWaiting = moneyPlan?.kind === 'loan' && !moneyPlan.received && !loanLine;
+  const cashWaiting = moneyPlan?.kind === 'cash' && !moneyPlan.received && moneyItems.length === 0 && entries.length === 0;
+  const loanItem = moneyItems.find((m) => m.p.type === 'loan_disbursement');
+  const needsSync = !!moneyPlan && !moneyPlan.received && !money.loading && entries.length > 0 && (moneyPlan.kind === 'loan' ? !!loanItem?.covered : c?.toCollectCents === 0);
+  useEffect(() => { if (needsSync && !synced.current && moneyPlan?.onReceived) { synced.current = true; moneyPlan.onReceived(); } }, [needsSync, moneyPlan]);
+  const loanContext = (paymentId: string, leftCents: number): LoanContext => ({
+    paymentId, leftCents,
+    bills: mine.filter((b) => ['repair', 'misc_cost', 'panel_charge'].includes(b.type) && b.status === 'pending' && paymentBalanceCents(b) > 0).map((b) => ({ id: b.id, label: [b.recipientName, b.description].filter(Boolean).join(' · ') || words(b.type), leftCents: paymentBalanceCents(b) })),
+    addOns: (deal?.plus ?? []).map((a) => ({ label: a.label, amountCents: cents(a.amount) })),
+  });
+  const setupCents = setup === null ? null : parseRinggit(setup);
+  const setupLoan = async () => {
+    if (!setupCents) return;
+    setSetupBusy(true); setSetupError('');
+    const id = 'loan_disbursement_' + car.id;
+    try {
+      await addPayment({ id, type: 'loan_disbursement', carId: car.id, recipientType: 'customer', recipientId: car.id, recipientName: `${moneyPlan?.bank ?? 'Bank'} — ${car.make} ${car.model}`, amount: setupCents / 100, description: 'Bank loan receivable', status: 'pending', createdAt: new Date().toISOString() });
+      setSetup(null);
+      setRecording({ amountCents: setupCents, note: `Bank loan · ${moneyPlan?.bank ?? ''}`, loan: loanContext(id, setupCents) });
+    } catch (e) { setSetupError(e instanceof Error ? e.message : 'Could not set up the bank loan.'); }
+    finally { setSetupBusy(false); }
+  };
   const unpaid = bills.filter((p) => p.status === 'pending' && paymentBalanceCents(p) > 0).sort((a, b) => b.amount - a.amount);
   const paidCount = bills.length - unpaid.length;
 
   const stages: { id: StageId; done: boolean }[] = c ? [
     { id: 'sold', done: true },
     ...(delivery ? [{ id: 'delivered' as const, done: delivery.done }] : []),
-    { id: 'money', done: c.toCollectCents === 0 },
+    { id: 'money', done: c.toCollectCents === 0 && !loanWaiting && !cashWaiting },
     { id: 'bills', done: c.toPay === 0 },
-    ...(consignmentIn ? [{ id: 'dealer' as const, done: !c.dealerNotApproved }] : []),
+    ...(consignmentIn ? [{ id: 'dealer' as const, done: !!car.consignmentFinanceOpen && !c.dealerNotApproved }] : []),
     { id: 'paper', done: paperwork === 0 },
     { id: 'closed', done: c.state === 'closed' },
   ] : [];
@@ -132,9 +167,9 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
   const copy: Record<StageId, [string, string]> = {
     sold: ['The car is sold', 'Buyer, price and salesperson.'],
     delivered: [delivery?.done ? 'Delivered to the buyer' : 'Hand the car to the buyer', 'The customer’s part must be in before the car leaves. Add the delivery photo when you mark it delivered.'],
-    money: [c && c.toCollectCents > 0 ? `Collect ${formatCents(c.toCollectCents)}` : 'All money is in', 'Mark each payment when it reaches the bank. Add the bank slip if you have it.'],
+    money: [loanWaiting ? `Waiting for the bank loan · ${moneyPlan?.bank ?? ''}` : cashWaiting ? 'Cash from the customer not marked yet' : c && c.toCollectCents > 0 ? `Collect ${formatCents(c.toCollectCents)}` : 'All money is in', 'Mark each payment when it reaches the bank. Add the bank slip if you have it.'],
     bills: [unpaid.length ? `Pay the car’s bills · ${formatCents(unpaid.reduce((s, p) => s + paymentBalanceCents(p), 0))} left` : 'All bills are paid', 'Add, pay or fix any bill for this car, at any time.'],
-    dealer: [c?.dealerNotApproved ? 'Approve what the dealer receives' : 'Dealer amount approved', 'Check the bills are right, then approve the dealer amount.'],
+    dealer: [!car.consignmentFinanceOpen ? 'Dealer deal not opened yet' : c?.dealerNotApproved ? 'Approve what the dealer receives' : 'Dealer amount approved', 'Check the bills are right, then approve the dealer amount.'],
     paper: [paperwork ? `Finish the paperwork · ${paperwork} open` : 'Paperwork complete', 'Missing invoices, slips and the agreement are handled in the to-do list.'],
     closed: [c?.state === 'closed' ? 'Case closed' : 'Not closed yet', 'The case closes by itself once every stage before it is done.'],
   };
@@ -214,17 +249,35 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
             </div>}
 
             {shown === 'money' && <div className="space-y-2">
-              {moneyItems.length === 0 && entries.length === 0 && <p className="text-sm text-gray-300">No money is expected for this car.</p>}
+              {loanWaiting && moneyPlan && <div className={`${row} flex flex-wrap items-center gap-3`}>
+                {tick(false)}
+                <div className="flex-1 min-w-[140px]"><p className="text-sm text-white truncate">Bank loan · {moneyPlan.bank}</p>
+                  <p className="text-xs text-gray-400">{moneyPlan.status === 'processing' ? 'Bank processing' : 'Awaiting disbursement'} · same as the Delivered tab</p></div>
+                {moneyPlan.expected > 0 && <p className="text-sm font-semibold text-white whitespace-nowrap">{formatCents(cents(moneyPlan.expected))}</p>}
+                {director && <span className="flex gap-2">
+                  {moneyPlan.status === 'pending' && moneyPlan.onProcessing && <button type="button" className={ghostBtn} onClick={moneyPlan.onProcessing}>Mark processing</button>}
+                  <button type="button" className={goldBtn} onClick={() => { setSetupError(''); setSetup(moneyPlan.expected > 0 ? moneyPlan.expected.toFixed(2) : ''); }}>Disbursed</button>
+                </span>}
+              </div>}
+              {loanWaiting && setup !== null && <div className="rounded-xl border border-[#5A4614] bg-black/20 p-3 space-y-2">
+                <label className="block text-xs text-gray-400">Loan approved by the bank (RM)<input className="input w-full rounded-lg px-3 py-2 mt-1 text-sm" inputMode="decimal" value={setup} onChange={(e) => setSetup(e.target.value)} /></label>
+                <p className="text-xs text-gray-400">Next: what reached our bank, and what was deducted.</p>
+                {setupError && <p role="alert" className="text-xs text-red-400">{setupError}</p>}
+                <div className="flex gap-2"><button type="button" className={ghostBtn} onClick={() => setSetup(null)}>Cancel</button>
+                  <button type="button" className={`${goldBtn} disabled:opacity-40`} disabled={setupBusy || !setupCents} onClick={() => void setupLoan()}>{setupBusy ? 'Saving…' : 'Continue'}</button></div>
+              </div>}
+              {cashWaiting && <div className={`${row} flex flex-wrap items-center gap-3`}>
+                {tick(false)}
+                <div className="flex-1 min-w-[140px]"><p className="text-sm text-white">Cash from the customer</p><p className="text-xs text-gray-400">Not marked received yet · same as the Delivered tab</p></div>
+                {director && <button type="button" className={goldBtn} onClick={() => setRecording({ note: 'Cash from the customer' })}>Mark received</button>}
+              </div>}
+              {!loanWaiting && !cashWaiting && moneyItems.length === 0 && entries.length === 0 && <p className="text-sm text-gray-300">No money is expected for this car.</p>}
               {moneyItems.map(({ p, left, covered }) => <div key={p.id} className={`${row} flex flex-wrap items-center gap-3`}>
                 {tick(covered)}
                 <div className="flex-1 min-w-[140px]"><p className="text-sm text-white truncate">{IN_LABEL[p.type] ?? words(p.type)}{p.recipientName ? ` · ${p.recipientName}` : ''}</p>
                   <p className="text-xs text-gray-400">{covered ? 'Received' : left < cents(p.amount) ? `${formatCents(left)} still to come` : 'Waiting'}</p></div>
                 <p className="text-sm font-semibold text-white whitespace-nowrap">{formatCents(cents(p.amount))}</p>
-                {director && !covered && <button type="button" className={goldBtn} onClick={() => setRecording({ amountCents: left, note: `${IN_LABEL[p.type] ?? words(p.type)}${p.recipientName ? ' · ' + p.recipientName : ''}`, ...(p.type === 'loan_disbursement' ? { loan: {
-                  paymentId: p.id, leftCents: left,
-                  bills: mine.filter((b) => ['repair', 'misc_cost', 'panel_charge'].includes(b.type) && b.status === 'pending' && paymentBalanceCents(b) > 0).map((b) => ({ id: b.id, label: [b.recipientName, b.description].filter(Boolean).join(' · ') || words(b.type), leftCents: paymentBalanceCents(b) })),
-                  addOns: (deal?.plus ?? []).map((a) => ({ label: a.label, amountCents: cents(a.amount) })),
-                } } : {}) })}>Mark received</button>}
+                {director && !covered && <button type="button" className={goldBtn} onClick={() => setRecording({ amountCents: left, note: `${IN_LABEL[p.type] ?? words(p.type)}${p.recipientName ? ' · ' + p.recipientName : ''}`, ...(p.type === 'loan_disbursement' ? { loan: loanContext(p.id, left) } : {}) })}>Mark received</button>}
               </div>)}
               {entries.length > 0 && <div className="pt-1 space-y-1.5">
                 <p className="text-xs text-gray-400">Recorded</p>
