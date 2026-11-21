@@ -1,5 +1,7 @@
 import { useState, useMemo, useRef } from 'react';
-import { CreditCard, FileText, CheckCircle, Clock, ClipboardCheck, Fingerprint, Contact, Upload, Wrench, Trash2, Plus, MapPin } from 'lucide-react';
+import { CreditCard, FileText, CheckCircle, Clock, ClipboardCheck, Fingerprint, Contact, Upload, Wrench, Trash2, Plus, MapPin, FileWarning } from 'lucide-react';
+import DocTodo from '../components/DocTodo';
+import { companyBankPaymentsEnabled } from '../lib/companyBankPayments';
 import { useStore } from '../store';
 import LoanCaseDetail from './LoanCaseDetail';
 import MyPayslipCard from '../components/MyPayslipCard';
@@ -32,7 +34,7 @@ const LOAN_STATUS_LABELS: Record<string, string> = {
   cancelled:      'Cancelled',
 };
 
-type TabType = 'loans' | 'payments' | 'repairs' | 'intake';
+type TabType = 'loans' | 'payments' | 'repairs' | 'intake' | 'paperwork';
 
 export default function AdminDashboard() {
   const currentUser = useStore(s => s.currentUser)!;
@@ -302,7 +304,16 @@ export default function AdminDashboard() {
             </span>
           )}
         </button>
+        {companyBankPaymentsEnabled && <button
+          onClick={() => setTab('paperwork')}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === 'paperwork' ? 'border-gold-500 text-white' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
+        >
+          <FileWarning size={14} />
+          Paperwork To-do
+        </button>}
       </div>
+
+      {tab === 'paperwork' && companyBankPaymentsEnabled && <DocTodo mode="admin" />}
 
       {/* ── Loan Submissions tab ── */}
       {tab === 'loans' && myBanks.length > 0 && (

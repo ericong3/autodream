@@ -75,6 +75,7 @@ try{
  await db.exec(migration('20261120001200_consignment_blank_salesperson.sql'));
  await db.exec(migration('20261120001300_documents_to_follow.sql'));
  await db.exec(migration('20261120001400_money_received.sql'));
+ await db.exec(migration('20261120001500_document_todo.sql'));
  await assert.rejects(()=>db.exec("update cars set investor_id='i' where id='car-own'"),/USE_INVESTOR_ACCOUNTS/);
  await assert.rejects(()=>db.exec("insert into journal_entries(id,date,description,source_type,source_id,lines) values('legacy-investor-bypass',current_date,'Legacy investor write','car_sold','old','[{\"accountId\":\"acct-inv-investor\",\"debit\":1,\"credit\":0},{\"accountId\":\"acct-investor-payable\",\"debit\":0,\"credit\":1}]')"),/USE_INVESTOR_POSTING/);
  let n=0;const req=()=> 'consign_test_'+String(++n).padStart(8,'0');
@@ -321,6 +322,32 @@ try{
  await assert.rejects(()=>db.exec("update uc_money_received set amount_cents=1 where id='"+got.id+"'"),/IMMUTABLE_HISTORY/);
  await assert.rejects(()=>db.exec("delete from uc_money_received where id='"+got.id+"'"),/IMMUTABLE_HISTORY/);
  assert.equal((await moneyIn('a','list',{carId:'consign-one'})).entries.length,2);
+ // Dashboard to-do: admin sends a duplicate bill back; the Director deletes or edits it there, even on an open consignment deal.
+ const todo=(actor,action,data={})=>call('uc_doc_todo',actor,action,data);
+ await makeCase('todo-car');
+ await db.exec("insert into repairs(id,car_id,status,actual_cost,total_cost) values('todo-repair','todo-car','done',350,350);insert into payments(id,car_id,type,status,amount,recipient_type,recipient_id,recipient_name,repair_job_id) values('todo-bill-a','todo-car','repair','pending',350,'workshop','workshop','Workshop','todo-repair'),('todo-bill-b','todo-car','repair','pending',350,'workshop','workshop','Workshop','todo-repair')");
+ await assert.rejects(()=>db.exec("delete from payments where id='todo-bill-b'"),/CONSIGNMENT_HISTORY_LOCKED/);
+ const adminList=await todo('a','list');assert.ok(adminList.items.some(x=>x.paymentId==='todo-bill-b'&&x.needInvoice));
+ await assert.rejects(()=>todo('a','send_back',{paymentId:'todo-bill-b',reason:'x'}),/REASON_REQUIRED/);
+ const dupBack=(await todo('a','send_back',{paymentId:'todo-bill-b',reason:'Duplicate of the RM 350 repair bill'})).entry;assert.equal(dupBack.state,'open');assert.equal(dupBack.carId,'todo-car');
+ await assert.rejects(()=>todo('a','send_back',{paymentId:'todo-bill-b',reason:'Again please'}),/ALREADY_SENT_BACK/);
+ await assert.rejects(()=>todo('a','delete_bill',{id:dupBack.id}),/NOT_ALLOWED/);
+ assert.equal((await todo('d','list')).open.length,1);
+ const deletedBack=(await todo('d','delete_bill',{id:dupBack.id,note:'Duplicate removed'})).entry;assert.equal(deletedBack.resolution,'deleted');
+ assert.equal((await db.query("select count(*)::int n from payments where id='todo-bill-b'")).rows[0].n,0);
+ assert.equal((await db.query("select current_setting('autodream.consignment_write',true) v")).rows[0].v,'');
+ await assert.rejects(()=>todo('d','delete_bill',{id:dupBack.id}),/ALREADY_ANSWERED/);
+ const wrongBack=(await todo('a','send_back',{paymentId:'todo-bill-a',reason:'Workshop invoice says RM 300'})).entry;
+ assert.equal((await todo('d','edit_bill',{id:wrongBack.id,amountCents:30000})).entry.resolution,'edited');
+ assert.equal(Number((await db.query("select amount from payments where id='todo-bill-a'")).rows[0].amount),300);
+ assert.equal(Number((await db.query("select actual_cost from repairs where id='todo-repair'")).rows[0].actual_cost),300);
+ const moneyBack=(await todo('a','send_back',{moneyId:got.id,reason:'Which car is this for?'})).entry;
+ await assert.rejects(()=>todo('d','resolve',{id:moneyBack.id,resolution:'returned'}),/NOTE_REQUIRED/);
+ await todo('d','resolve',{id:moneyBack.id,resolution:'returned',note:'It is the Ativa loan'});
+ assert.ok((await todo('a','list')).answered.some(x=>x.id===moneyBack.id&&x.note==='It is the Ativa loan'));
+ await evidence('todo-bill-a','invoice');const docBack=(await todo('a','send_back',{paymentId:'todo-bill-a',reason:'Check amount'})).entry;
+ await assert.rejects(()=>todo('d','delete_bill',{id:docBack.id}),/BILL_HAS_DOCUMENTS/);
+ await assert.rejects(()=>db.exec("update uc_doc_returns set reason='changed' where id='"+docBack.id+"'"),/IMMUTABLE_HISTORY/);
  if(db.isPostgres){
   const a=await db.connection(),b=await db.connection();try{
    await makeCase('race-receipt',{price:70000});const rr=await cf('snapshot',{carId:'race-receipt'}),rd=await evidence(rr.case.customer_payment_id,'payment');

@@ -1,6 +1,6 @@
 import { salesCommission } from '../utils/salesCommission';
 import { useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Car,
   TrendingUp,
@@ -22,6 +22,8 @@ import { formatRM } from '../utils/format';
 import { calcConsignmentPayoutAmount } from '../utils/generatePayments';
 import { useAnimatedCounter } from '../hooks/useAnimatedCounter';
 import { useAnimatedRM } from '../hooks/useAnimatedRM';
+import DocTodo from '../components/DocTodo';
+import { companyBankPaymentsEnabled } from '../lib/companyBankPayments';
 
 export default function Dashboard() {
   const cars = useStore((s) => s.cars);
@@ -237,6 +239,11 @@ export default function Dashboard() {
       </div>
 
       <MyPayslipCard />
+
+      {companyBankPaymentsEnabled && <section className="rounded-2xl border border-white/[0.06] bg-obsidian-800/40 p-4 space-y-3">
+        <div className="flex items-center justify-between"><h2 className="text-white font-semibold text-sm">My to-do · sent back by admin</h2><Link to="/payments" className="text-xs text-gold-400">All missing paperwork</Link></div>
+        <DocTodo mode="director" />
+      </section>}
 
       {/* ── Today's Test Drives ─────────────────────────────── */}
       {todayTestDrives.length > 0 && (
