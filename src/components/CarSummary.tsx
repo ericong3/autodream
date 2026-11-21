@@ -114,7 +114,7 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
       const bill = useStore.getState().payments.find((p) => p.id === id);
       setLender(null);
       if (bill && bill.status === 'pending') setPaying(bill);
-    } catch (e) { setSettleError(e instanceof Error ? e.message : 'Could not record the old loan payment.'); }
+    } catch (e) { setSettleError(e instanceof Error ? e.message : 'Could not record the settlement payment.'); }
     finally { setSettleBusy(false); }
   };
   const choosePanel = async (p: Payment, dealerId: string) => {
@@ -234,7 +234,7 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
     const adminTodo = known && (!invoiceOk || (paid && !proofOk));
     return <div key={p.id} className={`${row} space-y-2`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="flex-1 min-w-[140px]"><p className="text-sm text-white truncate">{x ? `${x.name.split(' · ')[0]}${p.recipientName && !x.fromLoan ? ' · ' + p.recipientName : ''}` : p.type === 'purchase_settlement' ? `Pay off trade-in old loan · ${p.recipientName}` : (p.recipientName || words(p.type))}</p><p className="text-xs text-gray-400 truncate">{fromLoan ? 'Paid from the bank loan' : paid ? (p.status === 'transferred' ? `Paid${p.transferredAt ? ' ' + day(p.transferredAt) : ''}` : 'Settled') : (x?.sub ?? words(p.type))}</p></div>
+        <div className="flex-1 min-w-[140px]"><p className="text-sm text-white truncate">{x ? `${x.name.split(' · ')[0]}${p.recipientName && !x.fromLoan ? ' · ' + p.recipientName : ''}` : p.type === 'purchase_settlement' ? `Trade-in settlement · ${p.recipientName}` : (p.recipientName || words(p.type))}</p><p className="text-xs text-gray-400 truncate">{fromLoan ? 'Paid from the bank loan' : paid ? (p.status === 'transferred' ? `Paid${p.transferredAt ? ' ' + day(p.transferredAt) : ''}` : 'Settled') : (x?.sub ?? words(p.type))}</p></div>
         <p className={`text-sm font-semibold whitespace-nowrap ${paid ? 'text-emerald-300' : 'text-white'}`}>{formatCents(paid ? cents(p.amount) : paymentBalanceCents(p))}</p>
         <span className="flex gap-2">
           {(director || admin) && <button type="button" className={ghostBtn} onClick={() => setDocs(p.id)}>{!invoiceOk ? 'Upload invoice' : paid && !proofOk ? 'Upload proof' : 'Documents'}</button>}
@@ -505,11 +505,11 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
                     {ti.carId && <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 flex-shrink-0">{ti.carStatus === 'sold' || ti.carStatus === 'delivered' ? 'Sold' : 'In stock'}</span>}
                   </div>
                   <div className="flex justify-between text-sm"><span className="text-gray-300">Trade-in value</span><span className="text-white">{formatCents(cents(ti.amount))}</span></div>
-                  {settlement > 0 && <div className="flex justify-between text-sm"><span className="text-gray-300">− Old loan{bill?.recipientName ? ` paid to ${bill.recipientName}` : ti.settleTo ? ` to ${ti.settleTo}` : ''}</span><span className="text-white">− {formatCents(cents(settlement))}</span></div>}
+                  {settlement > 0 && <div className="flex justify-between text-sm"><span className="text-gray-300">− Settlement to {bill?.recipientName || ti.settleTo || 'bank'}</span><span className="text-white">− {formatCents(cents(settlement))}</span></div>}
                   {settlement > 0 && <div className="flex justify-between pt-2 border-t border-white/[0.08] text-sm font-semibold"><span className="text-white">{(ti.topUp ?? 0) > 0 ? 'Customer tops up' : 'Trade-in credit'}</span><span className="text-[#F3C969]">{formatCents(cents((ti.topUp ?? 0) > 0 ? ti.topUp! : ti.credit ?? 0))}</span></div>}
-                  {settlement > 0 && <p className="text-xs text-gray-400">{bill ? (bill.status === 'transferred' ? `Old loan paid${bill.transferredAt ? ' ' + day(bill.transferredAt) : ''} ✓` : 'Old loan payment is in Bills, waiting to be paid.') : 'Old loan payment is not recorded in the app yet.'}</p>}
+                  {settlement > 0 && <p className="text-xs text-gray-400">{bill ? (bill.status === 'transferred' ? `Settlement paid${bill.transferredAt ? ' ' + day(bill.transferredAt) : ''} ✓` : 'Settlement payment is in Bills, waiting to be paid.') : 'Settlement payment is not recorded in the app yet.'}</p>}
                   {settlement > 0 && !bill && onRecordSettlement && (lender === null
-                    ? <button type="button" className={`${goldBtn} w-full`} onClick={() => { setSettleError(''); setLender(ti.settleTo ?? ''); }}>Record old loan payment</button>
+                    ? <button type="button" className={`${goldBtn} w-full`} onClick={() => { setSettleError(''); setLender(ti.settleTo ?? ''); }}>Record settlement payment</button>
                     : <div className="space-y-2">
                       <label className="block text-xs text-gray-400">Paid to which bank<input className="input w-full rounded-lg px-3 py-2 mt-1 text-sm" placeholder="e.g. CIMB" value={lender} onChange={(e) => setLender(e.target.value)} /></label>
                       <p className="text-xs text-gray-400">Next: the date, which of our banks paid it (or paid before opening), and the proof.</p>

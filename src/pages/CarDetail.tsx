@@ -608,7 +608,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const recordTradeInSettlement = async (lender: string): Promise<string> => {
     if (!car || !tradeInChild || !currentUser || !dealWo) throw new Error('Trade-in car not found.');
     const tf = tradeInFigures(dealWo);
-    if (tf.settlement <= 0) throw new Error('This trade-in has no old loan.');
+    if (tf.settlement <= 0) throw new Error('This trade-in has no settlement.');
     // The top-up was booked as sales; it is owed to the old lender. Book that once.
     if (tf.topUp > 0 && !journalEntries.some((e) => e.sourceType === 'trade_in_topup' && e.sourceId === car.id && !e.voided)) {
       // Same day as the sale it corrects, but never inside the books from before the bank opened.
@@ -621,7 +621,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     await addPayment({
       id, type: 'purchase_settlement', carId: tradeInChild.id,
       recipientType: 'merchant', recipientId: lender, recipientName: lender,
-      amount: tf.settlement, description: `Pay off old loan — ${tradeInChild.year} ${tradeInChild.make} ${tradeInChild.model}${tradeInChild.carPlate ? ' ' + tradeInChild.carPlate : ''}`,
+      amount: tf.settlement, description: `Trade-in settlement — ${tradeInChild.year} ${tradeInChild.make} ${tradeInChild.model}${tradeInChild.carPlate ? ' ' + tradeInChild.carPlate : ''}`,
       status: 'pending', createdAt: new Date().toISOString(),
     });
     return id;
@@ -1110,8 +1110,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     const plusLines = [
       ...(insurance > 0 ? [{ label: 'Insurance', amount: insurance }] : []),
       ...(bankProduct > 0 ? [{ label: 'Bank Product', amount: bankProduct }] : []),
-      ...additionalItems.map((i, k) => ({ label: k === trade.manualIndex ? `${tradeName} old loan top-up` : i.label, amount: i.amount })).filter(l => l.amount > 0 && l.label.trim()),
-      ...(trade.autoTopUp > 0 ? [{ label: `${tradeName} old loan top-up`, amount: trade.autoTopUp }] : []),
+      ...additionalItems.map((i, k) => ({ label: k === trade.manualIndex ? `${tradeName} settlement top-up` : i.label, amount: i.amount })).filter(l => l.amount > 0 && l.label.trim()),
+      ...(trade.autoTopUp > 0 ? [{ label: `${tradeName} settlement top-up`, amount: trade.autoTopUp }] : []),
     ];
     const minusLines = [
       ...(discount > 0 ? [{ label: 'Discount', amount: discount }] : []),
@@ -3962,7 +3962,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                         <input type="number" min={0} placeholder="0" value={editDealForm.settlementFigure || ''} onChange={e => setEditDealForm(f => ({ ...f, settlementFigure: Number(e.target.value) }))} className={inputCls} />
                       </div>
                       <div className="flex items-center justify-between px-1 pt-1">
-                        <span className="text-gray-400 text-xs">{editTrade.autoTopUp > 0 ? 'Customer tops up the old loan (added to balance)' : editTrade.topUp > 0 ? 'Old loan top-up (already in extra items)' : 'Net Trade-In'}</span>
+                        <span className="text-gray-400 text-xs">{editTrade.autoTopUp > 0 ? 'Customer tops up the settlement (added to balance)' : editTrade.topUp > 0 ? 'Settlement top-up (already in extra items)' : 'Net Trade-In'}</span>
                         <span className="text-white font-semibold text-sm">{formatRM(editTrade.topUp > 0 ? editTrade.topUp : editTrade.credit)}</span>
                       </div>
                     </div>

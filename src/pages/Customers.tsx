@@ -4230,7 +4230,7 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                       )}
                       {formTrade.autoTopUp > 0 && (
                         <div className="flex justify-between text-sm">
-                          <span className="text-gray-400">Trade-in old loan top-up (added by the app)</span>
+                          <span className="text-gray-400">Trade-in settlement top-up (added by the app)</span>
                           <span className="text-amber-300 font-mono">+ {formatRM(formTrade.autoTopUp)}</span>
                         </div>
                       )}
@@ -4385,7 +4385,7 @@ const hasApproved = c.loanApplications?.some(a => a.status === 'approved');
                         </div>
                       )}
                       {formTrade.topUp > 0 && (
-                        <p className="px-4 pb-3 text-[11px] text-gray-400">{formTrade.manualIndex >= 0 ? 'The old loan top-up is already in the extra items, so the app does not add it again.' : `The old loan is bigger than the trade-in, so the customer tops up ${formatRM(formTrade.topUp)}. The app adds it to the balance. Do not type it as an extra item.`}</p>
+                        <p className="px-4 pb-3 text-[11px] text-gray-400">{formTrade.manualIndex >= 0 ? 'The settlement top-up is already in the extra items, so the app does not add it again.' : `The settlement is bigger than the trade-in, so the customer tops up ${formatRM(formTrade.topUp)}. The app adds it to the balance. Do not type it as an extra item.`}</p>
                       )}
                     </div>
 
