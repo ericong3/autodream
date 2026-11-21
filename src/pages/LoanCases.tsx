@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FileText, CheckCircle, MessageSquare } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useStore } from '../store';
 import { toast } from '../utils/toast';
 import { notifyUsers } from '../utils/notify';
+import { bankHasBankerPortal } from '../lib/loanBankNotifications';
 import LoanCaseDetail from './LoanCaseDetail';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -81,6 +82,19 @@ export default function LoanCases() {
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [appealTarget, setAppealTarget] = useState<string | null>(null);
   const [appealReason, setAppealReason] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const linkedCaseId = searchParams.get('case');
+
+  // Opened from a notification (/loan-cases?case=<id>): open that case directly.
+  // Waits until the case is loaded, then drops the param so closing the case
+  // doesn't reopen it.
+  useEffect(() => {
+    if (!linkedCaseId) return;
+    if (!loanCases.some(c => c.id === linkedCaseId)) return;
+    setSelectedCaseId(linkedCaseId);
+    markNotificationsReadByRef(linkedCaseId);
+    setSearchParams(p => { p.delete('case'); return p; }, { replace: true });
+  }, [linkedCaseId, loanCases, markNotificationsReadByRef, setSearchParams]);
 
   const myCases = loanCases
     .filter(c => c.salesmanId === currentUser.id)
@@ -144,7 +158,7 @@ export default function LoanCases() {
       });
     }
     const customer = customers.find(c => c.id === lc.customerId);
-    notifyUsers(
+    if (bankHasBankerPortal(lc.bank)) notifyUsers(
       [lc.bankerId],
       'Appeal Filed',
       `${customer?.name ?? 'A customer'} filed an appeal for ${lc.bank}${reason.trim() ? ` — ${reason.trim()}` : ''}`,

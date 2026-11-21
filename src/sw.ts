@@ -35,8 +35,13 @@ self.addEventListener('notificationclick', (event: NotificationEvent) => {
   const url: string = event.notification.data?.url || '/';
   event.waitUntil(
     (self.clients as Clients).matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      // App already open: bring it forward AND tell it which page to show.
+      // Focusing alone left the user wherever they last were.
       for (const client of list) {
-        if ('focus' in client) return (client as WindowClient).focus();
+        if ('focus' in client) {
+          client.postMessage({ type: 'notification-click', url });
+          return (client as WindowClient).focus();
+        }
       }
       return (self.clients as Clients).openWindow(url);
     })

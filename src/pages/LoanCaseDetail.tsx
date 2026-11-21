@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { LoanCase, LoanCaseStatus, LoanCaseBankProduct } from '../types';
 import { toast } from '../utils/toast';
 import { notifyUsers } from '../utils/notify';
+import { bankHasBankerPortal } from '../lib/loanBankNotifications';
 
 const STATUS_COLORS: Record<string, string> = {
   pending:        'bg-yellow-500/15 text-yellow-300 border-yellow-500/30',
@@ -112,8 +113,8 @@ export default function LoanCaseDetail({ loanCase, groupCases, initialTab, onClo
         });
       }
       const notifyTarget = isBanker ? activeCase.salesmanId : (bankerUser?.id ?? '');
-      const notifyUrl    = isBanker ? '/loan-cases' : '/banker-dashboard';
-      notifyUsers(
+      const notifyUrl    = isBanker ? `/loan-cases?case=${activeCase.id}` : '/banker-dashboard';
+      if (bankHasBankerPortal(activeCase.bank)) notifyUsers(
         [notifyTarget],
         `New document from ${currentUser.name}`,
         `${files.length} additional document${files.length > 1 ? 's' : ''} uploaded for ${customer?.name ?? 'customer'}`,

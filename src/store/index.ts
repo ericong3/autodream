@@ -10,6 +10,7 @@ import { financeFrom } from '../lib/privateFinance';
 import { privateFinanceCacheJson } from '../utils/privateFinanceCache';
 import { User, Car, RepairJob, Quotation, Instruction, Customer, TestDrive, PersonalReminder, Dealer, Workshop, Supplier, Merchant, ClaimCategory, LedgerAccount, JournalEntry, JournalLine, MiscCost, ExternalSalesman, Banker, LoanCase, LoanCaseDocument, LoanCaseActivity, Payment, AppNotification, InvestorTransaction, Shipment, CarMovement, KanbanColumn, Payslip, BankStatementUpload, BankTransaction } from '../types';
 import { sendPush } from '../utils/sendPush';
+import { bankHasBankerPortal } from '../lib/loanBankNotifications';
 import { hashPassword, verifyPassword } from '../utils/password';
 
 // ── Notification helpers ─────────────────────────────────────────────────────
@@ -26,10 +27,16 @@ function instrRecipients(i: Instruction, users: User[]): string[] {
   return i.toIds ?? [];
 }
 const SCHED_KEY = 'autodream-sched-notif-date';
-function scheduledNotifAllowed(): boolean {
+// Once per day per user per device. Daily reminders are only ever sent to the
+// user whose device this is (see loadAll), so each person gets one copy a day
+// instead of one copy from every staff member's phone that opened the app.
+function scheduledNotifAllowed(userId: string): boolean {
   const today = new Date().toDateString();
-  if (localStorage.getItem(SCHED_KEY) === today) return false;
-  localStorage.setItem(SCHED_KEY, today);
+  const key = `${SCHED_KEY}:${userId}`;
+  try {
+    if (localStorage.getItem(key) === today) return false;
+    localStorage.setItem(key, today);
+  } catch { /* storage blocked — still send */ }
   return true;
 }
 
@@ -1556,36 +1563,39 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       // Needs phase 1's allCustomers/allUsers, so wait for that here — this only
       // delays the notification side effect, not the phase 2 data landing above.
       const phase1Succeeded = await phase1Promise;
-      if (loadCurrent() && phase1Succeeded && scheduledNotifAllowed()) {
+      // Each reminder goes only to the person using this device — otherwise every
+      // staff phone that opens the app sends the same reminder to the same person.
+      const me = get().currentUser;
+      if (loadCurrent() && phase1Succeeded && me && scheduledNotifAllowed(me.id)) {
         const today    = new Date().toDateString();
         const tomorrow = new Date(Date.now() + 86400000).toDateString();
 
         allCustomers
-          .filter(c => !c.isTrashed && !c.isDead && c.followUpDate && new Date(c.followUpDate).toDateString() === today)
-          .forEach(c => sendPush([c.assignedSalesId].filter(Boolean), '📞 Follow-up reminder', `Call ${c.name} today`, '/customers', c.id));
+          .filter(c => c.assignedSalesId === me.id && !c.isTrashed && !c.isDead && c.followUpDate && new Date(c.followUpDate).toDateString() === today)
+          .forEach(c => sendPush([me.id], '📞 Follow-up reminder', `Call ${c.name} today`, '/customers', c.id));
 
         const threeDaysAgo = new Date(Date.now() - 3 * 86400000).toISOString();
         get().loanCases
-          .filter(lc => lc.status === 'need_more_info' && lc.updatedAt <= threeDaysAgo)
+          .filter(lc => lc.salesmanId === me.id && lc.status === 'need_more_info' && lc.updatedAt <= threeDaysAgo && bankHasBankerPortal(lc.bank))
           .forEach(lc => {
             const lastSalesActivity = get().loanCaseActivities
               .filter(a => a.caseId === lc.id && a.userRole !== 'banker')
               .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
             if (!lastSalesActivity || lastSalesActivity.createdAt <= lc.updatedAt) {
-              sendPush([lc.salesmanId], '⏰ Banker is waiting', `${lc.bank} case needs your reply`, '/loan-cases', lc.id);
+              sendPush([me.id], '⏰ Banker is waiting', `${lc.bank} case needs your reply`, `/loan-cases?case=${lc.id}`, lc.id);
             }
           });
 
         allTestDrives
-          .filter(t => t.status === 'scheduled' && new Date(t.scheduledAt).toDateString() === tomorrow)
+          .filter(t => t.salesId === me.id && t.status === 'scheduled' && new Date(t.scheduledAt).toDateString() === tomorrow)
           .forEach(t => {
             const cust = allCustomers.find(c => c.id === t.customerId);
-            sendPush([t.salesId], '🚗 Test drive tomorrow', `${cust?.name ?? 'Customer'} has a test drive scheduled`, '/calendar');
+            sendPush([me.id], '🚗 Test drive tomorrow', `${cust?.name ?? 'Customer'} has a test drive scheduled`, '/calendar');
           });
 
-        allQuotations
+        if (me.role === 'director') allQuotations
           .filter(q => q.status === 'pending' && new Date(q.expiryDate).toDateString() === tomorrow)
-          .forEach(q => sendPush(dirIds(allUsers), '⏰ Quotation expiring', `${q.contactName} – ${q.make} ${q.model} expires tomorrow`, '/quotations'));
+          .forEach(q => sendPush([me.id], '⏰ Quotation expiring', `${q.contactName} – ${q.make} ${q.model} expires tomorrow`, '/quotations'));
       }
     }).catch((err) => {
       if(!loadCurrent())return;
@@ -2077,7 +2087,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         .forEach(lc => {
           get().updateLoanCase(lc.id, { carSoldAlert: { soldCarId: id, flaggedAt } });
           const custName = get().customers.find(c => c.id === lc.customerId)?.name ?? 'Customer';
-          sendPush([lc.salesmanId], '🚗 Unit sold', `${carName} sold — ${custName}'s ${lc.bank} case needs a new car`, '/customers', lc.customerId);
+          if (bankHasBankerPortal(lc.bank)) sendPush([lc.salesmanId], '🚗 Unit sold', `${carName} sold — ${custName}'s ${lc.bank} case needs a new car`, '/customers', lc.customerId);
         });
     }
     // #21 Car status changed to Ready
@@ -2889,7 +2899,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         const profile = get().bankers.find(b => b.id === loanCase.bankerId);
         return profile?.userId ? get().users.find(u => u.id === profile.userId) : undefined;
       })();
-    if (bankerUser) {
+    if (bankerUser && bankHasBankerPortal(loanCase.bank)) {
       sendPush([bankerUser.id], '📋 New case submitted', `${salesman?.name ?? 'Salesman'} – ${customer?.name ?? 'Customer'} · RM ${loanCase.loanAmount.toLocaleString()}`, '/banker-dashboard', loanCase.id);
     }
   },
@@ -2925,7 +2935,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       })();
 
     // Notify banker when guarantor info is added for the first time
-    if (updates.guarantorInterviewText && !prev?.guarantorInterviewText && prev) {
+    if (updates.guarantorInterviewText && !prev?.guarantorInterviewText && prev && bankHasBankerPortal(prev.bank)) {
       const cust = get().customers.find(c => c.id === prev.customerId);
       const bankerUser = resolveBankerUser(prev.bankerId);
       if (bankerUser) {
@@ -2933,7 +2943,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       }
     }
     // Notify on status change
-    if (updates.status && prev?.status !== updates.status && prev) {
+    if (updates.status && prev?.status !== updates.status && prev && bankHasBankerPortal(prev.bank)) {
       const cust = get().customers.find(c => c.id === prev.customerId);
       const custName = cust?.name ?? 'Customer';
       // Banker → salesman updates
@@ -2945,7 +2955,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
       };
       const salesLabel = toSalesmanLabels[updates.status];
       if (salesLabel) {
-        sendPush([prev.salesmanId], `📋 Case ${salesLabel}`, `${prev.bank} · ${custName}`, '/loan-cases', id);
+        sendPush([prev.salesmanId], `📋 Case ${salesLabel}`, `${prev.bank} · ${custName}`, `/loan-cases?case=${id}`, id);
       }
       // Salesman → banker updates
       if (updates.status === 'appeal') {
@@ -2985,16 +2995,16 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     // Banker adds remark/instruction → notify salesman
     if ((activity.type === 'remark' || activity.type === 'instruction') && activity.userRole === 'banker') {
       const lc = get().loanCases.find(c => c.id === activity.caseId);
-      if (lc) {
+      if (lc && bankHasBankerPortal(lc.bank)) {
         const cust = get().customers.find(c => c.id === lc.customerId);
         const label = activity.type === 'instruction' ? 'Instruction' : 'Remark';
-        sendPush([lc.salesmanId], `💬 Banker ${label}`, `${lc.bank} · ${cust?.name ?? 'Customer'}: ${activity.content ?? ''}`.slice(0, 100), '/loan-cases', lc.id);
+        sendPush([lc.salesmanId], `💬 Banker ${label}`, `${lc.bank} · ${cust?.name ?? 'Customer'}: ${activity.content ?? ''}`.slice(0, 100), `/loan-cases?case=${lc.id}`, lc.id);
       }
     }
     // Salesman adds remark → notify banker
     if (activity.type === 'remark' && activity.userRole !== 'banker') {
       const lc = get().loanCases.find(c => c.id === activity.caseId);
-      if (lc) {
+      if (lc && bankHasBankerPortal(lc.bank)) {
         const cust = get().customers.find(c => c.id === lc.customerId);
         const bankerUser = resolveBankerUser(lc.bankerId);
         if (bankerUser) {
@@ -3019,7 +3029,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     }
     // Notify banker that new documents have been uploaded
     const lc = get().loanCases.find(c => c.id === doc.caseId);
-    if (lc) {
+    if (lc && bankHasBankerPortal(lc.bank)) {
       const banker = get().users.find(u => u.id === lc.bankerId);
       const cust = get().customers.find(c => c.id === lc.customerId);
       if (banker) {

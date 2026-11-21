@@ -119,6 +119,20 @@ export default function Layout() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
+  // A tapped push notification while the app is already open: the service
+  // worker focuses this window and sends the page to show.
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const onMessage = (e: MessageEvent) => {
+      const data = e.data as { type?: string; url?: string } | null;
+      if (data?.type === 'notification-click' && typeof data.url === 'string' && data.url.startsWith('/')) {
+        navigate(data.url);
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage);
+  }, [navigate]);
+
   // Show toast alerts for real-time notification arrivals
   useEffect(() => {
     if (!toastQueue.length) return;
@@ -462,6 +476,7 @@ export default function Layout() {
                       setBankerOpenCaseId(t.referenceId);
                     } else {
                       markNotificationReadById(t.id);
+                      if (t.url && t.url !== '/') navigate(t.url);
                     }
                     setToasts(p => p.filter(toast => toast.id !== t.id));
                   }}
