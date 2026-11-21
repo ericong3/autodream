@@ -951,6 +951,81 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     setShowDetails(true);
     setTimeout(() => document.getElementById('car-' + section)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
   };
+  // The customer's deal, worked out once: shown in the new Final deal tab and
+  // the old Final Deal tab, and printed on the receipt.
+  const dealFig = (() => {
+    if (!dealWo) return null;
+    const { sellingPrice, discount } = deliveredDealPrice(car, dealWo);
+    const insurance = dealWo.insurance ?? 0;
+    const bankProduct = dealWo.bankProduct ?? 0;
+    const additionalItems = dealWo.additionalItems ?? [];
+    const additionalTotal = additionalItems.reduce((s, i) => s + i.amount, 0);
+    const loanAmount = dealIsLoan ? (car.disbursementExpectedAmount ?? car.disbursementAmount ?? dealCustomer?.loanWorkOrder?.loanAmount ?? 0) : 0;
+    const bookingFee = dealWo.bookingFee ?? 0;
+    const balance = sellingPrice - discount + insurance + bankProduct + additionalTotal - loanAmount - bookingFee;
+    const plusLines = [
+      ...(insurance > 0 ? [{ label: 'Insurance', amount: insurance }] : []),
+      ...(bankProduct > 0 ? [{ label: 'Bank Product', amount: bankProduct }] : []),
+      ...additionalItems.map(i => ({ label: i.label, amount: i.amount })),
+    ];
+    const minusLines = [
+      ...(discount > 0 ? [{ label: 'Discount', amount: discount }] : []),
+      ...(bookingFee > 0 ? [{ label: 'Deposit / Booking Fee', amount: bookingFee }] : []),
+      ...(loanAmount > 0 ? [{ label: 'Loan Amount', amount: loanAmount }] : []),
+    ];
+    return { sellingPrice, discount, insurance, bankProduct, additionalItems, additionalTotal, loanAmount, bookingFee, balance, plusLines, minusLines };
+  })();
+  const generateDealReceipt = async () => {
+    if (!dealCustomer || !dealFig) return;
+    setGeneratingReceipt(true);
+    try {
+      const { balance } = dealFig;
+      const resultLabel = Math.abs(balance) < 0.01 ? 'Balance' : balance < 0 ? 'Refund to Customer' : 'Collect from Customer';
+      const carLabel = `${car.year} ${car.make} ${car.model}${car.variant ? ' ' + car.variant : ''}`;
+      const salesmanName = (dealWo as any)?.submittedBy || assignedSalesperson?.name || currentUser?.name || '-';
+      const bytes = await buildDealReceiptPdf({
+        customerName: dealCustomer.name,
+        carLabel,
+        carPlate: car.carPlate,
+        salesmanName,
+        sellingPrice: dealFig.sellingPrice,
+        plusLines: dealFig.plusLines,
+        subtotal: dealFig.sellingPrice + dealFig.insurance + dealFig.bankProduct + dealFig.additionalTotal,
+        minusLines: dealFig.minusLines,
+        resultLabel,
+        resultAmount: Math.abs(balance),
+        generatedAt: new Date(),
+      });
+      const url = await uploadDealReceipt(bytes, car.id, supabase.storage.from('car-photos'));
+      await updateCar(car.id, { dealReceiptUrl: url, dealReceiptGeneratedAt: new Date().toISOString() });
+      toast.success('Receipt generated');
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Failed to generate receipt');
+    } finally {
+      setGeneratingReceipt(false);
+    }
+  };
+  const finalDealCard = car.finalDeal && dealCustomer && dealFig ? {
+    approval: car.finalDeal.approvalStatus === 'rejected' ? 'rejected' as const : car.status === 'sold' || car.status === 'delivered' || car.finalDeal.approvalStatus === 'approved' ? 'approved' as const : 'pending' as const,
+    payment: dealIsLoan ? 'Bank loan' : 'Cash',
+    bank: car.finalDeal.bank || dealCustomer.loanWorkOrder?.bank || '',
+    sellingPrice: dealFig.sellingPrice,
+    plus: dealFig.plusLines,
+    minus: dealFig.minusLines.map(l => l.label === 'Loan Amount' ? { ...l, label: 'Loan from the bank' } : l),
+    balance: dealFig.balance,
+    tradeIn: dealWo?.hasTradeIn ? {
+      label: [dealWo.tradeInMake, dealWo.tradeInModel, dealWo.tradeInPlate].filter(Boolean).join(' ') || 'Trade-in car',
+      amount: Math.max(0, (dealWo.tradeInPrice ?? 0) - (dealWo.settlementFigure ?? 0)),
+      swap: dealWo.tradeInMode === 'swap',
+    } : null,
+    submittedBy: (dealWo as any)?.submittedBy ? users.find(u => u.id === (dealWo as any).submittedBy)?.name ?? (dealWo as any).submittedBy : users.find(u => u.id === car.finalDeal!.submittedBy)?.name,
+    submittedAt: car.finalDeal.submittedAt,
+    approvedBy: car.finalDeal.approvedBy ? users.find(u => u.id === car.finalDeal!.approvedBy)?.name ?? car.finalDeal.approvedBy : undefined,
+    approvedAt: car.finalDeal.approvedAt,
+    notes: car.finalDeal.notes,
+    rejectionNotes: car.finalDeal.rejectionNotes,
+    receiptUrl: car.dealReceiptUrl,
+  } : null;
   const profitCosts = [
     { label: 'Bought for', amount: car.purchasePrice + _sourceCommission },
     { label: 'Repairs', amount: totalRepairCost },
@@ -972,6 +1047,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
         <CarSummary car={car} actorId={currentUser.id} role={currentUser.role} profit={isDirectorView && !car.investorFunded ? netProfit : null} costs={profitCosts} detailsOpen={showDetails} onOpenDetails={openDetails} onOpenMedia={(tab) => openGallery(0, tab)}
           buyerName={dealCustomer?.name} salespersonName={assignedSalesperson?.name}
           onEditDeal={dealCustomer ? openEditDeal : undefined}
+          deal={finalDealCard} generatingReceipt={generatingReceipt} onReceipt={isDirector || isAdmin ? generateDealReceipt : undefined}
           onAddRepair={isDirector || isAdmin ? openAddRepair : undefined}
           onAddMisc={isDirector || isAdmin ? () => { setMiscForm({ category: '', merchantName: '', description: '', amount: '', notes: '' }); setMiscErrors({}); setMiscDupeOk(false); setShowMiscModal(true); } : undefined} />
       </>}
@@ -2052,45 +2128,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                     <button
                       type="button"
                       disabled={generatingReceipt}
-                      onClick={async () => {
-                        if (!soldCustomer) return;
-                        setGeneratingReceipt(true);
-                        try {
-                          const resultLabel = Math.abs(balance) < 0.01 ? 'Balance' : balance < 0 ? 'Refund to Customer' : 'Collect from Customer';
-                          const carLabel = `${car.year} ${car.make} ${car.model}${car.variant ? ' ' + car.variant : ''}`;
-                          const salesmanName = (wo as any)?.submittedBy || assignedSalesperson?.name || currentUser?.name || '-';
-                          const plusLines = [
-                            ...(insurance > 0 ? [{ label: 'Insurance', amount: insurance }] : []),
-                            ...(bankProduct > 0 ? [{ label: 'Bank Product', amount: bankProduct }] : []),
-                            ...additionalItems.map(i => ({ label: i.label, amount: i.amount })),
-                          ];
-                          const minusLines = [
-                            ...(discount > 0 ? [{ label: 'Discount', amount: discount }] : []),
-                            ...(bookingFee > 0 ? [{ label: 'Deposit / Booking Fee', amount: bookingFee }] : []),
-                            ...(loanAmount > 0 ? [{ label: 'Loan Amount', amount: loanAmount }] : []),
-                          ];
-                          const bytes = await buildDealReceiptPdf({
-                            customerName: soldCustomer.name,
-                            carLabel,
-                            carPlate: car.carPlate,
-                            salesmanName,
-                            sellingPrice,
-                            plusLines,
-                            subtotal: sellingPrice + insurance + bankProduct + additionalTotal,
-                            minusLines,
-                            resultLabel,
-                            resultAmount: Math.abs(balance),
-                            generatedAt: new Date(),
-                          });
-                          const url = await uploadDealReceipt(bytes, car.id, supabase.storage.from('car-photos'));
-                          await updateCar(car.id, { dealReceiptUrl: url, dealReceiptGeneratedAt: new Date().toISOString() });
-                          toast.success('Receipt generated');
-                        } catch (err: any) {
-                          toast.error(err?.message ?? 'Failed to generate receipt');
-                        } finally {
-                          setGeneratingReceipt(false);
-                        }
-                      }}
+                      onClick={() => void generateDealReceipt()}
                       className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gold-500/15 hover:bg-gold-500/25 border border-gold-500/30 text-gold-300 text-xs font-medium transition-colors disabled:opacity-50"
                     >
                       <Receipt size={12} /> {generatingReceipt ? 'Generating…' : car.dealReceiptUrl ? 'Regenerate Receipt' : 'Generate Receipt'}

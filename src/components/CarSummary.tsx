@@ -13,6 +13,17 @@ import CompanyBankPaymentDialog from './CompanyBankPaymentDialog';
 import CompanyPaymentDocuments from './CompanyPaymentDocuments';
 
 export type ProfitRow = { label: string; amount: number };
+export type DealLine = { label: string; amount: number };
+/** The customer's final deal as shown in the Final deal tab. Amounts in RM. */
+export type DealCard = {
+  approval: 'approved' | 'pending' | 'rejected';
+  payment: string; bank: string; sellingPrice: number;
+  plus: DealLine[]; minus: DealLine[]; balance: number;
+  tradeIn: { label: string; amount: number; swap: boolean } | null;
+  submittedBy?: string; submittedAt?: string; approvedBy?: string; approvedAt?: string;
+  notes?: string; rejectionNotes?: string; receiptUrl?: string;
+};
+const day = (iso?: string) => iso ? new Date(iso).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
 type StageId = 'sold' | 'money' | 'bills' | 'dealer' | 'paper' | 'closed';
 const INBOUND = new Set(['customer_collection', 'loan_disbursement', 'consignment_collection', 'supplier_credit_collection']);
 const IN_LABEL: Record<string, string> = { customer_collection: 'Customer', loan_disbursement: 'Bank loan', consignment_collection: 'From dealer', supplier_credit_collection: 'Supplier credit' };
@@ -25,11 +36,12 @@ const cents = (rm: number) => Math.round(rm * 100);
  * (Sold → Money in → Bills paid → Dealer → Paperwork → Closed). Any stage can
  * be opened at any time; each one ends with a button to the next.
  */
-export default function CarSummary({ car, actorId, role, profit, costs, buyerName, salespersonName, detailsOpen, onOpenDetails, onOpenMedia, onEditDeal, onAddRepair, onAddMisc }: {
+export default function CarSummary({ car, actorId, role, profit, costs, buyerName, salespersonName, detailsOpen, onOpenDetails, onOpenMedia, onEditDeal, onAddRepair, onAddMisc, deal, generatingReceipt, onReceipt }: {
   car: Car; actorId: string; role: string; profit: number | null; costs: ProfitRow[];
   buyerName?: string; salespersonName?: string; detailsOpen: boolean;
   onOpenDetails: (section?: string) => void; onOpenMedia: (tab: 'photos' | 'card') => void;
   onEditDeal?: () => void; onAddRepair?: () => void; onAddMisc?: () => void;
+  deal?: DealCard | null; generatingReceipt?: boolean; onReceipt?: () => void;
 }) {
   const director = role === 'director';
   const cases = useInvestorQuery(`car-cases:${actorId}`, loadCarCases);
@@ -39,6 +51,7 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
   const [recording, setRecording] = useState<{ amountCents?: number; note?: string } | null>(null);
   const [paying, setPaying] = useState<Payment | null>(null);
   const [docs, setDocs] = useState<string | null>(null);
+  const [moneyTab, setMoneyTab] = useState<'profit' | 'deal'>('profit');
   const reload = () => { void money.reload(); void cases.reload(); };
 
   const c: CarCase | undefined = cases.data?.cars[car.id];
@@ -49,6 +62,8 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
   const todoLink = director ? '/dashboard' : role === 'admin' ? '/admin-dashboard?tab=paperwork' : null;
   const photoCount = car.photos?.length || (car.photo ? 1 : 0);
   const soldFor = profit === null ? null : profit + costs.reduce((s, r) => s + r.amount, 0);
+  const showProfit = profit !== null && soldFor !== null;
+  const tab = showProfit ? (deal ? moneyTab : 'profit') : 'deal';
 
   // Money in: money recorded under "Money received" covers the expected payments in order.
   let unallocated = entries.filter((e) => e.state === 'to_match').reduce((s, e) => s + e.amountCents, 0);
@@ -215,11 +230,44 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
             </div>
           </section>
 
-          {profit !== null && soldFor !== null && <section className={`${card} p-5 space-y-2.5`}>
-            <h2 className="text-white font-semibold mb-1">How the profit adds up</h2>
-            <div className="flex justify-between text-sm"><span className="text-gray-300">Sold for</span><span className="text-white">{formatCents(cents(soldFor))}</span></div>
-            {costs.filter((r) => r.amount !== 0).map((r) => <div key={r.label} className="flex justify-between text-sm"><span className="text-gray-300">{r.label}</span><span className="text-white">− {formatCents(cents(r.amount))}</span></div>)}
-            <div className="flex justify-between pt-2.5 border-t border-white/[0.08]"><span className="font-semibold text-white">Profit</span><span className={`font-bold ${profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatCents(cents(profit))}</span></div>
+          {(showProfit || deal) && <section className={`${card} p-5 space-y-3`}>
+            {showProfit && deal && <div role="tablist" aria-label="Profit and deal" className="grid grid-cols-2 gap-1 rounded-xl border border-white/[0.08] bg-black/20 p-1">
+              {(['profit', 'deal'] as const).map((t) => <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setMoneyTab(t)}
+                className={`min-h-[40px] rounded-lg text-sm font-semibold ${tab === t ? 'bg-[#2A2210] text-[#F3C969]' : 'text-gray-400 hover:text-white'}`}>{t === 'profit' ? 'Profit' : 'Final deal'}</button>)}
+            </div>}
+            {tab === 'profit' && showProfit && <div className="space-y-2.5">
+              <h2 className="text-white font-semibold mb-1">How the profit adds up</h2>
+              <div className="flex justify-between text-sm"><span className="text-gray-300">Sold for</span><span className="text-white">{formatCents(cents(soldFor))}</span></div>
+              {costs.filter((r) => r.amount !== 0).map((r) => <div key={r.label} className="flex justify-between text-sm"><span className="text-gray-300">{r.label}</span><span className="text-white">− {formatCents(cents(r.amount))}</span></div>)}
+              <div className="flex justify-between pt-2.5 border-t border-white/[0.08]"><span className="font-semibold text-white">Profit</span><span className={`font-bold ${profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatCents(cents(profit))}</span></div>
+            </div>}
+            {tab === 'deal' && deal && <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-white font-semibold">The customer's deal</h2>
+                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${deal.approval === 'approved' ? 'bg-emerald-950 text-emerald-300' : deal.approval === 'rejected' ? 'bg-red-950 text-red-300' : 'bg-[#2A2210] text-[#F3C969]'}`}>{deal.approval === 'approved' ? 'Approved ✓' : deal.approval === 'rejected' ? 'Rejected' : 'Waiting for approval'}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {[['Buyer', buyerName || '—'], ['Salesperson', salespersonName || '—'], ['Payment', deal.payment], ['Loan bank', deal.bank || '—']].filter(([k]) => k !== 'Loan bank' || deal.payment !== 'Cash').map(([k, v]) => <div key={k} className="rounded-xl bg-white/[0.04] px-3 py-2.5 min-w-0"><p className="text-xs text-gray-400">{k}</p><p className="text-sm text-white mt-0.5 truncate" title={v}>{v}</p></div>)}
+              </div>
+              <div className="space-y-2 pt-3 border-t border-white/[0.08]">
+                <div className="flex justify-between text-sm"><span className="text-gray-300">Selling price</span><span className="text-white">{formatCents(cents(deal.sellingPrice))}</span></div>
+                {deal.plus.map((l) => <div key={'p' + l.label} className="flex justify-between text-sm"><span className="text-gray-300">+ {l.label}</span><span className="text-white">{formatCents(cents(l.amount))}</span></div>)}
+                {deal.minus.map((l) => <div key={'m' + l.label} className="flex justify-between text-sm"><span className="text-gray-300">− {l.label}</span><span className="text-white">− {formatCents(cents(l.amount))}</span></div>)}
+                <div className="flex justify-between pt-2.5 border-t border-white/[0.08]">
+                  <span className="font-semibold text-white">{Math.abs(deal.balance) < 0.01 ? 'Nothing more to pay' : deal.balance < 0 ? 'We refund the customer' : 'Customer pays'}</span>
+                  <span className={`font-bold ${deal.balance < 0 ? 'text-sky-300' : 'text-[#F3C969]'}`}>{formatCents(cents(Math.abs(deal.balance)))}</span>
+                </div>
+              </div>
+              {deal.tradeIn && <div className="rounded-xl bg-white/[0.04] px-3 py-2.5 flex justify-between gap-3 text-sm"><span className="text-gray-300 min-w-0 truncate">{deal.tradeIn.swap ? 'Swapped for' : 'Trade-in'} · {deal.tradeIn.label}</span><span className="text-white flex-shrink-0">{formatCents(cents(deal.tradeIn.amount))}</span></div>}
+              {deal.rejectionNotes && <p className="text-sm text-red-300">Rejected: {deal.rejectionNotes}</p>}
+              {deal.notes && <p className="text-sm text-gray-300">Note: {deal.notes}</p>}
+              <p className="text-xs text-gray-400">{[deal.submittedBy && `Submitted by ${deal.submittedBy}${deal.submittedAt ? ' · ' + day(deal.submittedAt) : ''}`, deal.approvedBy && `approved by ${deal.approvedBy}${deal.approvedAt ? ' · ' + day(deal.approvedAt) : ''}`].filter(Boolean).join(' · ')}</p>
+              {(onEditDeal && director || onReceipt || deal.receiptUrl) && <div className="flex flex-wrap gap-2">
+                {director && onEditDeal && <button type="button" className={`${ghostBtn} flex-1`} onClick={onEditDeal}>Edit deal</button>}
+                {onReceipt && <button type="button" className={`${ghostBtn} flex-1`} disabled={generatingReceipt} onClick={onReceipt}>{generatingReceipt ? 'Making receipt…' : deal.receiptUrl ? 'New receipt' : 'Make receipt'}</button>}
+                {deal.receiptUrl && <a href={deal.receiptUrl} target="_blank" rel="noopener noreferrer" className={`${ghostBtn} flex-1 text-center`}>View receipt</a>}
+              </div>}
+            </div>}
           </section>}
         </div>
       </div>
