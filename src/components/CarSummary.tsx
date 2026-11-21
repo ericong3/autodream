@@ -7,7 +7,7 @@ import { thumbUrl } from '../utils/photoUrl';
 import { formatCents, parseRinggit, useInvestorQuery } from '../lib/investorFinance';
 import { paymentBalanceCents } from '../lib/companyBankPayments';
 import { moneyRequest, type MoneyEntry } from '../lib/moneyReceived';
-import { loadCarCases, type CarCase } from '../lib/docTodo';
+import { loadCarCases, todoRequest, type CarCase, type DocTodoList } from '../lib/docTodo';
 import { RecordMoney, type LoanContext } from './MoneyReceivedPanel';
 import CompanyBankPaymentDialog from './CompanyBankPaymentDialog';
 import CompanyPaymentDocuments from './CompanyPaymentDocuments';
@@ -39,24 +39,23 @@ export type RefundInfo = {
   claim?: Payment; form: RefundForm; setForm: (f: RefundForm) => void; onSubmit: () => void; saving: boolean;
 };
 export type CostAction = { label: string; run: () => void; danger?: boolean; disabled?: boolean; title?: string };
-export type CostTone = 'paid' | 'unpaid' | 'open' | 'none' | 'loan';
-export type CostItem = { id: string; name: string; sub?: string; status: string; tone: CostTone; amount: number | null; receiptUrl?: string; actions: CostAction[] };
-export type CostGroup = { name: string; total: number | null; items: CostItem[]; add?: { label: string; run: () => void } };
+/** A cost recorded on the car (repair, misc cost, panel charge) and whether it has a bill yet. Amounts in RM. */
+export type BillCost = {
+  id: string; name: string; sub: string; amount: number | null; receiptUrl?: string;
+  state: 'open' | 'nobill' | 'billed' | 'free'; billId?: string; fromLoan?: boolean;
+  noBillWhy?: string; actions: CostAction[];
+};
 export type CarRecords = {
   info: [string, string][]; notes?: string; onEdit?: () => void;
   loans: { id: string; name: string; by: string; inactive: boolean; apps: { bank: string; status: string }[] }[];
   moves: { id: string; type: 'in' | 'out'; text: string; when: string; notes?: string }[] | null;
-};
-const TONE: Record<CostTone, string> = {
-  paid: 'bg-emerald-950 text-emerald-300', unpaid: 'bg-[#2A2210] text-[#F3C969]', open: 'bg-sky-950 text-sky-300',
-  none: 'bg-white/[0.06] text-gray-400', loan: 'bg-violet-950 text-violet-300',
 };
 const LOAN_TONE: Record<string, string> = { approved: 'bg-emerald-950 text-emerald-300', rejected: 'bg-red-950 text-red-300', submitted: 'bg-sky-950 text-sky-300' };
 const day = (iso?: string) => iso ? new Date(iso).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
 type StageId = 'sold' | 'delivered' | 'money' | 'bills' | 'dealer' | 'paper' | 'closed';
 const INBOUND = new Set(['customer_collection', 'loan_disbursement', 'consignment_collection', 'supplier_credit_collection']);
 const IN_LABEL: Record<string, string> = { customer_collection: 'Customer', loan_disbursement: 'Bank loan', consignment_collection: 'From dealer', supplier_credit_collection: 'Supplier credit' };
-const NAMES: Record<StageId, string> = { sold: 'Sold', delivered: 'Delivered', money: 'Money in', bills: 'Bills paid', dealer: 'Dealer approved', paper: 'Paperwork', closed: 'Closed' };
+const NAMES: Record<StageId, string> = { sold: 'Sold', delivered: 'Delivered', money: 'Money in', bills: 'Bills', dealer: 'Dealer approved', paper: 'Paperwork', closed: 'Closed' };
 const words = (t: string) => t.split('_').join(' ');
 const cents = (rm: number) => Math.round(rm * 100);
 
@@ -65,13 +64,13 @@ const cents = (rm: number) => Math.round(rm * 100);
  * (Sold → Money in → Bills paid → Dealer → Paperwork → Closed). Any stage can
  * be opened at any time; each one ends with a button to the next.
  */
-export default function CarSummary({ car, actorId, role, profit, costs, buyerName, salespersonName, detailsOpen, onOpenDetails, onOpenMedia, onEditDeal, onAddRepair, onAddMisc, deal, generatingReceipt, onReceipt, delivery, dealerPanel, refund, costGroups, records, investorLink, moneyPlan }: {
+export default function CarSummary({ car, actorId, role, profit, costs, buyerName, salespersonName, detailsOpen, onOpenDetails, onOpenMedia, onEditDeal, onAddRepair, onAddMisc, deal, generatingReceipt, onReceipt, delivery, dealerPanel, refund, billCosts, onPanelCharge, records, investorLink, moneyPlan }: {
   car: Car; actorId: string; role: string; profit: number | null; costs: ProfitRow[];
   buyerName?: string; salespersonName?: string; detailsOpen: boolean;
   onOpenDetails: (section?: string) => void; onOpenMedia: (tab: 'photos' | 'card') => void;
   onEditDeal?: () => void; onAddRepair?: () => void; onAddMisc?: () => void;
   deal?: DealCard | null; generatingReceipt?: boolean; onReceipt?: () => void;
-  delivery?: DeliveryInfo; dealerPanel?: ReactNode; refund?: RefundInfo; costGroups?: CostGroup[]; records?: CarRecords; investorLink?: () => void; moneyPlan?: MoneyPlan;
+  delivery?: DeliveryInfo; dealerPanel?: ReactNode; refund?: RefundInfo; billCosts?: BillCost[]; onPanelCharge?: () => void; records?: CarRecords; investorLink?: () => void; moneyPlan?: MoneyPlan;
 }) {
   const director = role === 'director';
   const cases = useInvestorQuery(`car-cases:${actorId}`, loadCarCases);
@@ -81,7 +80,9 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
   const [recording, setRecording] = useState<{ amountCents?: number; note?: string; loan?: LoanContext } | null>(null);
   const [paying, setPaying] = useState<Payment | null>(null);
   const [docs, setDocs] = useState<string | null>(null);
-  const [moneyTab, setMoneyTab] = useState<'profit' | 'costs' | 'deal'>('profit');
+  const [moneyTab, setMoneyTab] = useState<'profit' | 'deal'>('profit');
+  const [billOpen, setBillOpen] = useState<Record<string, boolean>>({ paid: false });
+
   const [openCost, setOpenCost] = useState<string | null>(null);
   const [recTab, setRecTab] = useState<'info' | 'loans' | 'moves'>('info');
   const [uploading, setUploading] = useState(false);
@@ -92,7 +93,8 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
   const addPayment = useStore((s) => s.addPayment);
   const moneyCard = useRef<HTMLElement>(null);
   const admin = role === 'admin';
-  const reload = () => { void money.reload(); void cases.reload(); };
+  const todo = useInvestorQuery<DocTodoList>(director || role === 'admin' ? `doc-todo:${actorId}` : null, () => todoRequest('list'));
+  const reload = () => { void money.reload(); void cases.reload(); void todo.reload(); };
 
   const c: CarCase | undefined = cases.data?.cars[car.id];
   const mine = payments.filter((p) => p.carId === car.id && !p.obligationReplaced && (p.status === 'pending' || p.status === 'transferred'));
@@ -103,10 +105,8 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
   const photoCount = car.photos?.length || (car.photo ? 1 : 0);
   const soldFor = profit === null ? null : profit + costs.reduce((s, r) => s + r.amount, 0);
   const showProfit = profit !== null && soldFor !== null;
-  const tabs = [...(showProfit ? ['profit' as const] : []), ...(costGroups ? ['costs' as const] : []), ...(deal ? ['deal' as const] : [])];
+  const tabs = [...(showProfit ? ['profit' as const] : []), ...(deal ? ['deal' as const] : [])];
   const tab = tabs.includes(moneyTab) ? moneyTab : tabs[0];
-  const openCosts = () => { setMoneyTab('costs'); moneyCard.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
-  const editBills = () => consignmentIn && dealerPanel ? setView('dealer') : costGroups ? openCosts() : onOpenDetails(consignmentIn ? 'consignment' : 'jobs');
 
   // Money in: money recorded under "Money received" covers the expected payments in order.
   let unallocated = entries.filter((e) => e.state === 'to_match').reduce((s, e) => s + e.amountCents + (e.deductionsCents ?? 0), 0);
@@ -144,13 +144,20 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
     finally { setSetupBusy(false); }
   };
   const unpaid = bills.filter((p) => p.status === 'pending' && paymentBalanceCents(p) > 0).sort((a, b) => b.amount - a.amount);
-  const paidCount = bills.length - unpaid.length;
+  // Bills stage: every cost on the car, grouped by what still has to happen.
+  const costByBill = new Map((billCosts ?? []).filter((x) => x.billId).map((x) => [x.billId!, x]));
+  const inProgress = (billCosts ?? []).filter((x) => x.state === 'open');
+  const noBill = (billCosts ?? []).filter((x) => x.state === 'nobill');
+  const paidBills = bills.filter((p) => !(p.status === 'pending' && paymentBalanceCents(p) > 0));
+  const freeCosts = (billCosts ?? []).filter((x) => x.state === 'free');
+  const billsLeft = inProgress.length + unpaid.length;
+  const docOf = new Map((todo.data?.items ?? []).map((d) => [d.paymentId, d]));
 
   const stages: { id: StageId; done: boolean }[] = c ? [
     { id: 'sold', done: true },
     ...(delivery ? [{ id: 'delivered' as const, done: delivery.done }] : []),
     { id: 'money', done: c.toCollectCents === 0 && !loanWaiting && !cashWaiting },
-    { id: 'bills', done: c.toPay === 0 },
+    { id: 'bills', done: c.toPay === 0 && billsLeft === 0 },
     ...(consignmentIn ? [{ id: 'dealer' as const, done: !!car.consignmentFinanceOpen && !c.dealerNotApproved }] : []),
     { id: 'paper', done: paperwork === 0 },
     { id: 'closed', done: c.state === 'closed' },
@@ -168,7 +175,7 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
     sold: ['The car is sold', 'Buyer, price and salesperson.'],
     delivered: [delivery?.done ? 'Delivered to the buyer' : 'Hand the car to the buyer', 'The customer’s part must be in before the car leaves. Add the delivery photo when you mark it delivered.'],
     money: [loanWaiting ? `Waiting for the bank loan · ${moneyPlan?.bank ?? ''}` : cashWaiting ? 'Cash from the customer not marked yet' : c && c.toCollectCents > 0 ? `Collect ${formatCents(c.toCollectCents)}` : 'All money is in', 'Mark each payment when it reaches the bank. Add the bank slip if you have it.'],
-    bills: [unpaid.length ? `Pay the car’s bills · ${formatCents(unpaid.reduce((s, p) => s + paymentBalanceCents(p), 0))} left` : 'All bills are paid', 'Add, pay or fix any bill for this car, at any time.'],
+    bills: [billsLeft ? `${billsLeft} still to pay or finish` : 'All bills are paid', 'Each bill: the admin uploads the invoice, you pay, the admin uploads the proof of payment.'],
     dealer: [!car.consignmentFinanceOpen ? 'Dealer deal not opened yet' : c?.dealerNotApproved ? 'Approve what the dealer receives' : 'Dealer amount approved', 'Check the bills are right, then approve the dealer amount.'],
     paper: [paperwork ? `Finish the paperwork · ${paperwork} open` : 'Paperwork complete', 'Missing invoices, slips and the agreement are handled in the to-do list.'],
     closed: [c?.state === 'closed' ? 'Case closed' : 'Not closed yet', 'The case closes by itself once every stage before it is done.'],
@@ -178,6 +185,44 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
   const row = 'rounded-xl border border-white/[0.07] bg-[#15151A] px-4 py-3';
   const goldBtn = 'btn-gold rounded-xl px-4 min-h-[44px] text-sm font-bold inline-flex items-center justify-center';
   const ghostBtn = 'rounded-xl px-3 min-h-[40px] text-sm border border-white/10 text-gray-200 hover:text-white inline-flex items-center justify-center';
+  const moreBtn = (x: BillCost) => (x.actions.length > 0 || x.receiptUrl) ? <button type="button" aria-label={`More for ${x.name}`} aria-expanded={openCost === x.id} onClick={() => setOpenCost(openCost === x.id ? null : x.id)}
+    className="w-10 h-10 flex-shrink-0 rounded-lg border border-white/10 text-gray-300 hover:text-white">⋯</button> : null;
+  const menu = (x: BillCost) => <div className="flex flex-wrap gap-2">
+    {x.receiptUrl && <a href={x.receiptUrl} target="_blank" rel="noopener noreferrer" className={`${ghostBtn} min-h-[36px]`}>Receipt</a>}
+    {x.actions.map((a) => <button key={a.label} type="button" disabled={a.disabled} title={a.title} onClick={() => { setOpenCost(null); a.run(); }}
+      className={`${ghostBtn} min-h-[36px] disabled:opacity-40 ${a.danger ? 'text-red-300 border-red-500/30' : ''}`}>{a.label}</button>)}
+  </div>;
+  const costRow = (x: BillCost, right: ReactNode) => <div key={x.id} className={`${row} space-y-2`}>
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <div className="flex-1 min-w-[140px]"><p className="text-sm text-white truncate" title={x.name}>{x.name}</p><p className="text-xs text-gray-400 truncate" title={x.sub}>{x.sub}</p></div>
+      {x.amount !== null && <p className="text-sm font-semibold text-white whitespace-nowrap">{formatCents(cents(x.amount))}</p>}
+      {right}{moreBtn(x)}
+    </div>
+    {openCost === x.id && menu(x)}
+  </div>;
+  // One bill with its three steps: invoice (admin), paid (director), proof of payment (admin).
+  const pill = (state: 'ok' | 'missing' | 'later', label: string) => <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${state === 'ok' ? 'bg-emerald-950 text-emerald-300' : state === 'missing' ? 'bg-[#2A2210] text-[#F3C969]' : 'bg-white/[0.05] text-gray-500'}`}>{label} {state === 'ok' ? '✓' : state === 'missing' ? '✗' : '·'}</span>;
+  const billRow = (p: Payment, paid: boolean) => {
+    const x = costByBill.get(p.id), d = docOf.get(p.id), known = !!todo.data;
+    const fromLoan = !!x?.fromLoan, invoiceOk = fromLoan || !d?.needInvoice, proofOk = fromLoan || !d?.needReceipt;
+    const adminTodo = known && (!invoiceOk || (paid && !proofOk));
+    return <div key={p.id} className={`${row} space-y-2`}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex-1 min-w-[140px]"><p className="text-sm text-white truncate">{x?.name ?? (p.recipientName || words(p.type))}</p><p className="text-xs text-gray-400 truncate">{fromLoan ? 'Paid from the bank loan' : paid ? (p.status === 'transferred' ? `Paid${p.transferredAt ? ' ' + day(p.transferredAt) : ''}` : 'Settled') : (x?.sub ?? words(p.type))}</p></div>
+        <p className={`text-sm font-semibold whitespace-nowrap ${paid ? 'text-emerald-300' : 'text-white'}`}>{formatCents(paid ? cents(p.amount) : paymentBalanceCents(p))}</p>
+        <span className="flex gap-2">
+          {(director || admin) && <button type="button" className={ghostBtn} onClick={() => setDocs(p.id)}>{!invoiceOk ? 'Upload invoice' : paid && !proofOk ? 'Upload proof' : 'Documents'}</button>}
+          {!paid && director && <button type="button" className="btn-gold rounded-xl px-4 min-h-[40px] text-sm font-bold" onClick={() => setPaying(p)}>Pay</button>}
+          {x && moreBtn(x)}
+        </span>
+      </div>
+      {known && <div className="flex flex-wrap items-center gap-1.5">
+        {pill(invoiceOk ? 'ok' : 'missing', 'Invoice')}{pill(paid ? 'ok' : 'later', 'Paid')}{pill(!paid ? 'later' : proofOk ? 'ok' : 'missing', 'Proof')}
+        {adminTodo && <span className="text-xs text-gray-400">· in the admin's to-do</span>}
+      </div>}
+      {x && openCost === x.id && menu(x)}
+    </div>;
+  };
   const tick = (on: boolean) => <span aria-hidden="true" className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${on ? 'bg-emerald-400 text-emerald-950' : 'border-2 border-white/20'}`}>{on && <Check size={15} strokeWidth={3} />}</span>;
 
   return (
@@ -290,21 +335,40 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
               {expectedCents > 0 && <p className="text-xs text-gray-500">Expected in total: {formatCents(expectedCents)}</p>}
             </div>}
 
-            {shown === 'bills' && <div className="space-y-2">
-              {unpaid.length === 0 && <p className="text-sm text-gray-300">No unpaid bills{paidCount ? ` · ${paidCount} paid` : ''}.</p>}
-              {unpaid.map((p) => <div key={p.id} className={`${row} flex flex-wrap items-center gap-x-3 gap-y-2`}>
-                <div className="flex-1 min-w-[140px]"><p className="text-sm text-white truncate">{p.recipientName || words(p.type)}</p><p className="text-xs text-gray-400 capitalize">{words(p.type)}</p></div>
-                <p className="text-sm font-semibold text-white whitespace-nowrap">{formatCents(paymentBalanceCents(p))}</p>
-                <span className="flex gap-2">
-                  {(director || role === 'admin') && <button type="button" className={ghostBtn} onClick={() => setDocs(p.id)}>Invoice</button>}
-                  {director && <button type="button" className={ghostBtn} onClick={editBills}>Edit</button>}
-                  {director && <button type="button" className="btn-gold rounded-xl px-4 min-h-[40px] text-sm font-bold" onClick={() => setPaying(p)}>Pay</button>}
-                </span>
-              </div>)}
-              {unpaid.length > 0 && paidCount > 0 && <p className="text-xs text-gray-500">{paidCount} bill{paidCount > 1 ? 's' : ''} already paid.</p>}
-              {(director || role === 'admin') && (onAddMisc || onAddRepair) && <div className="flex flex-wrap gap-2 pt-1">
+            {shown === 'bills' && <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                {([['To pay', unpaid.length + inProgress.length, 'text-[#F3C969]'], ['Paid', paidBills.length + freeCosts.length, 'text-emerald-300']] as const).map(([k, n, tone], i) =>
+                  <div key={k} className={`rounded-xl bg-[#15151A] px-3 py-2 border ${n && i === 0 ? 'border-[#5A4614]' : 'border-white/[0.07]'}`}><p className="text-xs text-gray-400">{k}</p><p className={`text-lg font-bold ${n ? tone : 'text-gray-600'}`}>{n}</p></div>)}
+              </div>
+              {([
+                { key: 'pay', name: 'To pay', tone: 'text-[#F3C969]', count: unpaid.length + inProgress.length },
+                { key: 'paid', name: 'Paid', tone: 'text-emerald-300', count: paidBills.length + freeCosts.length },
+                { key: 'none', name: 'No one to pay', tone: 'text-gray-300', count: noBill.length },
+              ]).filter((g) => g.key !== 'none' || g.count > 0).map((g) => {
+                const open = (billOpen[g.key] ?? true) && g.count > 0;
+                return <div key={g.key} className="space-y-2">
+                  <button type="button" aria-expanded={open} disabled={!g.count} onClick={() => setBillOpen((o) => ({ ...o, [g.key]: !(o[g.key] ?? true) }))} className="w-full flex items-center justify-between min-h-[36px] text-left">
+                    <span className={`text-sm font-semibold ${g.count ? g.tone : 'text-gray-600'}`}>{g.name} · {g.count}</span>
+                    {g.count > 0 && <ChevronRight size={16} className={`text-gray-400 transition-transform ${open ? 'rotate-90' : ''}`} />}
+                  </button>
+                  {open && g.key === 'pay' && <>
+                    {unpaid.map((p) => billRow(p, false))}
+                    {inProgress.map((x) => costRow(x, <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-sky-950 text-sky-300">Repair not finished</span>))}
+                  </>}
+                  {open && g.key === 'paid' && <>
+                    {paidBills.map((p) => billRow(p, true))}
+                    {freeCosts.map((x) => costRow(x, <span className="text-xs text-gray-400">No cost</span>))}
+                  </>}
+                  {open && g.key === 'none' && <>
+                    <p className="text-xs text-gray-400">These costs have no shop or workshop name, so there is no one to pay. Add the name, or delete the cost if it was entered by mistake.</p>
+                    {noBill.map((x) => costRow(x, <span className="text-xs text-gray-400">{x.noBillWhy}</span>))}
+                  </>}
+                </div>;
+              })}
+              {(director || admin) && (onAddMisc || onAddRepair || onPanelCharge) && <div className="flex flex-wrap gap-2 pt-1">
                 {onAddMisc && <button type="button" className="rounded-xl px-4 min-h-[44px] text-sm border border-dashed border-[#5A4614] text-[#F3C969]" onClick={onAddMisc}>+ Add a bill</button>}
                 {onAddRepair && <button type="button" className="rounded-xl px-4 min-h-[44px] text-sm border border-dashed border-[#5A4614] text-[#F3C969]" onClick={onAddRepair}>+ Add a repair</button>}
+                {onPanelCharge && <button type="button" className="rounded-xl px-4 min-h-[44px] text-sm border border-dashed border-[#5A4614] text-[#F3C969]" onClick={onPanelCharge}>+ Panel charge</button>}
               </div>}
             </div>}
 
@@ -358,34 +422,9 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
           </section>
 
           {tabs.length > 0 && <section ref={moneyCard} className={`${card} p-5 space-y-3 scroll-mt-24`}>
-            {tabs.length > 1 && <div role="tablist" aria-label="Profit, costs and deal" className="grid gap-1 rounded-xl border border-white/[0.08] bg-black/20 p-1" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}>
+            {tabs.length > 1 && <div role="tablist" aria-label="Profit and deal" className="grid gap-1 rounded-xl border border-white/[0.08] bg-black/20 p-1" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}>
               {tabs.map((t) => <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setMoneyTab(t)}
-                className={`min-h-[40px] rounded-lg text-sm font-semibold ${tab === t ? 'bg-[#2A2210] text-[#F3C969]' : 'text-gray-400 hover:text-white'}`}>{t === 'profit' ? 'Profit' : t === 'costs' ? 'Costs' : 'Final deal'}</button>)}
-            </div>}
-            {tab === 'costs' && costGroups && <div className="space-y-4">
-              {costGroups.map((g) => <div key={g.name} className="space-y-1.5">
-                <div className="flex justify-between text-xs text-gray-400"><span>{g.name}</span><span>{g.total === null ? '' : formatCents(cents(g.total))}</span></div>
-                {g.items.length === 0 && <p className="text-xs text-gray-500">None yet.</p>}
-                {g.items.map((i) => <div key={i.id} className="rounded-xl bg-white/[0.04] px-3 py-2.5 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 min-w-0"><p className="text-sm text-white truncate" title={i.name}>{i.name}</p>{i.sub && <p className="text-xs text-gray-400 truncate" title={i.sub}>{i.sub}</p>}</div>
-                    <span className={`flex-shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full ${TONE[i.tone]}`}>{i.status}</span>
-                    <span className="text-sm font-semibold text-white whitespace-nowrap">{i.amount === null ? '' : formatCents(cents(i.amount))}</span>
-                    {(i.actions.length > 0 || i.receiptUrl) && <button type="button" aria-label={`More for ${i.name}`} aria-expanded={openCost === i.id} onClick={() => setOpenCost(openCost === i.id ? null : i.id)}
-                      className="w-9 h-9 flex-shrink-0 rounded-lg border border-white/10 text-gray-300 hover:text-white">⋯</button>}
-                  </div>
-                  {openCost === i.id && <div className="flex flex-wrap gap-2">
-                    {i.receiptUrl && <a href={i.receiptUrl} target="_blank" rel="noopener noreferrer" className={`${ghostBtn} min-h-[36px]`}>Receipt</a>}
-                    {i.actions.map((a) => <button key={a.label} type="button" disabled={a.disabled} title={a.title} onClick={() => { setOpenCost(null); a.run(); }}
-                      className={`${ghostBtn} min-h-[36px] disabled:opacity-40 ${a.danger ? 'text-red-300 border-red-500/30' : ''}`}>{a.label}</button>)}
-                  </div>}
-                </div>)}
-                {g.add && <button type="button" className="text-sm text-gold-400 min-h-[40px]" onClick={g.add.run}>{g.add.label}</button>}
-              </div>)}
-              {(director || admin) && (onAddMisc || onAddRepair) && <div className="flex flex-wrap gap-2">
-                {onAddMisc && <button type="button" className="flex-1 rounded-xl px-3 min-h-[44px] text-sm border border-dashed border-[#5A4614] text-[#F3C969]" onClick={onAddMisc}>+ Add a bill</button>}
-                {onAddRepair && <button type="button" className="flex-1 rounded-xl px-3 min-h-[44px] text-sm border border-dashed border-[#5A4614] text-[#F3C969]" onClick={onAddRepair}>+ Add a repair</button>}
-              </div>}
+                className={`min-h-[40px] rounded-lg text-sm font-semibold ${tab === t ? 'bg-[#2A2210] text-[#F3C969]' : 'text-gray-400 hover:text-white'}`}>{t === 'profit' ? 'Profit' : 'Final deal'}</button>)}
             </div>}
             {tab === 'profit' && showProfit && <div className="space-y-2.5">
               <h2 className="text-white font-semibold mb-1">How the profit adds up</h2>

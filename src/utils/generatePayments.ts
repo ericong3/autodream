@@ -306,6 +306,7 @@ export async function generateRepairPayment(opts: {
   payments: Payment[];
   workshops: Workshop[];
   addPayment: AddPayment;
+  id?: string;
 }): Promise<string | undefined> {
   const { repair, payments, workshops, addPayment } = opts;
   if (!repair.location) return;
@@ -313,7 +314,7 @@ export async function generateRepairPayment(opts: {
   const amount = repair.actualCost ?? repair.totalCost;
   if (amount <= 0) return;
   const ws = workshops.find(w => w.name.toLowerCase() === repair.location!.toLowerCase());
-  const id = generateId();
+  const id = opts.id ?? generateId();
   await addPayment({
     id, type: 'repair', carId: repair.carId, repairJobId: repair.id,
     recipientType: 'workshop', recipientId: ws?.id ?? repair.location, recipientName: repair.location,

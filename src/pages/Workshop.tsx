@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { Plus, Wrench, Trash2, Edit, AlertCircle, MapPin, Upload, Receipt } from 'lucide-react';
 import { useStore } from '../store';
 import { generateRepairPayment } from '../utils/generatePayments';
+import { buildCarCostRecognizedEntry } from '../utils/generateJournalEntries';
 import { RepairJob } from '../types';
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
@@ -67,6 +68,7 @@ export default function Workshop() {
   const payments = useStore((s) => s.payments);
   const addPayment = useStore((s) => s.addPayment);
   const updatePayment = useStore((s) => s.updatePayment);
+  const addJournalEntry = useStore((s) => s.addJournalEntry);
 
   const isDirector = currentUser?.role === 'director';
   const isMechanic = currentUser?.role === 'mechanic';
@@ -122,17 +124,14 @@ export default function Workshop() {
         receiptPhoto: form.receiptPhoto || undefined,
       });
       if (becomingDone) {
-        generateRepairPayment({
-          repair: { ...editTarget, location: form.location || editTarget.location, typeOfRepair: form.typeOfRepair, totalCost: total, carId: form.carId, receiptPhoto: form.receiptPhoto || undefined },
-          payments, workshops, addPayment,
-        });
+        void billFinishedRepair({ ...editTarget, location: form.location || editTarget.location, typeOfRepair: form.typeOfRepair, totalCost: total, carId: form.carId, receiptPhoto: form.receiptPhoto || undefined });
       } else if (receiptChanged) {
         // Invoice arrived after the job was already marked done — attach it to the existing payment too.
         const existingPayment = payments.find(p => p.type === 'repair' && p.repairJobId === editTarget.id);
         if (existingPayment) updatePayment(existingPayment.id, { receiptUrl: form.receiptPhoto });
       }
     } else {
-      addRepair({
+      const newRepair = {
         id: generateId(),
         carId: form.carId,
         typeOfRepair: form.typeOfRepair,
@@ -144,8 +143,16 @@ export default function Workshop() {
         notes: form.notes,
         receiptPhoto: form.receiptPhoto || undefined,
         createdAt: new Date().toISOString(),
-      });
+      };
+      void Promise.resolve(addRepair(newRepair)).then(() => { if (newRepair.status === 'done') return billFinishedRepair({ ...newRepair, completedAt: new Date().toISOString() }); });
     }
+  };
+
+  // A repair saved as Done needs its bill (and the cost on the car's books), the same as Mark done.
+  const billFinishedRepair = async (repair: Parameters<typeof generateRepairPayment>[0]['repair']) => {
+    const id = await generateRepairPayment({ repair, payments, workshops, addPayment });
+    const car = getCar(repair.carId);
+    if (id && car && !car.investorFunded && currentUser) await addJournalEntry(buildCarCostRecognizedEntry({ car, amount: repair.actualCost ?? repair.totalCost, description: `Repair recognized — ${repair.typeOfRepair}`, sourceType: 'repair', sourceId: id, createdBy: currentUser.id }));
   };
 
   const openEdit = (r: RepairJob) => {

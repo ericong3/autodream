@@ -68,7 +68,7 @@ import { Car, RepairJob, ChecklistItem, DEFAULT_CHECKLIST_LABELS, WorkOrderItem 
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, formatMileage, generateId, shortName } from '../utils/format';
-import { generateDeliveryPayments, generateMiscCostPayment, generatePanelChargePayment, calcCarNetProfitBreakdown, calcConsignmentSettlement } from '../utils/generatePayments';
+import { generateDeliveryPayments, generateMiscCostPayment, generatePanelChargePayment, generateRepairPayment, calcCarNetProfitBreakdown, calcConsignmentSettlement } from '../utils/generatePayments';
 import { consignmentBasisPoints } from '../../shared/consignmentRules.mjs';
 import { completeRepairJob } from '../utils/completeRepair';
 import { recordInvestorMiscCost } from '../utils/completeInvestorMisc';
@@ -77,7 +77,7 @@ import CompanyPurchaseStart from '../components/CompanyPurchaseStart';
 import ConsignmentFinancePanel from '../components/ConsignmentFinancePanel';
 import MoneyReceivedPanel from '../components/MoneyReceivedPanel';
 import CarCaseBadge from '../components/CarCaseBadge';
-import CarSummary, { type CarRecords, type CostGroup, type CostItem } from '../components/CarSummary';
+import CarSummary, { type BillCost, type CarRecords } from '../components/CarSummary';
 import { buildCarSaleEntry, buildPayableRecognizedEntry, buildCarCostRecognizedEntry, buildSettlementRecognizedEntry, buildTradeInAcquiredEntry, LEDGER_ACCOUNTS } from '../utils/generateJournalEntries';
 import { getCaseCompletion } from '../utils/caseCompletion';
 import { buildDealReceiptPdf, uploadDealReceipt } from '../utils/generateDealReceipt';
@@ -234,6 +234,26 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   // Sold cars open on the simple summary; the full page stays one tap away.
   const [showDetails, setShowDetails] = useState(false);
   useEffect(() => { setShowDetails(false); }, [id]);
+
+  // A finished repair must have its "To pay" line in Payments, so the admin's to-do can ask for the invoice.
+  // Repairs saved as finished on the Workshop page used to miss it; add it once when the director opens the car.
+  const phase2Loaded = useStore((s) => s.phase2Loaded);
+  const autoBilled = useRef(new Set<string>());
+  useEffect(() => {
+    if (!car || !companyBankPaymentsEnabled || !isDirector || car.investorFunded || !phase2Loaded || !currentUser) return;
+    for (const r of carRepairs) {
+      const cost = r.actualCost ?? r.totalCost;
+      if (r.status !== 'done' || !r.location || cost <= 0 || (r.completedAt ?? r.createdAt) < '2026-11-01' || autoBilled.current.has(r.id)) continue;
+      if (payments.some((p) => p.repairJobId === r.id)) continue;
+      autoBilled.current.add(r.id);
+      void (async () => {
+        try {
+          const billId = await generateRepairPayment({ repair: r, payments, workshops, addPayment, id: 'repair-bill-' + r.id });
+          if (billId) await addJournalEntry(buildCarCostRecognizedEntry({ car, amount: cost, description: `Repair recognized — ${r.typeOfRepair}`, sourceType: 'repair', sourceId: billId, createdBy: currentUser.id }));
+        } catch (e) { console.warn('Could not add the repair bill', r.id, e); }
+      })();
+    }
+  }, [car, isDirector, phase2Loaded, currentUser, carRepairs, payments, workshops, addPayment, addJournalEntry]);
   const [editForm, setEditForm] = useState<Partial<Car>>({});
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
 
@@ -949,53 +969,53 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const consignmentPanel = companyBankPaymentsEnabled && car.consignment && !car.outgoingConsignment && currentUser && (isDirector||isAdmin||isShareHolder)
     ? <ConsignmentFinancePanel key={currentUser.id+':'+currentUser.role+':'+car.id} car={car} actorId={currentUser.id} role={currentUser.role}/> : null;
 
-  // Costs tab on the sold-car page: every repair, misc cost and the panel charge, paid or not.
-  const costGroups: CostGroup[] | undefined = summaryMode ? (() => {
+  // Bills stage on the sold-car page: every repair, misc cost and the panel charge, and whether each has a bill.
+  const openPanelCharge = () => { setPanelForm({ dealerId: car.panelDealerId ?? '', chargeAmount: car.panelChargeAmount ? String(car.panelChargeAmount) : '' }); setShowPanelPopup(true); };
+  const billCosts: BillCost[] | undefined = summaryMode && !car.investorFunded ? (() => {
     const canEdit = isDirector || isAdmin;
-    const billFor = (match: (p: (typeof payments)[number]) => boolean) => payments.find((p) => p.carId === car.id && !p.obligationReplaced && match(p));
-    const billTone = (b: ReturnType<typeof billFor>): Pick<CostItem, 'status' | 'tone'> =>
-      !b ? { status: 'No bill', tone: 'none' } : b.status === 'transferred' ? { status: 'Paid', tone: 'paid' } : b.status === 'pending' ? { status: 'Unpaid', tone: 'unpaid' } : { status: String(b.status).replace(/_/g, ' '), tone: 'none' };
+    const billOf = (match: (p: (typeof payments)[number]) => boolean) => payments.find((p) => p.carId === car.id && !p.obligationReplaced && match(p));
     const short = (iso?: string) => iso ? new Date(iso).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
-    const repairItems: CostItem[] = carRepairs.map((r) => {
+    const out: BillCost[] = [];
+    for (const r of carRepairs) {
+      const bill = billOf((p) => p.repairJobId === r.id);
+      const done = r.status === 'done', cost = r.actualCost ?? r.totalCost;
       const active = r.status === 'pending' || r.status === 'in_progress' || r.status === 'awaiting_bill';
-      const queued = r.status === 'queued';
       const can = isMechanic || isDirector || isAdmin;
-      return {
-        id: 'r:' + r.id, name: r.typeOfRepair,
-        sub: [r.location, r.completedAt ? 'Finished ' + short(r.completedAt) : short(r.createdAt), r.notes].filter(Boolean).join(' · '),
-        ...(r.status === 'done' ? billTone(billFor((p) => p.repairJobId === r.id)) : { status: REPAIR_STATUS_LABEL[r.status] ?? r.status, tone: 'open' as const }),
-        amount: isDirectorView ? (r.status === 'done' ? (r.actualCost ?? r.totalCost) : r.totalCost) : null,
-        receiptUrl: r.receiptPhoto,
+      out.push({
+        id: 'r:' + r.id, name: [r.typeOfRepair, r.location].filter(Boolean).join(' · '),
+        sub: done ? (bill || !r.location ? `Repair · finished ${short(r.completedAt ?? r.createdAt)}` : 'Repair · adding it to Payments…') : `Repair · ${REPAIR_STATUS_LABEL[r.status] ?? r.status}`,
+        amount: isDirectorView ? (done ? cost : r.totalCost) : null, receiptUrl: r.receiptPhoto, billId: bill?.id,
+        state: !done ? 'open' : bill ? 'billed' : cost <= 0 ? 'free' : r.location ? 'open' : 'nobill',
+        noBillWhy: r.location ? undefined : 'No workshop name, so no one to pay.',
         actions: [
-          ...(queued && can ? [{ label: 'Proceed', run: () => handleProceedRepair(r), disabled: hasSentOutRepair, title: hasSentOutRepair ? 'Complete the current active job first' : undefined }] : []),
+          ...(r.status === 'queued' && can ? [{ label: 'Proceed', run: () => handleProceedRepair(r), disabled: hasSentOutRepair, title: hasSentOutRepair ? 'Complete the current active job first' : undefined }] : []),
           ...(active && can ? [{ label: 'Complete repair', run: () => openCompleteRepair(r) }] : []),
-          ...(isDirector ? [{ label: 'Delete', danger: true, run: () => setDeleteTarget({ label: `repair job "${r.typeOfRepair}"`, action: () => deleteRepair(r.id) }) }] : []),
+          ...(isDirector && !bill ? [{ label: 'Delete', danger: true, run: () => setDeleteTarget({ label: `repair job "${r.typeOfRepair}"`, action: () => deleteRepair(r.id) }) }] : []),
         ],
-      };
-    });
-    const miscItems: CostItem[] = (car.miscCosts ?? []).map((m) => {
+      });
+    }
+    for (const m of car.miscCosts ?? []) {
+      const bill = billOf((p) => p.miscCostId === m.id);
       const fromLoan = !!(m as { loanDeduction?: boolean }).loanDeduction;
-      return {
-        id: 'm:' + m.id, name: m.description,
-        sub: [m.category, m.merchant, short(m.createdAt), car.investorFunded ? 'originally recorded' : ''].filter(Boolean).join(' · '),
-        ...(fromLoan ? { status: 'Loan deduction', tone: 'loan' as const } : billTone(billFor((p) => p.miscCostId === m.id))),
-        amount: m.amount,
-        actions: canEdit && !car.investorFunded ? [{ label: 'Delete', danger: true, run: () => setDeleteTarget({ label: `misc cost "${m.description}"`, action: () => deleteMiscCost(car.id, m.id) }) }] : [],
-      };
-    });
-    const panelDealer = car.panelDealerId ? dealers.find((d) => d.id === car.panelDealerId) : undefined;
-    const openPanel = () => { setPanelForm({ dealerId: car.panelDealerId ?? '', chargeAmount: car.panelChargeAmount ? String(car.panelChargeAmount) : '' }); setShowPanelPopup(true); };
-    const panelItems: CostItem[] = car.panelDealerId ? [{
-      id: 'panel', name: panelDealer?.name ?? 'Unknown dealer',
-      sub: panelDealer?.bankName ? `${panelDealer.bankName} · ${panelDealer.bankAccountNumber ?? ''}` : 'No bank details',
-      ...billTone(billFor((p) => p.type === 'panel_charge')), amount: car.panelChargeAmount ?? 0,
-      actions: canEdit ? [{ label: 'Edit panel charge', run: openPanel }] : [],
-    }] : [];
-    return [
-      { name: 'Repairs', total: isDirectorView && !car.investorFunded ? totalRepairCost : null, items: repairItems },
-      { name: 'Misc costs', total: (car.miscCosts ?? []).reduce((t, m) => t + m.amount, 0), items: miscItems },
-      { name: 'Panel charge', total: car.panelDealerId ? car.panelChargeAmount ?? 0 : null, items: panelItems, ...(canEdit && !car.panelDealerId ? { add: { label: '+ Set panel charge', run: openPanel } } : {}) },
-    ];
+      out.push({
+        id: 'm:' + m.id, name: [m.description, m.merchant].filter(Boolean).join(' · '),
+        sub: ['Misc cost', m.category, short(m.createdAt)].filter(Boolean).join(' · '), amount: m.amount, billId: bill?.id, fromLoan,
+        state: bill || fromLoan ? 'billed' : m.amount <= 0 ? 'free' : 'nobill',
+        noBillWhy: m.merchant ? undefined : 'No shop name, so no one to pay.',
+        actions: canEdit && !bill && !fromLoan ? [{ label: 'Delete', danger: true, run: () => setDeleteTarget({ label: `misc cost "${m.description}"`, action: () => deleteMiscCost(car.id, m.id) }) }] : [],
+      });
+    }
+    if (car.panelDealerId) {
+      const bill = billOf((p) => p.type === 'panel_charge');
+      const dealer = dealers.find((d) => d.id === car.panelDealerId);
+      out.push({
+        id: 'panel', name: `Panel charge · ${dealer?.name ?? 'Unknown dealer'}`, sub: dealer?.bankName ? `${dealer.bankName} · ${dealer.bankAccountNumber ?? ''}` : 'No bank details',
+        amount: car.panelChargeAmount ?? 0, billId: bill?.id, state: bill ? 'billed' : (car.panelChargeAmount ?? 0) <= 0 ? 'free' : 'nobill',
+        noBillWhy: 'No amount saved. Edit the panel charge.',
+        actions: canEdit && (!bill || bill.status === 'pending') ? [{ label: 'Edit panel charge', run: openPanelCharge }] : [],
+      });
+    }
+    return out;
   })() : undefined;
 
   // Car records card: what is left of the old full page.
@@ -1141,7 +1161,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             };
           })()}
           refund={dealCustomer ? { claim: refundClaim, form: refundForm, setForm: setRefundForm, onSubmit: () => void handleSubmitRefundClaim(), saving: savingRefundClaim } : undefined}
-          costGroups={costGroups} records={carRecords}
+          billCosts={billCosts} onPanelCharge={(isDirector || isAdmin) && !car.panelDealerId && !car.investorFunded ? openPanelCharge : undefined} records={carRecords}
           investorLink={car.investorFunded && (isDirector || isAdmin) ? () => navigate('/investor-finance?carId=' + encodeURIComponent(car.id)) : undefined}
           onAddMisc={isDirector || isAdmin ? () => { setMiscForm({ category: '', merchantName: '', description: '', amount: '', notes: '' }); setMiscErrors({}); setMiscDupeOk(false); setShowMiscModal(true); } : undefined} />
       </>}
