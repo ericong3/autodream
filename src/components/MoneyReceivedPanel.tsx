@@ -59,9 +59,9 @@ export default function MoneyReceivedPanel({ car, actorId, role }: { car: Car; a
   );
 }
 
-export function RecordMoney({ car, actorId, onClose, onSaved }: { car: Car; actorId: string; onClose: () => void; onSaved: () => void }) {
+export function RecordMoney({ car, actorId, onClose, onSaved, defaultAmountCents, defaultNote }: { car: Car; actorId: string; onClose: () => void; onSaved: () => void; defaultAmountCents?: number; defaultNote?: string }) {
   const banks = useInvestorQuery<{ banks: Bank[] }>(`company-banks:${actorId}`, () => companyBankRequest('banks'));
-  const [amount, setAmount] = useState(''), [day, setDay] = useState(today()), [bankId, setBankId] = useState(''), [reference, setReference] = useState(''), [note, setNote] = useState('');
+  const [amount, setAmount] = useState(defaultAmountCents ? (defaultAmountCents / 100).toFixed(2) : ''), [day, setDay] = useState(today()), [bankId, setBankId] = useState(''), [reference, setReference] = useState(''), [note, setNote] = useState(defaultNote ?? '');
   const [file, setFile] = useState<File | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState(''), [savedId, setSavedId] = useState<string | null>(null);
   // One reference per form: a retry after a network error never records the money twice.
   const requestId = useRef('money_' + crypto.randomUUID().replace(/-/g, ''));
@@ -98,7 +98,7 @@ export function RecordMoney({ car, actorId, onClose, onSaved }: { car: Car; acto
         {chosen && day && day < chosen.openingDate && <p className="text-xs text-sky-300">Before {chosen.name} opened ({chosen.openingDate}): this money is already in the opening balance. The car is marked received; the bank balance does not change.</p>}
         <label className="block text-xs text-gray-400">Bank reference (optional)<input className="input w-full rounded-lg px-3 py-2 mt-1 text-sm" maxLength={200} value={reference} disabled={!!savedId} onChange={(e) => setReference(e.target.value)} /></label>
         <label className="block text-xs text-gray-400">Note (optional)<input className="input w-full rounded-lg px-3 py-2 mt-1 text-sm" maxLength={500} placeholder="e.g. Maybank loan disbursement" value={note} disabled={!!savedId} onChange={(e) => setNote(e.target.value)} /></label>
-        <label className="block text-xs text-gray-400">Slip (optional, can upload later)<input type="file" accept="image/png,image/jpeg,application/pdf" className="block mt-2 text-sm" disabled={busy} onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></label>
+        <label className="block text-xs text-gray-400">Bank slip (add it now if you have it; admin can upload it later)<input type="file" accept="image/png,image/jpeg,application/pdf" className="block mt-2 text-sm" disabled={busy} onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></label>
         <button type="button" className="btn-gold w-full rounded-lg px-4 py-2 text-sm disabled:opacity-40" disabled={savedId ? busy || !file : !ready} onClick={() => void save()}>{busy ? 'Saving…' : savedId ? 'Retry slip upload' : 'Save money received'}</button>
       </div>
     </Modal>

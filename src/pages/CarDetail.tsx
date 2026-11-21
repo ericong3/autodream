@@ -969,7 +969,11 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           <ChevronRight size={12} className="text-gray-600" />
           <span className="text-gray-300 truncate max-w-[200px]">{car.year} {car.make} {car.model}</span>
         </nav>
-        <CarSummary car={car} actorId={currentUser.id} role={currentUser.role} profit={isDirectorView && !car.investorFunded ? netProfit : null} costs={profitCosts} detailsOpen={showDetails} onOpenDetails={openDetails} onOpenMedia={(tab) => openGallery(0, tab)} />
+        <CarSummary car={car} actorId={currentUser.id} role={currentUser.role} profit={isDirectorView && !car.investorFunded ? netProfit : null} costs={profitCosts} detailsOpen={showDetails} onOpenDetails={openDetails} onOpenMedia={(tab) => openGallery(0, tab)}
+          buyerName={dealCustomer?.name} salespersonName={users.find((u) => u.id === car.assignedSalesperson)?.name}
+          onEditDeal={dealCustomer ? openEditDeal : undefined}
+          onAddRepair={isDirector || isAdmin ? openAddRepair : undefined}
+          onAddMisc={isDirector || isAdmin ? () => { setMiscForm({ category: '', merchantName: '', description: '', amount: '', notes: '' }); setMiscErrors({}); setMiscDupeOk(false); setShowMiscModal(true); } : undefined} />
       </>}
       {(!summaryMode || showDetails) && <div className="xl:grid xl:grid-cols-[1fr_380px] xl:gap-6 xl:items-start space-y-6 xl:space-y-0">
         {/* ── Left Column ── */}
@@ -1555,6 +1559,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       })()}
 
       {/* ── Repair Jobs & Loans ── */}
+      <div id="car-jobs" className="scroll-mt-24" />
       <div className="bg-card-gradient border border-obsidian-400/70 rounded-xl shadow-card">
         {/* Tab bar */}
         <div className="flex items-center gap-1 px-4 pt-4 pb-0 border-b border-obsidian-400/60">
