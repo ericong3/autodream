@@ -10,6 +10,7 @@ import { moneyRequest, type MoneyEntry } from '../lib/moneyReceived';
 import { loadCarCases, todoRequest, type CarCase, type DocTodoList } from '../lib/docTodo';
 import { RecordMoney, type LoanContext } from './MoneyReceivedPanel';
 import { PANEL_TBC } from '../utils/tradeIn';
+import { getCommissionMonth } from '../utils/generatePayments';
 import CompanyBankPaymentDialog from './CompanyBankPaymentDialog';
 import CompanyPaymentDocuments from './CompanyPaymentDocuments';
 
@@ -95,6 +96,15 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
   const synced = useRef(false);
   const addPayment = useStore((s) => s.addPayment);
   const updatePayment = useStore((s) => s.updatePayment);
+  const customers = useStore((s) => s.customers);
+  const financeLoaded = useStore((s) => s.financeLoaded);
+  // Staff commissions are paid with that month's payroll (one transfer per person), not from the car.
+  const payrollMonthOf = (p: Payment): string | null => {
+    if (p.type === 'salesman_commission') return getCommissionMonth(car, customers);
+    if (p.type === 'intake_bonus' || (p.type === 'source_commission' && car.sourceType === 'internal')) return car.carInDate?.slice(0, 7) ?? '';
+    return null;
+  };
+  const monthName = (m: string) => /^\d{4}-\d{2}$/.test(m) ? new Date(m + '-01T00:00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) : 'that month’s';
   const dealers = useStore((s) => s.dealers);
   const [lender, setLender] = useState<string | null>(null);
   const [settleBusy, setSettleBusy] = useState(false);
@@ -187,7 +197,7 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
     { id: 'sold', done: true },
     ...(delivery ? [{ id: 'delivered' as const, done: delivery.done && !delivery.notBooked }] : []),
     { id: 'money', done: c.toCollectCents === 0 && !loanWaiting && !cashWaiting },
-    { id: 'bills', done: c.toPay === 0 && billsLeft === 0 },
+    { id: 'bills', done: financeLoaded && c.toPay === 0 && billsLeft === 0 },
     ...(consignmentIn ? [{ id: 'dealer' as const, done: !!car.consignmentFinanceOpen && !c.dealerNotApproved }] : []),
     { id: 'paper', done: paperwork === 0 },
     { id: 'closed', done: c.state === 'closed' },
@@ -205,7 +215,7 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
     sold: ['The car is sold', 'Buyer, price and salesperson.'],
     delivered: [delivery?.done ? (delivery.notBooked ? 'Delivered · book the sale into the accounts' : 'Delivered to the buyer') : 'Hand the car to the buyer', 'The customer’s part must be in before the car leaves. Add the delivery photo when you mark it delivered.'],
     money: [loanWaiting ? `Waiting for the bank loan · ${moneyPlan?.bank ?? ''}` : cashWaiting ? 'Cash from the customer not marked yet' : c && c.toCollectCents > 0 ? `Collect ${formatCents(c.toCollectCents)}` : 'All money is in', 'Mark each payment when it reaches the bank. Add the bank slip if you have it.'],
-    bills: [billsLeft ? `${billsLeft} still to pay or finish` : 'All bills are paid', 'Each bill: the admin uploads the invoice, you pay, the admin uploads the proof of payment.'],
+    bills: [!financeLoaded ? 'Loading the bills…' : billsLeft ? `${billsLeft} still to pay or finish` : 'All bills are paid', 'Each bill: the admin uploads the invoice, you pay, the admin uploads the proof of payment.'],
     dealer: [!car.consignmentFinanceOpen ? 'Dealer deal not opened yet' : c?.dealerNotApproved ? 'Approve what the dealer receives' : 'Dealer amount approved', 'Check the bills are right, then approve the dealer amount.'],
     paper: [paperwork ? `Finish the paperwork · ${paperwork} open` : 'Paperwork complete', 'Missing invoices, slips and the agreement are handled in the to-do list.'],
     closed: [c?.state === 'closed' ? 'Case closed' : 'Not closed yet', 'The case closes by itself once every stage before it is done.'],
@@ -235,15 +245,19 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
   const billRow = (p: Payment, paid: boolean) => {
     const x = costByBill.get(p.id), d = docOf.get(p.id), known = !!todo.data;
     const needsPanel = p.recipientName === PANEL_TBC;
+    const payrollMonth = payrollMonthOf(p), payroll = payrollMonth !== null;
+    const payrollWhat = p.type === 'intake_bonus' ? 'intake bonus' : p.type === 'source_commission' ? 'sourcing commission' : 'commission';
     const fromLoan = !!x?.fromLoan, invoiceOk = fromLoan || !d?.needInvoice, proofOk = fromLoan || !d?.needReceipt;
-    const adminTodo = known && (!invoiceOk || (paid && !proofOk));
+    const adminTodo = known && (!invoiceOk || (paid && !proofOk)) && payrollMonthOf(p) === null;
     return <div key={p.id} className={`${row} space-y-2`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="flex-1 min-w-[140px]"><p className="text-sm text-white truncate">{x ? `${x.name.split(' · ')[0]}${p.recipientName && !x.fromLoan ? ' · ' + p.recipientName : ''}` : p.type === 'purchase_settlement' ? `Trade-in settlement · ${p.recipientName}` : (p.recipientName || words(p.type))}</p><p className="text-xs text-gray-400 truncate">{fromLoan ? 'Paid from the bank loan' : paid ? (p.status === 'transferred' ? `Paid${p.transferredAt ? ' ' + day(p.transferredAt) : ''}` : 'Settled') : (x?.sub ?? words(p.type))}</p></div>
+        <div className="flex-1 min-w-[140px]"><p className="text-sm text-white truncate">{x ? `${x.name.split(' · ')[0]}${p.recipientName && !x.fromLoan ? ' · ' + p.recipientName : ''}` : p.type === 'purchase_settlement' ? `Trade-in settlement · ${p.recipientName}` : payroll ? `${p.recipientName} · ${payrollWhat}` : (p.recipientName || words(p.type))}</p><p className="text-xs text-gray-400 truncate">{fromLoan ? 'Paid from the bank loan' : payroll ? (paid ? `Paid with ${monthName(payrollMonth!)} payroll ✓` : `Paid with ${monthName(payrollMonth!)} payroll`) : paid ? (p.status === 'transferred' ? `Paid${p.transferredAt ? ' ' + day(p.transferredAt) : ''}` : 'Settled') : (x?.sub ?? words(p.type))}</p></div>
         <p className={`text-sm font-semibold whitespace-nowrap ${paid ? 'text-emerald-300' : 'text-white'}`}>{formatCents(paid ? cents(p.amount) : paymentBalanceCents(p))}</p>
         <span className="flex gap-2">
+          {payroll ? (director && <Link to="/payroll" className={ghostBtn}>Open payroll</Link>) : <>
           {(director || admin) && <button type="button" className={ghostBtn} onClick={() => setDocs(p.id)}>{!invoiceOk ? 'Upload invoice' : paid && !proofOk ? 'Upload proof' : 'Documents'}</button>}
           {!paid && director && !needsPanel && <button type="button" className="btn-gold rounded-xl px-4 min-h-[40px] text-sm font-bold" onClick={() => setPaying(p)}>Pay</button>}
+          </>}
           {x && moreBtn(x)}
         </span>
       </div>
@@ -254,7 +268,7 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
         </select> : <span className="text-xs text-[#F3C969]">Waiting for the admin to choose the panel</span>}
         {panelError && <span role="alert" className="text-xs text-red-400">{panelError}</span>}
       </div>}
-      {known && <div className="flex flex-wrap items-center gap-1.5">
+      {known && !payroll && <div className="flex flex-wrap items-center gap-1.5">
         {pill(invoiceOk ? 'ok' : 'missing', p.type === 'purchase_settlement' ? 'Settlement letter' : 'Invoice')}{pill(paid ? 'ok' : 'later', 'Paid')}{pill(!paid ? 'later' : proofOk ? 'ok' : 'missing', 'Proof')}
         {adminTodo && <span className="text-xs text-gray-400">· in the admin's to-do</span>}
       </div>}
@@ -387,6 +401,7 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
             </div>}
 
             {shown === 'bills' && <div className="space-y-3">
+              {!financeLoaded && <p role="status" className="text-sm text-[#F3C969]">Loading the latest payments… The list below may be out of date until it finishes. If this stays, refresh the page.</p>}
               <div className="grid grid-cols-2 gap-2">
                 {([['To pay', unpaid.length + inProgress.length, 'text-[#F3C969]'], ['Paid', paidBills.length + freeCosts.length, 'text-emerald-300']] as const).map(([k, n, tone], i) =>
                   <div key={k} className={`rounded-xl bg-[#15151A] px-3 py-2 border ${n && i === 0 ? 'border-[#5A4614]' : 'border-white/[0.07]'}`}><p className="text-xs text-gray-400">{k}</p><p className={`text-lg font-bold ${n ? tone : 'text-gray-600'}`}>{n}</p></div>)}

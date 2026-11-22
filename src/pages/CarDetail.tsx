@@ -240,7 +240,8 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
 
   // A finished repair must have its "To pay" line in Payments, so the admin's to-do can ask for the invoice.
   // Repairs saved as finished on the Workshop page used to miss it; add it once when the director opens the car.
-  const phase2Loaded = useStore((s) => s.phase2Loaded);
+  // Fresh payments and books, not the copy saved on this device: bills are only auto-created once they are known.
+  const phase2Loaded = useStore((s) => s.financeLoaded);
   const autoBilled = useRef(new Set<string>());
   useEffect(() => {
     if (!car || !companyBankPaymentsEnabled || !isDirector || car.investorFunded || !phase2Loaded || !currentUser) return;

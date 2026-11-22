@@ -128,6 +128,8 @@ interface StoreState {
   bankerOpenCaseId: string | null;
   loaded: boolean;
   phase2Loaded: boolean;
+  /** Payments and the books were freshly loaded this session (never true from the saved copy). Anything that creates bills or books entries waits for it. */
+  financeLoaded: boolean;
   lastFetched: number | null;
 
   // Init
@@ -1350,6 +1352,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   viewPreference: {},
   loaded: false,
   phase2Loaded: false,
+  financeLoaded: false,
   lastFetched: null,
 
   loadAll: async (force = false) => {
@@ -1558,6 +1561,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         bankStatementUploads:bankUploadsResult.data    ? bankUploadsResult.data.map(rowToBankStatementUpload)                     : s.bankStatementUploads,
         bankTransactions:    bankTxnsResult.data       ? bankTxnsResult.data.map(rowToBankTransaction)                            : s.bankTransactions,
         phase2Loaded: true,
+        financeLoaded: s.financeLoaded || (!!paymentsResult.data && !paymentsResult.error && !!journalEntries.data && !journalEntries.error),
       }));
 
       // ── Scheduled notifications (once per day, after secondary data is ready) ──
@@ -1990,7 +1994,7 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     loanCaseDocuments: [], loanCaseActivities: [], payments: [], investorTransactions: [],
     payslips: [], notifications: [], kanbanColumns: [],
     bankStatementUploads: [], bankTransactions: [],
-    loaded: false, phase2Loaded: false, lastFetched: null,
+    loaded: false, phase2Loaded: false, financeLoaded: false, lastFetched: null,
   });
     const revoke = options?.revokeSession !== false && (secureGarageLoginEnabled() || import.meta.env.VITE_GARAGE_BUILDING_STORAGE === 'online')
       ? garageSessionRequest('DELETE') : Promise.resolve();
