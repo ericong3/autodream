@@ -1,4 +1,5 @@
 import { companyBankPaymentsEnabled, paymentBalanceCents } from '../lib/companyBankPayments';
+import { bookDelivery, saleMissing } from '../lib/bookDelivery';
 import OutgoingCollectionApproval from '../components/OutgoingCollectionApproval';
 import { readPending, useInvestorQuery, useInvestorAction, investorRequest } from '../lib/investorFinance';
 import { companyCollectionBalance } from '../lib/companyBankReceipts';
@@ -78,7 +79,7 @@ import ConsignmentFinancePanel from '../components/ConsignmentFinancePanel';
 import MoneyReceivedPanel from '../components/MoneyReceivedPanel';
 import CarCaseBadge from '../components/CarCaseBadge';
 import CarSummary, { type BillCost, type CarRecords } from '../components/CarSummary';
-import { buildCarSaleEntry, buildPayableRecognizedEntry, buildCarCostRecognizedEntry, buildSettlementRecognizedEntry, buildTradeInAcquiredEntry, buildTradeInTopUpEntry, LEDGER_ACCOUNTS } from '../utils/generateJournalEntries';
+import { buildCarCostRecognizedEntry, buildSettlementRecognizedEntry, buildTradeInTopUpEntry } from '../utils/generateJournalEntries';
 import { tradeInFigures, PANEL_TBC } from '../utils/tradeIn';
 import { getCaseCompletion } from '../utils/caseCompletion';
 import { buildDealReceiptPdf, uploadDealReceipt } from '../utils/generateDealReceipt';
@@ -933,69 +934,10 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       }
     }
 
-    // Ledger: dealer-consignment cars (someone else's car, we're just selling it
-    // for them) are a separate existing flow and never booked as our inventory.
-    const _dealPriceAtDelivery = ((dealWo?.sellingPrice ?? car.sellingPrice) - (dealWo?.discount ?? 0)) || car.sellingPrice;
-    const _commissionAtDelivery = salesCommission(car, customers);
-
-    // Legacy company/consignment trade-ins retain their existing reconciliation.
-    // Investor deals use the explicit funding agreement instead: delivery must
-    // not overwrite that purchase price or post a second acquisition. Only the parent's own
-    // sale-side ledger entry below is skipped for consignment (existing,
-    // separate behavior — consignment sales were never booked to Revenue/
-    // Bank/COGS here, only through the Payments/payout flow).
-    if (dealWo?.hasTradeIn && currentUser && !car.investorFunded) {
-      const tradeInChild = cars.find(c => c.tradeInSourceCarId === car.id);
-      if (tradeInChild) {
-        const finalPurchasePrice = dealWo.tradeInMode === 'swap'
-          ? (car.purchasePrice ?? 0) + totalRepairCost + totalMiscCost + _commissionAtDelivery
-          : (dealWo.tradeInPrice ?? 0);
-        await updateCar(tradeInChild.id, { purchasePrice: finalPurchasePrice });
-        await addJournalEntry(buildTradeInAcquiredEntry({
-          car: { ...tradeInChild, purchasePrice: finalPurchasePrice },
-          tradeInPrice: dealWo.tradeInPrice ?? 0,
-          settlementFigure: dealWo.settlementFigure,
-          createdBy: currentUser.id,
-        }));
-      }
-    }
-
-    if (!car.investorFunded && !car.consignment && !car.outgoingConsignment && currentUser) {
-      const dealPrice = (companyBankPaymentsEnabled ? deliveredDealPrice(car, dealWo).netPrice : _dealPriceAtDelivery) + (companyBankPaymentsEnabled ? (dealWo?.insurance ?? 0) + (dealWo?.bankProduct ?? 0) + (dealWo?.additionalItems ?? []).reduce((sum, item) => sum + item.amount, 0) : 0);
-      const cost = (car.purchasePrice ?? 0) + totalRepairCost + totalMiscCost;
-      const loanAmount = dealIsLoan ? (car.disbursementExpectedAmount ?? car.disbursementAmount ?? dealCustomer?.loanWorkOrder?.loanAmount ?? 0) : 0;
-      const bookingFee = dealWo?.bookingFee ?? 0;
-      const tradeInValue = dealWo?.hasTradeIn ? Math.max(0, (dealWo.tradeInPrice ?? 0) - (dealWo.settlementFigure ?? 0)) : 0;
-      const saleTrade = tradeInFigures(dealWo);
-      await addJournalEntry(buildCarSaleEntry({ bankReceiptMode: companyBankPaymentsEnabled, car, dealPrice: dealPrice + saleTrade.autoTopUp, cost, isLoan: dealIsLoan, loanAmount, bookingFee, tradeInValue, createdBy: currentUser.id }));
-      if (saleTrade.topUp > 0 && !journalEntries.some((x) => x.sourceType === 'trade_in_topup' && x.sourceId === car.id && !x.voided)) {
-        await addJournalEntry(buildTradeInTopUpEntry({ car, amount: saleTrade.topUp, createdBy: currentUser.id }));
-      }
-
-      if (car.assignedSalesperson && !car.isStaffSale && !car.waiveCommission) {
-        await addJournalEntry(buildPayableRecognizedEntry({
-          expenseAccountId: LEDGER_ACCOUNTS.expSalesmanComm,
-          amount: _commissionAtDelivery,
-          description: `Commission recognized — ${car.year} ${car.make} ${car.model}`,
-          car, sourceType: 'salesman_commission', sourceId: car.id, createdBy: currentUser.id,
-        }));
-      }
-      if ((car.intakeCommission ?? 0) > 0 && car.assignedSalesperson) {
-        await addJournalEntry(buildPayableRecognizedEntry({
-          expenseAccountId: LEDGER_ACCOUNTS.expIntakeBonus,
-          amount: car.intakeCommission!,
-          description: `Intake bonus recognized — ${car.year} ${car.make} ${car.model}`,
-          car, sourceType: 'intake_bonus', sourceId: car.id, createdBy: currentUser.id,
-        }));
-      }
-      if ((car.sourceCommission ?? 0) > 0) {
-        await addJournalEntry(buildPayableRecognizedEntry({
-          expenseAccountId: LEDGER_ACCOUNTS.expSourceComm,
-          amount: car.sourceCommission!,
-          description: `Source commission recognized — ${car.year} ${car.make} ${car.model}`,
-          car, sourceType: 'source_commission', sourceId: car.id, createdBy: currentUser.id,
-        }));
-      }
+    // The sale, the trade-in car and the commissions go into the books (shared with the other Deliver buttons).
+    if (currentUser && !car.investorFunded) {
+      try { await bookDelivery({ carId: car.id, createdBy: currentUser.id }); }
+      catch (e) { toast.error(e instanceof Error ? `Delivered, but the sale is not in the books: ${e.message}` : 'Delivered, but the sale is not in the books. Use Book this sale.'); }
     }
 
     if (customerBalance < 0 && dealCustomer) {
@@ -1204,6 +1146,10 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             onUploadReceipt: isDirector || isAdmin ? async (file) => { try { const url = await uploadToStorage(file, 'receipts'); await updateCar(car.id, { collectionReceiptUrl: url }); } catch (err: any) { toast.error(err?.message ?? 'Could not upload the receipt.'); } } : undefined,
             onDeliver: isDirector && car.status === 'sold' ? () => { setDeliveryPhoto(''); setShowDeliveryModal(true); } : undefined,
             photo: car.deliveryPhoto, dealReceiptUrl: car.dealReceiptUrl,
+            notBooked: isDirector && companyBankPaymentsEnabled && phase2Loaded && currentUser && saleMissing(car, journalEntries) ? {
+              date: dealCustomer?.deliveredAt ? new Date(dealCustomer.deliveredAt).toLocaleDateString('en-CA') : '',
+              onBook: async (date) => { await bookDelivery({ carId: car.id, createdBy: currentUser.id, date, withPayments: true }); toast.success('Sale booked into the accounts.'); },
+            } : undefined,
           }}
           dealerPanel={consignmentPanel}
           onRecordSettlement={isDirector && tradeInChild ? recordTradeInSettlement : undefined}

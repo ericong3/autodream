@@ -29,6 +29,8 @@ export type DeliveryInfo = {
   done: boolean; balance: number; checking: boolean; onRefresh: () => void;
   receiptUrl?: string; onUploadReceipt?: (file: File) => Promise<void>;
   onDeliver?: () => void; photo?: string; dealReceiptUrl?: string;
+  /** Delivered but the sale is not in the books yet (Director). */
+  notBooked?: { date: string; onBook: (date: string) => Promise<void> };
 };
 /** How the buyer pays, from the deal and the Delivered tab's disbursement button. Amounts in RM. */
 export type MoneyPlan = {
@@ -96,6 +98,9 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
   const dealers = useStore((s) => s.dealers);
   const [lender, setLender] = useState<string | null>(null);
   const [settleBusy, setSettleBusy] = useState(false);
+  const [bookDate, setBookDate] = useState<string | null>(null);
+  const [booking, setBooking] = useState(false);
+  const [bookError, setBookError] = useState('');
   const [settleError, setSettleError] = useState('');
   const [panelError, setPanelError] = useState('');
   const moneyCard = useRef<HTMLElement>(null);
@@ -180,7 +185,7 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
 
   const stages: { id: StageId; done: boolean }[] = c ? [
     { id: 'sold', done: true },
-    ...(delivery ? [{ id: 'delivered' as const, done: delivery.done }] : []),
+    ...(delivery ? [{ id: 'delivered' as const, done: delivery.done && !delivery.notBooked }] : []),
     { id: 'money', done: c.toCollectCents === 0 && !loanWaiting && !cashWaiting },
     { id: 'bills', done: c.toPay === 0 && billsLeft === 0 },
     ...(consignmentIn ? [{ id: 'dealer' as const, done: !!car.consignmentFinanceOpen && !c.dealerNotApproved }] : []),
@@ -198,7 +203,7 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
 
   const copy: Record<StageId, [string, string]> = {
     sold: ['The car is sold', 'Buyer, price and salesperson.'],
-    delivered: [delivery?.done ? 'Delivered to the buyer' : 'Hand the car to the buyer', 'The customer’s part must be in before the car leaves. Add the delivery photo when you mark it delivered.'],
+    delivered: [delivery?.done ? (delivery.notBooked ? 'Delivered · book the sale into the accounts' : 'Delivered to the buyer') : 'Hand the car to the buyer', 'The customer’s part must be in before the car leaves. Add the delivery photo when you mark it delivered.'],
     money: [loanWaiting ? `Waiting for the bank loan · ${moneyPlan?.bank ?? ''}` : cashWaiting ? 'Cash from the customer not marked yet' : c && c.toCollectCents > 0 ? `Collect ${formatCents(c.toCollectCents)}` : 'All money is in', 'Mark each payment when it reaches the bank. Add the bank slip if you have it.'],
     bills: [billsLeft ? `${billsLeft} still to pay or finish` : 'All bills are paid', 'Each bill: the admin uploads the invoice, you pay, the admin uploads the proof of payment.'],
     dealer: [!car.consignmentFinanceOpen ? 'Dealer deal not opened yet' : c?.dealerNotApproved ? 'Approve what the dealer receives' : 'Dealer amount approved', 'Check the bills are right, then approve the dealer amount.'],
@@ -297,6 +302,19 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
             </div>}
 
             {shown === 'delivered' && delivery && <div className="space-y-2">
+              {delivery.done && delivery.notBooked && (() => {
+                const nb = delivery.notBooked, d = bookDate ?? nb.date;
+                return <div className="rounded-xl border border-[#F3C969]/40 bg-[#F3C969]/[0.06] p-3 space-y-2">
+                  <p className="text-sm font-semibold text-white">This sale is not in the accounts yet</p>
+                  <p className="text-xs text-gray-300">The car was marked delivered without writing the sale into the books. Booking it adds the sale, the car leaving stock{deal?.tradeIn ? ', the trade-in car coming in' : ''} and the commission, dated the delivery day. No money moves.</p>
+                  <label className="block text-xs text-gray-400">Delivered on<input type="date" className="input w-full rounded-lg px-3 py-2 mt-1 text-sm" value={d} max={new Date().toLocaleDateString('en-CA')} onChange={(e) => setBookDate(e.target.value)} /></label>
+                  {bookError && <p role="alert" className="text-xs text-red-400">{bookError}</p>}
+                  <button type="button" className={`${goldBtn} w-full disabled:opacity-40`} disabled={booking || !d} onClick={async () => {
+                    setBooking(true); setBookError('');
+                    try { await nb.onBook(d); setBookDate(null); } catch (e) { setBookError(e instanceof Error ? e.message : 'Could not book the sale.'); } finally { setBooking(false); }
+                  }}>{booking ? 'Booking…' : 'Book this sale'}</button>
+                </div>;
+              })()}
               {delivery.done ? <>
                 <div className={`${row} flex flex-wrap items-center gap-3`}>
                   {tick(true)}

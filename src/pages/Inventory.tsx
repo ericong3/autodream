@@ -1,4 +1,5 @@
 import { salesCommission } from '../utils/salesCommission';
+import { bookDelivery } from '../lib/bookDelivery';
 import { RECON_COMMISSION_DEFAULT, registrationCommission } from '../utils/carRegistration';
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
@@ -2870,6 +2871,11 @@ export default function Inventory() {
           } catch (e) {
             toast.error(e instanceof Error ? e.message : 'Failed to confirm delivery — please try again.');
             return;
+          }
+          // The Director's delivery also writes the sale into the books; otherwise the Director books it from the car page.
+          if (isDirector && currentUser) {
+            try { await bookDelivery({ carId: car.id, createdBy: currentUser.id, withPayments: true }); }
+            catch { toast.error('Delivered, but the sale is not in the books yet. Open the car and press Book this sale.'); }
           }
           setWoViewCar(null);
           setWoDeliveryConfirm(false);

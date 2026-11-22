@@ -271,6 +271,7 @@ export function buildCarSaleEntry(opts: {
   // buildTradeInAcquiredEntry.
   tradeInValue?: number;
   createdBy: string;
+  date?: string;
 }): JournalEntry {
   const { car, dealPrice, cost, isLoan, createdBy } = opts;
   const loanAmount = opts.loanAmount ?? 0;
@@ -323,7 +324,7 @@ export function buildCarSaleEntry(opts: {
 
   return {
     id: generateId(),
-    date: today(),
+    date: opts.date ?? today(),
     description: `Car sold — ${carLabel(car)}`,
     lines,
     sourceType: 'car_sold',
@@ -380,11 +381,12 @@ export function buildPayableRecognizedEntry(opts: {
   sourceType: string;
   sourceId: string;
   createdBy: string;
+  date?: string;
 }): JournalEntry {
   const { expenseAccountId, amount, description, car, sourceType, sourceId, createdBy } = opts;
   return {
     id: generateId(),
-    date: today(),
+    date: opts.date ?? today(),
     description,
     lines: [
       { accountId: expenseAccountId, debit: amount, credit: 0 },
