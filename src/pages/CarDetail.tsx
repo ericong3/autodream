@@ -209,6 +209,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   const deleteRepair = useStore((s) => s.deleteRepair);
   const addMiscCost = useStore((s) => s.addMiscCost);
   const deleteMiscCost = useStore((s) => s.deleteMiscCost);
+  const voidJournalEntry = useStore((s) => s.voidJournalEntry);
+  const restoreJournalEntry = useStore((s) => s.restoreJournalEntry);
+  const deletePayment = useStore((s) => s.deletePayment);
   const payments = useStore((s) => s.payments);
   const addPayment = useStore((s) => s.addPayment);
   const updatePayment = useStore((s) => s.updatePayment);
@@ -643,12 +646,42 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     void (async () => {
       try {
         const misc = { id: 'ins-' + car.id, description: 'Insurance', category: 'Insurance', merchant: PANEL_TBC, amount, createdAt: new Date().toISOString(), createdBy: currentUser.id };
-        await addMiscCost(car.id, misc);
+        if (!(await addMiscCost(car.id, misc))) { console.warn('Could not add the insurance cost, so no bill was made', car.id); return; }
         const billId = await generateMiscCostPayment({ carId: car.id, misc, payments, merchants, addPayment, id: 'insurance-bill-' + car.id });
         if (billId) await addJournalEntry(buildCarCostRecognizedEntry({ car, amount, description: 'Misc cost recognized — Insurance', sourceType: 'misc_cost', sourceId: billId, createdBy: currentUser.id }));
       } catch (e) { console.warn('Could not add the insurance bill', car.id, e); }
     })();
   }, [car, dealCustomer, isDirector, phase2Loaded, currentUser, payments, merchants, addMiscCost, addPayment, addJournalEntry]);
+
+  // A car cost and its bill go together. Deleting the cost also removes its unpaid
+  // bill and cancels that bill's books entry, so no bill is left with nothing on
+  // the car behind it. A bill that is already paid (fully or partly) blocks it.
+  const costBillOf = (miscId: string) => car ? payments.find((p) => p.carId === car.id && p.miscCostId === miscId && !p.obligationReplaced) : undefined;
+  const billIsPaid = (p: (typeof payments)[number]) => p.status === 'transferred' || (p.bankPaidCents ?? 0) > 0;
+  const costDeleteLabel = (m: { description: string; id: string }) => {
+    const bill = costBillOf(m.id);
+    return bill ? `cost "${m.description}" and its unpaid bill (${formatRM(bill.amount)} to ${bill.recipientName || 'the shop'})` : `misc cost "${m.description}"`;
+  };
+  const deleteCostAndBill = async (m: { id: string }) => {
+    if (!car || !currentUser) return;
+    const bill = costBillOf(m.id);
+    if (bill && billIsPaid(bill)) throw new Error('This cost’s bill is already paid, so the cost can’t be deleted.');
+    if (bill) {
+      const cancelled: string[] = [];
+      try {
+        for (const e of journalEntries.filter((j) => j.sourceId === bill.id && !j.voided)) {
+          await voidJournalEntry(e.id, currentUser.id, 'Car cost deleted; its unpaid bill was removed');
+          cancelled.push(e.id);
+        }
+        await deletePayment(bill.id);
+      } catch (err) {
+        let restored = true;
+        for (const id of cancelled) { try { await restoreJournalEntry(id); } catch { restored = false; } }
+        throw new Error(`Could not remove this cost’s bill, so nothing was deleted.${restored ? '' : ' A books entry was cancelled and could not be put back; tell the director.'} ${err instanceof Error ? err.message : ''}`.trim());
+      }
+    }
+    if (!(await deleteMiscCost(car.id, m.id))) throw new Error(bill ? 'The bill was removed, but the cost is still on the car. Delete the cost again.' : 'Could not delete this cost. Try again.');
+  };
 
   if (!car) {
     return (
@@ -998,7 +1031,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
         sub: ['Misc cost', m.category, short(m.createdAt)].filter(Boolean).join(' · '), amount: m.amount, billId: bill?.id, fromLoan,
         state: bill || fromLoan ? 'billed' : m.amount <= 0 ? 'free' : 'nobill',
         noBillWhy: m.merchant ? undefined : 'No shop name, so no one to pay.',
-        actions: canEdit && !bill && !fromLoan ? [{ label: 'Delete', danger: true, run: () => setDeleteTarget({ label: `misc cost "${m.description}"`, action: () => deleteMiscCost(car.id, m.id) }) }] : [],
+        actions: canEdit && !fromLoan && (!bill || !billIsPaid(bill)) ? [{ label: 'Delete', danger: true, run: () => setDeleteTarget({ label: costDeleteLabel(m), action: () => deleteCostAndBill(m) }) }] : [],
       });
     }
     if (car.panelDealerId) {
@@ -1984,14 +2017,18 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="text-purple-400 font-semibold text-sm">{car.investorFunded && <span className="text-xs text-gray-500 font-normal">Originally recorded: </span>}{formatRM(m.amount)}</span>
-                        {(isAdmin || isDirector) && !car.investorFunded && (
-                          <button
-                            onClick={() => setDeleteTarget({ label: `misc cost "${m.description}"`, action: () => deleteMiscCost(car.id, m.id) })}
-                            className="text-red-400 hover:text-red-300 transition-colors"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
+                        {(isAdmin || isDirector) && !car.investorFunded && (() => {
+                          const bill = costBillOf(m.id);
+                          return bill && billIsPaid(bill)
+                            ? <span className="text-gray-600" title="Its bill is already paid, so this cost can’t be deleted."><Trash2 size={14} /></span>
+                            : <button
+                              onClick={() => setDeleteTarget({ label: costDeleteLabel(m), action: () => deleteCostAndBill(m) })}
+                              aria-label={`Delete ${costDeleteLabel(m)}`}
+                              className="text-red-400 hover:text-red-300 transition-colors"
+                            >
+                              <Trash2 size={14} />
+                            </button>;
+                        })()}
                       </div>
                     </div>
                   ))}
@@ -3398,7 +3435,10 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 } catch (e) { setMiscErrors({ amount: e instanceof Error ? e.message : 'Could not save. Try again.' }); }
                 return;
               }
-              await addMiscCost(car!.id, miscEntry);
+              if (!(await addMiscCost(car!.id, miscEntry))) {
+                setMiscErrors({ amount: 'Could not save this cost, so no bill was made. Check the connection and try again.' });
+                return;
+              }
               const miscPaymentId = await generateMiscCostPayment({ carId: car!.id, misc: miscEntry, payments, merchants, addPayment });
               if (miscPaymentId && currentUser) {
                 await addJournalEntry(buildCarCostRecognizedEntry({

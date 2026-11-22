@@ -220,6 +220,7 @@ interface StoreState {
   addJournalEntry: (entry: JournalEntry) => Promise<void>;
   batchAddJournalEntries: (entries: JournalEntry[]) => Promise<void>;
   voidJournalEntry: (id: string, voidedBy: string, reason: string) => Promise<void>;
+  restoreJournalEntry: (id: string) => Promise<void>;
 
   // Payments
   payments: Payment[];
@@ -264,8 +265,8 @@ interface StoreState {
   deleteLoanCaseDocument: (id: string) => Promise<void>;
 
   // Misc Costs
-  addMiscCost: (carId: string, misc: MiscCost) => Promise<void>;
-  deleteMiscCost: (carId: string, miscId: string) => Promise<void>;
+  addMiscCost: (carId: string, misc: MiscCost) => Promise<boolean>;
+  deleteMiscCost: (carId: string, miscId: string) => Promise<boolean>;
 
   // View preference
   setViewPreference: (userId: string, page: string, view: 'grid' | 'list' | 'board') => void;
@@ -289,6 +290,32 @@ interface StoreState {
 
 // Supabase realtime can send JSONB columns as serialized strings instead of parsed objects.
 // This helper handles both so REST and realtime payloads work the same way.
+// Adds or removes ONE car cost inside the database (uc_car_misc_cost_add /
+// uc_car_misc_cost_remove), against the list as it is right now. Writing the
+// whole list from this device's copy could wipe out a cost someone else had
+// just added, leaving its bill behind. Falls back to read-then-write while the
+// database functions are not installed. Returns the car's list after the
+// change, or null when nothing was saved.
+async function saveCarCost(carId: string, change: { add: MiscCost } | { remove: string }): Promise<MiscCost[] | null> {
+  const rpc = 'add' in change
+    ? await supabase.rpc('uc_car_misc_cost_add', { p_car_id: carId, p_misc: change.add })
+    : await supabase.rpc('uc_car_misc_cost_remove', { p_car_id: carId, p_misc_id: change.remove });
+  if (!rpc.error) return parseJsonField<MiscCost[]>(rpc.data) ?? [];
+  // P0001 is the database saying no on purpose (a bad cost, no such car, a locked bill).
+  // Anything else (function missing, not allowed): fall back so costs can still be saved.
+  if (rpc.error.code === 'P0001') { console.error('Saving a car cost failed:', rpc.error.message); return null; }
+  console.warn('Car cost function unavailable, saving the careful way:', rpc.error.message);
+  const latest = await supabase.from('cars').select('misc_costs').eq('id', carId).single();
+  if (latest.error) { console.error('Saving a car cost failed:', latest.error.message); return null; }
+  const current = parseJsonField<MiscCost[]>(latest.data?.misc_costs) ?? [];
+  const next = 'add' in change
+    ? (current.some((m) => m.id === change.add.id) ? current : [...current, change.add])
+    : current.filter((m) => m.id !== change.remove);
+  const { error } = await supabase.from('cars').update({ misc_costs: next }).eq('id', carId);
+  if (error) { console.error('Saving a car cost failed:', error.message); return null; }
+  return next;
+}
+
 function parseJsonField<T>(v: any): T | undefined {
   if (v == null) return undefined;
   if (typeof v === 'string') { try { return JSON.parse(v) as T; } catch { return undefined; } }
@@ -2685,6 +2712,15 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     set((s) => ({ journalEntries: s.journalEntries.map((e) => e.id === id ? { ...e, ...patch } : e) }));
   },
 
+  // Undo a cancel made a moment ago when the step after it failed.
+  restoreJournalEntry: async (id) => {
+    const savingActor=get().currentUser?.id;
+    const patch = { voided: false, voidedBy: undefined, voidedAt: undefined, voidReason: undefined };
+    await confirmFinanceWrite(financeFrom('journal_entries').update(journalEntryToRow(patch)).eq('id', id));
+    if(get().currentUser?.id!==savingActor)return;
+    set((s) => ({ journalEntries: s.journalEntries.map((e) => e.id === id ? { ...e, ...patch } : e) }));
+  },
+
   addPayment: async (payment) => {
     const savingActor=get().currentUser?.id;
 
@@ -3101,31 +3137,30 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     sendPush([p.userId], '🧾 Payslip issued', `${p.payslipNo} is ready to view`, '/payroll', p.id);
   },
 
+  // Returns false when the cost was not saved, so callers stop before making its bill.
   addMiscCost: async (carId, misc) => {
     const car = get().cars.find((c) => c.id === carId);
-    if (!car) return;
+    if (!car) return false;
     // The same entry saved twice (a retry, or two screens) is added once.
-    if ((car.miscCosts ?? []).some((m) => m.id === misc.id)) return;
-    const updated = [...(car.miscCosts ?? []), misc];
-    set((s) => ({ cars: s.cars.map((c) => c.id === carId ? { ...c, miscCosts: updated } : c) }));
-    const { error } = await supabase.from('cars').update({ misc_costs: updated }).eq('id', carId);
-    if (error) {
-      console.error('addMiscCost failed:', error.message);
-      // Rollback
-      set((s) => ({ cars: s.cars.map((c) => c.id === carId ? { ...c, miscCosts: car.miscCosts ?? [] } : c) }));
-    }
+    if ((car.miscCosts ?? []).some((m) => m.id === misc.id)) return true;
+    const setCosts = (fn: (list: MiscCost[]) => MiscCost[]) => set((s) => ({ cars: s.cars.map((c) => c.id === carId ? { ...c, miscCosts: fn(c.miscCosts ?? []) } : c) }));
+    setCosts((list) => [...list, misc]);
+    const saved = await saveCarCost(carId, { add: misc });
+    if (!saved) { setCosts((list) => list.filter((m) => m.id !== misc.id)); return false; }
+    setCosts(() => saved);
+    return true;
   },
 
   deleteMiscCost: async (carId, miscId) => {
     const car = get().cars.find((c) => c.id === carId);
-    if (!car) return;
-    const updated = (car.miscCosts ?? []).filter((m) => m.id !== miscId);
-    set((s) => ({ cars: s.cars.map((c) => c.id === carId ? { ...c, miscCosts: updated } : c) }));
-    const { error } = await supabase.from('cars').update({ misc_costs: updated }).eq('id', carId);
-    if (error) {
-      console.error('deleteMiscCost failed:', error.message);
-      set((s) => ({ cars: s.cars.map((c) => c.id === carId ? { ...c, miscCosts: car.miscCosts ?? [] } : c) }));
-    }
+    if (!car) return false;
+    const removed = (car.miscCosts ?? []).find((m) => m.id === miscId);
+    const setCosts = (fn: (list: MiscCost[]) => MiscCost[]) => set((s) => ({ cars: s.cars.map((c) => c.id === carId ? { ...c, miscCosts: fn(c.miscCosts ?? []) } : c) }));
+    setCosts((list) => list.filter((m) => m.id !== miscId));
+    const saved = await saveCarCost(carId, { remove: miscId });
+    if (!saved) { if (removed) setCosts((list) => list.some((m) => m.id === miscId) ? list : [...list, removed]); return false; }
+    setCosts(() => saved);
+    return true;
   },
 }), {
   name: 'autodream-session',

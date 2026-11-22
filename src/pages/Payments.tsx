@@ -704,7 +704,7 @@ export default function Payments({ embedded }: PaymentsProps) {
       await updatePayment(id, { repairJobId });
     } else if (claim.claimKind === 'misc') {
       const miscCostId = generateId();
-      await addMiscCost(claim.carId, {
+      const cost = {
         id: miscCostId,
         description: claim.claimCategory || claim.description || 'Misc',
         amount: claim.amount,
@@ -712,7 +712,11 @@ export default function Payments({ embedded }: PaymentsProps) {
         merchant: vendorName,
         createdAt: claim.createdAt,
         createdBy: claim.recipientId || undefined,
-      });
+      };
+      // One retry; the claim is already approved, so say so if the cost still won't save.
+      if (!(await addMiscCost(claim.carId, cost)) && !(await addMiscCost(claim.carId, cost))) {
+        throw new Error('The claim is approved, but its cost could not be added to the car, so the car’s profit does not include it yet. Tell the director.');
+      }
       await updatePayment(id, { miscCostId });
     }
     } finally { confirmingClaims.current.delete(id); }
@@ -784,7 +788,10 @@ export default function Payments({ embedded }: PaymentsProps) {
     const claim = payments.find(p => p.id === id);
     if (!confirm('Delete this payment entry?')) return;
     if (claim?.repairJobId) await deleteRepair(claim.repairJobId);
-    if (claim?.carId && claim?.miscCostId) await deleteMiscCost(claim.carId, claim.miscCostId);
+    if (claim?.carId && claim?.miscCostId && !(await deleteMiscCost(claim.carId, claim.miscCostId))) {
+      setFinanceError('Could not remove this claim’s cost from the car, so the claim was not deleted. Try again.');
+      return;
+    }
     // Ledger entries are never hard-deleted — void them so the mistake and its
     // correction both stay on record, instead of quietly vanishing with the payment.
     const linkedEntries = journalEntries.filter(e => e.sourceId === id && !e.voided);
