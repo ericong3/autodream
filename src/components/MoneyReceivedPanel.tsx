@@ -56,7 +56,9 @@ export default function MoneyReceivedPanel({ car, actorId, role }: { car: Car; a
           <div className="flex justify-between gap-3 text-sm"><span className="text-white">{formatCents(e.amountCents)}</span><span className="text-gray-400 text-xs">{new Date(e.receivedOn).toLocaleDateString('en-MY')} · {e.bankName}</span></div>
           <p className="text-[11px] text-gray-500">{e.bankReference}{e.note ? ` · ${e.note}` : ''} · by {e.recordedBy || 'Director'}</p>
           <div className="flex flex-wrap gap-1.5 items-center">
-            {e.beforeOpening && <span className="text-[10px] px-2 py-0.5 rounded-full border border-sky-500/40 text-sky-300">Before bank opening · in opening balance</span>}
+            {e.beforeOpening
+              ? <span className="text-[10px] px-2 py-0.5 rounded-full border border-sky-500/40 text-sky-300">Before the bank opened · not on the statement</span>
+              : <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-500/40 text-emerald-300">{e.bankName ?? 'Bank'} · on the statement</span>}
             {e.state === 'to_match' && <span className="text-[10px] px-2 py-0.5 rounded-full border border-amber-500/40 text-amber-300">To match</span>}
             {e.hasSlip
               ? (link?.id === e.id ? <a className="text-xs text-emerald-300 underline" href={link.url} target="_blank" rel="noopener noreferrer">Open slip</a> : <button type="button" className="text-xs text-emerald-300" disabled={busy !== null} onClick={() => void view(e.id)}>Slip ✓ view</button>)
@@ -118,7 +120,9 @@ export function RecordMoney({ car, actorId, onClose, onSaved, defaultAmountCents
         <label className="block text-xs text-gray-400">{loan ? 'Bank or panel transferred to us (RM)' : 'Amount received (RM)'}<input className="input w-full rounded-lg px-3 py-2 mt-1 text-sm" inputMode="decimal" value={amount} disabled={!!savedId} onChange={(e) => setAmount(e.target.value)} /></label>
         <label className="block text-xs text-gray-400">Date received<input type="date" max={today()} className="input w-full rounded-lg px-3 py-2 mt-1 text-sm" value={day} disabled={!!savedId} onChange={(e) => setDay(e.target.value)} /></label>
         <label className="block text-xs text-gray-400">Bank<select className="input w-full rounded-lg px-3 py-2 mt-1 text-sm" value={bank} disabled={!!savedId} onChange={(e) => setBankId(e.target.value)}><option value="">Choose bank</option>{list.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
-        {chosen && day && day < chosen.openingDate && <p className="text-xs text-sky-300">Before {chosen.name} opened ({chosen.openingDate}): this money is already in the opening balance. The car is marked received; the bank balance does not change.</p>}
+        {chosen && day && (day < chosen.openingDate
+          ? <p className="text-xs text-sky-300">Before {new Date(chosen.openingDate + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })} · not on your {chosen.name} statement. It is already in the starting balance, so nothing is added to {chosen.name}. The car is marked as received.</p>
+          : <p className="text-xs text-emerald-300">On your {chosen.name} statement · goes into {chosen.name}.</p>)}
         <label className="block text-xs text-gray-400">Bank reference (optional)<input className="input w-full rounded-lg px-3 py-2 mt-1 text-sm" maxLength={200} value={reference} disabled={!!savedId} onChange={(e) => setReference(e.target.value)} /></label>
         <label className="block text-xs text-gray-400">Note (optional)<input className="input w-full rounded-lg px-3 py-2 mt-1 text-sm" maxLength={500} placeholder="e.g. Maybank loan disbursement" value={note} disabled={!!savedId} onChange={(e) => setNote(e.target.value)} /></label>
         {loan && <div className="space-y-2 border-t border-white/10 pt-3">
