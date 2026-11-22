@@ -7,6 +7,8 @@ const profileFields=new Set(['name','phone','avatar','position','bio','email','w
 const payrollAccounts=new Set(['acct-exp-salary','acct-exp-allowance','acct-exp-director-fee','acct-exp-campaign-bonus','acct-investor-payable','acct-inv-investor','acct-rev-investor-share','acct-bank-investor','acct-uc-sale-clearing']);
 const salaryJournal=r=>r.source_type==='investor_finance'||salaryTypes.has(r.source_type)||Array.isArray(r.lines)&&r.lines.some(l=>payrollAccounts.has(l.accountId));
 const id=v=>typeof v==='string'&&v.length>0&&v.length<=180;
+// Repair and car-cost books entries: the server builds them from the saved bill.
+const carCostJournalTypes=['repair','misc_cost'];
 export function isPrivateFinanceRequest(req){try{return (typeof req.body==='string'?JSON.parse(req.body):req.body)?.scope==='private_finance';}catch{return false;}}
 export async function handlePrivateFinance(req,deps){return respond(req,deps,['POST'],async(ctx,res)=>{
  const {user}=await authenticate(req,ctx,res,canUseApp);
@@ -41,7 +43,7 @@ export async function handlePrivateFinance(req,deps){return respond(req,deps,['P
   }
   if(b.table==='journal_entries'&&!director){
    const rows=Array.isArray(b.data)?b.data:[b.data];
-   if(!admin||b.operation!=='insert'||rows.some(r=>!r||salaryJournal(r)||!['expense_claim_confirmed'].includes(r.source_type)))throw new ApiError(403,'FORBIDDEN','A Director must change the accounts.');
+   if(!admin||b.operation!=='insert'||rows.some(r=>!r||!carCostJournalTypes.includes(r.source_type)&&(salaryJournal(r)||r.source_type!=='expense_claim_confirmed')))throw new ApiError(403,'FORBIDDEN','A Director must change the accounts.');
   }
  }
  if(write&&b.table==='payments'&&!director&&b.operation==='update'){
@@ -57,13 +59,17 @@ export async function handlePrivateFinance(req,deps){return respond(req,deps,['P
  let out;
  if(admin&&b.table==='journal_entries'&&write){
   const row=Array.isArray(b.data)?b.data.length===1?b.data[0]:null:b.data;
-  if(!row||!id(row.source_id)||!id(row.id))throw new ApiError(400,'INVALID','Confirm one recorded claim at a time.');
-  const saved=await ctx.repo.rpc('uc_confirm_claim_journal',{p_actor:user.id,p_claim:row.source_id,p_entry:row.id});
+  if(!row||!id(row.source_id)||!id(row.id))throw new ApiError(400,'INVALID','Save one books entry at a time.');
+  // A repair or car-cost entry is built on the server from the saved bill, so the
+  // amount, car and accounts can never differ from the bill.
+  const saved=carCostJournalTypes.includes(row.source_type)
+   ?await ctx.repo.rpc('uc_post_car_cost_journal',{p_actor:user.id,p_bill:row.source_id,p_entry:row.id})
+   :await ctx.repo.rpc('uc_confirm_claim_journal',{p_actor:user.id,p_claim:row.source_id,p_entry:row.id});
   out={...saved,data:saved.data?[saved.data]:[]};
  }else out=await ctx.repo.privateFinance({table:b.table,operation:b.operation,data:b.data,filters,orders,range,policy});
  if(!out.error&&write&&['update','delete'].includes(b.operation)&&Array.isArray(out.data)&&!out.data.length)throw new ApiError(409,'CHANGED','This record is unavailable or has changed. Reload it first.');
  if(out.error){
-  const documentErrors={EVIDENCE_REVIEW_REQUIRED:'This payment has confirmed documents. Ask the Director to review a correction.',SUPPLIER_INVOICE_REQUIRED:'Upload the supplier invoice in Invoices & receipts first.',PAYMENT_RECEIPT_REQUIRED:'Upload proof of payment in Invoices & receipts first.',INVOICE_REQUIRED:'Upload the invoice in Invoices & receipts first.',PAYMENT_DOCUMENTS_REQUIRED:'Upload the bill and payment receipt before completing this payment.',PAYMENT_DETAILS_LOCKED:'This payment has uploaded documents. Ask the Director to review a correction.',BILL_ALREADY_EXISTS:'This already has a bill in To pay, so no second bill was made.'};
+  const documentErrors={EVIDENCE_REVIEW_REQUIRED:'This payment has confirmed documents. Ask the Director to review a correction.',SUPPLIER_INVOICE_REQUIRED:'Upload the supplier invoice in Invoices & receipts first.',PAYMENT_RECEIPT_REQUIRED:'Upload proof of payment in Invoices & receipts first.',INVOICE_REQUIRED:'Upload the invoice in Invoices & receipts first.',PAYMENT_DOCUMENTS_REQUIRED:'Upload the bill and payment receipt before completing this payment.',PAYMENT_DETAILS_LOCKED:'This payment has uploaded documents. Ask the Director to review a correction.',BILL_ALREADY_EXISTS:'This already has a bill in To pay, so no second bill was made.',BOOKS_REVIEW_REQUIRED:'This bill changed after it was added to the books. Ask the Director to check it.',USE_INVESTOR_CAR_BILLS:'This is an investor car. Its costs are recorded in the investor car bills.'};
   for(const [code,message] of Object.entries(documentErrors))if(out.error.message?.includes(code))throw new ApiError(409,code,message);
   throw new ApiError(out.error.code==='23503'?409:503,'UNAVAILABLE',out.error.code==='23503'?'Keep this record because it has linked history.':'Could not confirm this finance change. Refresh before trying again.');
  }
