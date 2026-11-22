@@ -423,7 +423,7 @@ interface PaymentsProps { embedded?: boolean; }
 export default function Payments({ embedded }: PaymentsProps) {
   const {
     payments, addPayment, batchAddPayments, updatePayment, deletePayment,
-    currentUser, users, externalSalesmen, workshops, dealers, merchants, cars, customers, repairs, loaded,
+    currentUser, users, externalSalesmen, workshops, dealers, merchants, cars, customers, repairs, financeLoaded,
     addRepair, addMiscCost, deleteRepair, deleteMiscCost, addJournalEntry, voidJournalEntry, journalEntries,
     updateCar, ledgerAccounts, addLedgerAccount,
   } = useStore(s => ({
@@ -441,7 +441,7 @@ export default function Payments({ embedded }: PaymentsProps) {
     cars:              s.cars,
     customers:         s.customers,
     repairs:           s.repairs,
-    loaded:            s.loaded,
+    financeLoaded:     s.financeLoaded,
     addRepair:         s.addRepair,
     addMiscCost:       s.addMiscCost,
     deleteRepair:      s.deleteRepair,
@@ -478,15 +478,17 @@ export default function Payments({ embedded }: PaymentsProps) {
   const [backfilling, setBackfilling] = useState(false);
   const [backfillResult, setBackfillResult] = useState<number | null>(null);
 
-  // Auto-backfill once after data is loaded
+  // Auto-backfill once, but only after the real bill list has loaded. It used to run
+  // as soon as cars loaded, while the bill list was still empty, so it could add a
+  // second bill for repairs and car costs that already had one.
   const BACKFILL_KEY = 'autodream-payment-backfill-v2';
   useEffect(() => {
-    if (!loaded) return;
+    if (!financeLoaded) return;
     if (localStorage.getItem(BACKFILL_KEY)) return;
     localStorage.setItem(BACKFILL_KEY, 'done');
     const missing = collectMissingPayments({ bankReceiptMode: companyBankPaymentsEnabled, cars, customers, repairs, users, externalSalesmen, dealers, workshops, merchants, payments });
-    if (missing.length > 0) batchAddPayments(missing);
-  }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (missing.length > 0) batchAddPayments(missing).catch((e) => console.warn('Adding missing bills stopped:', e));
+  }, [financeLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Filters ─────────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -818,10 +820,16 @@ export default function Payments({ embedded }: PaymentsProps) {
 
   // ── Backfill ──────────────────────────────────────────────────────────────────
   const handleBackfill = async () => {
+    if (!financeLoaded) { setFinanceError('The bills are still loading. Try again in a moment.'); return; }
     setBackfilling(true);
     const missing = collectMissingPayments({ cars, customers, repairs, users, externalSalesmen, dealers, workshops, merchants, payments });
-    if (missing.length > 0) await batchAddPayments(missing);
-    setBackfillResult(missing.length);
+    try {
+      if (missing.length > 0) await batchAddPayments(missing);
+      setBackfillResult(missing.length);
+    } catch (e) {
+      setFinanceError(e instanceof Error ? e.message : 'Could not add the missing bills.');
+      setBackfillResult(0);
+    }
     setBackfilling(false);
     setTimeout(() => setBackfillResult(null), 4000);
   };

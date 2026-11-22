@@ -17,7 +17,7 @@ class FinanceQuery implements PromiseLike<any>{
  private async execute(){
   const response=await fetch('/api/garage/sales',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-Garage-Building':'1'},body:JSON.stringify({scope:'private_finance',table:this.table,operation:this.operation,data:this.data,filters:this.filters,orders:this.orders,range:this.page})});
   const result=await response.json().catch(()=>null);
-  if(!response.ok)throw new Error(result?.error?.message||'Could not load or save finance records.');
+  if(!response.ok)throw Object.assign(new Error(result?.error?.message||'Could not load or save finance records.'),{code:result?.error?.code});
   return {data:result.data,error:null};
  }
 }

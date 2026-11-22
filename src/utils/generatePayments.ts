@@ -138,6 +138,13 @@ export function getProrationFactor(u: User, month: string): number {
 }
 
 // ── Duplicate guard ───────────────────────────────────────────────────────────
+// The database refuses a second bill for the same repair job or car cost
+// (migration 20261122000300). That is not a failure: the bill is already there.
+export function isBillAlreadyExists(e: unknown): boolean {
+  const err = e as { code?: unknown; message?: unknown } | null;
+  return err?.code === 'BILL_ALREADY_EXISTS' || (typeof err?.message === 'string' && /BILL_ALREADY_EXISTS|already has a bill/.test(err.message));
+}
+
 function exists(
   payments: Payment[],
   type: Payment['type'],
@@ -317,14 +324,20 @@ export async function generateRepairPayment(opts: {
   const amount = repair.actualCost ?? repair.totalCost;
   if (amount <= 0) return;
   const ws = workshops.find(w => w.name.toLowerCase() === repair.location!.toLowerCase());
-  const id = opts.id ?? generateId();
-  await addPayment({
-    id, type: 'repair', carId: repair.carId, repairJobId: repair.id,
-    recipientType: 'workshop', recipientId: ws?.id ?? repair.location, recipientName: repair.location,
-    bankName: ws?.bankName, accountNumber: ws?.bankAccountNumber, accountHolder: ws?.bankAccountHolder,
-    amount, description: `${repair.typeOfRepair} repair`, status: 'pending', createdAt: new Date().toISOString(),
-    receiptUrl: repair.receiptPhoto,
-  });
+  // One fixed id per repair job, so a second tap can never save a second bill.
+  const id = opts.id ?? 'repair-bill-' + repair.id;
+  try {
+    await addPayment({
+      id, type: 'repair', carId: repair.carId, repairJobId: repair.id,
+      recipientType: 'workshop', recipientId: ws?.id ?? repair.location, recipientName: repair.location,
+      bankName: ws?.bankName, accountNumber: ws?.bankAccountNumber, accountHolder: ws?.bankAccountHolder,
+      amount, description: `${repair.typeOfRepair} repair`, status: 'pending', createdAt: new Date().toISOString(),
+      receiptUrl: repair.receiptPhoto,
+    });
+  } catch (e) {
+    if (isBillAlreadyExists(e)) return undefined;
+    throw e;
+  }
   return id;
 }
 
@@ -343,12 +356,17 @@ export async function generateMiscCostPayment(opts: {
   if (exists(payments, 'misc_cost', { miscCostId: misc.id })) return;
   const merchant = merchants.find(m => m.name.toLowerCase() === misc.merchant!.toLowerCase());
   const id = opts.id ?? generateId();
-  await addPayment({
-    id, type: 'misc_cost', carId, miscCostId: misc.id,
-    recipientType: 'merchant', recipientId: merchant?.id ?? misc.merchant, recipientName: misc.merchant,
-    bankName: merchant?.bankName, accountNumber: merchant?.bankAccountNumber, accountHolder: merchant?.bankAccountHolder,
-    amount: misc.amount, description: misc.description || 'Misc cost', status: 'pending', createdAt: new Date().toISOString(),
-  });
+  try {
+    await addPayment({
+      id, type: 'misc_cost', carId, miscCostId: misc.id,
+      recipientType: 'merchant', recipientId: merchant?.id ?? misc.merchant, recipientName: misc.merchant,
+      bankName: merchant?.bankName, accountNumber: merchant?.bankAccountNumber, accountHolder: merchant?.bankAccountHolder,
+      amount: misc.amount, description: misc.description || 'Misc cost', status: 'pending', createdAt: new Date().toISOString(),
+    });
+  } catch (e) {
+    if (isBillAlreadyExists(e)) return undefined;
+    throw e;
+  }
   return id;
 }
 
