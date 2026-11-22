@@ -978,7 +978,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       const active = r.status === 'pending' || r.status === 'in_progress' || r.status === 'awaiting_bill';
       const can = isMechanic || isDirector || isAdmin;
       out.push({
-        id: 'r:' + r.id, name: [r.typeOfRepair, r.location].filter(Boolean).join(' · '),
+        id: 'r:' + r.id, group: 'repairs', name: [r.typeOfRepair, r.location].filter(Boolean).join(' · '),
         sub: done ? (bill || !r.location || oldRepair ? `Repair · finished ${short(r.completedAt ?? r.createdAt)}` : 'Repair · adding it to Payments…') : `Repair · ${REPAIR_STATUS_LABEL[r.status] ?? r.status}`,
         amount: isDirectorView ? (done ? cost : r.totalCost) : null, receiptUrl: r.receiptPhoto, billId: bill?.id,
         state: !done ? 'open' : bill ? 'billed' : cost <= 0 ? 'free' : r.location && !oldRepair ? 'open' : 'nobill',
@@ -994,7 +994,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       const bill = billOf((p) => p.miscCostId === m.id);
       const fromLoan = !!(m as { loanDeduction?: boolean }).loanDeduction;
       out.push({
-        id: 'm:' + m.id, name: [m.description, m.merchant].filter(Boolean).join(' · '),
+        id: 'm:' + m.id, group: /panel|bank fee/i.test(m.category ?? '') ? 'fees' : 'costs', name: [m.description, m.merchant].filter(Boolean).join(' · '),
         sub: ['Misc cost', m.category, short(m.createdAt)].filter(Boolean).join(' · '), amount: m.amount, billId: bill?.id, fromLoan,
         state: bill || fromLoan ? 'billed' : m.amount <= 0 ? 'free' : 'nobill',
         noBillWhy: m.merchant ? undefined : 'No shop name, so no one to pay.',
@@ -1005,7 +1005,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       const bill = billOf((p) => p.type === 'panel_charge');
       const dealer = dealers.find((d) => d.id === car.panelDealerId);
       out.push({
-        id: 'panel', name: `Panel charge · ${dealer?.name ?? 'Unknown dealer'}`, sub: dealer?.bankName ? `${dealer.bankName} · ${dealer.bankAccountNumber ?? ''}` : 'No bank details',
+        id: 'panel', group: 'fees', name: `Panel charge · ${dealer?.name ?? 'Unknown dealer'}`, sub: dealer?.bankName ? `${dealer.bankName} · ${dealer.bankAccountNumber ?? ''}` : 'No bank details',
         amount: car.panelChargeAmount ?? 0, billId: bill?.id, state: bill ? 'billed' : (car.panelChargeAmount ?? 0) <= 0 ? 'free' : 'nobill',
         noBillWhy: 'No amount saved. Edit the panel charge.',
         actions: canEdit && (!bill || bill.status === 'pending') ? [{ label: 'Edit panel charge', run: openPanelCharge }] : [],
@@ -1129,7 +1129,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
   ];
 
   return (
-    <div className="max-w-6xl space-y-6">
+    <div className={summaryMode ? "space-y-6" : "max-w-6xl space-y-6"}>
       {summaryMode && currentUser && <>
         <nav className="flex items-center gap-1.5 text-xs text-gray-500">
           <span className="hover:text-gold-400 cursor-pointer transition-colors" onClick={onBack}>{breadcrumbLabel ?? (fromHistory ? 'Delivered' : 'Inventory')}</span>
