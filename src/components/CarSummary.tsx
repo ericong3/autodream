@@ -257,7 +257,7 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
     const fromLoan = !!x?.fromLoan, invoiceOk = fromLoan || !d?.needInvoice, proofOk = fromLoan || !d?.needReceipt;
     const settle = p.type === 'purchase_settlement', invoiceWord = settle ? 'settlement letter' : 'invoice';
     const name = x ? `${x.name.split(' · ')[0]}${p.recipientName && !x.fromLoan && !needsPanel ? ' · ' + p.recipientName : ''}` : settle ? `Trade-in settlement · ${p.recipientName}` : (p.recipientName || words(p.type));
-    const sub = fromLoan ? 'Paid from the bank loan' : paid && p.status === 'transferred' ? `Paid${p.transferredAt ? ' ' + day(p.transferredAt) : ''}` : (x?.sub ?? words(p.type));
+    const sub = fromLoan ? 'Paid from the bank loan' : paid && p.status === 'transferred' ? `Paid${p.transferredAt ? ' ' + day(p.transferredAt) : ''}` : (x?.sub ?? (settle ? 'Pays off the old loan on the trade-in' : p.type === 'misc_cost' ? 'No matching cost on the car' : words(p.type)));
     const status = needsPanel && !paid ? chip('gold', 'Choose the panel') : fromLoan ? chip('green', 'Paid from loan ✓') : !known ? chip(paid ? 'green' : 'gold', paid ? 'Paid' : 'To pay')
       : !paid ? chip('gold', invoiceOk ? 'Ready to pay' : `Needs ${invoiceWord}`) : proofOk ? chip('green', 'Done ✓') : chip('gold', 'Paid · needs proof');
     const docWord = !invoiceOk ? `Upload ${invoiceWord}` : paid && !proofOk ? 'Upload proof' : 'Documents';
@@ -500,8 +500,8 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
             <div className="space-y-3 lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
             {tab === 'profit' && showProfit && <div className="space-y-2.5">
               <h2 className="text-white font-semibold mb-1">How the profit adds up</h2>
-              <div className="flex justify-between text-sm"><span className="text-gray-300">Sold for</span><span className="text-white">{formatCents(cents(soldFor))}</span></div>
-              {costs.filter((r) => r.amount !== 0).map((r) => <div key={r.label} className="flex justify-between text-sm"><span className="text-gray-300">{r.label}</span><span className="text-white">− {formatCents(cents(r.amount))}</span></div>)}
+              <div className="flex justify-between gap-3 text-sm"><span className="text-gray-300 min-w-0">Sold for</span><span className="text-white whitespace-nowrap">{formatCents(cents(soldFor))}</span></div>
+              {costs.filter((r) => r.amount !== 0).map((r) => <div key={r.label} className="flex justify-between gap-3 text-sm"><span className="text-gray-300 min-w-0">{r.label}</span><span className="text-white whitespace-nowrap">− {formatCents(cents(r.amount))}</span></div>)}
               <div className="flex justify-between pt-2.5 border-t border-white/[0.08]"><span className="font-semibold text-white">Profit</span><span className={`font-bold ${profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatCents(cents(profit))}</span></div>
             </div>}
             {tab === 'deal' && deal && <div className="space-y-3">
@@ -513,9 +513,9 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
                 {[['Buyer', buyerName || '—'], ['Salesperson', salespersonName || '—'], ['Payment', deal.payment], ['Loan bank', deal.bank || '—']].filter(([k]) => k !== 'Loan bank' || deal.payment !== 'Cash').map(([k, v]) => <div key={k} className="rounded-xl bg-white/[0.04] px-3 py-2.5 min-w-0"><p className="text-xs text-gray-400">{k}</p><p className="text-sm text-white mt-0.5 truncate" title={v}>{v}</p></div>)}
               </div>
               <div className="space-y-2 pt-3 border-t border-white/[0.08]">
-                <div className="flex justify-between text-sm"><span className="text-gray-300">Selling price</span><span className="text-white">{formatCents(cents(deal.sellingPrice))}</span></div>
-                {deal.plus.map((l) => <div key={'p' + l.label} className="flex justify-between text-sm"><span className="text-gray-300">+ {l.label}</span><span className="text-white">{formatCents(cents(l.amount))}</span></div>)}
-                {deal.minus.map((l) => <div key={'m' + l.label} className="flex justify-between text-sm"><span className="text-gray-300">− {l.label}</span><span className="text-white">− {formatCents(cents(l.amount))}</span></div>)}
+                <div className="flex justify-between gap-3 text-sm"><span className="text-gray-300 min-w-0">Selling price</span><span className="text-white whitespace-nowrap">{formatCents(cents(deal.sellingPrice))}</span></div>
+                {deal.plus.map((l) => <div key={'p' + l.label} className="flex justify-between gap-3 text-sm"><span className="text-gray-300 min-w-0">+ {l.label}</span><span className="text-white whitespace-nowrap">{formatCents(cents(l.amount))}</span></div>)}
+                {deal.minus.map((l) => <div key={'m' + l.label} className="flex justify-between gap-3 text-sm"><span className="text-gray-300 min-w-0">− {l.label}</span><span className="text-white whitespace-nowrap">− {formatCents(cents(l.amount))}</span></div>)}
                 <div className="flex justify-between pt-2.5 border-t border-white/[0.08]">
                   <span className="font-semibold text-white">{Math.abs(deal.balance) < 0.01 ? 'Nothing more to pay' : deal.balance < 0 ? 'We refund the customer' : 'Customer pays'}</span>
                   <span className={`font-bold ${deal.balance < 0 ? 'text-sky-300' : 'text-[#F3C969]'}`}>{formatCents(cents(Math.abs(deal.balance)))}</span>
@@ -543,8 +543,8 @@ export default function CarSummary({ car, actorId, role, profit, costs, buyerNam
                     <p className="text-sm font-semibold text-white min-w-0 truncate">{ti.swap ? 'Swapped for' : 'Trade-in'} · {ti.label}</p>
                     {ti.carId && <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 flex-shrink-0">{ti.carStatus === 'sold' || ti.carStatus === 'delivered' ? 'Sold' : 'In stock'}</span>}
                   </div>
-                  <div className="flex justify-between text-sm"><span className="text-gray-300">Trade-in value</span><span className="text-white">{formatCents(cents(ti.amount))}</span></div>
-                  {settlement > 0 && <div className="flex justify-between text-sm"><span className="text-gray-300">− Settlement to {bill?.recipientName || ti.settleTo || 'bank'}</span><span className="text-white">− {formatCents(cents(settlement))}</span></div>}
+                  <div className="flex justify-between gap-3 text-sm"><span className="text-gray-300 min-w-0">Trade-in value</span><span className="text-white whitespace-nowrap">{formatCents(cents(ti.amount))}</span></div>
+                  {settlement > 0 && <div className="flex justify-between gap-3 text-sm"><span className="text-gray-300 min-w-0">− Settlement to {bill?.recipientName || ti.settleTo || 'bank'}</span><span className="text-white whitespace-nowrap">− {formatCents(cents(settlement))}</span></div>}
                   {settlement > 0 && <div className="flex justify-between pt-2 border-t border-white/[0.08] text-sm font-semibold"><span className="text-white">{(ti.topUp ?? 0) > 0 ? 'Customer tops up' : 'Trade-in credit'}</span><span className="text-[#F3C969]">{formatCents(cents((ti.topUp ?? 0) > 0 ? ti.topUp! : ti.credit ?? 0))}</span></div>}
                   {settlement > 0 && <p className="text-xs text-gray-400">{bill ? (bill.status === 'transferred' ? `Settlement paid${bill.transferredAt ? ' ' + day(bill.transferredAt) : ''} ✓` : 'Settlement payment is in Bills, waiting to be paid.') : 'Settlement payment is not recorded in the app yet.'}</p>}
                   {settlement > 0 && !bill && onRecordSettlement && (lender === null
