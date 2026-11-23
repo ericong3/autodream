@@ -282,13 +282,13 @@ function DoneView({ line, moves }: { line: BankCheckLine; moves: BankMove[] }) {
   </div>;
 }
 
-function BillTable({ bills, cars, amountOf, ticked, onToggle }: { bills: Payment[]; cars: { id: string; carPlate?: string }[]; amountOf: (p: Payment) => number; ticked?: Set<string>; onToggle?: (id: string) => void }) {
+function BillTable({ bills, cars, amountOf, ticked, onToggle, flag }: { bills: Payment[]; cars: { id: string; carPlate?: string }[]; amountOf: (p: Payment) => number; ticked?: Set<string>; onToggle?: (id: string) => void; flag?: (p: Payment) => string | undefined }) {
   return <div className="rounded-lg border border-obsidian-400/60 divide-y divide-obsidian-400/40">
     {bills.map((p) => {
       const plate = cars.find((c) => c.id === p.carId)?.carPlate ?? '';
       const body = <>
         <span className="w-24 shrink-0 text-white font-semibold">{plate || '—'}</span>
-        <span className="flex-1 min-w-[160px] text-gray-300">{p.description || p.type}<span className="text-gray-500"> · keyed {dayLabel(p.createdAt)}</span></span>
+        <span className="flex-1 min-w-[160px] text-gray-300">{p.description || p.type}<span className="text-gray-500"> · keyed {dayLabel(p.createdAt)}</span>{flag?.(p) && <span className="ml-2 text-[11px] text-amber-300">{flag(p)}</span>}</span>
         <span className="w-28 text-right text-white">{formatCents(amountOf(p)).replace('RM ', '')}</span>
       </>;
       return onToggle
@@ -341,6 +341,8 @@ function BillsMatch({ line, bank, actorId, onChange }: { line: BankCheckLine; ba
   const shopNames = useMemo(() => [...workshops.map((w) => w.name), ...merchants.map((m) => m.name)], [workshops, merchants]);
   const [payee, setPayee] = useState(() => line.details.payee ?? guessPayee(`${line.details.who ?? ''} ${line.text}`, [...new Set([...payees.map((x) => x[0]), ...shopNames])]) ?? '');
   const [ticked, setTicked] = useState<string[]>(line.details.billIds ?? []);
+  // Bills that were ticked when the line opened stay on top, so they are easy to compare.
+  const [firstTicked] = useState(() => new Set(line.details.billIds ?? []));
   const [slip, setSlip] = useState<File | null>(null), [ref, setRef] = useState(line.details.ref ?? '');
   const [review, setReview] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(''), [saved, setSaved] = useState('');
   const key = `autodream-bank-check:${actorId}:${line.id}`;
@@ -349,15 +351,21 @@ function BillsMatch({ line, bank, actorId, onChange }: { line: BankCheckLine; ba
   const keep = (it: Intent | null) => { try { if (it) sessionStorage.setItem(key, JSON.stringify(it)); else sessionStorage.removeItem(key); } catch { /* the save still runs */ } setIntent(it); };
 
   const byId = useMemo(() => new Map(payments.map((p) => [p.id, p])), [payments]);
+  const journalEntries = useStore((s) => s.journalEntries);
+  // A repair or car-cost bill can only be paid once its cost is in the books.
+  const booked = useMemo(() => new Set(journalEntries.filter((e) => !e.voided && (e.sourceType === 'repair' || e.sourceType === 'misc_cost')).map((e) => e.sourceType + ':' + e.sourceId)), [journalEntries]);
+  const unbooked = (p: Payment) => (p.type === 'repair' || p.type === 'misc_cost') && !booked.has(p.type + ':' + p.id);
+  const flag = (p: Payment) => (unbooked(p) ? 'no books entry yet' : undefined);
   const tickedSet = new Set(ticked);
-  const list = openBills.filter((p) => p.recipientName.toLowerCase() === payee.toLowerCase()).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const list = openBills.filter((p) => p.recipientName.toLowerCase() === payee.toLowerCase()).sort((a, b) => Number(firstTicked.has(b.id)) - Number(firstTicked.has(a.id)) || a.createdAt.localeCompare(b.createdAt));
   const others = ticked.map((id) => byId.get(id)).filter((p): p is Payment => !!p && !list.includes(p));
   const live = ticked.filter((id) => { const p = byId.get(id); return !!p && p.status === 'pending' && paymentBalanceCents(p) > 0; });
   const total = live.reduce((s, id) => s + paymentBalanceCents(byId.get(id)!), 0);
   const left = amount - total;
   const stale = ticked.length - live.length;
+  const noBooks = live.filter((id) => unbooked(byId.get(id)!)).length;
   const toggle = (id: string) => setTicked((t) => (t.includes(id) ? t.filter((x) => x !== id) : [...t, id]));
-  const canReview = !busy && !intent && left === 0 && live.length > 0 && live.length <= 50 && !!slip && ref.trim().length > 0 && ref.length <= 200;
+  const canReview = !busy && !intent && noBooks === 0 && left === 0 && live.length > 0 && live.length <= 50 && !!slip && ref.trim().length > 0 && ref.length <= 200;
 
   const saveTicks = async (ids = ticked, extra: Partial<BankCheckDetails> = {}) => {
     const l = await saveLine(line.id, { details: { ...line.details, payee, billIds: ids, ...extra } });
@@ -419,11 +427,11 @@ function BillsMatch({ line, bank, actorId, onChange }: { line: BankCheckLine; ba
           </select></label>
       </div>
       {payee ? (list.length ? <>
-        <p className="text-xs text-gray-500">{payee}'s unpaid bills, oldest first.</p>
-        <BillTable bills={list} cars={cars} amountOf={paymentBalanceCents} ticked={tickedSet} onToggle={toggle} />
+        <p className="text-xs text-gray-500">{payee}'s unpaid bills{firstTicked.size ? ', ticked ones first' : ''}, oldest first.</p>
+        <BillTable bills={list} cars={cars} amountOf={paymentBalanceCents} ticked={tickedSet} onToggle={toggle} flag={flag} />
         <div className="flex gap-3 text-xs"><button type="button" className="text-gold-400 min-h-[36px]" onClick={() => setTicked((t) => [...new Set([...t, ...list.map((p) => p.id)])])}>Tick all</button><button type="button" className="text-gold-400 min-h-[36px]" onClick={() => setTicked((t) => t.filter((id) => !list.some((p) => p.id === id)))}>Untick all</button></div>
       </> : <p className="text-sm text-gray-400">{payee} has no unpaid bills in the app.</p>) : <p className="text-sm text-gray-400">Choose who this transfer paid.</p>}
-      {others.length > 0 && <><p className="text-xs text-gray-500">Also ticked, from other payees or already paid:</p><BillTable bills={others} cars={cars} amountOf={paymentBalanceCents} ticked={tickedSet} onToggle={toggle} /></>}
+      {others.length > 0 && <><p className="text-xs text-gray-500">Also ticked, from other payees or already paid:</p><BillTable bills={others} cars={cars} amountOf={paymentBalanceCents} ticked={tickedSet} onToggle={toggle} flag={flag} /></>}
       {stale > 0 && <p className="text-xs text-amber-200">{stale} ticked {stale === 1 ? 'bill is' : 'bills are'} already paid and won't count.</p>}
     </div>
 
@@ -441,12 +449,13 @@ function BillsMatch({ line, bank, actorId, onChange }: { line: BankCheckLine; ba
         <label className="text-xs text-gray-400">Bank slip (needed to record)<input type="file" accept="image/png,image/jpeg,application/pdf" className="block mt-1 text-xs" onChange={(e) => setSlip(e.target.files?.[0] ?? null)} /></label>
         <label className="text-xs text-gray-400">Bank reference<input className="input w-full rounded-lg px-3 py-2 text-sm mt-1" value={ref} maxLength={200} placeholder="From the slip" onChange={(e) => setRef(e.target.value)} /></label>
       </div>
+      {noBooks > 0 && <p className="text-xs text-amber-200">{noBooks} ticked {noBooks === 1 ? 'bill has' : 'bills have'} no books entry yet, so the payment can't be recorded. Ask Claude to add the missing books entries.</p>}
       {live.length > 50 && <p className="text-xs text-amber-200">One payment can hold up to 50 bills. Ask Claude to split this one.</p>}
       {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
       {saved && <p className="text-sm text-emerald-300">{saved}</p>}
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" className="btn-gold px-5 py-2.5 rounded-lg text-sm" disabled={!canReview} onClick={() => { setError(''); setReview(true); }}>Record payment</button>
-        <span className="text-xs text-gray-500">{left !== 0 ? 'Unlocks when "Still to explain" is RM 0.00.' : !slip ? 'Pick the bank slip first.' : !ref.trim() ? 'Type the bank reference.' : 'You will check the list once more before it records.'}</span>
+        <span className="text-xs text-gray-500">{noBooks > 0 ? 'Waiting for the missing books entries.' : left !== 0 ? 'Unlocks when "Still to explain" is RM 0.00.' : !slip ? 'Pick the bank slip first.' : !ref.trim() ? 'Type the bank reference.' : 'You will check the list once more before it records.'}</span>
         <span className="flex-1" />
         <button type="button" className="btn-ghost px-4 py-2 rounded-lg text-sm" disabled={busy} onClick={() => void later()}>Save, finish later</button>
       </div>
