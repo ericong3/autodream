@@ -84,11 +84,12 @@ export async function handleCompanyEvidence(req,deps){return respond(req,deps,['
  const {scope:_,action,...input}=body;
  const data=validateEvidence(user,action,input);
  if(deps.env.USED_CAR_PRIVATE_FINANCE_ONLINE!=='1')throw new ApiError(503,'SETUP','Private finance saving is waiting for activation.');
- await limit(ctx,'all',user.id,120,900);
+ // A bulk bank payment attaches its slip to each bill (up to 50), so these allow a few in a row.
+ await limit(ctx,'all',user.id,400,900);
 
  if(action==='upload'){
   if(typeof ctx.repo.uploadInvestorProof!=='function')throw new ApiError(503,'SETUP','Receipt storage is not activated yet. No changes were made.');
-  await limit(ctx,'upload',user.id,30,900);
+  await limit(ctx,'upload',user.id,200,900);
   const {bytes,digest}=decodeProof(data.mimeType,data.base64);
   const prepared=await call(ctx,user.id,'prepare',{paymentId:data.paymentId,kind:data.kind,fileName:data.fileName,mimeType:data.mimeType,sha256:digest,sizeBytes:bytes.length,requestId:data.requestId});
   if(prepared?.state==='confirmed')return {status:200,body:{document:safeDocument(prepared)}};

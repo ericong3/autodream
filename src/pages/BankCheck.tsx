@@ -364,6 +364,7 @@ function BillsMatch({ line, bank, actorId, onChange }: { line: BankCheckLine; ba
   const [firstTicked] = useState(() => new Set(line.details.billIds ?? []));
   const [slip, setSlip] = useState<File | null>(null), [ref, setRef] = useState(line.details.ref ?? '');
   const [review, setReview] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(''), [saved, setSaved] = useState('');
+  const [progress, setProgress] = useState('');
   const key = `autodream-bank-check:${actorId}:${line.id}`;
   const readIntent = (): Intent | null => { try { const v = JSON.parse(sessionStorage.getItem(key) || 'null'); return v?.requestId && Array.isArray(v.allocations) && Array.isArray(v.billIds) ? v : null; } catch { return null; } };
   const [intent, setIntent] = useState<Intent | null>(readIntent);
@@ -442,17 +443,19 @@ function BillsMatch({ line, bank, actorId, onChange }: { line: BankCheckLine; ba
         if (useStore.getState().currentUser?.id !== actorId) throw new Error('Your account changed. Reopen this line.');
         const bill = useStore.getState().payments.find((p) => p.id === id);
         if (!bill) throw new Error('A ticked bill is missing. Reload the page.');
+        setProgress(`Attaching the slip to bill ${it.allocations.length + 1} of ${it.billIds.length}…`);
         const doc = await uploadCompanyEvidence(id, 'payment', slip);
         it = { ...it, allocations: [...it.allocations, { paymentId: id, amountCents: paymentBalanceCents(bill), documentId: doc.document.documentId }] };
         keep(it);
       }
+      setProgress('Recording the payment…');
       it = { ...it, sent: true }; keep(it);
       const saved = await companyBankRequest<CompanyBankSave>('record', { requestId: it.requestId, bankAccountId: it.bankAccountId, bankReference: it.bankReference, paidOn: it.paidOn, notes: it.notes, allocations: it.allocations });
       useStore.getState().applyCompanyBankPayment(actorId, saved);
       const journalIds = (saved.journals ?? []).map((j) => String(j.id ?? '')).filter(Boolean);
       const l = await saveLine(line.id, { status: 'matched', details: { ...line.details, payee, billIds: it.billIds, done: { how: 'recorded', bankPaymentId: saved.bankPaymentId, journalIds, at: new Date().toISOString(), by: actorId } } });
       keep(null); setReview(false); onChange(l);
-    } catch (e) { setError(errorText(e, 'Could not record this payment.')); } finally { setBusy(false); }
+    } catch (e) { setError(errorText(e, 'Could not record this payment.')); } finally { setBusy(false); setProgress(''); }
   };
 
   const reviewBills = (intent?.billIds ?? live).map((id) => byId.get(id)).filter((p): p is Payment => !!p);
@@ -462,7 +465,8 @@ function BillsMatch({ line, bank, actorId, onChange }: { line: BankCheckLine; ba
     <BillTable bills={reviewBills} cars={cars} amountOf={(p) => intent?.allocations.find((a) => a.paymentId === p.id)?.amountCents ?? paymentBalanceCents(p)} />
     <p className="text-right text-white font-semibold">Total {formatCents(amount)}</p>
     {intent && <p className="text-xs text-amber-200">This save was started{intent.allocations.length ? ` (${intent.allocations.length} of ${intent.billIds.length} slips attached)` : ''}. Press the button again to finish it.{!slip && intent.allocations.length < intent.billIds.length ? ' Pick the bank slip again first.' : ''}</p>}
-    {intent && !slip && intent.allocations.length < intent.billIds.length && <label className="block text-xs text-gray-400">Bank slip<input type="file" accept="image/png,image/jpeg,application/pdf" className="block mt-1 text-xs" onChange={(e) => setSlip(e.target.files?.[0] ?? null)} /></label>}
+    {intent && intent.allocations.length < intent.billIds.length && <label className="block text-xs text-gray-400">Bank slip{slip ? ` (chosen: ${slip.name})` : ' (pick it again)'}<input type="file" accept="image/png,image/jpeg,application/pdf" className="block mt-1 text-xs" disabled={busy} onChange={(e) => { setSlip(e.target.files?.[0] ?? null); setError(''); }} /></label>}
+    {busy && progress && <p className="text-sm text-sky-200">{progress} Keep this page open until it finishes.</p>}
     {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
     <div className="flex flex-wrap gap-2 items-center">
       <button type="button" className="btn-gold px-5 py-2.5 rounded-lg text-sm" disabled={busy} onClick={() => void record()}>{busy ? 'Recording…' : `Yes, record ${formatCents(amount)}`}</button>
