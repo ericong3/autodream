@@ -356,7 +356,9 @@ function BillsMatch({ line, bank, actorId, onChange }: { line: BankCheckLine; ba
   // A repair or car-cost bill can only be paid once its cost is in the books.
   const booked = useMemo(() => new Set(journalEntries.filter((e) => !e.voided && (e.sourceType === 'repair' || e.sourceType === 'misc_cost')).map((e) => e.sourceType + ':' + e.sourceId)), [journalEntries]);
   const unbooked = (p: Payment) => (p.type === 'repair' || p.type === 'misc_cost') && !booked.has(p.type + ':' + p.id);
-  const flag = (p: Payment) => (unbooked(p) ? 'no books entry yet' : undefined);
+  // Two bills for the same repair or car cost: one is a duplicate and must never get an entry or be paid.
+  const duplicate = (p: Payment) => payments.some((o) => o.id !== p.id && o.type === p.type && ((p.type === 'repair' && !!p.repairJobId && o.repairJobId === p.repairJobId) || (p.type === 'misc_cost' && !!p.miscCostId && o.miscCostId === p.miscCostId)));
+  const flag = (p: Payment) => (duplicate(p) ? 'same job as another bill: check before paying' : unbooked(p) ? 'no books entry yet' : undefined);
   const tickedSet = new Set(ticked);
   const list = openBills.filter((p) => p.recipientName.toLowerCase() === payee.toLowerCase()).sort((a, b) => Number(firstTicked.has(b.id)) - Number(firstTicked.has(a.id)) || a.createdAt.localeCompare(b.createdAt));
   const others = ticked.map((id) => byId.get(id)).filter((p): p is Payment => !!p && !list.includes(p));
@@ -365,6 +367,29 @@ function BillsMatch({ line, bank, actorId, onChange }: { line: BankCheckLine; ba
   const left = amount - total;
   const stale = ticked.length - live.length;
   const noBooks = live.filter((id) => unbooked(byId.get(id)!)).length;
+  const [bookAsk, setBookAsk] = useState(false);
+  // The same entry the app makes when a bill is keyed in: the car's cost goes up and so
+  // does what we owe, dated the day the bill was keyed. No money moves.
+  const addBooks = async () => {
+    setBusy(true); setError(''); setSaved('');
+    try {
+      const want = live.map((id) => byId.get(id)!).filter(unbooked).slice(0, 200);
+      const { data, error: loadError } = await financeFrom('journal_entries').select('*').in('source_id', want.map((p) => p.id)).range(0, 999);
+      if (loadError) throw new Error(loadError.message);
+      const have = new Set(((data ?? []) as { voided?: boolean; source_type?: string; source_id?: string }[]).filter((e) => !e.voided).map((e) => e.source_type + ':' + e.source_id));
+      let added = 0, already = 0; const skipped: string[] = [];
+      for (const p of want) {
+        if (have.has(p.type + ':' + p.id)) { already++; continue; }
+        const car = cars.find((c) => c.id === p.carId);
+        if (!car || car.investorFunded || duplicate(p)) { skipped.push(car?.carPlate || p.description || p.id); continue; }
+        const entry = buildCarCostRecognizedEntry({ car, amount: p.amount, description: p.type === 'repair' ? `Repair recognized — ${(p.description || 'Repair').replace(/ repair$/, '')}` : `Misc cost recognized — ${p.description || 'Misc cost'}`, sourceType: p.type, sourceId: p.id, createdBy: actorId });
+        await addJournalEntry({ ...entry, date: new Date(new Date(p.createdAt).getTime() + 8 * 3600e3).toISOString().slice(0, 10) });
+        added++;
+      }
+      setBookAsk(false);
+      setSaved([added ? `${added} books ${added === 1 ? 'entry' : 'entries'} added.` : '', already ? `${already} already had one: reload the page.` : '', skipped.length ? `Not added (check on the car's page): ${skipped.join(', ')}.` : ''].filter(Boolean).join(' '));
+    } catch (e) { setError(errorText(e, 'Could not add the books entries.')); } finally { setBusy(false); }
+  };
   const toggle = (id: string) => setTicked((t) => (t.includes(id) ? t.filter((x) => x !== id) : [...t, id]));
   const canReview = !busy && !intent && noBooks === 0 && left === 0 && live.length > 0 && live.length <= 50 && !!slip && ref.trim().length > 0 && ref.length <= 200;
 
@@ -450,13 +475,18 @@ function BillsMatch({ line, bank, actorId, onChange }: { line: BankCheckLine; ba
         <label className="text-xs text-gray-400">Bank slip (needed to record)<input type="file" accept="image/png,image/jpeg,application/pdf" className="block mt-1 text-xs" onChange={(e) => setSlip(e.target.files?.[0] ?? null)} /></label>
         <label className="text-xs text-gray-400">Bank reference<input className="input w-full rounded-lg px-3 py-2 text-sm mt-1" value={ref} maxLength={200} placeholder="From the slip" onChange={(e) => setRef(e.target.value)} /></label>
       </div>
-      {noBooks > 0 && <p className="text-xs text-amber-200">{noBooks} ticked {noBooks === 1 ? 'bill has' : 'bills have'} no books entry yet, so the payment can't be recorded. Ask Claude to add the missing books entries.</p>}
+      {noBooks > 0 && <div className="rounded-lg border border-amber-400/40 bg-amber-400/10 p-3 space-y-2 text-xs text-amber-100">
+        <p>{noBooks} ticked {noBooks === 1 ? 'bill is' : 'bills are'} in To pay but not in the accounts book yet, so the payment can't be recorded.</p>
+        {!bookAsk ? <button type="button" className="btn-ghost px-3 py-1.5 rounded-lg" disabled={busy} onClick={() => setBookAsk(true)}>Add {noBooks === 1 ? 'it' : 'them'} to the accounts book</button>
+          : <div className="space-y-2"><p>For each one: the car's cost goes up and what we owe the payee goes up, dated the day the bill was keyed. No money moves.</p>
+            <div className="flex flex-wrap gap-2"><button type="button" className="btn-gold px-3 py-1.5 rounded-lg" disabled={busy} onClick={() => void addBooks()}>{busy ? 'Adding…' : 'Yes, add ' + noBooks}</button><button type="button" className="underline" onClick={() => setBookAsk(false)}>Cancel</button></div></div>}
+      </div>}
       {live.length > 50 && <p className="text-xs text-amber-200">One payment can hold up to 50 bills. Ask Claude to split this one.</p>}
       {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
       {saved && <p className="text-sm text-emerald-300">{saved}</p>}
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" className="btn-gold px-5 py-2.5 rounded-lg text-sm" disabled={!canReview} onClick={() => { setError(''); setReview(true); }}>Record payment</button>
-        <span className="text-xs text-gray-500">{noBooks > 0 ? 'Waiting for the missing books entries.' : left !== 0 ? 'Unlocks when "Still to explain" is RM 0.00.' : !slip ? 'Pick the bank slip first.' : !ref.trim() ? 'Type the bank reference.' : 'You will check the list once more before it records.'}</span>
+        <span className="text-xs text-gray-500">{noBooks > 0 ? 'Add the missing books entries first.' : left !== 0 ? 'Unlocks when "Still to explain" is RM 0.00.' : !slip ? 'Pick the bank slip first.' : !ref.trim() ? 'Type the bank reference.' : 'You will check the list once more before it records.'}</span>
         <span className="flex-1" />
         <button type="button" className="btn-ghost px-4 py-2 rounded-lg text-sm" disabled={busy} onClick={() => void later()}>Save, finish later</button>
       </div>
