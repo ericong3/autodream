@@ -10,7 +10,7 @@ import { collectMissingJournalEntries, findStaleLoanSaleEntries, buildCarSaleEnt
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import Payments from './Payments';
-import Reconciliation from './Reconciliation';
+import BankCheck from './BankCheck';
 import { useSearchParams } from 'react-router-dom';
 import AccountingBankAccounts from '../components/AccountingBankAccounts';
 
@@ -237,7 +237,7 @@ export default function Finance() {
           className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${financeTab === 'reconciliation' ? 'bg-gold-gradient text-obsidian-950 font-bold shadow-gold-sm' : 'text-gray-400 hover:text-white'}`}
         >
           <Landmark size={12} />
-          Reconciliation
+          Bank check
         </button>
         <button
           onClick={() => setFinanceTab('accounts')}
@@ -264,7 +264,7 @@ export default function Finance() {
 
       {financeTab === 'payments' && <Payments embedded />}
 
-      {financeTab === 'reconciliation' && <Reconciliation />}
+      {financeTab === 'reconciliation' && <BankCheck />}
 
       {financeTab === 'banks' && currentUser?.role === 'director' && <AccountingBankAccounts key={currentUser.id} actorId={currentUser.id} />}
 

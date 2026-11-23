@@ -145,7 +145,9 @@ interface StoreState {
   deleteCar: (id: string) => Promise<void>;
 
   // Repairs
-  addRepair: (repair: RepairJob) => Promise<void>;
+  // record: an old, finished job keyed in afterwards: never moves the car or alerts
+  // the workshop, and fails loudly so no bill is made without its repair.
+  addRepair: (repair: RepairJob, opts?: { record?: boolean }) => Promise<void>;
   updateRepair: (id: string, repair: Partial<RepairJob>) => Promise<void>;
   applySavedInvestorRepair: (actorId:string,row:any)=>void;
   deleteRepair: (id: string) => Promise<void>;
@@ -2168,10 +2170,10 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
   },
 
   // Repairs
-  addRepair: async (repair) => {
+  addRepair: async (repair, opts) => {
     // Admin only logs expenses/bills here — they have no in-house mechanic tracking
     // physical car location, so their entries must never move the car.
-    const actorIsAdmin = get().currentUser?.role === 'admin';
+    const actorIsAdmin = get().currentUser?.role === 'admin' || !!opts?.record;
     const car = get().cars.find((c) => c.id === repair.carId);
     const protectedStatus = car?.status === 'delivered' || car?.status === 'deal_pending' || car?.finalDeal != null;
     const shouldMoveCar = !actorIsAdmin && repair.location && repair.status !== 'queued';
@@ -2185,6 +2187,10 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     set((s) => ({ repairs: [...s.repairs, repair], cars: updatedCars }));
     const { error } = await supabase.from('repairs').insert(repairToRow(repair));
     if (error) console.error('addRepair failed:', error.message);
+    if (opts?.record) {
+      if (error) { set((s) => ({ repairs: s.repairs.filter((r) => r.id !== repair.id) })); throw new Error('Could not save the repair. Nothing was added.'); }
+      return;
+    }
     if (shouldMoveCar) {
       const dbUpdate: any = { current_location: repair.location };
       if (!protectedStatus) dbUpdate.status = 'in_workshop';
