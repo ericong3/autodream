@@ -51,7 +51,8 @@ export async function handlePrivateFinance(req,deps){return respond(req,deps,['P
   if(Object.hasOwn(b.data,'delete_requested_by')){b.data.delete_requested_by=user.id;b.data.delete_requested_at=stamp;}
   if(Object.hasOwn(b.data,'claim_confirmed_by')){if(!admin)throw new ApiError(403,'FORBIDDEN','Ask admin to check this claim.');b.data.claim_confirmed_by=user.id;b.data.claim_confirmed_at=stamp;}
  }
- const rate=await ctx.repo.throttleHit('privfin:'+createHash('sha256').update(user.id).digest('hex'),240,900);
+ // One full app load already uses a good share of this, so a busy finance day must not hit it.
+ const rate=await ctx.repo.throttleHit('privfin:'+createHash('sha256').update(user.id).digest('hex'),1000,900);
  if(!rate.allowed)throw new ApiError(429,'RATE_LIMITED','Wait a moment and try again.');
  // The production repo applies these capabilities to the query before any rows
  // are returned or updated; browser filters can only narrow that scope.
