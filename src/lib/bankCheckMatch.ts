@@ -13,6 +13,7 @@ export type BankCheckDetails = {
   ref?: string;          // bank reference
   balanceCents?: number; // balance after this line, when the statement shows it
   payee?: string;        // the payee whose bills are being ticked
+  alsoPayee?: string;    // a second payee whose bills this transfer also paid (e.g. Petrol keyed apart)
   billIds?: string[];    // bills this transfer paid (ticked, not yet recorded)
   addedBillIds?: string[]; // bills made from the Bank check page
   note?: string;         // a note from whoever prepared the ticks

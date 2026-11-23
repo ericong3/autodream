@@ -285,13 +285,13 @@ function DoneView({ line, moves }: { line: BankCheckLine; moves: BankMove[] }) {
   </div>;
 }
 
-function BillTable({ bills, cars, amountOf, ticked, onToggle, flag }: { bills: Payment[]; cars: { id: string; carPlate?: string }[]; amountOf: (p: Payment) => number; ticked?: Set<string>; onToggle?: (id: string) => void; flag?: (p: Payment) => string | undefined }) {
+function BillTable({ bills, cars, amountOf, ticked, onToggle, flag, hint }: { bills: Payment[]; cars: { id: string; carPlate?: string }[]; amountOf: (p: Payment) => number; ticked?: Set<string>; onToggle?: (id: string) => void; hint?: (p: Payment) => string | undefined; flag?: (p: Payment) => string | undefined }) {
   return <div className="rounded-lg border border-obsidian-400/60 divide-y divide-obsidian-400/40">
     {bills.map((p) => {
       const plate = cars.find((c) => c.id === p.carId)?.carPlate ?? '';
       const body = <>
         <span className="w-24 shrink-0 text-white font-semibold">{plate || '—'}</span>
-        <span className="flex-1 min-w-[160px] text-gray-300">{p.description || p.type}<span className="text-gray-500"> · keyed {dayLabel(p.createdAt)}</span>{flag?.(p) && <span className="ml-2 text-[11px] text-amber-300">{flag(p)}</span>}</span>
+        <span className="flex-1 min-w-[160px] text-gray-300">{p.description || p.type}<span className="text-gray-500"> · keyed {dayLabel(p.createdAt)}</span>{flag?.(p) ? <span className="ml-2 text-[11px] text-amber-300">{flag(p)}</span> : hint?.(p) && <span className="ml-2 text-[11px] text-sky-300">{hint(p)}</span>}</span>
         <span className="w-28 text-right text-white">{formatCents(amountOf(p)).replace('RM ', '')}</span>
       </>;
       return onToggle
@@ -379,7 +379,18 @@ function BillsMatch({ line, bank, actorId, onChange }: { line: BankCheckLine; ba
   const flag = (p: Payment) => (duplicate(p) ? 'same job as another bill: check before paying' : unbooked(p) ? 'no books entry yet' : undefined);
   const tickedSet = new Set(ticked);
   const list = openBills.filter((p) => p.recipientName.toLowerCase() === payee.toLowerCase()).sort((a, b) => Number(firstTicked.has(b.id)) - Number(firstTicked.has(a.id)) || a.createdAt.localeCompare(b.createdAt));
-  const others = ticked.map((id) => byId.get(id)).filter((p): p is Payment => !!p && !list.includes(p));
+  // Costs the same person paid can be keyed under another payee (petrol keyed as "Petrol"
+  // next to the runner's own bill). Those on the same car and day as a ticked bill are
+  // suggested, and a second payee's bills can be shown and ticked too.
+  const [alsoPayee, setAlsoPayee] = useState(line.details.alsoPayee ?? '');
+  const keyedDay = (p: Payment) => new Date(new Date(p.createdAt).getTime() + 8 * 3600e3).toISOString().slice(0, 10);
+  const sameKeys = new Set(ticked.map((id) => byId.get(id)).filter((p): p is Payment => !!p && !!p.carId && p.recipientName.toLowerCase() === payee.toLowerCase()).map((p) => p.carId + '|' + keyedDay(p)));
+  const nearSame = (p: Payment) => !!p.carId && sameKeys.has(p.carId + '|' + keyedDay(p));
+  const nearby = new Map<string, { n: number; cents: number }>();
+  for (const p of openBills) if (p.type === 'misc_cost' && p.recipientName.toLowerCase() !== payee.toLowerCase() && !tickedSet.has(p.id) && nearSame(p)) { const g = nearby.get(p.recipientName) ?? { n: 0, cents: 0 }; nearby.set(p.recipientName, { n: g.n + 1, cents: g.cents + paymentBalanceCents(p) }); }
+  const list2 = alsoPayee && alsoPayee.toLowerCase() !== payee.toLowerCase() ? openBills.filter((p) => p.recipientName.toLowerCase() === alsoPayee.toLowerCase()).sort((a, b) => Number(nearSame(b)) - Number(nearSame(a)) || Number(tickedSet.has(b.id)) - Number(tickedSet.has(a.id)) || a.createdAt.localeCompare(b.createdAt)) : [];
+  const list2Near = list2.filter(nearSame);
+  const others = ticked.map((id) => byId.get(id)).filter((p): p is Payment => !!p && !list.includes(p) && !list2.includes(p));
   const live = ticked.filter((id) => { const p = byId.get(id); return !!p && p.status === 'pending' && paymentBalanceCents(p) > 0; });
   const total = live.reduce((s, id) => s + paymentBalanceCents(byId.get(id)!), 0);
   const left = amount - total;
@@ -412,7 +423,7 @@ function BillsMatch({ line, bank, actorId, onChange }: { line: BankCheckLine; ba
   const canReview = !busy && !intent && noBooks === 0 && left === 0 && live.length > 0 && live.length <= 50 && !!slip && ref.trim().length > 0 && ref.length <= 200;
 
   const saveTicks = async (ids = ticked, extra: Partial<BankCheckDetails> = {}) => {
-    const l = await saveLine(line.id, { details: { ...line.details, payee, billIds: ids, ...extra } });
+    const l = await saveLine(line.id, { details: { ...line.details, payee, alsoPayee: alsoPayee || undefined, billIds: ids, ...extra } });
     onChange(l); return l;
   };
   const later = async () => {
@@ -475,6 +486,22 @@ function BillsMatch({ line, bank, actorId, onChange }: { line: BankCheckLine; ba
         <BillTable bills={list} cars={cars} amountOf={paymentBalanceCents} ticked={tickedSet} onToggle={toggle} flag={flag} />
         <div className="flex gap-3 text-xs"><button type="button" className="text-gold-400 min-h-[36px]" onClick={() => setTicked((t) => [...new Set([...t, ...list.map((p) => p.id)])])}>Tick all</button><button type="button" className="text-gold-400 min-h-[36px]" onClick={() => setTicked((t) => t.filter((id) => !list.some((p) => p.id === id)))}>Untick all</button></div>
       </> : <p className="text-sm text-gray-400">{payee} has no unpaid bills in the app.</p>) : <p className="text-sm text-gray-400">Choose who this transfer paid.</p>}
+      {payee && <div className="rounded-lg border border-white/10 p-3 space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs text-gray-300">Did this transfer also pay bills keyed under another payee? (e.g. Petrol)</p>
+          <select className="input rounded-lg px-3 py-2 text-sm max-w-[260px]" value={alsoPayee} onChange={(e) => setAlsoPayee(e.target.value)}>
+            <option value="">No</option>
+            {payees.filter((x) => x[0].toLowerCase() !== payee.toLowerCase()).map((x) => <option key={x[0]} value={x[0]}>{x[0]} ({x[1]})</option>)}
+          </select>
+        </div>
+        {!alsoPayee && nearby.size > 0 && <p className="text-xs text-sky-200">On the same cars and days as your ticked bills: {[...nearby.entries()].map(([n, g], i) => <span key={n}>{i ? ', ' : ''}<button type="button" className="underline" onClick={() => setAlsoPayee(n)}>{n} ({g.n} {g.n === 1 ? 'bill' : 'bills'}, {formatCents(g.cents)})</button></span>)}. Tap to show them.</p>}
+        {list2.length > 0 && <>
+          <p className="text-xs text-gray-500">{alsoPayee}'s unpaid bills{list2Near.length ? `, the ${list2Near.length} on the same cars and days as your ticked bills first` : ''}.</p>
+          <BillTable bills={list2} cars={cars} amountOf={paymentBalanceCents} ticked={tickedSet} onToggle={toggle} flag={flag} hint={(p) => (nearSame(p) ? 'same car and day as a ticked bill' : undefined)} />
+          <div className="flex flex-wrap gap-3 text-xs">{list2Near.length > 0 && <button type="button" className="text-gold-400 min-h-[36px]" onClick={() => setTicked((t) => [...new Set([...t, ...list2Near.map((p) => p.id)])])}>Tick the {list2Near.length} on the same cars and days</button>}<button type="button" className="text-gold-400 min-h-[36px]" onClick={() => setTicked((t) => t.filter((id) => !list2.some((p) => p.id === id)))}>Untick all {alsoPayee}</button></div>
+        </>}
+        {alsoPayee && !list2.length && <p className="text-xs text-gray-400">{alsoPayee} has no unpaid bills in the app.</p>}
+      </div>}
       {others.length > 0 && <><p className="text-xs text-gray-500">Also ticked, from other payees or already paid:</p><BillTable bills={others} cars={cars} amountOf={paymentBalanceCents} ticked={tickedSet} onToggle={toggle} flag={flag} /></>}
       {stale > 0 && <p className="text-xs text-amber-200">{stale} ticked {stale === 1 ? 'bill is' : 'bills are'} already paid and won't count.</p>}
     </div>
