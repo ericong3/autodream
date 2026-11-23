@@ -45,6 +45,7 @@ import Investors from './pages/Investors';
 const InvestorAccountPortal=lazy(()=>import('./pages/InvestorAccountPortal'));
 const InvestorFinanceConsole=lazy(()=>import('./pages/InvestorFinanceConsole'));
 const DealerAccounts=lazy(()=>import('./pages/DealerAccounts'));
+const BankCheck=lazy(()=>import('./pages/BankCheck'));
 import LoanCases from './pages/LoanCases';
 import BankerDashboard from './pages/BankerDashboard';
 import AdminDashboard from './pages/AdminDashboard';
@@ -333,6 +334,7 @@ export default function App() {
           <Route path="/loan-cases" element={<RequireSalesOrDirector><LoanCases /></RequireSalesOrDirector>} />
           <Route path="/finance" element={<RequireDirector><Suspense fallback={<p className="p-8 text-white/60">Loading Accounting…</p>}><Finance /></Suspense></RequireDirector>} />
           <Route path="/payroll" element={<RequireDirector><Payroll /></RequireDirector>} />
+          <Route path="/bank-check" element={<RequireDirector><Suspense fallback={<p className="p-8 text-white/60">Loading bank check…</p>}><BankCheck /></Suspense></RequireDirector>} />
           <Route path="/payroll/bonus-campaigns" element={<RequireDirector><BonusCampaigns /></RequireDirector>} />
           <Route path="/team" element={<RequireDirector><TeamMembers /></RequireDirector>} />
           <Route path="/data" element={<RequireDataAccess><Data /></RequireDataAccess>} />

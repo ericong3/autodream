@@ -10,7 +10,6 @@ import { collectMissingJournalEntries, findStaleLoanSaleEntries, buildCarSaleEnt
 import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import Payments from './Payments';
-import BankCheck from './BankCheck';
 import { useSearchParams } from 'react-router-dom';
 import AccountingBankAccounts from '../components/AccountingBankAccounts';
 
@@ -57,7 +56,7 @@ export default function Finance() {
   const [applyingStale, setApplyingStale] = useState<string | null>(null);
 
   const [params, setParams] = useSearchParams();
-  const [selectedTab, setSelectedTab] = useState<'overview' | 'payments' | 'reconciliation' | 'accounts' | 'ledger' | 'balance_sheet'>('overview');
+  const [selectedTab, setSelectedTab] = useState<'overview' | 'payments' | 'accounts' | 'ledger' | 'balance_sheet'>('overview');
   const financeTab = companyBankPaymentsEnabled && params.get('tab') === 'banks' ? 'banks' : selectedTab;
   const setFinanceTab = (tab: typeof selectedTab) => {
     setSelectedTab(tab);
@@ -233,13 +232,6 @@ export default function Finance() {
           Bank accounts
         </button>}
         <button
-          onClick={() => setFinanceTab('reconciliation')}
-          className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${financeTab === 'reconciliation' ? 'bg-gold-gradient text-obsidian-950 font-bold shadow-gold-sm' : 'text-gray-400 hover:text-white'}`}
-        >
-          <Landmark size={12} />
-          Bank check
-        </button>
-        <button
           onClick={() => setFinanceTab('accounts')}
           className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${financeTab === 'accounts' ? 'bg-gold-gradient text-obsidian-950 font-bold shadow-gold-sm' : 'text-gray-400 hover:text-white'}`}
         >
@@ -263,8 +255,6 @@ export default function Finance() {
       </div>
 
       {financeTab === 'payments' && <Payments embedded />}
-
-      {financeTab === 'reconciliation' && <BankCheck />}
 
       {financeTab === 'banks' && currentUser?.role === 'director' && <AccountingBankAccounts key={currentUser.id} actorId={currentUser.id} />}
 

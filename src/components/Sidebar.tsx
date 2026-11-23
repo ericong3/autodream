@@ -25,6 +25,7 @@ import {
   Wrench,
   Receipt,
   PiggyBank,
+  Landmark,
 } from 'lucide-react';
 import { useStore } from '../store';
 
@@ -41,6 +42,7 @@ const directorItems: NavItem[] = [
 
 const directorBottomItems: NavItem[] = [
   { to: '/finance',    icon: TrendingUp,    label: 'Accounting'    },
+  { to: '/bank-check', icon: Landmark,      label: 'Bank check'    },
   { to: '/payroll',    icon: PiggyBank,     label: 'Payroll'       },
   { to: '/team',       icon: UsersRound,    label: 'Team Members'  },
   ...(import.meta.env.VITE_INVESTOR_FINANCE==='1'?[{ to: '/investor-finance', icon: Briefcase, label: 'Investor accounts' },{ to: '/dealer-accounts', icon: Briefcase, label: 'Dealer accounts' }]:[]),

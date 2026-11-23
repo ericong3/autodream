@@ -152,7 +152,7 @@ export default function BankCheck() {
   return <div className="space-y-4 max-w-5xl mx-auto">
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div>
-        <p className="text-[11px] tracking-wider text-gray-500">FINANCE · DIRECTOR ONLY</p>
+        <p className="text-[11px] tracking-wider text-gray-500">DIRECTOR ONLY</p>
         <h2 className="font-display text-white font-bold text-xl">Bank check</h2>
         <p className="text-gray-400 text-sm">{bank ? `${bank.name}${activeMonth ? ` · ${monthLabel(activeMonth)} · ${monthLines.length} lines` : ''}` : 'Loading banks…'}</p>
       </div>

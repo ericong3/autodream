@@ -7,7 +7,7 @@ import {
   FileText, Calculator, GitCompare,
   ClipboardList, Bot, TrendingUp, UsersRound,
   History, Banknote, Briefcase, Search,
-  Loader2, RefreshCw, Database, FolderOpen, Settings, Wallet, Receipt,
+  Loader2, RefreshCw, Database, FolderOpen, Settings, Wallet, Receipt, Landmark,
 } from 'lucide-react';
 import { NavLink, useNavigate, useLocation, Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
@@ -48,6 +48,7 @@ const DIRECTOR_PRIMARY = [
 ];
 const DIRECTOR_MORE = [
   { to: '/finance',         icon: TrendingUp,    label: 'Accounting'   },
+  { to: '/bank-check',      icon: Landmark,      label: 'Bank check'   },
   { to: '/team',            icon: UsersRound,    label: 'Team Members' },
   ...(import.meta.env.VITE_INVESTOR_FINANCE==='1'?[{ to: '/investor-finance', icon: Briefcase, label: 'Investor accounts' },{ to: '/dealer-accounts', icon: Briefcase, label: 'Dealer accounts' }]:[]),
   { to: '/investors',       icon: Briefcase,     label: 'Consignment' },
