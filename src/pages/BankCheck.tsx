@@ -30,7 +30,10 @@ const kindLabel = (k?: string) => [...OUT_KINDS, ...IN_KINDS].find((x) => x[0] =
 const dayLabel = (d: string) => new Date(d.slice(0, 10) + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short' });
 const monthLabel = (m: string) => new Date(m + '-01T00:00:00').toLocaleDateString('en-MY', { month: 'long', year: 'numeric' });
 const signed = (cents: number) => (cents > 0 ? '+' : '') + formatCents(cents).replace('RM ', '');
-const errorText = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);
+const errorText = (e: unknown, fallback: string) => {
+  if ((e as { code?: string } | null)?.code === 'RATE_LIMITED') return 'Too many requests from your account in the last few minutes. Wait about 10 minutes, then try again. Nothing you typed is lost.';
+  return e instanceof Error && e.message ? e.message : fallback;
+};
 const card = 'bg-card-gradient border border-obsidian-400/70 rounded-xl';
 const CHIP: Record<LineState, [string, string]> = {
   needs: ['Needs you', 'bg-amber-400/15 text-amber-200'],
@@ -300,17 +303,23 @@ function BillTable({ bills, cars, amountOf, ticked, onToggle, flag }: { bills: P
 
 function AnswerForm({ line, kind, actorId, onChange }: { line: BankCheckLine; kind: string; actorId: string; onChange: (l: BankCheckLine) => void }) {
   const before = line.details.answer?.kind === kind ? line.details.answer : undefined;
-  const [type, setType] = useState(before?.type ?? (kind === 'office' ? OFFICE_TYPES[0] : ''));
-  const [car, setCar] = useState(before?.car ?? ''), [month, setMonth] = useState(before?.month ?? ''), [note, setNote] = useState(before?.note ?? '');
+  const users = useStore((s) => s.users);
+  const pickPerson = kind === 'salary' || kind === 'director_in';
+  // Staff to pick from: everyone for a salary, directors and shareholders for money a director put in.
+  const people = useMemo(() => [...new Set(users.filter((u) => u.role !== 'investor' && u.role !== 'banker' && (kind === 'salary' || u.role === 'director' || u.role === 'shareholder')).map((u) => u.name).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [users, kind]);
+  const monthOptions = useMemo(() => { const d = new Date(line.date + 'T00:00:00'); return Array.from({ length: 13 }, (_, i) => new Date(d.getFullYear(), d.getMonth() - i, 1).toLocaleDateString('en-MY', { month: 'long', year: 'numeric' })); }, [line.date]);
+  const [type, setType] = useState(() => before?.type ?? (kind === 'office' ? OFFICE_TYPES[0] : pickPerson ? guessPayee(`${line.details.who ?? ''} ${line.text}`, people) ?? '' : ''));
+  const [someoneElse, setSomeoneElse] = useState(() => pickPerson && !!before?.type && !people.includes(before.type));
+  const [car, setCar] = useState(before?.car ?? ''), [month, setMonth] = useState(before?.month ?? (kind === 'salary' ? monthOptions[1] : '')), [note, setNote] = useState(before?.note ?? '');
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [saved, setSaved] = useState(false);
   const needsCar = ['car_purchase', 'car_sale', 'booking', 'garage', 'customer_refund'].includes(kind);
-  const needsName = ['salary', 'director_in', 'customer_refund'].includes(kind);
   const needsMonth = ['office', 'salary'].includes(kind);
-  const ready = !busy && (kind !== 'other' || note.trim().length > 0);
+  const ready = !busy && (kind !== 'other' || note.trim().length > 0) && (kind !== 'salary' || (type.trim().length > 0 && month.length > 0));
   const save = async () => {
     setBusy(true); setError(''); setSaved(false);
     try {
-      const answer = { kind, ...(type.trim() ? { type: type.trim().slice(0, 120) } : {}), ...(car.trim() ? { car: car.trim().slice(0, 40) } : {}), ...(month.trim() ? { month: month.trim().slice(0, 60) } : {}), ...(note.trim() ? { note: note.trim().slice(0, 1000) } : {}), at: new Date().toISOString(), by: actorId };
+      const userId = pickPerson && !someoneElse ? users.find((u) => u.name === type)?.id : undefined;
+      const answer = { kind, ...(type.trim() ? { type: type.trim().slice(0, 120) } : {}), ...(userId ? { userId } : {}), ...(car.trim() ? { car: car.trim().slice(0, 40) } : {}), ...(month.trim() ? { month: month.trim().slice(0, 60) } : {}), ...(note.trim() ? { note: note.trim().slice(0, 1000) } : {}), at: new Date().toISOString(), by: actorId };
       onChange(await saveLine(line.id, { details: { ...line.details, answer } })); setSaved(true);
     } catch (e) { setError(errorText(e, 'Could not save your answer.')); } finally { setBusy(false); }
   };
@@ -318,9 +327,17 @@ function AnswerForm({ line, kind, actorId, onChange }: { line: BankCheckLine; ki
   return <div className={`${card} p-4 space-y-3`}>
     <div className="grid gap-3 sm:grid-cols-2">
       {kind === 'office' && <label className="text-xs text-gray-400">Type<select className={field} value={type} onChange={(e) => setType(e.target.value)}>{OFFICE_TYPES.map((t) => <option key={t}>{t}</option>)}</select></label>}
-      {needsName && <label className="text-xs text-gray-400">{kind === 'salary' ? 'Whose salary or fee?' : kind === 'customer_refund' ? "Customer's name" : 'Which director?'}<input className={field} value={type} maxLength={120} onChange={(e) => setType(e.target.value)} /></label>}
+      {pickPerson && <label className="text-xs text-gray-400">{kind === 'salary' ? 'Whose salary or fee?' : 'Which director?'}
+        <select className={field} value={someoneElse ? '__other' : type} onChange={(e) => { if (e.target.value === '__other') { setSomeoneElse(true); setType(''); } else { setSomeoneElse(false); setType(e.target.value); } }}>
+          <option value="">Choose…</option>
+          {people.map((n) => <option key={n} value={n}>{n}</option>)}
+          <option value="__other">Someone else (type the name)</option>
+        </select>
+        {someoneElse && <input className={field} value={type} maxLength={120} placeholder="Name" onChange={(e) => setType(e.target.value)} />}</label>}
+      {kind === 'customer_refund' && <label className="text-xs text-gray-400">Customer's name<input className={field} value={type} maxLength={120} onChange={(e) => setType(e.target.value)} /></label>}
       {needsCar && <label className="text-xs text-gray-400">Which car?<input className={field} value={car} maxLength={40} placeholder="Plate, e.g. QAA1234A" onChange={(e) => setCar(e.target.value)} /></label>}
-      {needsMonth && <label className="text-xs text-gray-400">For which month?<input className={field} value={month} maxLength={60} placeholder="e.g. October 2026" onChange={(e) => setMonth(e.target.value)} /></label>}
+      {kind === 'salary' && <label className="text-xs text-gray-400">For which month?<select className={field} value={month} onChange={(e) => setMonth(e.target.value)}><option value="">Choose…</option>{[...new Set([...(month && !monthOptions.includes(month) ? [month] : []), ...monthOptions])].map((m) => <option key={m}>{m}</option>)}</select></label>}
+      {needsMonth && kind !== 'salary' && <label className="text-xs text-gray-400">For which month?<input className={field} value={month} maxLength={60} placeholder="e.g. October 2026" onChange={(e) => setMonth(e.target.value)} /></label>}
       <label className="text-xs text-gray-400 sm:col-span-2">{kind === 'other' ? 'What was it? (needed)' : 'Note (optional)'}<input className={field} value={note} maxLength={1000} onChange={(e) => setNote(e.target.value)} /></label>
     </div>
     {kind === 'customer_refund' && <p className="text-xs text-gray-400">For example, the loan paid more than the car price and the extra went back to the customer. Claude will put the refund on the car and in the books, and check with you first.</p>}

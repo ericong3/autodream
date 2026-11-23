@@ -3,7 +3,7 @@
 // a statement line is negative when money left the bank.
 import type { JournalEntry } from '../types';
 
-export type BankCheckAnswer = { kind: string; type?: string; car?: string; month?: string; note?: string; at: string; by: string };
+export type BankCheckAnswer = { kind: string; type?: string; userId?: string; car?: string; month?: string; note?: string; at: string; by: string };
 export type BankCheckDone = { how: 'recorded' | 'marked'; bankPaymentId?: string; journalIds?: string[]; at: string; by: string };
 export type BankCheckDetails = {
   bankId?: string;
@@ -97,7 +97,7 @@ export function appSaysAt(currentCents: number, moves: BankMove[], date: string)
   return currentCents - moves.filter((m) => m.date > date).reduce((s, m) => s + m.cents, 0);
 }
 
-const STOP = new Set(['sdn', 'bhd', 'enterprise', 'trading', 'the', 'and', 'auto', 'motor', 'motors', 'service', 'services', 'plt', 'company', 'centre', 'center']);
+const STOP = new Set(['sdn', 'bhd', 'enterprise', 'trading', 'the', 'and', 'auto', 'motor', 'motors', 'service', 'services', 'plt', 'company', 'centre', 'center', 'bin', 'binti', 'bte', 'anak']);
 const words = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ').filter((w) => w.length >= 3 && !STOP.has(w));
 
 // The payee name that shares the most words with the statement text.
