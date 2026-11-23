@@ -23,7 +23,7 @@ import {
 type BankRow = Bank & { balanceCents?: number };
 type Tab = 'needs' | 'answered' | 'done' | 'all';
 const SALARY = new Set(['salary', 'allowance', 'campaign_bonus']);
-const OUT_KINDS: [string, string][] = [['bills', 'Bills in To pay'], ['office', 'Office cost'], ['car_purchase', 'Car purchase'], ['salary', 'Salary or director fee'], ['own_transfer', 'Moved to our other account'], ['other', 'Other']];
+const OUT_KINDS: [string, string][] = [['bills', 'Bills in To pay'], ['staff', 'Paid back to staff (they paid first)'], ['customer_refund', 'Paid back to a customer (overloan / refund)'], ['office', 'Office cost'], ['car_purchase', 'Car purchase'], ['salary', 'Salary or director fee'], ['own_transfer', 'Moved to our other account'], ['other', 'Other']];
 const IN_KINDS: [string, string][] = [['car_sale', 'Customer paid for a car'], ['booking', 'Booking fee'], ['garage', 'Garage job'], ['director_in', 'A director put money in'], ['own_transfer', 'From our other account'], ['other', 'Other']];
 const OFFICE_TYPES = ['Rent', 'Electricity and water', 'Internet and phone', 'Office supplies', 'Refreshments', 'Uniforms', 'Other'];
 const kindLabel = (k?: string) => [...OUT_KINDS, ...IN_KINDS].find((x) => x[0] === k)?.[1] ?? k ?? '';
@@ -259,7 +259,7 @@ function LineDetail({ line, state, bank, moves, actorId, onBack, onChange }: {
             <input type="radio" name="kind" className="accent-[#EAB820]" checked={kind === k} onChange={() => setKind(k)} />{name}</label>)}
         </div>
       </fieldset>
-      {out && kind === 'bills' ? <BillsMatch line={line} bank={bank} actorId={actorId} onChange={onChange} />
+      {out && (kind === 'bills' || kind === 'staff') ? <>{kind === 'staff' && <p className="text-sm text-sky-200 rounded-lg border border-sky-400/30 bg-sky-400/10 p-3">Choose the staff member as the payee. Then in step 2 add what they paid for: the car, what it was, and the amount. It goes on the car as a car cost paid back to them.</p>}<BillsMatch line={line} bank={bank} actorId={actorId} onChange={onChange} /></>
         : kind ? <AnswerForm key={kind} line={line} kind={kind} actorId={actorId} onChange={onChange} /> : null}
       <div className="text-xs text-gray-500">
         {!marking ? <button type="button" className="underline min-h-[40px]" onClick={() => setMarking(true)}>This is already recorded in the app</button>
@@ -303,8 +303,8 @@ function AnswerForm({ line, kind, actorId, onChange }: { line: BankCheckLine; ki
   const [type, setType] = useState(before?.type ?? (kind === 'office' ? OFFICE_TYPES[0] : ''));
   const [car, setCar] = useState(before?.car ?? ''), [month, setMonth] = useState(before?.month ?? ''), [note, setNote] = useState(before?.note ?? '');
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [saved, setSaved] = useState(false);
-  const needsCar = ['car_purchase', 'car_sale', 'booking', 'garage'].includes(kind);
-  const needsName = ['salary', 'director_in'].includes(kind);
+  const needsCar = ['car_purchase', 'car_sale', 'booking', 'garage', 'customer_refund'].includes(kind);
+  const needsName = ['salary', 'director_in', 'customer_refund'].includes(kind);
   const needsMonth = ['office', 'salary'].includes(kind);
   const ready = !busy && (kind !== 'other' || note.trim().length > 0);
   const save = async () => {
@@ -318,11 +318,12 @@ function AnswerForm({ line, kind, actorId, onChange }: { line: BankCheckLine; ki
   return <div className={`${card} p-4 space-y-3`}>
     <div className="grid gap-3 sm:grid-cols-2">
       {kind === 'office' && <label className="text-xs text-gray-400">Type<select className={field} value={type} onChange={(e) => setType(e.target.value)}>{OFFICE_TYPES.map((t) => <option key={t}>{t}</option>)}</select></label>}
-      {needsName && <label className="text-xs text-gray-400">{kind === 'salary' ? 'Whose salary or fee?' : 'Which director?'}<input className={field} value={type} maxLength={120} onChange={(e) => setType(e.target.value)} /></label>}
+      {needsName && <label className="text-xs text-gray-400">{kind === 'salary' ? 'Whose salary or fee?' : kind === 'customer_refund' ? "Customer's name" : 'Which director?'}<input className={field} value={type} maxLength={120} onChange={(e) => setType(e.target.value)} /></label>}
       {needsCar && <label className="text-xs text-gray-400">Which car?<input className={field} value={car} maxLength={40} placeholder="Plate, e.g. QAA1234A" onChange={(e) => setCar(e.target.value)} /></label>}
       {needsMonth && <label className="text-xs text-gray-400">For which month?<input className={field} value={month} maxLength={60} placeholder="e.g. October 2026" onChange={(e) => setMonth(e.target.value)} /></label>}
       <label className="text-xs text-gray-400 sm:col-span-2">{kind === 'other' ? 'What was it? (needed)' : 'Note (optional)'}<input className={field} value={note} maxLength={1000} onChange={(e) => setNote(e.target.value)} /></label>
     </div>
+    {kind === 'customer_refund' && <p className="text-xs text-gray-400">For example, the loan paid more than the car price and the extra went back to the customer. Claude will put the refund on the car and in the books, and check with you first.</p>}
     {kind === 'car_purchase' && <p className="text-xs text-gray-400">If this car is not in the app yet, add it in Inventory too. Its purchase can then be recorded against this line.</p>}
     {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
     {saved && <p className="text-sm text-emerald-300">Saved.</p>}
