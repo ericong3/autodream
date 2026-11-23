@@ -338,7 +338,8 @@ function BillsMatch({ line, bank, actorId, onChange }: { line: BankCheckLine; ba
   const amount = -line.cents;
   const openBills = useMemo(() => payments.filter((p) => p.status === 'pending' && !SALARY.has(p.type) && p.type !== 'panel_charge' && paymentBalanceCents(p) > 0), [payments]);
   const payees = useMemo(() => { const m = new Map<string, number>(); for (const p of openBills) m.set(p.recipientName, (m.get(p.recipientName) ?? 0) + 1); return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0])); }, [openBills]);
-  const shopNames = useMemo(() => [...workshops.map((w) => w.name), ...merchants.map((m) => m.name)], [workshops, merchants]);
+  const users = useStore((s) => s.users);
+  const shopNames = useMemo(() => [...workshops.map((w) => w.name), ...merchants.map((m) => m.name), ...users.filter((u) => u.role !== 'investor').map((u) => u.name)].filter(Boolean), [workshops, merchants, users]);
   const [payee, setPayee] = useState(() => line.details.payee ?? guessPayee(`${line.details.who ?? ''} ${line.text}`, [...new Set([...payees.map((x) => x[0]), ...shopNames])]) ?? '');
   const [ticked, setTicked] = useState<string[]>(line.details.billIds ?? []);
   // Bills that were ticked when the line opened stay on top, so they are easy to compare.
@@ -423,7 +424,7 @@ function BillsMatch({ line, bank, actorId, onChange }: { line: BankCheckLine; ba
         <label className="text-xs text-gray-400 flex items-center gap-2">Payee
           <select className="input rounded-lg px-3 py-2 text-sm max-w-[260px]" value={payee} onChange={(e) => setPayee(e.target.value)}>
             <option value="">Choose…</option>
-            {[...new Set([...payees.map((x) => x[0]), ...(payee && !payees.some((x) => x[0] === payee) ? [payee] : [])])].map((n) => <option key={n} value={n}>{n} ({payees.find((x) => x[0] === n)?.[1] ?? 0})</option>)}
+            {[...new Set([...payees.map((x) => x[0]), ...shopNames, ...(payee ? [payee] : [])])].sort((a, b) => a.localeCompare(b)).map((n) => <option key={n} value={n}>{n} ({payees.find((x) => x[0] === n)?.[1] ?? 0})</option>)}
           </select></label>
       </div>
       {payee ? (list.length ? <>
@@ -474,7 +475,8 @@ type AddDeps = {
 };
 
 // A bill the admin never keyed in: it goes on the car as a finished repair (for a
-// workshop) or a car cost (for a shop), with its books entry dated on the bank
+// workshop) or a car cost (for a shop, or a person who paid first and is paid
+// back), with its books entry dated on the bank
 // line, and is ticked for this transfer.
 function AddBill({ line, payee, actorId, deps, onAdded }: { line: BankCheckLine; payee: string; actorId: string; deps: AddDeps; onAdded: (billId: string) => Promise<void> }) {
   const ws = deps.workshops.find((w) => w.name.toLowerCase() === payee.toLowerCase());
@@ -482,7 +484,7 @@ function AddBill({ line, payee, actorId, deps, onAdded }: { line: BankCheckLine;
   const [plate, setPlate] = useState(''), [job, setJob] = useState<string>(REPAIR_TYPES[0]), [what, setWhat] = useState(''), [amount, setAmount] = useState('');
   const [invoice, setInvoice] = useState<File | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState(''), [done, setDone] = useState<string[]>([]);
   const cents = parseRinggit(amount);
-  const ready = !busy && (!!ws || !!shop) && plate.trim().length > 0 && !!cents && (ws ? !!job : what.trim().length > 0);
+  const ready = !busy && !!payee && plate.trim().length > 0 && !!cents && (ws ? !!job : what.trim().length > 0);
   const add = async () => {
     setBusy(true); setError('');
     try {
@@ -496,8 +498,9 @@ function AddBill({ line, payee, actorId, deps, onAdded }: { line: BankCheckLine;
         await deps.addRepair(repair, { record: true });
         billId = await generateRepairPayment({ repair, payments: useStore.getState().payments, workshops: deps.workshops, addPayment: deps.addPayment });
         if (billId) await deps.addJournalEntry({ ...buildCarCostRecognizedEntry({ car, amount: amt, description: `Repair recognized — ${job}`, sourceType: 'repair', sourceId: billId, createdBy: actorId }), date: line.date });
-      } else if (shop) {
-        const misc: MiscCost = { id: generateId(), description: what.trim().slice(0, 200), amount: amt, merchant: shop.name, createdAt: now, createdBy: actorId };
+      } else {
+        // A shop, or a person (staff) who paid first and is paid back by this transfer.
+        const misc: MiscCost = { id: generateId(), description: what.trim().slice(0, 200), amount: amt, merchant: shop?.name ?? payee, createdAt: now, createdBy: actorId };
         if (!(await deps.addMiscCost(car.id, misc))) throw new Error('Could not save this cost, so no bill was made. Try again.');
         billId = await generateMiscCostPayment({ carId: car.id, misc, payments: useStore.getState().payments, merchants: deps.merchants, addPayment: deps.addPayment });
         if (billId) await deps.addJournalEntry({ ...buildCarCostRecognizedEntry({ car, amount: amt, description: `Misc cost recognized — ${misc.description}`, sourceType: 'misc_cost', sourceId: billId, createdBy: actorId }), date: line.date });
@@ -512,14 +515,14 @@ function AddBill({ line, payee, actorId, deps, onAdded }: { line: BankCheckLine;
   const field = 'input w-full rounded-lg px-3 py-2 text-sm mt-1';
   return <div className={`${card} p-4 space-y-3`}>
     <p className="text-white text-sm font-semibold">2 · Add bills that were never keyed in</p>
-    {!payee ? <p className="text-sm text-gray-400">Choose the payee above first.</p> : !ws && !shop ? <p className="text-sm text-gray-400">{payee} is not a workshop or shop in the app, so bills for it can't be added here.</p> : <>
-      <p className="text-xs text-gray-500">Each one goes on the car as {ws ? 'a finished repair' : 'a car cost'} from {payee}, with its books entry, and is ticked for this transfer.</p>
+    {!payee ? <p className="text-sm text-gray-400">Choose the payee above first.</p> : <>
+      <p className="text-xs text-gray-500">Each one goes on the car as {ws ? `a finished repair from ${payee}` : shop ? `a car cost from ${payee}` : `a car cost paid back to ${payee} (they paid for it first)`}, with its books entry, and is ticked for this transfer.</p>
       <div className="grid gap-3 sm:grid-cols-4">
         <label className="text-xs text-gray-400">Car plate<input className={field} value={plate} maxLength={20} placeholder="QAA1234A" onChange={(e) => setPlate(e.target.value)} /></label>
         {ws ? <label className="text-xs text-gray-400">Job<select className={field} value={job} onChange={(e) => setJob(e.target.value)}>{REPAIR_TYPES.map((t) => <option key={t}>{t}</option>)}</select></label>
-          : <label className="text-xs text-gray-400">What for<input className={field} value={what} maxLength={200} placeholder="e.g. Insurance" onChange={(e) => setWhat(e.target.value)} /></label>}
+          : <label className="text-xs text-gray-400">What for<input className={field} value={what} maxLength={200} placeholder={shop ? "e.g. Insurance" : "e.g. Window switch"} onChange={(e) => setWhat(e.target.value)} /></label>}
         <label className="text-xs text-gray-400">Amount (RM)<input className={field} inputMode="decimal" value={amount} placeholder="0.00" onChange={(e) => setAmount(e.target.value)} /></label>
-        <label className="text-xs text-gray-400">Invoice (optional)<input type="file" accept="image/png,image/jpeg,application/pdf" className="block mt-2 text-xs w-full" onChange={(e) => setInvoice(e.target.files?.[0] ?? null)} /></label>
+        <label className="text-xs text-gray-400">Receipt or invoice (optional)<input type="file" accept="image/png,image/jpeg,application/pdf" className="block mt-2 text-xs w-full" onChange={(e) => setInvoice(e.target.files?.[0] ?? null)} /></label>
       </div>
       {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
       <button type="button" className="btn-ghost px-4 py-2 rounded-lg text-sm" disabled={!ready} onClick={() => void add()}>{busy ? 'Adding…' : 'Add bill'}</button>
