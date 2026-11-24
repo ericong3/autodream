@@ -7,11 +7,14 @@ import {
   Wallet, CheckCircle2, X, Search, CreditCard, Camera,
   Trash2, Plus, ChevronDown, ArrowUpRight, ArrowDownLeft, Receipt, CalendarDays,
   Users, Wrench, Building2, UserCircle, DollarSign, RefreshCw, TrendingDown, TrendingUp,
-  Clock, AlertTriangle, Check, FileText, Landmark,
-  ChevronLeft, ChevronRight, MoreVertical,
-  FileWarning,
+  Clock, AlertTriangle, Check, FileText, MoreVertical,
 } from 'lucide-react';
 import MissingDocuments from '../components/MissingDocuments';
+import { BillsTiles, Chip, KindFilters, OwedList, PaidView, PayeeList, SelectionBar, UnpaidByMonth, type Tile, type TileKey } from '../components/BillsBoard';
+import { ageDays, billBlock, billKind, docCoverage, docState, inBucket, isPayroll, monthBuckets, myDay, myMonth, paidCents, paidGroups, payeeGroups, payeeKey, type BillKind } from '../lib/billsBoard';
+import { useInvestorQuery } from '../lib/investorFinance';
+import { loadLines } from '../lib/bankCheckLines';
+import type { BankCheckLine } from '../lib/bankCheckMatch';
 import { useStore } from '../store';
 import { Payment, PaymentType, RecipientType } from '../types';
 import { formatRM, generateId } from '../utils/format';
@@ -21,7 +24,7 @@ import { supabase } from '../lib/supabase';
 import Modal from '../components/Modal';
 import DisbursementCollectModal from '../components/DisbursementCollectModal';
 import CompanyPaymentDocuments from '../components/CompanyPaymentDocuments';
-import { privateCompanyEvidence, uploadCompanyEvidence } from '../lib/companyEvidence';
+import { missingDocuments, privateCompanyEvidence, uploadCompanyEvidence } from '../lib/companyEvidence';
 import InvestorClaimsPanel from '../components/InvestorClaimsPanel';
 
 const isInvestorCommission = (p: Payment) => p.id.startsWith('uc_commission_');
@@ -81,16 +84,6 @@ const TYPE_COLORS: Record<PaymentType, string> = {
 
 // Payments we RECEIVE (not pay out)
 const INBOUND_TYPES = new Set<PaymentType>(['customer_collection', 'loan_disbursement', 'consignment_collection','supplier_credit_collection']);
-
-// Jewel-tone glass badges for the Receivable tab specifically — a quieter,
-// more deliberate palette than the generic TYPE_COLORS map (whose bright
-// saturated fills read fine in a dense table but clash against glass).
-const RECEIVABLE_TYPE_STYLE: Partial<Record<PaymentType, { bg: string; text: string; border: string }>> = {
-  loan_disbursement:      { bg: 'rgba(234,184,32,0.1)',  text: '#F7D96A', border: 'rgba(234,184,32,0.22)' },
-  customer_collection:    { bg: 'rgba(52,211,153,0.1)',  text: '#6ee7b7', border: 'rgba(52,211,153,0.22)' },
-  supplier_credit_collection:{bg:'rgba(96,165,250,0.1)',text:'#93c5fd',border:'rgba(96,165,250,0.22)'},
-  consignment_collection: { bg: 'rgba(96,165,250,0.1)',  text: '#93c5fd', border: 'rgba(96,165,250,0.22)' },
-};
 
 const RECIPIENT_ICON: Record<RecipientType, React.ElementType> = {
   user:             UserCircle,
@@ -467,10 +460,12 @@ export default function Payments({ embedded }: PaymentsProps) {
   // Loan disbursements collect through their own deal-summary modal instead
   // of the generic transfer flow — see DisbursementCollectModal.
   const [collectingDisbursementId, setCollectingDisbursementId] = useState<string | null>(null);
-  const [receivablePage, setReceivablePage] = useState(1);
-  const [payPage, setPayPage] = useState(1);
   const [openRowMenuId, setOpenRowMenuId] = useState<string | null>(null);
-  useEffect(() => { setReceivablePage(1); setPayPage(1); }, [tab, search]);
+  // Bills and money due: the kind chip, the month bar and the paid month picked.
+  const [kindPick, setKindPick] = useState<BillKind | null>(null);
+  const [monthPick, setMonthPick] = useState<string | null>(null);
+  const [paidMonth, setPaidMonth] = useState(() => myMonth(new Date().toISOString()));
+  const [bankLines, setBankLines] = useState<BankCheckLine[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ ...EMPTY_ADD });
   const [addSaving, setAddSaving] = useState(false);
@@ -518,10 +513,6 @@ export default function Payments({ embedded }: PaymentsProps) {
   const pendingExpenseClaims = pendingPayments.filter(p => p.type === 'expense_claim');
   const pendingTotal = pendingOutbound.reduce((s, p) => s + (companyBankPaymentsEnabled ? paymentBalanceCents(p) / 100 : p.amount), 0);
   const toCollectTotal = pendingInbound.reduce((s, p) => s + (companyBankPaymentsEnabled ? paymentBalanceCents(p) / 100 : p.amount), 0);
-  const thisMonth = new Date().toISOString().slice(0, 7);
-  const monthTransferred = payments
-    .filter(p => p.status === 'transferred' && p.transferredAt?.startsWith(thisMonth))
-    .reduce((s, p) => s + p.amount, 0);
 
   // Loan disbursements the car already shows as received, but whose payment
   // record never got flipped to collected — see generateLoanDisbursement.
@@ -565,7 +556,10 @@ export default function Payments({ embedded }: PaymentsProps) {
     setSelected(prev => pendingIds.length === prev.size && pendingIds.every(id => prev.has(id)) ? new Set() : new Set(pendingIds));
   };
 
-  const selectedPending = filtered.filter(p => p.status === 'pending' && !p.obligationReplaced && !isInvestorCommission(p) && selected.has(p.id));
+  // On To pay the ticks stay when the list is narrowed by month, kind or search.
+  const selectedPending = tab === 'to_pay'
+    ? payments.filter(p => selected.has(p.id) && !INBOUND_TYPES.has(p.type) && !billBlock(p))
+    : filtered.filter(p => p.status === 'pending' && !p.obligationReplaced && !isInvestorCommission(p) && selected.has(p.id));
   const selectedTotal = selectedPending.reduce((s, p) => s + (companyBankPaymentsEnabled ? paymentBalanceCents(p) / 100 : p.amount), 0);
 
   // ── Transfer / Collect ────────────────────────────────────────────────────────
@@ -841,6 +835,94 @@ export default function Payments({ embedded }: PaymentsProps) {
     return m;
   }, [cars]);
 
+  // ── Bills and money due ───────────────────────────────────────────────────────
+  // What each bill still needs, by payee, by month keyed, and by payment.
+  const centsOf = (p: Payment) => companyBankPaymentsEnabled ? paymentBalanceCents(p) : Math.round(p.amount * 100);
+  const nowIso = new Date().toISOString();
+  const nowMonth = myMonth(nowIso);
+  const today = myDay(nowIso);
+  const carOf = (p: Payment) => (p.carId && carMap[p.carId]) || '';
+  const canSeeDocs = currentUser?.role === 'director' || currentUser?.role === 'admin';
+  const evidenceActor = privateCompanyEvidence && canSeeDocs && currentUser ? currentUser.id : null;
+  const missingQ = useInvestorQuery(evidenceActor ? `bills-missing:${evidenceActor}` : null, missingDocuments);
+  const coverage = useMemo(() => missingQ.data ? docCoverage(missingQ.data.items, missingQ.data.total) : null, [missingQ.data]);
+  const docOf = coverage ? (p: Payment) => docState(coverage, p) : undefined;
+  const onDocs = privateCompanyEvidence ? (p: Payment) => setDocumentPaymentId(p.id) : undefined;
+  const billHelpers = { docOf, onDocs, carOf, centsOf };
+
+  // Paperwork changes once a pay or documents window closes: refresh the flags.
+  const reloadMissing = missingQ.reload;
+  const hadDialog = useRef(false);
+  useEffect(() => {
+    const open = !!transferTarget || !!documentPaymentId;
+    if (hadDialog.current && !open) void reloadMissing();
+    hadDialog.current = open;
+  }, [transferTarget, documentPaymentId, reloadMissing]);
+
+  const boardSearch = search.trim().toLowerCase();
+  const searchHit = (p: Payment) => !boardSearch || [p.recipientName, p.description, carOf(p)].some(s => s?.toLowerCase().includes(boardSearch));
+  const monthHit = (p: Payment) => !monthPick || inBucket(p, monthPick.startsWith('before:') ? { month: monthPick.slice(7), before: true } : { month: monthPick, before: false });
+  const unpaidOut = useMemo(() => payments.filter(p => p.status === 'pending' && !p.obligationReplaced && !INBOUND_TYPES.has(p.type)), [payments]);
+  const unpaidGroups = useMemo(
+    () => payeeGroups(unpaidOut, centsOf, p => (!kindPick || billKind(p.type) === kindPick) && monthHit(p) && searchHit(p)),
+    [unpaidOut, kindPick, monthPick, boardSearch, carMap], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const unpaidOfKind = useMemo(() => unpaidOut.filter(p => !kindPick || billKind(p.type) === kindPick), [unpaidOut, kindPick]);
+  const buckets = useMemo(() => monthBuckets(unpaidOfKind, centsOf, nowMonth, 8), [unpaidOfKind, nowMonth]); // eslint-disable-line react-hooks/exhaustive-deps
+  const olderUnpaid = useMemo(() => {
+    let count = 0, cents = 0;
+    for (const p of unpaidOfKind) if (myMonth(p.createdAt) < nowMonth) { count++; cents += centsOf(p); }
+    return { count, cents };
+  }, [unpaidOfKind, nowMonth]); // eslint-disable-line react-hooks/exhaustive-deps
+  const payeeCount = useMemo(() => new Set(unpaidOut.map(payeeKey)).size, [unpaidOut]);
+
+  const paidOut = useMemo(() => payments.filter(p => p.status === 'transferred' && !INBOUND_TYPES.has(p.type)), [payments]);
+  const paidMonthOf = (p: Payment) => myMonth(p.transferredAt || p.createdAt);
+  const paidMonths = useMemo(() => {
+    const s = new Set(paidOut.map(paidMonthOf).filter(Boolean));
+    s.add(nowMonth);
+    return [...s].sort().reverse().slice(0, 6);
+  }, [paidOut, nowMonth]); // eslint-disable-line react-hooks/exhaustive-deps
+  const paidShown = useMemo(
+    () => paidGroups(paidOut.filter(p => (paidMonth === 'all' || paidMonthOf(p) === paidMonth) && searchHit(p)), bankLines),
+    [paidOut, paidMonth, bankLines, boardSearch, carMap], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const paidNow = useMemo(() => paidGroups(paidOut.filter(p => paidMonthOf(p) === nowMonth), bankLines), [paidOut, nowMonth, bankLines]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Bills ticked in Bank check show as one payment. Without access, bills group by payee and day.
+  const loadsLines = companyBankPaymentsEnabled && canSeeDocs;
+  useEffect(() => {
+    if (!loadsLines) return;
+    let live = true;
+    loadLines().then(r => { if (live) setBankLines(r.lines); }).catch(() => { /* payee-and-day grouping still works */ });
+    return () => { live = false; };
+  }, [loadsLines, tab === 'transferred']); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const monthName = (m: string) => new Date(m + '-01T00:00:00').toLocaleDateString('en-MY', { month: 'long' });
+  const tiles: Tile[] = [
+    { key: 'to_pay', title: 'Not paid', value: formatRM(pendingTotal), note: `${pendingOutbound.length.toLocaleString('en-MY')} bills, ${payeeCount} payees`, icon: 'notyet' },
+    { key: 'transferred', title: `Paid in ${monthName(nowMonth)}`, value: formatRM(paidNow.reduce((s, g) => s + g.cents, 0) / 100), note: `${paidNow.length} payments, ${paidNow.reduce((s, g) => s + g.bills.length, 0)} bills`, icon: 'done' },
+    ...(canSeeDocs ? [{ key: 'documents' as const, title: 'Missing a document', value: missingQ.data ? `${missingQ.data.total.toLocaleString('en-MY')} bills` : missingQ.error ? 'Open list' : '…', note: 'No invoice or no slip yet', icon: 'missing' as const }] : []),
+    { key: 'to_collect', title: 'Owed to us', value: formatRM(toCollectTotal), note: `${pendingInbound.length} amounts to collect`, icon: 'owed' },
+  ];
+  const pickTab = (key: StatusTab) => {
+    setTab(key); setSelected(new Set()); setTypeFilter(''); setMonthFilter(''); setKindPick(null); setMonthPick(null);
+  };
+
+  // The pay bar: one receipt for every ticked bill.
+  const selPayees = new Set(selectedPending.map(payeeKey)).size;
+  const selProblem = !companyBankPaymentsEnabled ? null
+    : selectedPending.length > 50 ? 'One payment can cover up to 50 bills. Untick some first.'
+    : selectedPending.some(isPayroll) && selectedPending.some(p => !isPayroll(p)) ? 'Pay salary and bonuses apart from other bills.'
+    : null;
+  const selWarning = selPayees > 1 ? `These bills go to ${selPayees} payees. Use one receipt only if one bank transfer paid them all.` : null;
+  const setMany = (ids: string[], on: boolean) => setSelected(prev => {
+    const next = new Set(prev);
+    for (const id of ids) on ? next.add(id) : next.delete(id);
+    return next;
+  });
+  const owedAge = (p: Payment) => ageDays(p.createdAt, today);
+
   // ── Render row ────────────────────────────────────────────────────────────────
   function PaymentRow({ p }: { p: Payment }) {
     const Icon = RECIPIENT_ICON[p.recipientType] ?? UserCircle;
@@ -1025,465 +1107,103 @@ export default function Payments({ embedded }: PaymentsProps) {
     );
   }
 
-  // Shared table shell for To Pay / Receivable — 540+ rows on To Pay alone
-  // makes a stack of cards unusable at scale, and a table is the shape this
-  // data actually has (one thing per row, a handful of comparable columns) —
-  // column headers let the eye scan straight down "Amount" or "Status"
-  // instead of re-parsing every card's layout each time.
-  const DATA_TABLE_COLS = 'grid-cols-[28px_minmax(180px,1.6fr)_150px_110px_130px_110px_150px]';
-  const DATA_TABLE_PAGE_SIZE = 10;
-
-  function ReceivableTable({ items }: { items: Payment[] }) {
-    const totalPages = Math.max(1, Math.ceil(items.length / DATA_TABLE_PAGE_SIZE));
-    const page = Math.min(receivablePage, totalPages);
-    const pageItems = items.slice((page - 1) * DATA_TABLE_PAGE_SIZE, page * DATA_TABLE_PAGE_SIZE);
-    const from = items.length === 0 ? 0 : (page - 1) * DATA_TABLE_PAGE_SIZE + 1;
-    const to = Math.min(page * DATA_TABLE_PAGE_SIZE, items.length);
-
-    return (
-      <div
-        className="relative overflow-hidden rounded-[22px]"
-        style={{
-          background: 'linear-gradient(160deg, rgba(255,255,255,0.035) 0%, rgba(255,255,255,0.012) 100%)',
-          backdropFilter: 'blur(28px) saturate(170%)', WebkitBackdropFilter: 'blur(28px) saturate(170%)',
-          border: '1px solid rgba(234,184,32,0.13)',
-          boxShadow: '0 6px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06)',
-        }}
-      >
-        {items.some(p => p.status === 'pending' && !p.obligationReplaced) && (
-          <div className="flex items-center gap-3 px-5 py-2.5 border-b border-white/[0.06]">
-            <button onClick={selectAll} className="text-[11px] text-white/40 hover:text-white transition-colors font-medium tracking-wide">
-              {selected.size > 0 ? `${selected.size} selected` : 'Select all'}
-            </button>
-            {selected.size > 0 && (
-              <>
-                <span className="text-white/15 text-[11px]">·</span>
-                <span className="text-[11px] text-emerald-400 font-semibold">{formatRM(selectedTotal)}</span>
-                <button onClick={() => setSelected(new Set())} className="ml-auto text-[11px] text-white/30 hover:text-white transition-colors">
-                  Clear
-                </button>
-              </>
-            )}
-          </div>
-        )}
-
-        <div className="overflow-x-auto">
-          <div className="min-w-[880px]">
-            {/* Column headers */}
-            <div className={`grid ${DATA_TABLE_COLS} gap-3 px-5 py-3 text-[10px] uppercase tracking-wider text-white/30 font-semibold border-b border-white/[0.06]`}>
-              <div />
-              <div>Vehicle / Recipient</div>
-              <div>Type</div>
-              <div>Reference</div>
-              <div className="text-right">Amount</div>
-              <div>Status</div>
-              <div className="text-right">Action</div>
-            </div>
-
-            {pageItems.map(p => <ReceivableTableRow key={p.id} p={p} />)}
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between px-5 py-3 border-t border-white/[0.06] text-xs text-white/35">
-          <span>{items.length === 0 ? 'No rows' : `${from}–${to} of ${items.length}`}</span>
-          {totalPages > 1 && (
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setReceivablePage(p => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/[0.05] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                <ChevronLeft size={14} />
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
-                <button
-                  key={n}
-                  onClick={() => setReceivablePage(n)}
-                  className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${
-                    n === page ? 'bg-gold-500/20 text-gold-300 border border-gold-500/30' : 'text-white/40 hover:text-white hover:bg-white/[0.05]'
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-              <button
-                onClick={() => setReceivablePage(p => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-                className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/[0.05] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                <ChevronRight size={14} />
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  function ReceivableTableRow({ p }: { p: Payment }) {
-    const isChecked = selected.has(p.id);
-    const isPending = p.status === 'pending' && !p.obligationReplaced;
-    const car = p.carId ? cars.find(c => c.id === p.carId) : undefined;
-    const Icon = p.type === 'loan_disbursement' ? Landmark : RECIPIENT_ICON[p.recipientType] ?? UserCircle;
-    const typeStyle = RECEIVABLE_TYPE_STYLE[p.type] ?? { bg: 'rgba(234,184,32,0.1)', text: '#F7D96A', border: 'rgba(234,184,32,0.22)' };
-    const reference = car?.carPlate ?? p.referenceNumber ?? '—';
+  // Buttons on one unpaid bill (pay it alone, approve a claim, delete) — the
+  // same rules the old To Pay table had.
+  function deleteControls(p: Payment) {
     const menuOpen = openRowMenuId === p.id;
-
+    if (p.type === 'campaign_bonus' || isInvestorCommission(p)) return null;
     return (
-      <div
-        className={`group grid ${DATA_TABLE_COLS} gap-3 items-center px-5 py-3.5 border-b border-white/[0.04] last:border-0 transition-colors ${
-          isChecked ? 'bg-emerald-500/[0.05]' : 'hover:bg-white/[0.02]'
-        }`}
-      >
-        {isPending ? (
-          <button
-            onClick={() => toggleSelect(p.id)}
-            className={`shrink-0 w-[17px] h-[17px] rounded-md border transition-colors ${isChecked ? 'bg-emerald-400 border-emerald-400' : 'border-white/15 hover:border-emerald-400/50'}`}
-          >
-            {isChecked && <svg viewBox="0 0 12 12" fill="none" className="w-full h-full"><path d="M2.5 6l2.5 2.5 4.5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-obsidian-950" /></svg>}
-          </button>
-        ) : <div />}
-
-        <div className="flex items-center gap-3 min-w-0">
-          <div
-            className="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-gold-300"
-            style={{ background: 'radial-gradient(circle at 30% 30%, rgba(234,184,32,0.2), rgba(234,184,32,0.04))', border: '1px solid rgba(234,184,32,0.2)' }}
-          >
-            <Icon size={15} strokeWidth={1.5} />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[13px] text-white font-medium truncate">{p.recipientName}</p>
-            {isInvestorCommission(p) && <a className="text-[11px] text-gold-400" href={`#/investor-finance?carId=${encodeURIComponent(p.carId || '')}`}>Open car bill</a>}
-          {privateCompanyEvidence && !isInvestorCommission(p) && <button className="text-[11px] text-gold-400" onClick={() => setDocumentPaymentId(p.id)}>Invoices & receipts</button>}
-            <p className="text-[11px] text-white/35 truncate">
-              {car ? `${car.make} ${car.model}` : p.bankName ?? ''}
-              {!isPending && p.transferredAt && ` · Collected ${new Date(p.transferredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}`}
-            </p>
-          </div>
-        </div>
-
-        <div>
-          <span
-            className="text-[10px] px-2 py-0.5 rounded-full font-semibold tracking-wide whitespace-nowrap"
-            style={{ background: typeStyle.bg, color: typeStyle.text, border: `1px solid ${typeStyle.border}` }}
-          >
-            {TYPE_LABELS[p.type]}
-          </span>
-        </div>
-
-        <div className="text-xs text-white/45 truncate">{reference}</div>
-
-        <div className={`text-right text-[13px] font-semibold tabular-nums ${isPending ? 'text-gold-300' : 'text-white/25'}`}>
-          {formatRM(p.amount)}
-        </div>
-
-        <div>
-          <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${isPending ? 'text-amber-300' : 'text-white/30'}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${isPending ? 'bg-amber-400' : 'bg-white/20'}`} />
-            {isPending ? 'Pending' : 'Collected'}
-          </span>
-        </div>
-
-        <div className="flex items-center justify-end gap-1.5 relative">
-          {isPending ? (
-            <button
-              onClick={() => {
-                if (p.type === 'loan_disbursement') setCollectingDisbursementId(p.id);
-                else { setSingleId(p.id); setTransferTarget('single'); }
-              }}
-              className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full text-obsidian-950 transition-all hover:scale-[1.03] active:scale-95 whitespace-nowrap"
-              style={{ background: 'linear-gradient(135deg, #6ee7b7 0%, #34d399 45%, #10b981 100%)', boxShadow: '0 4px 16px rgba(16,185,129,0.32)' }}
-            >
-              <ArrowDownLeft size={12} /> Collect
-            </button>
-          ) : (
-            <span className="text-xs font-medium px-3.5 py-2 text-white/20 whitespace-nowrap">
-              <CheckCircle2 size={12} className="inline -mt-0.5 mr-1" />Done
+      <>
+        {isDirectorView && (
+          p.deleteRequestedBy ? (
+            <span className="flex items-center gap-1">
+              <button onClick={() => handleApproveDelete(p.id)} title="Approve deletion" aria-label="Approve deletion" className="p-1.5 rounded text-red-400 hover:bg-red-500/20 transition-colors"><Check size={13} /></button>
+              <button onClick={() => handleRejectDelete(p.id)} title="Reject deletion" aria-label="Reject deletion" className="p-1.5 rounded text-gray-500 hover:text-gray-300 transition-colors"><X size={13} /></button>
             </span>
-          )}
-          {p.type !== 'campaign_bonus' && !isInvestorCommission(p) && isDirectorView && (
-            p.deleteRequestedBy ? (
-              <div className="flex items-center gap-1">
-                <button onClick={() => handleApproveDelete(p.id)} title="Approve deletion" className="p-1 rounded text-red-400 hover:bg-red-500/20 transition-colors"><Check size={12} /></button>
-                <button onClick={() => handleRejectDelete(p.id)} title="Reject deletion" className="p-1 rounded text-gray-500 hover:text-gray-300 transition-colors"><X size={12} /></button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setOpenRowMenuId(menuOpen ? null : p.id)}
-                className={`p-1.5 rounded-lg transition-colors ${menuOpen ? 'text-white bg-white/[0.08]' : 'text-white/0 group-hover:text-white/30 hover:!text-white'}`}
-              >
-                <MoreVertical size={14} />
-              </button>
-            )
-          )}
-          {menuOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setOpenRowMenuId(null)} />
-              <div className="absolute right-0 top-9 z-20 w-36 rounded-xl bg-obsidian-800 border border-white/10 shadow-card-lg overflow-hidden">
-                <button
-                  onClick={() => { handleDelete(p.id); setOpenRowMenuId(null); }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-white/60 hover:bg-red-500/10 hover:text-red-400 transition-colors"
-                >
-                  <Trash2 size={12} /> Delete
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  function PayTable({ items }: { items: Payment[] }) {
-    const totalPages = Math.max(1, Math.ceil(items.length / DATA_TABLE_PAGE_SIZE));
-    const page = Math.min(payPage, totalPages);
-    const pageItems = items.slice((page - 1) * DATA_TABLE_PAGE_SIZE, page * DATA_TABLE_PAGE_SIZE);
-    const from = items.length === 0 ? 0 : (page - 1) * DATA_TABLE_PAGE_SIZE + 1;
-    const to = Math.min(page * DATA_TABLE_PAGE_SIZE, items.length);
-
-    return (
-      <div
-        className="relative overflow-hidden rounded-[22px]"
-        style={{
-          background: 'linear-gradient(160deg, rgba(255,255,255,0.035) 0%, rgba(255,255,255,0.012) 100%)',
-          backdropFilter: 'blur(28px) saturate(170%)', WebkitBackdropFilter: 'blur(28px) saturate(170%)',
-          border: '1px solid rgba(234,184,32,0.13)',
-          boxShadow: '0 6px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06)',
-        }}
-      >
-        {items.some(p => p.status === 'pending' && !p.obligationReplaced) && (
-          <div className="flex items-center gap-3 px-5 py-2.5 border-b border-white/[0.06]">
-            <button onClick={selectAll} className="text-[11px] text-white/40 hover:text-white transition-colors font-medium tracking-wide">
-              {selected.size > 0 ? `${selected.size} selected` : 'Select all'}
+          ) : (
+            <button
+              onClick={() => setOpenRowMenuId(menuOpen ? null : p.id)}
+              aria-label="More"
+              className={`p-1.5 rounded-lg transition-colors ${menuOpen ? 'text-white bg-white/[0.08]' : 'text-white/30 hover:text-white'}`}
+            >
+              <MoreVertical size={14} />
             </button>
-            {selected.size > 0 && (
-              <>
-                <span className="text-white/15 text-[11px]">·</span>
-                <span className="text-[11px] text-gold-300 font-semibold">{formatRM(selectedTotal)}</span>
-                <button onClick={() => setSelected(new Set())} className="ml-auto text-[11px] text-white/30 hover:text-white transition-colors">
-                  Clear
-                </button>
-              </>
-            )}
-          </div>
+          )
         )}
-
-        <div className="overflow-x-auto">
-          <div className="min-w-[880px]">
-            {/* Column headers */}
-            <div className={`grid ${DATA_TABLE_COLS} gap-3 px-5 py-3 text-[10px] uppercase tracking-wider text-white/30 font-semibold border-b border-white/[0.06]`}>
-              <div />
-              <div>Recipient</div>
-              <div>Type</div>
-              <div>Reference</div>
-              <div className="text-right">Amount</div>
-              <div>Status</div>
-              <div className="text-right">Action</div>
-            </div>
-
-            {pageItems.map(p => <PayTableRow key={p.id} p={p} />)}
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between px-5 py-3 border-t border-white/[0.06] text-xs text-white/35">
-          <span>{items.length === 0 ? 'No rows' : `${from}–${to} of ${items.length}`}</span>
-          {totalPages > 1 && (
-            <div className="flex items-center gap-1">
+        {isAdmin && !isDirectorView && (
+          p.deleteRequestedBy ? (
+            <span title="Pending director approval" className="flex items-center gap-1 text-[10px] text-amber-400 px-1.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <Clock size={10} /> Pending
+            </span>
+          ) : (
+            <button onClick={() => handleRequestDelete(p.id)} title="Request deletion" aria-label="Request deletion" className="p-1.5 rounded-lg text-white/30 hover:text-red-400 transition-colors">
+              <Trash2 size={14} />
+            </button>
+          )
+        )}
+        {menuOpen && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setOpenRowMenuId(null)} />
+            <div className="absolute right-0 top-9 z-20 w-36 rounded-xl bg-obsidian-800 border border-white/10 shadow-card-lg overflow-hidden">
               <button
-                onClick={() => setPayPage(p => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/[0.05] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                onClick={() => { handleDelete(p.id); setOpenRowMenuId(null); }}
+                className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-white/60 hover:bg-red-500/10 hover:text-red-400 transition-colors"
               >
-                <ChevronLeft size={14} />
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
-                <button
-                  key={n}
-                  onClick={() => setPayPage(n)}
-                  className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${
-                    n === page ? 'bg-gold-500/20 text-gold-300 border border-gold-500/30' : 'text-white/40 hover:text-white hover:bg-white/[0.05]'
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-              <button
-                onClick={() => setPayPage(p => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-                className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/[0.05] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                <ChevronRight size={14} />
+                <Trash2 size={12} /> Delete
               </button>
             </div>
-          )}
-        </div>
-      </div>
+          </>
+        )}
+      </>
     );
   }
 
-  function PayTableRow({ p }: { p: Payment }) {
-    const isChecked = selected.has(p.id);
-    const isPending = p.status === 'pending' && !p.obligationReplaced;
-    const Icon = RECIPIENT_ICON[p.recipientType] ?? UserCircle;
+  function billActions(p: Payment) {
     const refundMissingBankDetails = p.type === 'customer_refund' && !p.bankName;
     const claimNeedsVendor = p.type === 'expense_claim' && p.recipientType !== 'user' && !p.recipientId;
     const unconfirmedClaim = p.type === 'expense_claim' && !p.claimConfirmedBy;
-    const selectable = isPending && !isInvestorCommission(p) && !refundMissingBankDetails && !unconfirmedClaim && !claimNeedsVendor;
-    const reference = (p.carId && carMap[p.carId]) || p.referenceNumber || p.bankName || '—';
-    const menuOpen = openRowMenuId === p.id;
-
+    const pill = 'min-h-[32px] inline-flex items-center gap-1.5 text-xs font-semibold px-3 rounded-full whitespace-nowrap transition-colors';
     return (
-      <div
-        className={`group grid ${DATA_TABLE_COLS} gap-3 items-center px-5 py-3.5 border-b border-white/[0.04] last:border-0 transition-colors ${
-          p.deleteRequestedBy && isDirectorView ? 'bg-red-500/[0.05]' : isChecked ? 'bg-gold-500/[0.05]' : 'hover:bg-white/[0.02]'
-        }`}
-      >
-        {selectable ? (
-          <button
-            onClick={() => toggleSelect(p.id)}
-            className={`shrink-0 w-[17px] h-[17px] rounded-md border transition-colors ${isChecked ? 'bg-gold-400 border-gold-400' : 'border-white/15 hover:border-gold-400/50'}`}
-          >
-            {isChecked && <svg viewBox="0 0 12 12" fill="none" className="w-full h-full"><path d="M2.5 6l2.5 2.5 4.5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-obsidian-950" /></svg>}
-          </button>
-        ) : <div />}
-
-        <div className="flex items-center gap-3 min-w-0">
-          <div
-            className="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-gold-300"
-            style={{ background: 'radial-gradient(circle at 30% 30%, rgba(234,184,32,0.2), rgba(234,184,32,0.04))', border: '1px solid rgba(234,184,32,0.2)' }}
-          >
-            <Icon size={15} strokeWidth={1.5} />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[13px] text-white font-medium truncate">{p.recipientName}</p>
-            {isInvestorCommission(p) && <a className="text-[11px] text-gold-400" href={`#/investor-finance?carId=${encodeURIComponent(p.carId || '')}`}>Open car bill</a>}
-          {privateCompanyEvidence && !isInvestorCommission(p) && <button className="text-[11px] text-gold-400" onClick={() => setDocumentPaymentId(p.id)}>Invoices & receipts</button>}
-            <p className="text-[11px] text-white/35 truncate">
-              {RECIPIENT_TYPE_LABELS[p.recipientType]}
-              {p.description && ` · ${p.description}`}
-              {!isPending && p.transferredAt && ` · Paid ${new Date(p.transferredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}`}
-            </p>
-          </div>
-        </div>
-
-        <div>
-          <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold tracking-wide whitespace-nowrap border ${TYPE_COLORS[p.type]}`}>
-            {TYPE_LABELS[p.type]}
-          </span>
-        </div>
-
-        <div className="text-xs text-white/45 truncate">{reference}</div>
-
-        <div className={`text-right text-[13px] font-semibold tabular-nums ${isPending ? 'text-white' : 'text-white/25'}`}>
-          {formatRM(p.amount)}
-        </div>
-
-        <div>
-          {refundMissingBankDetails ? (
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-300">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" /> Awaiting details
-            </span>
-          ) : claimNeedsVendor ? (
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-violet-300">
-              <span className="w-1.5 h-1.5 rounded-full bg-violet-400" /> Needs vendor
-            </span>
-          ) : unconfirmedClaim ? (
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-sky-300">
-              <span className="w-1.5 h-1.5 rounded-full bg-sky-400" /> Awaiting review
-            </span>
-          ) : (
-            <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${isPending ? 'text-amber-300' : 'text-white/30'}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${isPending ? 'bg-amber-400' : 'bg-white/20'}`} />
-              {isPending ? 'Pending' : 'Paid'}
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center justify-end gap-1.5 relative">
-          {refundMissingBankDetails ? (
-            <span className="text-xs font-medium px-3.5 py-2 text-white/20 whitespace-nowrap">—</span>
-          ) : claimNeedsVendor ? (
-            (isDirectorView || isAdmin) ? (
-              <button
-                onClick={() => setLinkVendorTarget(p.id)}
-                title="This vendor isn't registered yet — add them in Data before this can be confirmed"
-                className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full text-violet-200 bg-violet-500/20 border border-violet-500/30 hover:bg-violet-500/30 transition-colors whitespace-nowrap"
-              >
-                <Building2 size={12} /> Register Vendor
-              </button>
-            ) : (
-              <span className="text-xs font-medium px-3.5 py-2 text-white/20 whitespace-nowrap">—</span>
-            )
-          ) : unconfirmedClaim ? (
-            (isDirectorView || isAdmin) ? (
-              <button
-                onClick={() => { setFinanceError(''); void handleConfirmClaim(p.id).catch((e) => setFinanceError(e instanceof Error ? e.message : 'Could not approve this claim.')); }}
-                title="Check the receipt matches the amount, then confirm"
-                className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full text-sky-200 bg-sky-500/20 border border-sky-500/30 hover:bg-sky-500/30 transition-colors whitespace-nowrap"
-              >
-                <Check size={12} /> Confirm
-              </button>
-            ) : (
-              <span className="text-xs font-medium px-3.5 py-2 text-white/20 whitespace-nowrap">—</span>
-            )
-          ) : isPending ? (
-            <button
-              onClick={() => { if (isInvestorCommission(p)) { window.location.hash = '/investor-finance?carId=' + encodeURIComponent(p.carId || ''); return; } setSingleId(p.id); setTransferTarget('single'); }}
-              className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full text-obsidian-950 transition-all hover:scale-[1.03] active:scale-95 whitespace-nowrap"
-              style={{ background: 'linear-gradient(135deg, #F7D96A 0%, #EAB820 45%, #C99A16 100%)', boxShadow: '0 4px 16px rgba(234,184,32,0.32)' }}
-            >
-              <ArrowUpRight size={12} /> {isInvestorCommission(p) ? 'Open car bill' : 'Transfer'}
+      <>
+        {refundMissingBankDetails ? null : claimNeedsVendor ? (
+          (isDirectorView || isAdmin) ? (
+            <button onClick={() => setLinkVendorTarget(p.id)} title="This vendor isn't registered yet — add them in Data before this can be confirmed" className={`${pill} text-violet-200 bg-violet-500/20 border border-violet-500/30 hover:bg-violet-500/30`}>
+              <Building2 size={12} /> Register vendor
             </button>
-          ) : (
-            <span className="text-xs font-medium px-3.5 py-2 text-white/20 whitespace-nowrap">
-              <CheckCircle2 size={12} className="inline -mt-0.5 mr-1" />Done
-            </span>
-          )}
-          {p.type !== 'campaign_bonus' && !isInvestorCommission(p) && isDirectorView && (
-            p.deleteRequestedBy ? (
-              <div className="flex items-center gap-1">
-                <button onClick={() => handleApproveDelete(p.id)} title="Approve deletion" className="p-1 rounded text-red-400 hover:bg-red-500/20 transition-colors"><Check size={12} /></button>
-                <button onClick={() => handleRejectDelete(p.id)} title="Reject deletion" className="p-1 rounded text-gray-500 hover:text-gray-300 transition-colors"><X size={12} /></button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setOpenRowMenuId(menuOpen ? null : p.id)}
-                className={`p-1.5 rounded-lg transition-colors ${menuOpen ? 'text-white bg-white/[0.08]' : 'text-white/0 group-hover:text-white/30 hover:!text-white'}`}
-              >
-                <MoreVertical size={14} />
-              </button>
-            )
-          )}
-          {p.type !== 'campaign_bonus' && !isInvestorCommission(p) && isAdmin && !isDirectorView && (
-            p.deleteRequestedBy ? (
-              <span title="Pending director approval" className="flex items-center gap-1 text-[10px] text-amber-400 px-1.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                <Clock size={10} /> Pending
-              </span>
-            ) : (
-              <button
-                onClick={() => handleRequestDelete(p.id)}
-                title="Request deletion"
-                className="p-1.5 rounded-lg text-white/0 group-hover:text-white/30 hover:!text-red-400 transition-colors"
-              >
-                <Trash2 size={14} />
-              </button>
-            )
-          )}
-          {menuOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setOpenRowMenuId(null)} />
-              <div className="absolute right-0 top-9 z-20 w-36 rounded-xl bg-obsidian-800 border border-white/10 shadow-card-lg overflow-hidden">
-                <button
-                  onClick={() => { handleDelete(p.id); setOpenRowMenuId(null); }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-white/60 hover:bg-red-500/10 hover:text-red-400 transition-colors"
-                >
-                  <Trash2 size={12} /> Delete
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
+          ) : null
+        ) : unconfirmedClaim ? (
+          (isDirectorView || isAdmin) ? (
+            <button onClick={() => { setFinanceError(''); void handleConfirmClaim(p.id).catch((e) => setFinanceError(e instanceof Error ? e.message : 'Could not approve this claim.')); }} title="Check the receipt matches the amount, then confirm" className={`${pill} text-sky-200 bg-sky-500/20 border border-sky-500/30 hover:bg-sky-500/30`}>
+              <Check size={12} /> Confirm
+            </button>
+          ) : null
+        ) : isInvestorCommission(p) ? (
+          <a href={`#/investor-finance?carId=${encodeURIComponent(p.carId || '')}`} className={`${pill} text-gold-300 border border-gold-500/30 hover:bg-gold-500/10`}>Open car bill</a>
+        ) : (
+          <button onClick={() => { setSingleId(p.id); setTransferTarget('single'); }} className={`${pill} text-gold-200 border border-gold-500/40 hover:bg-gold-500/15`}>
+            <ArrowUpRight size={12} /> Pay
+          </button>
+        )}
+        {deleteControls(p)}
+      </>
+    );
+  }
+
+  function owedActions(p: Payment) {
+    return (
+      <>
+        <button
+          onClick={() => {
+            if (p.type === 'loan_disbursement') setCollectingDisbursementId(p.id);
+            else { setSingleId(p.id); setTransferTarget('single'); }
+          }}
+          className="min-h-[36px] inline-flex items-center gap-1.5 text-xs font-semibold px-3.5 rounded-full text-obsidian-950 whitespace-nowrap hover:opacity-90"
+          style={{ background: '#7FB3E6' }}
+        >
+          <ArrowDownLeft size={12} /> Money came in
+        </button>
+        {isDirectorView && deleteControls(p)}
+      </>
     );
   }
 
@@ -1494,7 +1214,7 @@ export default function Payments({ embedded }: PaymentsProps) {
     <div className={embedded ? 'pb-10' : 'min-h-screen bg-obsidian-950 pb-32'}>
       {financeError && <p role="alert" className="text-sm text-red-400 p-4">{financeError}</p>}
       {/* Header */}
-      <div className={embedded ? 'mb-1' : 'sticky top-0 z-30 bg-obsidian-950/95 backdrop-blur-sm border-b border-white/[0.06]'}>
+      <div className={embedded ? 'mb-1' : 'bg-obsidian-950 border-b border-white/[0.06]'}>
         <div className={embedded ? 'pb-3' : 'px-4 pt-4 pb-3'}>
           {!embedded && (
             <div className="flex items-center justify-between mb-3">
@@ -1512,69 +1232,31 @@ export default function Payments({ embedded }: PaymentsProps) {
             </div>
           )}
 
-          {/* Stats */}
-          <div className="grid grid-cols-2 gap-2 mb-3">
-            <div className="rounded-xl bg-obsidian-800/60 border border-white/[0.06] px-3 py-2.5">
-              <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">To Pay Out</p>
-              <p className="text-sm font-bold text-white tabular-nums">{formatRM(pendingTotal)}</p>
-              <p className="text-[10px] text-gray-600">{pendingOutbound.length} pending</p>
-            </div>
-            <div className="rounded-xl bg-obsidian-800/60 border border-emerald-500/20 px-3 py-2.5">
-              <p className="text-[10px] text-emerald-600 uppercase tracking-wider mb-0.5">Receivable</p>
-              <p className="text-sm font-bold text-emerald-300 tabular-nums">{formatRM(toCollectTotal)}</p>
-              <p className="text-[10px] text-gray-600">{pendingInbound.length} pending</p>
-            </div>
-            {companyBankPaymentsEnabled && currentUser?.role === 'director' ? <CompanyBankMonth key={currentUser.id} actorId={currentUser.id} payments={payments} /> : (<div className="rounded-xl bg-obsidian-800/60 border border-white/[0.06] px-3 py-2.5">
-              <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">This Month</p>
-              <p className="text-sm font-bold text-green-400 tabular-nums">{formatRM(monthTransferred)}</p>
-              <p className="text-[10px] text-gray-600">transferred / collected</p>
-            </div>)}
-            <div className="rounded-xl bg-obsidian-800/60 border border-white/[0.06] px-3 py-2.5 flex items-center justify-between">
-              <div>
-                <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">Backfill</p>
-                <p className="text-[10px] text-gray-600">Sync old data</p>
-              </div>
-              <button
-                onClick={handleBackfill}
-                disabled={backfilling}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-obsidian-700/60 border border-white/[0.08] text-xs text-gray-300 hover:text-white hover:border-gold-500/30 transition-colors disabled:opacity-40"
-              >
-                <RefreshCw size={11} className={backfilling ? 'animate-spin' : ''} />
-                {backfilling ? '...' : backfillResult !== null ? `+${backfillResult}` : 'Run'}
-              </button>
-            </div>
+          {/* The four tiles are the main switch */}
+          <BillsTiles tiles={tiles} active={tab} onPick={(k: TileKey) => pickTab(k)} />
+
+          {/* Less-used lists */}
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            <Chip on={tab === 'refund_claims'} onClick={() => pickTab('refund_claims')}>Refund claims{pendingRefundClaims.length ? ` ${pendingRefundClaims.length}` : ''}</Chip>
+            <Chip on={tab === 'expense_claims'} onClick={() => pickTab('expense_claims')}>Expense claims{pendingExpenseClaims.length ? ` ${pendingExpenseClaims.length}` : ''}</Chip>
+            <Chip on={tab === 'all'} onClick={() => pickTab('all')}>All bills</Chip>
           </div>
 
-          {/* Tabs */}
-          <div className="flex gap-1 rounded-xl bg-obsidian-800/60 border border-white/[0.06] p-1 mb-3">
-            {([
-              { key: 'to_pay',     label: 'To Pay',    icon: TrendingDown, count: pendingOutbound.length },
-              { key: 'to_collect', label: 'Receivable', icon: Landmark,  count: pendingInbound.length },
-              { key: 'refund_claims', label: 'Refund Claims', icon: Receipt, count: pendingRefundClaims.length },
-              { key: 'expense_claims', label: 'Expense Claims', icon: CreditCard, count: pendingExpenseClaims.length },
-              { key: 'transferred',label: 'Done',       icon: CheckCircle2, count: 0 },
-              { key: 'all',        label: 'All',        icon: null,         count: 0 },
-              ...(currentUser?.role === 'director' || currentUser?.role === 'admin' ? [{ key: 'documents', label: 'Missing Docs', icon: FileWarning, count: 0 }] : []),
-            ] as { key: StatusTab; label: string; icon: any; count: number }[]).map(({ key, label, icon: Icon, count }) => (
-              <button
-                key={key}
-                onClick={() => { setTab(key); setSelected(new Set()); }}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1 ${
-                  tab === key ? 'bg-gold-gradient text-obsidian-950 font-bold shadow-gold-sm' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                {Icon && <Icon size={10} />}
-                {label}
-                {count > 0 && (
-                  <span className={`text-[10px] px-1.5 rounded-full font-bold ${tab === key ? 'bg-obsidian-900/60 text-gold-400' : 'bg-gold-500/20 text-gold-400'}`}>
-                    {count}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
+          {(tab === 'transferred' || tab === 'to_collect') && (
+            <div className="relative sm:w-72 mb-1">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search payee, car or what for"
+                aria-label="Search"
+                className="w-full min-h-[38px] pl-8 pr-3 rounded-lg bg-obsidian-800/60 border border-white/[0.08] text-white text-sm placeholder-gray-500 focus:outline-none focus:border-gold-500/40"
+              />
+            </div>
+          )}
 
           {/* Filters */}
+          {(tab === 'refund_claims' || tab === 'expense_claims' || tab === 'all') && (
           <div className="flex gap-2">
             {/* Search */}
             <div className="relative flex-1">
@@ -1620,6 +1302,7 @@ export default function Payments({ embedded }: PaymentsProps) {
               className="px-2 py-2 rounded-lg bg-obsidian-800/60 border border-white/[0.06] text-xs text-gray-300 focus:outline-none focus:border-gold-500/30 transition-colors w-[110px]"
             />
           </div>
+          )}
         </div>
       </div>
 
@@ -1678,15 +1361,36 @@ export default function Payments({ embedded }: PaymentsProps) {
           </div>
         )}
 
-        {tab === 'documents' ? <MissingDocuments /> : filtered.length === 0 ? (
+        {tab === 'documents' ? <MissingDocuments /> : tab === 'to_pay' ? (
+          <>
+            <UnpaidByMonth buckets={buckets} active={monthPick} onPick={setMonthPick} currentMonth={nowMonth} older={olderUnpaid} />
+            <KindFilters search={search} onSearch={setSearch} bills={unpaidOut} kind={kindPick} onKind={setKindPick} />
+            <PayeeList groups={unpaidGroups} selected={selected} onSetMany={setMany} actions={billActions} h={billHelpers} />
+            {selectedPending.length > 0 && <div className="h-40" aria-hidden />}
+          </>
+        ) : tab === 'transferred' ? (
+          <PaidView
+            groups={paidShown}
+            months={paidMonths}
+            month={paidMonth}
+            onMonth={setPaidMonth}
+            h={{ ...billHelpers, centsOf: paidCents }}
+            top={companyBankPaymentsEnabled && currentUser?.role === 'director' ? <div className="sm:max-w-xs"><CompanyBankMonth key={currentUser.id} actorId={currentUser.id} payments={payments} /></div> : undefined}
+          />
+        ) : tab === 'to_collect' ? (
+          <OwedList
+            items={filtered}
+            ageOf={owedAge}
+            kindOf={p => TYPE_LABELS[p.type]}
+            actions={owedActions}
+            selected={companyBankPaymentsEnabled ? undefined : selected}
+            onToggle={companyBankPaymentsEnabled ? undefined : toggleSelect}
+            h={billHelpers}
+          />
+        ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
             <Wallet size={40} className="text-gray-700" />
             <p className="text-gray-500 text-sm">No payments found</p>
-            {tab === 'to_pay' && (
-              <p className="text-gray-600 text-xs text-center max-w-xs">
-                Payment entries appear here automatically when deals are delivered, repairs completed, or misc costs logged.
-              </p>
-            )}
             {tab === 'refund_claims' && (
               <p className="text-gray-600 text-xs text-center max-w-xs">
                 Claims appear once a salesperson submits the customer's refund bank details on a loan deal with money owed back.
@@ -1698,10 +1402,6 @@ export default function Payments({ embedded }: PaymentsProps) {
               </p>
             )}
           </div>
-        ) : tab === 'to_collect' ? (
-          <ReceivableTable items={filtered} />
-        ) : tab === 'to_pay' ? (
-          <PayTable items={filtered} />
         ) : (
           <div className="rounded-xl overflow-hidden border border-white/[0.06] bg-obsidian-900/40">
             {/* Select-all bar for pending tabs */}
@@ -1732,8 +1432,22 @@ export default function Payments({ embedded }: PaymentsProps) {
         )}
       </div>
 
+      {/* Pay bar: one receipt for every ticked bill */}
+      {tab === 'to_pay' && selectedPending.length > 0 && (
+        <SelectionBar
+          bills={selectedPending}
+          cents={selectedPending.reduce((sum, p) => sum + centsOf(p), 0)}
+          onClear={() => setSelected(new Set())}
+          onPay={() => setTransferTarget('batch')}
+          onAttach={() => setShowBulkAttach(true)}
+          problem={selProblem}
+          warning={selWarning}
+          payLabel={selectedPending.length === 1 ? 'Pay this bill' : 'Pay with one receipt'}
+        />
+      )}
+
       {/* Batch transfer bar */}
-      {selectedPending.length > 0 && (
+      {tab !== 'to_pay' && selectedPending.length > 0 && (
         <div className="fixed bottom-20 left-0 right-0 z-40 px-4">
           <div className="rounded-xl bg-obsidian-800 border border-gold-500/30 shadow-card-lg p-3 flex items-center gap-3">
             <div className="flex-1">
@@ -1757,6 +1471,24 @@ export default function Payments({ embedded }: PaymentsProps) {
           </div>
         </div>
       )}
+
+      <details className="px-4 mt-8">
+        <summary className="cursor-pointer text-xs text-[#8C8679] hover:text-white w-fit">Repair tools</summary>
+        <div className="mt-2 max-w-md rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-3 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs text-white">Add missing bills from old data</p>
+            <p className="text-[11px] text-[#ABA597]">Only for old repairs or deals that never got a bill.</p>
+          </div>
+          <button
+            onClick={handleBackfill}
+            disabled={backfilling}
+            className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-obsidian-700/60 border border-white/[0.08] text-xs text-gray-300 hover:text-white hover:border-gold-500/30 transition-colors disabled:opacity-40"
+          >
+            <RefreshCw size={11} className={backfilling ? 'animate-spin' : ''} />
+            {backfilling ? '...' : backfillResult !== null ? `+${backfillResult}` : 'Run'}
+          </button>
+        </div>
+      </details>
 
       {/* Bulk attach bills modal */}
       {showBulkAttach && (

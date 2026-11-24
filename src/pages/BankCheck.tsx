@@ -8,6 +8,7 @@ import { ArrowLeft, Loader2, Upload } from 'lucide-react';
 import { useStore } from '../store';
 import { REPAIR_TYPES, type MiscCost, type Payment, type RepairJob } from '../types';
 import { financeFrom } from '../lib/privateFinance';
+import { loadLines, rowToLine } from '../lib/bankCheckLines';
 import { companyBankRequest, paymentBalanceCents, type CompanyBankSave } from '../lib/companyBankPayments';
 import { uploadCompanyEvidence } from '../lib/companyEvidence';
 import { formatCents, parseRinggit, type Bank } from '../lib/investorFinance';
@@ -41,24 +42,6 @@ const CHIP: Record<LineState, [string, string]> = {
   answered: ['Answered', 'bg-violet-400/15 text-violet-200'],
   done: ['Done', 'bg-emerald-400/15 text-emerald-200'],
 };
-
-function rowToLine(r: Record<string, unknown>): BankCheckLine | null {
-  const d = r.details && typeof r.details === 'object' ? (r.details as BankCheckDetails) : null;
-  if (!d?.bankId) return null;
-  return { id: String(r.id), date: String(r.txn_date).slice(0, 10), cents: toCents(Number(r.amount)) * (r.direction === 'debit' ? -1 : 1), text: String(r.description ?? ''), status: String(r.status), details: d };
-}
-
-async function loadLines(): Promise<{ lines: BankCheckLine[]; setUp: boolean }> {
-  const rows: Record<string, unknown>[] = [];
-  for (let from = 0; from < 20000; from += 500) {
-    const { data, error } = await financeFrom('bank_transactions').select('*').order('created_at', { ascending: true }).order('id').range(from, from + 499);
-    if (error) throw new Error(error.message);
-    const page = (data ?? []) as Record<string, unknown>[];
-    rows.push(...page);
-    if (page.length < 500) break;
-  }
-  return { lines: rows.map(rowToLine).filter((l): l is BankCheckLine => !!l), setUp: rows.length === 0 || rows.some((r) => 'details' in r) };
-}
 
 async function saveLine(id: string, patch: { status?: string; details: BankCheckDetails }): Promise<BankCheckLine> {
   const { data, error } = await financeFrom('bank_transactions').update(patch).eq('id', id);
