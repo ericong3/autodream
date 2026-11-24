@@ -23,8 +23,8 @@ import {
 type BankRow = Bank & { balanceCents?: number };
 type Tab = 'needs' | 'answered' | 'done' | 'all';
 const SALARY = new Set(['salary', 'allowance', 'campaign_bonus']);
-const OUT_KINDS: [string, string][] = [['bills', 'Bills in To pay'], ['staff', 'Paid back to staff (they paid first)'], ['customer_refund', 'Paid back to a customer (overloan / refund)'], ['office', 'Office cost'], ['car_purchase', 'Car purchase'], ['salary', 'Salary or director fee'], ['own_transfer', 'Moved to our other account'], ['other', 'Other']];
-const IN_KINDS: [string, string][] = [['car_sale', 'Customer paid for a car'], ['booking', 'Booking fee'], ['garage', 'Garage job'], ['director_in', 'A director put money in'], ['own_transfer', 'From our other account'], ['other', 'Other']];
+const OUT_KINDS: [string, string][] = [['bills', 'Bills in To pay'], ['staff', 'Paid back to staff (they paid first)'], ['customer_refund', 'Paid back to a customer (overloan / refund)'], ['garage_back', 'Paid back to the garage'], ['office', 'Office cost'], ['car_purchase', 'Car purchase'], ['salary', 'Salary or director fee'], ['own_transfer', 'Moved to our other account'], ['other', 'Other']];
+const IN_KINDS: [string, string][] = [['car_sale', 'Customer paid for a car'], ['booking', 'Booking fee'], ['garage', 'Garage job'], ['garage_money', 'Garage money (used our card machine)'], ['director_in', 'A director put money in'], ['own_transfer', 'From our other account'], ['other', 'Other']];
 const OFFICE_TYPES = ['Rent', 'Electricity and water', 'Internet and phone', 'Office supplies', 'Refreshments', 'Uniforms', 'Other'];
 const kindLabel = (k?: string) => [...OUT_KINDS, ...IN_KINDS].find((x) => x[0] === k)?.[1] ?? k ?? '';
 const dayLabel = (d: string) => new Date(d.slice(0, 10) + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short' });
@@ -148,7 +148,7 @@ export default function BankCheck() {
   };
 
   if (currentUser?.role !== 'director') return <p className="text-gray-400 text-sm p-6">Only the Director can open the bank check.</p>;
-  if (open && bank) return <LineDetail key={open.id} line={open} state={states.get(open.id)!} bank={bank} actorId={actorId}
+  if (open && bank) return <LineDetail key={open.id} line={open} state={states.get(open.id)!} bank={bank} bankAccountId={accountId} actorId={actorId}
     moves={(matched.get(open.id) ?? []).map((id) => moves.find((m) => m.id === id)).filter((m): m is BankMove => !!m)}
     onBack={() => setOpenId(null)} onChange={(l) => setLines((all) => all.map((x) => (x.id === l.id ? l : x)))} />;
 
@@ -225,8 +225,8 @@ function hint(l: BankCheckLine, s: LineState) {
   return memo + (l.cents > 0 ? 'What was this money?' : 'Tick the bills, or say what it was');
 }
 
-function LineDetail({ line, state, bank, moves, actorId, onBack, onChange }: {
-  line: BankCheckLine; state: LineState; bank: BankRow; moves: BankMove[]; actorId: string;
+function LineDetail({ line, state, bank, bankAccountId, moves, actorId, onBack, onChange }: {
+  line: BankCheckLine; state: LineState; bank: BankRow; bankAccountId: string; moves: BankMove[]; actorId: string;
   onBack: () => void; onChange: (l: BankCheckLine) => void;
 }) {
   const out = line.cents < 0;
@@ -263,6 +263,7 @@ function LineDetail({ line, state, bank, moves, actorId, onBack, onChange }: {
         </div>
       </fieldset>
       {out && (kind === 'bills' || kind === 'staff') ? <>{kind === 'staff' && <p className="text-sm text-sky-200 rounded-lg border border-sky-400/30 bg-sky-400/10 p-3">Choose the staff member as the payee. Then in step 2 add what they paid for: the car, what it was, and the amount. It goes on the car as a car cost paid back to them.</p>}<BillsMatch line={line} bank={bank} actorId={actorId} onChange={onChange} /></>
+        : kind === 'garage_money' || kind === 'garage_back' ? <GarageEntry key={kind} line={line} bankAccountId={bankAccountId} actorId={actorId} onChange={onChange} />
         : kind ? <AnswerForm key={kind} line={line} kind={kind} actorId={actorId} onChange={onChange} /> : null}
       <div className="text-xs text-gray-500">
         {!marking ? <button type="button" className="underline min-h-[40px]" onClick={() => setMarking(true)}>This is already recorded in the app</button>
@@ -272,6 +273,52 @@ function LineDetail({ line, state, bank, moves, actorId, onBack, onChange }: {
         {error && <p role="alert" className="text-red-300 mt-1">{error}</p>}
       </div>
     </>}
+  </div>;
+}
+
+// Money held for the garage: their customers paid on our card machine, so it came
+// into our bank but is the garage's. In: bank up, Owed to Garage up. Paid back:
+// both go down. It is never AutoDream income. One entry per bank line (fixed id).
+const GARAGE_ACCOUNT = 'acct-due-garage';
+function GarageEntry({ line, bankAccountId, actorId, onChange }: { line: BankCheckLine; bankAccountId: string; actorId: string; onChange: (l: BankCheckLine) => void }) {
+  const journalEntries = useStore((s) => s.journalEntries), ledgerAccounts = useStore((s) => s.ledgerAccounts);
+  const addLedgerAccount = useStore((s) => s.addLedgerAccount), addJournalEntry = useStore((s) => s.addJournalEntry);
+  const incoming = line.cents > 0, cents = Math.abs(line.cents);
+  const owed = useMemo(() => journalEntries.filter((e) => !e.voided).reduce((sum, e) => sum + (e.lines ?? []).filter((l) => l.accountId === GARAGE_ACCOUNT).reduce((t, l) => t + toCents(Number(l.credit) || 0) - toCents(Number(l.debit) || 0), 0), 0), [journalEntries]);
+  const [note, setNote] = useState(line.details.answer?.note ?? ''), [ask, setAsk] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const tooMuch = !incoming && cents > owed;
+  const save = async () => {
+    setBusy(true); setError('');
+    try {
+      if (!bankAccountId) throw new Error("This bank's account in the books was not found. Reload the page.");
+      const id = 'bank-check:' + line.id;
+      const { data, error: loadError } = await financeFrom('journal_entries').select('*').eq('id', id).range(0, 0);
+      if (loadError) throw new Error(loadError.message);
+      if (!(data ?? []).length) {
+        if (!ledgerAccounts.some((a) => a.id === GARAGE_ACCOUNT)) await addLedgerAccount({ id: GARAGE_ACCOUNT, name: 'Owed to Garage', type: 'liability', notes: 'Money AutoDream holds for the garage, e.g. their customers paid on our card machine. Paid back by transfer.' });
+        const rm = cents / 100, who = (line.details.who || line.text).slice(0, 120);
+        await addJournalEntry({ id, date: line.date, createdAt: new Date().toISOString(), createdBy: actorId, sourceType: 'bank_check', sourceId: line.id,
+          description: incoming ? `Garage money in (their customer used our card machine): ${who}` : `Paid back to the garage: ${who}`,
+          lines: incoming ? [{ accountId: bankAccountId, debit: rm, credit: 0 }, { accountId: GARAGE_ACCOUNT, debit: 0, credit: rm }] : [{ accountId: GARAGE_ACCOUNT, debit: rm, credit: 0 }, { accountId: bankAccountId, debit: 0, credit: rm }] });
+      }
+      const at = new Date().toISOString();
+      onChange(await saveLine(line.id, { status: 'matched', details: { ...line.details, answer: { kind: incoming ? 'garage_money' : 'garage_back', ...(note.trim() ? { note: note.trim().slice(0, 1000) } : {}), at, by: actorId }, done: { how: 'recorded', journalIds: [id], at, by: actorId } } }));
+    } catch (e) { setError(errorText(e, 'Could not put this in the books.')); setAsk(false); } finally { setBusy(false); }
+  };
+  return <div className={`${card} p-4 space-y-3`}>
+    <p className="text-sm text-gray-300">{incoming
+      ? 'This money belongs to the garage, not AutoDream. It goes in the books as money we owe the garage, not as income.'
+      : 'This transfer paid the garage back the money their customers paid on our card machine.'}</p>
+    <div className="rounded-lg border border-obsidian-400/60 p-3 text-sm space-y-1">
+      <div className="flex justify-between gap-3"><span className="text-gray-400">Bank</span><span className="text-white">{incoming ? '+' : '−'}{formatCents(cents)}</span></div>
+      <div className="flex justify-between gap-3"><span className="text-gray-400">Owed to Garage</span><span className="text-white">{incoming ? '+' : '−'}{formatCents(cents)}</span></div>
+      <div className="flex justify-between gap-3 text-xs"><span className="text-gray-500">We owe the garage now</span><span className="text-gray-300">{formatCents(owed)} → {formatCents(owed + (incoming ? cents : -cents))}</span></div>
+    </div>
+    {tooMuch && <p className="text-sm text-amber-200">This is more than we owe the garage ({formatCents(owed)}). Put the garage's card payments in the books first.</p>}
+    <label className="block text-xs text-gray-400">Note (optional)<input className="input w-full rounded-lg px-3 py-2 text-sm mt-1" value={note} maxLength={1000} placeholder={incoming ? 'e.g. Garage customer, verified' : ''} onChange={(e) => setNote(e.target.value)} /></label>
+    {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
+    {!ask ? <button type="button" className="btn-gold px-5 py-2.5 rounded-lg text-sm" disabled={busy || tooMuch} onClick={() => setAsk(true)}>Put in the books</button>
+      : <div className="flex flex-wrap items-center gap-2"><button type="button" className="btn-gold px-5 py-2.5 rounded-lg text-sm" disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : `Yes, put ${formatCents(cents)} in the books`}</button><button type="button" className="btn-ghost px-4 py-2.5 rounded-lg text-sm" disabled={busy} onClick={() => setAsk(false)}>Go back</button></div>}
   </div>;
 }
 
