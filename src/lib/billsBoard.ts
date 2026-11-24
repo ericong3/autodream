@@ -1,7 +1,7 @@
 // Bills and money due: pure rules for the Payments screen (group bills by
 // payee, by month keyed, and by the payment that paid them). No I/O here, so
 // the rules can be tested on their own. Money is in cents.
-import type { Payment, PaymentType } from '../types';
+import type { JournalEntry, Payment, PaymentType } from '../types';
 
 export type BillKind = 'repairs' | 'car_costs' | 'staff_pay' | 'consignment' | 'other';
 export const BILL_KINDS: { key: BillKind; label: string }[] = [
@@ -171,11 +171,23 @@ export type PaidGroup = {
 
 export const paidCents = (p: Pick<Payment, 'amount' | 'bankPaidCents'>) => p.bankPaidCents ?? Math.round(p.amount * 100);
 
-// One group per payment. A bill ticked against a bank statement line goes
-// with that line's other bills; the rest group by payee and paid day.
-export function paidGroups(paid: Payment[], lines: PaidLine[]): PaidGroup[] {
+// Bank check pairs each statement line with bank entries in the books (see
+// matchLines). Each entry names the bill it paid, so the line covers that bill.
+export function billLinesFromMatches(matches: Map<string, string[]>, entries: Pick<JournalEntry, 'id' | 'sourceId'>[]): Map<string, string> {
+  const billOf = new Map(entries.map((e) => [e.id, e.sourceId]));
+  const out = new Map<string, string>();
+  for (const [lineId, ids] of matches) for (const id of ids) { const bill = billOf.get(id); if (bill && !out.has(bill)) out.set(bill, lineId); }
+  return out;
+}
+
+// One group per payment. Bills on the same bank statement line (ticked in Bank
+// check, or matched through their books entry) go together; the rest group by
+// payee and paid day.
+export function paidGroups(paid: Payment[], lines: PaidLine[], billLine: Map<string, string> = new Map()): PaidGroup[] {
   const lineOf = new Map<string, PaidLine>();
   for (const l of lines) if (l.details?.done) for (const id of l.details.billIds ?? []) if (!lineOf.has(id)) lineOf.set(id, l);
+  const byId = new Map(lines.map((l) => [l.id, l]));
+  for (const [bill, lineId] of billLine) { const l = byId.get(lineId); if (l && !lineOf.has(bill)) lineOf.set(bill, l); }
   const groups = new Map<string, PaidGroup>();
   for (const p of paid) {
     const line = lineOf.get(p.id);

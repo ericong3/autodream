@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ageDays, billBlock, billKind, docCoverage, docState, inBucket, monthBuckets, myDay, namesLabel, paidGroups, payeeCore, payeeGroups } from '../src/lib/billsBoard.ts';
+import { ageDays, billBlock, billLinesFromMatches, billKind, docCoverage, docState, inBucket, monthBuckets, myDay, namesLabel, paidGroups, payeeCore, payeeGroups } from '../src/lib/billsBoard.ts';
 
 const bill = (o) => ({ id: 'b', type: 'repair', status: 'pending', recipientType: 'workshop', recipientId: 'w1', recipientName: 'Hub Seng', amount: 100, createdAt: '2026-11-02T03:00:00Z', ...o });
 const cents = (p) => Math.round(p.amount * 100);
@@ -114,4 +114,15 @@ test('age in days counts Malaysia calendar days', () => {
   assert.equal(ageDays('2026-08-26T03:00:00Z', '2026-11-24'), 90);
   assert.equal(ageDays('2026-11-23T17:00:00Z', '2026-11-24'), 0);
   assert.equal(ageDays('bad', '2026-11-24'), 0);
+});
+
+test('a statement line matched to books entries covers the bills those entries paid', () => {
+  const matches = new Map([['L9', ['j1', 'j2']], ['L8', ['j3']]]);
+  const entries = [{ id: 'j1', sourceId: 'a' }, { id: 'j2', sourceId: 'b' }, { id: 'j3', sourceId: 'a' }, { id: 'j4', sourceId: 'c' }];
+  const billLine = billLinesFromMatches(matches, entries);
+  assert.deepEqual([...billLine], [['a', 'L9'], ['b', 'L9']]);
+  const paid = ['a', 'b', 'c'].map((id) => bill({ id, status: 'transferred', transferredAt: '2026-11-10T04:00:00Z', recipientId: id, recipientName: id.toUpperCase() }));
+  const lines = [{ id: 'L9', date: '2026-11-09', text: 'BULK PAYMENT', details: {} }];
+  const g = paidGroups(paid, lines, billLine);
+  assert.deepEqual(g.map((x) => [x.day, x.lineId ?? '', x.bills.map((b) => b.id).join('')]), [['2026-11-10', '', 'c'], ['2026-11-09', 'L9', 'ab']]);
 });

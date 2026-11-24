@@ -1,7 +1,7 @@
 import CompanyBankMonth from '../components/CompanyBankMonth';
 import CompanyBankReceiptDialog from '../components/CompanyBankReceiptDialog';
 import CompanyBankPaymentDialog from '../components/CompanyBankPaymentDialog';
-import { companyBankPaymentsEnabled, paymentBalanceCents } from '../lib/companyBankPayments';
+import { companyBankPaymentsEnabled, companyBankRequest, paymentBalanceCents } from '../lib/companyBankPayments';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Wallet, CheckCircle2, X, Search, CreditCard, Camera,
@@ -11,10 +11,10 @@ import {
 } from 'lucide-react';
 import MissingDocuments from '../components/MissingDocuments';
 import { BillsTiles, Chip, KindFilters, OwedList, PaidView, PayeeList, SelectionBar, UnpaidByMonth, type Tile, type TileKey } from '../components/BillsBoard';
-import { ageDays, billBlock, billKind, docCoverage, docState, inBucket, isPayroll, monthBuckets, myDay, myMonth, paidCents, paidGroups, payeeGroups, payeeKey, type BillKind } from '../lib/billsBoard';
-import { useInvestorQuery } from '../lib/investorFinance';
+import { ageDays, billBlock, billKind, billLinesFromMatches, docCoverage, docState, inBucket, isPayroll, monthBuckets, myDay, myMonth, paidCents, paidGroups, payeeGroups, payeeKey, type BillKind } from '../lib/billsBoard';
+import { useInvestorQuery, type Bank } from '../lib/investorFinance';
 import { loadLines } from '../lib/bankCheckLines';
-import type { BankCheckLine } from '../lib/bankCheckMatch';
+import { bankMoves, matchLines, type BankCheckLine } from '../lib/bankCheckMatch';
 import { useStore } from '../store';
 import { Payment, PaymentType, RecipientType } from '../types';
 import { formatRM, generateId } from '../utils/format';
@@ -466,6 +466,9 @@ export default function Payments({ embedded }: PaymentsProps) {
   const [monthPick, setMonthPick] = useState<string | null>(null);
   const [paidMonth, setPaidMonth] = useState(() => myMonth(new Date().toISOString()));
   const [bankLines, setBankLines] = useState<BankCheckLine[]>([]);
+  const [banks, setBanks] = useState<Bank[]>([]);
+  // Director: show only the bills someone asked to delete.
+  const [deleteOnly, setDeleteOnly] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ ...EMPTY_ADD });
   const [addSaving, setAddSaving] = useState(false);
@@ -489,6 +492,7 @@ export default function Payments({ embedded }: PaymentsProps) {
   const filtered = useMemo(() => {
     return payments.filter(p => {
       if (tab === 'documents') return false;
+      if (deleteOnly && !p.deleteRequestedBy) return false;
       if(p.obligationReplaced&&p.status==='pending')return false;
       if (tab === 'to_pay'    && (p.status !== 'pending' || INBOUND_TYPES.has(p.type))) return false;
       if (tab === 'to_collect'&& (p.status !== 'pending' || !INBOUND_TYPES.has(p.type))) return false;
@@ -503,7 +507,7 @@ export default function Payments({ embedded }: PaymentsProps) {
       }
       return true;
     });
-  }, [payments, tab, typeFilter, monthFilter, search]);
+  }, [payments, tab, typeFilter, monthFilter, search, deleteOnly]);
 
   // ── Stats ───────────────────────────────────────────────────────────────────
   const pendingPayments = payments.filter(p => p.status === 'pending' && !p.obligationReplaced);
@@ -883,11 +887,22 @@ export default function Payments({ embedded }: PaymentsProps) {
     s.add(nowMonth);
     return [...s].sort().reverse().slice(0, 6);
   }, [paidOut, nowMonth]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Which statement line paid each bill, the same way Bank check decides a line is Done.
+  const statementBills = useMemo(() => {
+    const accounts = ledgerAccounts.filter(a => a.id.startsWith('acct-bank-uc-'));
+    const matches = new Map<string, string[]>();
+    for (const b of banks) {
+      const account = accounts.find(a => a.name === b.name) ?? (banks.length === 1 && accounts.length === 1 ? accounts[0] : undefined);
+      if (!account) continue;
+      matchLines(bankLines.filter(l => l.details.bankId === b.id), bankMoves(journalEntries, account.id)).forEach((ids, lineId) => matches.set(lineId, ids));
+    }
+    return billLinesFromMatches(matches, journalEntries);
+  }, [banks, bankLines, journalEntries, ledgerAccounts]);
   const paidShown = useMemo(
-    () => paidGroups(paidOut.filter(p => (paidMonth === 'all' || paidMonthOf(p) === paidMonth) && searchHit(p)), bankLines),
-    [paidOut, paidMonth, bankLines, boardSearch, carMap], // eslint-disable-line react-hooks/exhaustive-deps
+    () => paidGroups(paidOut.filter(p => (paidMonth === 'all' || paidMonthOf(p) === paidMonth) && searchHit(p)), bankLines, statementBills),
+    [paidOut, paidMonth, bankLines, statementBills, boardSearch, carMap], // eslint-disable-line react-hooks/exhaustive-deps
   );
-  const paidNow = useMemo(() => paidGroups(paidOut.filter(p => paidMonthOf(p) === nowMonth), bankLines), [paidOut, nowMonth, bankLines]); // eslint-disable-line react-hooks/exhaustive-deps
+  const paidNow = useMemo(() => paidGroups(paidOut.filter(p => paidMonthOf(p) === nowMonth), bankLines, statementBills), [paidOut, nowMonth, bankLines, statementBills]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Bills ticked in Bank check show as one payment. Without access, bills group by payee and day.
   const loadsLines = companyBankPaymentsEnabled && canSeeDocs;
@@ -895,6 +910,7 @@ export default function Payments({ embedded }: PaymentsProps) {
     if (!loadsLines) return;
     let live = true;
     loadLines().then(r => { if (live) setBankLines(r.lines); }).catch(() => { /* payee-and-day grouping still works */ });
+    companyBankRequest<{ banks: Bank[] }>('banks').then(r => { if (live) setBanks(r.banks ?? []); }).catch(() => { /* only the Director can list banks */ });
     return () => { live = false; };
   }, [loadsLines, tab === 'transferred']); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -906,7 +922,7 @@ export default function Payments({ embedded }: PaymentsProps) {
     { key: 'to_collect', title: 'Owed to us', value: formatRM(toCollectTotal), note: `${pendingInbound.length} amounts to collect`, icon: 'owed' },
   ];
   const pickTab = (key: StatusTab) => {
-    setTab(key); setSelected(new Set()); setTypeFilter(''); setMonthFilter(''); setKindPick(null); setMonthPick(null);
+    setTab(key); setSelected(new Set()); setTypeFilter(''); setMonthFilter(''); setKindPick(null); setMonthPick(null); setDeleteOnly(false);
   };
 
   // The pay bar: one receipt for every ticked bill.
@@ -1309,11 +1325,19 @@ export default function Payments({ embedded }: PaymentsProps) {
       {/* Delete-request banner for directors */}
       {isDirectorView && payments.some(p => p.deleteRequestedBy) && (
         <div className="px-4 pt-3">
-          <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 mb-1">
+          <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 mb-1">
             <AlertTriangle size={13} className="text-red-400 shrink-0" />
-            <p className="text-xs text-red-300 font-medium">
-              {payments.filter(p => p.deleteRequestedBy).length} payment{payments.filter(p => p.deleteRequestedBy).length !== 1 ? 's' : ''} pending deletion approval — review below (✓ approve · ✕ reject)
+            <p className="flex-1 text-xs text-red-300 font-medium">
+              {payments.filter(p => p.deleteRequestedBy).length} {payments.filter(p => p.deleteRequestedBy).length === 1 ? 'bill' : 'bills'} waiting for you to approve deleting{deleteOnly ? '. Tick ✓ to delete or ✕ to keep.' : ''}
             </p>
+            <button
+              type="button"
+              aria-pressed={deleteOnly}
+              onClick={() => { if (deleteOnly) { pickTab('to_pay'); } else { pickTab('all'); setDeleteOnly(true); } }}
+              className="min-h-[32px] px-3 rounded-lg border border-red-400/40 text-xs text-red-200 hover:bg-red-500/15"
+            >
+              {deleteOnly ? 'Back to bills' : 'Show them'}
+            </button>
           </div>
         </div>
       )}
