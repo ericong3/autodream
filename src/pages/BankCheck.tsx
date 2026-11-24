@@ -4,11 +4,13 @@
 // the list and records the payment. Other lines get a short answer that stays
 // with the line, so whoever records it later knows what it was.
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Loader2, Upload } from 'lucide-react';
 import { useStore } from '../store';
 import { REPAIR_TYPES, type MiscCost, type Payment, type RepairJob } from '../types';
 import { financeFrom } from '../lib/privateFinance';
 import { loadLines, rowToLine } from '../lib/bankCheckLines';
+import { IN_KINDS, OUT_KINDS, lineHint as hint } from '../lib/bankCheckWords';
 import { companyBankRequest, paymentBalanceCents, type CompanyBankSave } from '../lib/companyBankPayments';
 import { uploadCompanyEvidence } from '../lib/companyEvidence';
 import { formatCents, parseRinggit, type Bank } from '../lib/investorFinance';
@@ -24,10 +26,7 @@ import {
 type BankRow = Bank & { balanceCents?: number };
 type Tab = 'needs' | 'answered' | 'done' | 'all';
 const SALARY = new Set(['salary', 'allowance', 'campaign_bonus']);
-const OUT_KINDS: [string, string][] = [['bills', 'Bills in To pay'], ['staff', 'Paid back to staff (they paid first)'], ['customer_refund', 'Paid back to a customer (overloan / refund)'], ['garage_back', 'Paid back to the garage'], ['office', 'Office cost'], ['car_purchase', 'Car purchase'], ['salary', 'Salary or director fee'], ['own_transfer', 'Moved to our other account'], ['other', 'Other']];
-const IN_KINDS: [string, string][] = [['car_sale', 'Customer paid for a car'], ['booking', 'Booking fee'], ['garage', 'Garage job'], ['garage_money', 'Garage money (used our card machine)'], ['director_in', 'A director put money in'], ['own_transfer', 'From our other account'], ['other', 'Other']];
 const OFFICE_TYPES = ['Rent', 'Electricity and water', 'Internet and phone', 'Office supplies', 'Refreshments', 'Uniforms', 'Other'];
-const kindLabel = (k?: string) => [...OUT_KINDS, ...IN_KINDS].find((x) => x[0] === k)?.[1] ?? k ?? '';
 const dayLabel = (d: string) => new Date(d.slice(0, 10) + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short' });
 const monthLabel = (m: string) => new Date(m + '-01T00:00:00').toLocaleDateString('en-MY', { month: 'long', year: 'numeric' });
 const signed = (cents: number) => (cents > 0 ? '+' : '') + formatCents(cents).replace('RM ', '');
@@ -69,10 +68,12 @@ export default function BankCheck() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [banks, setBanks] = useState<BankRow[]>([]);
-  const [bankId, setBankId] = useState('');
-  const [month, setMonth] = useState('');
+  // The Accounting Bank screen can open a bank, a month or one line here.
+  const [params] = useSearchParams();
+  const [bankId, setBankId] = useState(() => params.get('bank') ?? '');
+  const [month, setMonth] = useState(() => params.get('month') ?? '');
   const [tab, setTab] = useState<Tab>('needs');
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(() => params.get('line'));
   const [uploading, setUploading] = useState(false);
 
   const reload = useCallback(async () => {
@@ -84,6 +85,10 @@ export default function BankCheck() {
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => {
+    const l = openId ? lines.find((x) => x.id === openId) : undefined;
+    if (l?.details.bankId && l.details.bankId !== bankId) setBankId(l.details.bankId);
+  }, [lines, openId, bankId]);
 
   const bank = banks.find((b) => b.id === bankId) ?? banks[0];
   const bankAccounts = ledgerAccounts.filter((a) => a.id.startsWith('acct-bank-uc-'));
@@ -200,13 +205,6 @@ function inTab(t: Tab, s: LineState) {
   return t === 'all' || (t === 'needs' ? s === 'needs' || s === 'ready' : s === t);
 }
 
-function hint(l: BankCheckLine, s: LineState) {
-  const memo = l.details.memo ? `"${l.details.memo}" · ` : '';
-  if (s === 'done') return memo + 'In the app';
-  if (s === 'ready') return memo + `${l.details.billIds?.length ?? 0} bills add up exactly. Check them and record.`;
-  if (s === 'answered') return memo + 'You said: ' + kindLabel(l.details.answer?.kind) + (l.details.answer?.type ? ` · ${l.details.answer.type}` : '');
-  return memo + (l.cents > 0 ? 'What was this money?' : 'Tick the bills, or say what it was');
-}
 
 function LineDetail({ line, state, bank, bankAccountId, moves, actorId, onBack, onChange }: {
   line: BankCheckLine; state: LineState; bank: BankRow; bankAccountId: string; moves: BankMove[]; actorId: string;

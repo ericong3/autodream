@@ -412,8 +412,9 @@ function BulkAttachReceiptsModal({ payments, onConfirm, onClose }: BulkAttachRec
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
-interface PaymentsProps { embedded?: boolean; }
-export default function Payments({ embedded }: PaymentsProps) {
+// start: open on one list, when Accounting → This month sends you here.
+interface PaymentsProps { embedded?: boolean; start?: 'documents' | 'deletes'; }
+export default function Payments({ embedded, start }: PaymentsProps) {
   const {
     payments, addPayment, batchAddPayments, updatePayment, deletePayment,
     currentUser, users, externalSalesmen, workshops, dealers, merchants, cars, customers, repairs, financeLoaded,
@@ -447,7 +448,7 @@ export default function Payments({ embedded }: PaymentsProps) {
     addLedgerAccount:  s.addLedgerAccount,
   }));
 
-  const [tab, setTab] = useState<StatusTab>('to_pay');
+  const [tab, setTab] = useState<StatusTab>(start === 'deletes' ? 'all' : start === 'documents' ? 'documents' : 'to_pay');
   const [typeFilter, setTypeFilter] = useState<PaymentType | ''>('');
   const [monthFilter, setMonthFilter] = useState('');
   const [search, setSearch] = useState('');
@@ -468,7 +469,7 @@ export default function Payments({ embedded }: PaymentsProps) {
   const [bankLines, setBankLines] = useState<BankCheckLine[]>([]);
   const [banks, setBanks] = useState<Bank[]>([]);
   // Director: show only the bills someone asked to delete.
-  const [deleteOnly, setDeleteOnly] = useState(false);
+  const [deleteOnly, setDeleteOnly] = useState(start === 'deletes');
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ ...EMPTY_ADD });
   const [addSaving, setAddSaving] = useState(false);
