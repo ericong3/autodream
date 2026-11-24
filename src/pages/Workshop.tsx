@@ -8,6 +8,7 @@ import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import StatCard from '../components/StatCard';
 import { formatRM, generateId } from '../utils/format';
+import { changeRepairPrice, repairBill, repairPriceBlock } from '../lib/repairPriceChange';
 import { supabase } from '../lib/supabase';
 
 async function uploadInvoicePhoto(file: File): Promise<string> {
@@ -69,6 +70,12 @@ export default function Workshop() {
   const addPayment = useStore((s) => s.addPayment);
   const updatePayment = useStore((s) => s.updatePayment);
   const addJournalEntry = useStore((s) => s.addJournalEntry);
+  const journalEntries = useStore((s) => s.journalEntries);
+  const voidJournalEntry = useStore((s) => s.voidJournalEntry);
+  const restoreJournalEntry = useStore((s) => s.restoreJournalEntry);
+  // A billed repair whose price changes: the Director confirms the bill and books change too.
+  const [priceAsk, setPriceAsk] = useState<{ from: number; to: number } | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const isDirector = currentUser?.role === 'director';
   const isMechanic = currentUser?.role === 'mechanic';
@@ -98,11 +105,41 @@ export default function Workshop() {
     return Object.keys(e).length === 0;
   };
 
-  const handleSubmit = () => {
-    if (!validate()) return;
+  const handleSubmit = async () => {
+    if (!validate() || saving) return;
     const validParts = form.parts.filter((p) => p.name.trim());
     const partsTotal = validParts.reduce((sum, p) => sum + p.cost, 0);
     const total = partsTotal + form.labourCost;
+
+    // The price only changes when the parts or labour were changed in the form.
+    const sameParts = (a: { name: string; cost: number }[]) => JSON.stringify(a.filter((p) => p.name.trim()).map((p) => [p.name.trim(), Number(p.cost) || 0]));
+    const priceTouched = !!editTarget && (sameParts(editTarget.parts ?? []) !== sameParts(validParts) || (Number(editTarget.labourCost) || 0) !== (Number(form.labourCost) || 0));
+    const price = editTarget ? (priceTouched ? total : editTarget.actualCost ?? editTarget.totalCost) : total;
+    const bill = editTarget ? repairBill(payments, editTarget.id) : undefined;
+    const carChanged = !!editTarget && form.carId !== editTarget.carId;
+    const cents = (v: number) => Math.round((Number(v) || 0) * 100);
+    if (editTarget && bill && (carChanged || cents(price) !== cents(bill.amount))) {
+      const car = getCar(editTarget.carId);
+      const block = repairPriceBlock({ bill, car, isDirector, newPrice: price, carChanged });
+      if (block) { setPriceAsk(null); setErrors({ price: block }); return; }
+      if (!priceAsk || cents(priceAsk.from) !== cents(bill.amount) || cents(priceAsk.to) !== cents(price)) { setErrors({}); setPriceAsk({ from: bill.amount, to: price }); return; }
+      setSaving(true); setErrors({});
+      try {
+        await changeRepairPrice({ repair: { ...editTarget, typeOfRepair: form.typeOfRepair }, bill, car: car!, newPrice: price, actorId: currentUser!.id },
+          { journalEntries, updatePayment, voidJournalEntry, restoreJournalEntry, addJournalEntry, buildEntry: buildCarCostRecognizedEntry });
+        await updateRepair(editTarget.id, {
+          carId: form.carId, typeOfRepair: form.typeOfRepair, location: form.location || undefined, parts: validParts, labourCost: form.labourCost,
+          totalCost: priceTouched ? total : editTarget.totalCost, ...(editTarget.actualCost != null ? { actualCost: price } : {}),
+          status: form.status, notes: form.notes, receiptPhoto: form.receiptPhoto || undefined,
+        });
+      } catch (e) {
+        setErrors({ price: e instanceof Error && e.message ? e.message : 'Could not save. Try again.' });
+        return;
+      } finally { setSaving(false); }
+      setPriceAsk(null); setShowModal(false); setEditTarget(null); setForm(emptyRepairForm);
+      return;
+    }
+    setPriceAsk(null);
 
     setShowModal(false);
     setEditTarget(null);
@@ -118,13 +155,14 @@ export default function Workshop() {
         location: form.location || undefined,
         parts: validParts,
         labourCost: form.labourCost,
-        totalCost: total,
+        totalCost: priceTouched ? total : editTarget.totalCost,
+        ...(priceTouched && editTarget.actualCost != null ? { actualCost: total } : {}),
         status: form.status,
         notes: form.notes,
         receiptPhoto: form.receiptPhoto || undefined,
       });
       if (becomingDone) {
-        void billFinishedRepair({ ...editTarget, location: form.location || editTarget.location, typeOfRepair: form.typeOfRepair, totalCost: total, carId: form.carId, receiptPhoto: form.receiptPhoto || undefined });
+        void billFinishedRepair({ ...editTarget, location: form.location || editTarget.location, typeOfRepair: form.typeOfRepair, totalCost: priceTouched ? total : editTarget.totalCost, actualCost: priceTouched && editTarget.actualCost != null ? total : editTarget.actualCost, carId: form.carId, receiptPhoto: form.receiptPhoto || undefined });
       } else if (receiptChanged) {
         // Invoice arrived after the job was already marked done — attach it to the existing payment too.
         const existingPayment = payments.find(p => p.type === 'repair' && p.repairJobId === editTarget.id);
@@ -168,6 +206,7 @@ export default function Workshop() {
       receiptPhoto: r.receiptPhoto ?? '',
     });
     setErrors({});
+    setPriceAsk(null);
     setShowModal(true);
   };
 
@@ -428,10 +467,16 @@ export default function Workshop() {
           </div>
         </div>
 
+        {errors.price && <p role="alert" className="mt-4 text-sm text-red-300">{errors.price}</p>}
+        {priceAsk && !errors.price && <div className="mt-4 rounded-lg border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-100 space-y-1">
+          <p>This repair already has a bill. Saving also changes:</p>
+          <p>• its bill in To pay: <b>{formatRM(priceAsk.from)}</b> → <b>{formatRM(priceAsk.to)}</b></p>
+          <p>• the accounts book: the old entry is cancelled and a new one is added at {formatRM(priceAsk.to)}, on the same date.</p>
+        </div>}
         <div className="flex gap-3 mt-5">
-          <button onClick={() => { setShowModal(false); setEditTarget(null); }} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
-          <button onClick={handleSubmit} className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm">
-            {editTarget ? 'Save Changes' : 'Add Repair Job'}
+          <button onClick={() => { setShowModal(false); setEditTarget(null); setPriceAsk(null); }} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
+          <button onClick={() => void handleSubmit()} disabled={saving} className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm">
+            {saving ? 'Saving…' : priceAsk ? 'Yes, change the bill and books too' : editTarget ? 'Save Changes' : 'Add Repair Job'}
           </button>
         </div>
       </Modal>
