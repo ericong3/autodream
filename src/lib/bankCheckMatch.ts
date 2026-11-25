@@ -19,7 +19,12 @@ export type BankCheckDetails = {
   note?: string;         // a note from whoever prepared the ticks
   answer?: BankCheckAnswer;
   done?: BankCheckDone;
+  // Lines from before the bank's start date in the app: answered as drafts only.
+  history?: boolean;
+  linkIds?: string[];    // books entries a history line is the same money as
+  toAdd?: DraftBill[];   // bills a history line paid that were never keyed in
 };
+export type DraftBill = { plate: string; what: string; cents: number };
 export type BankCheckLine = { id: string; date: string; cents: number; text: string; status: string; details: BankCheckDetails };
 export type BankMove = { id: string; date: string; label: string; cents: number };
 export type LineState = 'done' | 'ready' | 'answered' | 'needs';
