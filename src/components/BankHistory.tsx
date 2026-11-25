@@ -228,10 +228,17 @@ function MonthView({ tally, lines, states, hints, notes, notesSetUp, tab, setTab
   onBack: () => void; onOpen: (id: string) => void; onLine: (l: BankCheckLine) => void; onNote: (entryId: string, note: EntryNote | null) => Promise<void>;
 }) {
   const inTab = (t: Tab, s: HistoryState) => t === 'all' || (t === 'needs' ? s === 'needs' || s === 'part' : s === t);
-  const shown = lines.filter((l) => inTab(tab, states.get(l.id)!));
-  const count = (t: Tab) => lines.filter((l) => inTab(t, states.get(l.id)!)).length;
+  // Search by name, memo, reference or type, e.g. "STAMP FEE".
+  const [q, setQ] = useState('');
+  const found = (l: BankCheckLine) => !q.trim() || `${l.details.who ?? ''} ${l.text} ${l.details.memo ?? ''} ${l.details.ref ?? ''}`.toLowerCase().includes(q.trim().toLowerCase());
+  const shown = lines.filter((l) => inTab(tab, states.get(l.id)!) && found(l));
+  const count = (t: Tab) => lines.filter((l) => inTab(t, states.get(l.id)!) && found(l)).length;
   const offered = lines.filter((l) => states.get(l.id) === 'needs' && hints.has(l.id));
   const [review, setReview] = useState(false), [picked, setPicked] = useState<Set<string>>(new Set()), [busy, setBusy] = useState(false), [error, setError] = useState(''), [progress, setProgress] = useState('');
+  // Answer several lines at once: tick them, then one answer saves to each.
+  const [selecting, setSelecting] = useState(false), [sel, setSel] = useState<Set<string>>(new Set()), [bulkSaved, setBulkSaved] = useState('');
+  const ticked = lines.filter((l) => sel.has(l.id));
+  const tick = (id: string) => setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const leftOf = (l: BankCheckLine) => Math.abs(l.cents) - explainedCents(l, (id) => billCents.get(id) ?? 0, (id) => moveCents.get(id));
   const saveAll = async () => {
     setBusy(true); setError('');
@@ -305,20 +312,85 @@ function MonthView({ tally, lines, states, hints, notes, notesSetUp, tab, setTab
         <button key={t} type="button" aria-pressed={tab === t} onClick={() => setTab(t)}
           className={`min-h-[40px] px-4 rounded-full text-sm ${tab === t ? 'bg-gold-gradient text-obsidian-950 font-semibold' : 'border border-obsidian-400/70 text-gray-200'}`}>{name} · {count(t)}</button>)}
     </div>
+    <div className="flex flex-wrap items-center gap-2">
+      <input className="input rounded-lg px-3 py-2 text-sm flex-1 min-w-[200px]" type="search" placeholder="Search this month, e.g. STAMP FEE or a name" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search this month" />
+      <button type="button" aria-pressed={selecting} onClick={() => { setSelecting((s) => !s); setSel(new Set()); setBulkSaved(''); }}
+        className={`min-h-[40px] px-4 rounded-lg text-sm ${selecting ? 'bg-gold-gradient text-obsidian-950 font-semibold' : 'btn-ghost'}`}>{selecting ? 'Done ticking' : 'Answer several at once'}</button>
+    </div>
+    {bulkSaved && <p className="text-sm text-emerald-300">{bulkSaved}</p>}
+    {selecting && <div className="flex flex-wrap items-center gap-3 text-xs">
+      <span className="text-gray-400">Tick the lines that have the same answer.</span>
+      <button type="button" className="text-gold-400 min-h-[36px]" onClick={() => setSel((s) => new Set([...s, ...shown.map((l) => l.id)]))}>Tick all {shown.length} shown</button>
+      {sel.size > 0 && <button type="button" className="text-gold-400 min-h-[36px]" onClick={() => setSel(new Set())}>Untick all</button>}
+    </div>}
     <div className={`${CARD} overflow-hidden divide-y divide-obsidian-400/50`}>
       {shown.length === 0 && <p className="text-gray-500 text-sm text-center py-8">Nothing here.</p>}
-      {shown.map((l) => { const st = states.get(l.id)!; return <button key={l.id} type="button" onClick={() => { onOpen(l.id); window.scrollTo({ top: 0 }); }} className="w-full text-left flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 hover:bg-white/5">
-        <span className="flex-[999_1_320px] min-w-0">
-          <span className="block text-xs text-gray-500">{dayLabel(l.date)} · {l.cents > 0 ? 'Money in' : 'Money out'}</span>
-          <span className="block text-white text-sm font-semibold truncate">{l.details.who || l.text}</span>
-          <span className="block text-gray-400 text-xs truncate">{lineHint(l, st, hints.get(l.id), leftOf(l))}</span>
-        </span>
-        <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${CHIP[st][1]}`}>{CHIP[st][0]}</span>
-        <span className={`flex-[0_0_120px] text-right text-sm font-semibold ${l.cents > 0 ? 'text-emerald-300' : 'text-white'}`}>{signed(l.cents)}</span>
-      </button>; })}
+      {shown.map((l) => {
+        const st = states.get(l.id)!;
+        const body = <>
+          <span className="flex-[999_1_320px] min-w-0">
+            <span className="block text-xs text-gray-500">{dayLabel(l.date)} · {l.cents > 0 ? 'Money in' : 'Money out'}</span>
+            <span className="block text-white text-sm font-semibold truncate">{l.details.who || l.text}</span>
+            <span className="block text-gray-400 text-xs truncate">{lineHint(l, st, hints.get(l.id), leftOf(l))}</span>
+          </span>
+          <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${CHIP[st][1]}`}>{CHIP[st][0]}</span>
+          <span className={`flex-[0_0_120px] text-right text-sm font-semibold ${l.cents > 0 ? 'text-emerald-300' : 'text-white'}`}>{signed(l.cents)}</span>
+        </>;
+        return selecting
+          ? <label key={l.id} className={`w-full flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 cursor-pointer ${sel.has(l.id) ? 'bg-gold-500/10' : 'hover:bg-white/5'}`}>
+            <input type="checkbox" className="w-5 h-5 accent-[#EAB820]" checked={sel.has(l.id)} onChange={() => tick(l.id)} />{body}</label>
+          : <button key={l.id} type="button" onClick={() => { onOpen(l.id); window.scrollTo({ top: 0 }); }} className="w-full text-left flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 hover:bg-white/5">{body}</button>;
+      })}
     </div>
+    {selecting && ticked.length > 0 && <BulkAnswer key={ticked.some((l) => l.cents > 0) && ticked.some((l) => l.cents < 0) ? 'mixed' : ticked[0].cents > 0 ? 'in' : 'out'}
+      lines={ticked} actorId={actorId} onLine={onLine} onDone={(n) => { setSel(new Set()); setBulkSaved(`Saved the answer to ${n} ${n === 1 ? 'line' : 'lines'}.`); }} />}
 
     <UnlinkedEntries tally={tally} notes={notes} notesSetUp={notesSetUp} actorId={actorId} onNote={onNote} />
+  </div>;
+}
+
+// One answer for several ticked lines. Bills are ticked on each line's own page,
+// so they are not offered here. Each line keeps its links and ticked bills; only
+// its answer is set. Drafts only.
+function BulkAnswer({ lines, actorId, onLine, onDone }: { lines: BankCheckLine[]; actorId: string; onLine: (l: BankCheckLine) => void; onDone: (n: number) => void }) {
+  const inCents = lines.filter((l) => l.cents > 0).reduce((s, l) => s + l.cents, 0), outCents = -lines.filter((l) => l.cents < 0).reduce((s, l) => s + l.cents, 0);
+  const mixed = inCents > 0 && outCents > 0;
+  const kinds = mixed ? [['other', 'Other']] : (outCents > 0 ? HISTORY_OUT_KINDS : HISTORY_IN_KINDS).filter(([k]) => k !== 'bills' && k !== 'staff');
+  const [kind, setKind] = useState(''), [type, setType] = useState(''), [car, setCar] = useState(''), [month, setMonth] = useState(''), [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false), [error, setError] = useState(''), [progress, setProgress] = useState('');
+  const ready = !busy && !!kind && (kind !== 'other' || note.trim().length > 0);
+  const save = async () => {
+    setBusy(true); setError('');
+    const answer = { kind, ...(type.trim() ? { type: type.trim().slice(0, 120) } : {}), ...(car.trim() ? { car: car.trim().slice(0, 40) } : {}), ...(month.trim() ? { month: month.trim().slice(0, 60) } : {}), ...(note.trim() ? { note: note.trim().slice(0, 1000) } : {}), at: new Date().toISOString(), by: actorId };
+    let done = 0;
+    try {
+      for (const l of lines) {
+        setProgress(`Saving ${done + 1} of ${lines.length}…`);
+        onLine(await saveLine(l.id, { details: { ...l.details, answer } }));
+        done++;
+      }
+      onDone(done);
+    } catch (e) { setError(errorText(e, `Could not save. ${done} of ${lines.length} were saved.`)); } finally { setBusy(false); setProgress(''); }
+  };
+  const field = 'input w-full rounded-lg px-3 py-2 text-sm mt-1';
+  return <div className="sticky bottom-2 z-10 rounded-xl border border-gold-500/50 bg-obsidian-800 p-4 space-y-3 shadow-lg shadow-black/60">
+    <p className="text-white text-sm font-semibold">{lines.length} {lines.length === 1 ? 'line' : 'lines'} ticked{inCents ? ` · in ${plain(inCents)}` : ''}{outCents ? ` · out ${plain(outCents)}` : ''}</p>
+    {mixed && <p className="text-xs text-amber-200">You ticked money in and money out together, so only "Other" fits both.</p>}
+    <label className="block text-xs text-gray-400">What were they?
+      <select className={field} value={kind} onChange={(e) => setKind(e.target.value)}>
+        <option value="">Choose…</option>
+        {kinds.map(([k, name]) => <option key={k} value={k}>{name}</option>)}
+      </select></label>
+    {kind && <div className="grid gap-3 sm:grid-cols-3">
+      <label className="text-xs text-gray-400">Who or what (optional)<input className={field} value={type} maxLength={120} placeholder="e.g. a name, Rent" onChange={(e) => setType(e.target.value)} /></label>
+      <label className="text-xs text-gray-400">Car (optional)<input className={field} value={car} maxLength={40} placeholder="Plate" onChange={(e) => setCar(e.target.value)} /></label>
+      <label className="text-xs text-gray-400">For which month (optional)<input className={field} value={month} maxLength={60} placeholder="e.g. December 2025" onChange={(e) => setMonth(e.target.value)} /></label>
+      <label className="text-xs text-gray-400 sm:col-span-3">{kind === 'other' ? 'What were they? (needed)' : 'Note (optional)'}<input className={field} value={note} maxLength={1000} onChange={(e) => setNote(e.target.value)} /></label>
+    </div>}
+    <p className="text-xs text-gray-500">Bills are ticked on each line's own page. Lines that already have an answer get this one instead. Drafts only.</p>
+    {progress && <p className="text-sm text-sky-200">{progress}</p>}
+    {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
+    <button type="button" className="btn-gold px-5 py-2.5 rounded-lg text-sm" disabled={!ready} onClick={() => void save()}>{busy ? 'Saving…' : `Save this answer to ${lines.length} ${lines.length === 1 ? 'line' : 'lines'}`}</button>
   </div>;
 }
 
