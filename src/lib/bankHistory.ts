@@ -86,10 +86,18 @@ export function explainedCents(l: BankCheckLine, billCents: (id: string) => numb
   let s = 0;
   for (const id of l.details.linkIds ?? []) s += Math.abs(moveCents(id) ?? 0);
   if (l.cents < 0) {
-    for (const id of l.details.billIds ?? []) s += billCents(id);
+    for (const id of l.details.billIds ?? []) s += l.details.billCents?.[id] ?? billCents(id);
     for (const b of l.details.toAdd ?? []) s += b.cents;
   }
   return s;
+}
+
+// How much of each bill the lines' drafts already pay (a bill can be paid in parts
+// by several lines). Leave out one line with `except`.
+export function billCover(lines: BankCheckLine[], billCents: (id: string) => number, except?: string): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const l of lines) if (l.id !== except) for (const id of l.details.billIds ?? []) m.set(id, (m.get(id) ?? 0) + (l.details.billCents?.[id] ?? billCents(id)));
+  return m;
 }
 
 export function historyState(l: BankCheckLine, billCents: (id: string) => number, moveCents: (id: string) => number | undefined): HistoryState {
@@ -131,11 +139,15 @@ export function billSplit(line: BankCheckLine, bills: BillLite[], used: Set<stri
 // money out: bills for the car plate written on the line that add up exactly;
 // then bills of the payee named on the line that add up exactly; last any single
 // bill with the same amount keyed within 120 days. Each entry and bill is
-// suggested once, never one a draft already uses. Only a suggestion: the Director
-// accepts it or not.
-export function suggestions(lines: BankCheckLine[], moves: BankMove[], bills: BillLite[], payeeOf: (l: BankCheckLine) => string | undefined): Map<string, Suggestion> {
+// suggested once, never one a draft already uses. A bill another line paid part
+// of is offered for what is left of it. Only a suggestion: the Director accepts
+// it or not.
+export function suggestions(lines: BankCheckLine[], moves: BankMove[], allBills: BillLite[], payeeOf: (l: BankCheckLine) => string | undefined): Map<string, Suggestion> {
   const usedE = new Set(lines.flatMap((l) => l.details.linkIds ?? []));
-  const usedB = new Set(lines.flatMap((l) => l.details.billIds ?? []));
+  const full = new Map(allBills.map((b) => [b.id, b.cents]));
+  const cover = billCover(lines, (id) => full.get(id) ?? 0);
+  const bills = allBills.map((b) => ({ ...b, cents: b.cents - (cover.get(b.id) ?? 0) })).filter((b) => b.cents > 0);
+  const usedB = new Set<string>();
   const out = new Map<string, Suggestion>();
   const open = lines.filter((l) => l.cents !== 0 && !hasDraft(l)).sort(order);
   for (const win of [0, 3, 10, 45]) for (const l of open) {
@@ -175,16 +187,17 @@ export function suggestions(lines: BankCheckLine[], moves: BankMove[], bills: Bi
 }
 
 // Bank lines (money out) that could have paid one bill: the car's plate or the
-// payee's name is on the line, and the line still has room for the bill. Plate
-// on the line first, then the same amount, then oldest first.
+// payee's name is on the line, and the line still has room. `need` is what is
+// left of the bill to pay (all of it, unless another line paid part). Plate on
+// the line first, then the same amount, then oldest first.
 export type BillLine = { line: BankCheckLine; exact: boolean; plate: boolean; payee: boolean };
 const squash = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
-export function linesForBill(b: BillLite, lines: BankCheckLine[], roomOf: (l: BankCheckLine) => number, payeeOf: (l: BankCheckLine) => string | undefined): BillLine[] {
+export function linesForBill(b: BillLite, lines: BankCheckLine[], roomOf: (l: BankCheckLine) => number, payeeOf: (l: BankCheckLine) => string | undefined, need = b.cents): BillLine[] {
   const name = squash(b.payee);
   return lines.filter((l) => l.cents < 0).map((l) => {
     const key = lineKey(l);
-    return { line: l, exact: -l.cents === b.cents, plate: b.plate.length >= 5 && key.includes(b.plate), payee: (name.length >= 4 && key.includes(name)) || (payeeOf(l) ?? '').toLowerCase() === b.payee.toLowerCase() };
-  }).filter((x) => (x.plate || x.payee) && roomOf(x.line) >= b.cents)
+    return { line: l, exact: -l.cents === need, plate: b.plate.length >= 5 && key.includes(b.plate), payee: (name.length >= 4 && key.includes(name)) || (payeeOf(l) ?? '').toLowerCase() === b.payee.toLowerCase() };
+  }).filter((x) => (x.plate || x.payee) && roomOf(x.line) > 0)
     .sort((x, y) => Number(y.plate) - Number(x.plate) || Number(y.exact) - Number(x.exact) || order(x.line, y.line));
 }
 

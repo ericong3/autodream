@@ -129,3 +129,21 @@ test('bank lines that could have paid a bill: plate or payee on the line, room l
   assert.equal(got[0].plate, true);
   assert.equal(got[1].payee, true);
 });
+
+test('one bill paid by two transfers: each line counts its part, and the rest is offered to the other line', async () => {
+  const { billCover, explainedCents, linesForBill } = await import('../src/lib/bankHistory.ts');
+  const bill = { id: 'spray', cents: 98000, date: '2026-04-28', label: 'QS5092N · Spray Paint', payee: 'Kai Fa', plate: 'QS5092N' };
+  const full = (id) => (id === 'spray' ? 98000 : 0);
+  const first = line('l900', '2026-02-04', -90000, { who: 'KAI FA AUTO SPRAY GARAGE', memo: 'QS5092N SPRAY', billIds: ['spray'], billCents: { spray: 90000 }, answer: { kind: 'bills' } });
+  const second = line('l80', '2026-02-04', -8000, { who: 'KAI FA AUTO SPRAY GARAGE', memo: 'QS5092N SPRAYBALANCE' });
+  assert.equal(explainedCents(first, full, noMove), 90000);
+  assert.equal(historyState(first, full, noMove), 'linked');
+  assert.equal(billCover([first, second], full).get('spray'), 90000);
+  // The other line is offered what is left of the bill: 80.00, the same amount.
+  const s = suggestions([first, second], [], [bill], () => 'Kai Fa');
+  assert.deepEqual(s.get('l80').bills.map((b) => [b.id, b.cents]), [['spray', 8000]]);
+  // A line smaller than the bill can still be chosen for part of it.
+  const got = linesForBill(bill, [line('x', '2026-02-04', -90000, { memo: 'QS5092N SPRAY' })], (l) => -l.cents, () => undefined);
+  assert.equal(got.length, 1);
+  assert.equal(linesForBill(bill, [second], (l) => -l.cents, () => undefined, 8000)[0].exact, true);
+});

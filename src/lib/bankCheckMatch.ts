@@ -15,6 +15,7 @@ export type BankCheckDetails = {
   payee?: string;        // the payee whose bills are being ticked
   alsoPayee?: string;    // a second payee whose bills this transfer also paid (e.g. Petrol keyed apart)
   billIds?: string[];    // bills this transfer paid (ticked, not yet recorded)
+  billCents?: Record<string, number>; // part of a bill this transfer paid, when less than the whole bill (one bill paid in two transfers)
   addedBillIds?: string[]; // bills made from the Bank check page
   note?: string;         // a note from whoever prepared the ticks
   answer?: BankCheckAnswer;
