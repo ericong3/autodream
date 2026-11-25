@@ -37,6 +37,9 @@ export default function Finance() {
   const journalEntries = useStore((s) => s.journalEntries);
   const voidJournalEntry = useStore((s) => s.voidJournalEntry);
   const isDirector = currentUser?.role === 'director';
+  // The books (entries, accounts, bills) arrive in the second loading step.
+  const booksReady = useStore((s) => s.phase2Loaded);
+  const loadingBooks = <p className="text-[#ABA597] text-sm py-10 text-center">Loading the books…</p>;
 
   // The screen is in the link (?tab=…), so Back and shared links work.
   const [params, setParams] = useSearchParams();
@@ -114,7 +117,7 @@ export default function Finance() {
       {tab === 'overview' && (
         <AccountingThisMonth
           year={selectedYear} month={selectedMonth}
-          bank={bankSummary} gapCents={view.gapCents} missing={missingQ.data ? missingQ.data.total : null} deletes={deletes}
+          bank={bankSummary} gapCents={booksReady ? view.gapCents : null} missing={missingQ.data ? missingQ.data.total : null} deletes={booksReady ? deletes : null}
           onBank={() => go(companyBankPaymentsEnabled ? 'banks' : 'ledger')}
           onGap={() => (view.gapCents ? go('ledger', { problem: 'gap' }) : go('balance_sheet'))}
           onBills={() => go('payments', { start: 'documents' })}
@@ -128,9 +131,11 @@ export default function Finance() {
         ? <AccountingBank book={book} actorId={currentUser!.id} />
         : <p className="text-[#ABA597] text-sm">Only the Director can see the bank lines.</p>)}
 
-      {tab === 'balance_sheet' && <AccountingOwnOwe view={view} onFindGap={() => go('ledger', { problem: 'gap' })} />}
+      {tab === 'balance_sheet' && !booksReady && loadingBooks}
+      {tab === 'balance_sheet' && booksReady && <AccountingOwnOwe view={view} onFindGap={() => go('ledger', { problem: 'gap' })} />}
 
-      {tab === 'ledger' && (
+      {tab === 'ledger' && !booksReady && loadingBooks}
+      {tab === 'ledger' && booksReady && (
         <AccountingEntries
           entries={journalEntries} accounts={ledgerAccounts} payments={payments} cars={cars}
           docOf={docOf} entryLine={book.entryLine}

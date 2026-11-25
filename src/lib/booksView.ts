@@ -129,6 +129,19 @@ export function entryGap(e: Pick<JournalEntry, 'lines' | 'voided'>, known: Set<s
   return g;
 }
 
+// Why an entry puts the books off: its two sides differ (offCents), and/or it
+// uses accounts missing from the account list (unknown), whose amounts are
+// then left out of every total even though the entry itself may balance.
+export function entryCheck(e: Pick<JournalEntry, 'lines'>, known: Set<string>): { offCents: number; unknown: string[] } {
+  let off = 0;
+  const unknown: string[] = [];
+  for (const l of e.lines ?? []) {
+    off += cents(l.debit) - cents(l.credit);
+    if (!known.has(l.accountId) && !unknown.includes(l.accountId)) unknown.push(l.accountId);
+  }
+  return { offCents: off, unknown };
+}
+
 // ── Every entry ─────────────────────────────────────────────────────────────
 
 export type EntryKind = 'sold' | 'bought' | 'cost' | 'staff' | 'in' | 'out' | 'other';
@@ -240,6 +253,7 @@ export type ProofInput = {
   kind: EntryKind;
   voided: boolean;
   gapCents: number;
+  missingAccount?: boolean; // the gap comes from an account missing from the list, not unequal sides
   bill: { paid: boolean; doc: 'need_invoice' | 'need_receipt' | 'need_both' | 'ok' | 'unknown' } | null;
   bank: 'none' | 'matched' | 'unmatched';
   moneyIn: boolean | null; // sold cars: has money come in for this car
@@ -250,7 +264,7 @@ export type ProofInput = {
 export function entryProofs(x: ProofInput): Proof[] {
   if (x.voided) return [{ label: 'Cancelled, no longer counts', state: 'wait' }];
   const out: Proof[] = [];
-  if (x.gapCents) out.push({ label: "Doesn't add up", state: 'no' });
+  if (x.gapCents) out.push({ label: x.missingAccount ? 'Account not in list' : "Doesn't add up", state: 'no' });
   const invoice = (d: string) => (d === 'need_invoice' || d === 'need_both' ? 'no' : d === 'ok' || d === 'need_receipt' ? 'yes' : 'wait');
   const receipt = (d: string) => (d === 'need_receipt' || d === 'need_both' ? 'no' : d === 'ok' || d === 'need_invoice' ? 'yes' : 'wait');
   if (x.kind === 'sold') {

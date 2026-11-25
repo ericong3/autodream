@@ -19,9 +19,9 @@ export type BankCheckSummary = { loading: boolean; error: string; total: number;
 export default function AccountingThisMonth({ year, month, bank, gapCents, missing, deletes, onBank, onGap, onBills, onDeletes }: {
   year: number; month: number;
   bank: BankCheckSummary;
-  gapCents: number;
+  gapCents: number | null; // null while the books are still loading
   missing: number | null;
-  deletes: number;
+  deletes: number | null;
   onBank: () => void; onGap: () => void; onBills: () => void; onDeletes: () => void;
 }) {
   const cars = useStore((s) => s.cars);
@@ -105,17 +105,17 @@ export default function AccountingThisMonth({ year, month, bank, gapCents, missi
             note={bank.loading ? '' : bank.error ? 'Open Bank to try again' : !bank.total ? `Upload ${monthName} in Bank check` : bank.needs ? `${bank.needs} need you` : bank.done === bank.total ? 'All done' : 'Answered, waiting to record'}
             warn={!bank.loading && (!!bank.error || !bank.total || bank.needs > 0)} />
           <CheckTile onClick={onGap} title="Books add up"
-            icon={<StatusIcon kind={gapCents ? 'missing' : 'done'} size={48} />}
-            value={gapCents ? `Off by ${rm(Math.abs(gapCents))}` : 'Adds up'}
-            note={gapCents ? 'Find the difference' : 'What we own = what we owe + ours'} warn={!!gapCents} />
+            icon={<StatusIcon kind={gapCents === null ? 'notyet' : gapCents ? 'missing' : 'done'} size={48} />}
+            value={gapCents === null ? 'Loading…' : gapCents ? `Off by ${rm(Math.abs(gapCents))}` : 'Adds up'}
+            note={gapCents === null ? '' : gapCents ? 'Find the difference' : 'What we own = what we owe + ours'} warn={!!gapCents} />
           <CheckTile onClick={onBills} title="Bills missing an invoice or slip"
             icon={<StatusIcon kind={missing === null ? 'notyet' : missing ? 'missing' : 'done'} size={48} />}
             value={missing === null ? '…' : missing ? `${missing.toLocaleString('en-MY')} bills` : 'None'}
             note={missing ? 'Add them in Bills and money due' : missing === null ? 'Loading…' : 'Every bill has its papers'} warn={!!missing} />
           <CheckTile onClick={onDeletes} title="Delete requests"
-            icon={<StatusIcon kind={deletes ? 'owed' : 'done'} size={48} />}
-            value={deletes ? `${deletes} waiting` : 'None waiting'}
-            note={deletes ? 'Nothing goes until you say yes' : 'Nothing to approve'} blue={!!deletes} />
+            icon={<StatusIcon kind={deletes === null ? 'notyet' : deletes ? 'owed' : 'done'} size={48} />}
+            value={deletes === null ? 'Loading…' : deletes ? `${deletes} waiting` : 'None waiting'}
+            note={deletes === null ? '' : deletes ? 'Nothing goes until you say yes' : 'Nothing to approve'} blue={!!deletes} />
         </div>
       </section>
 

@@ -38,7 +38,7 @@ export default function AccountingOwnOwe({ view, onFindGap }: { view: OwnOwe; on
         <Bar label="What we own" total={view.ownCents} segs={own} scale={scale} />
         <Bar label="What we owe, and what is ours" total={view.oweCents + view.oursCents} segs={right} scale={scale} />
         <p className="text-[13px] text-[#ABA597] max-w-2xl">
-          {gap ? `The two bars should be the same length. The bottom bar is ${rm(Math.abs(gap))} ${gap > 0 ? 'shorter' : 'longer'}, because some entries do not add up. “Find the ${rm(Math.abs(gap))}” lists them.` : 'The two bars are the same length: everything we own is matched by what we owe and what is ours.'}
+          {gap ? `The two bars should be the same length. The bottom bar is ${rm(Math.abs(gap))} ${gap > 0 ? 'shorter' : 'longer'}, because some entries do not add up or use an account missing from the list. “Find the ${rm(Math.abs(gap))}” lists them.` : 'The two bars are the same length: everything we own is matched by what we owe and what is ours.'}
         </p>
       </section>
 

@@ -9,7 +9,7 @@ import type { Car as CarT, JournalEntry, LedgerAccount, Payment } from '../types
 import { formatRM } from '../utils/format';
 import { myDay, type DocState } from '../lib/billsBoard';
 import {
-  ENTRY_KINDS, bankCents, billFinder, cents, entryAmount, entryEffects, entryGap, entryKind, entryProofs, entryWords, isBankAccount, isOpening, plainAccount,
+  ENTRY_KINDS, bankCents, billFinder, cents, entryAmount, entryCheck, entryEffects, entryGap, entryKind, entryProofs, entryWords, isBankAccount, isOpening, plainAccount,
   type EntryKind, type Proof,
 } from '../lib/booksView';
 import { dayShort, rm, signedRm } from './AccountingParts';
@@ -28,7 +28,7 @@ const FIRST = 80, MORE = 200;
 
 type Row = {
   e: JournalEntry; kind: EntryKind; title: string; sub: string; amount: number; note: string;
-  proofs: Proof[]; gap: number; carId?: string; lineId?: string; search: string;
+  proofs: Proof[]; gap: number; off: number; unknown: string[]; carId?: string; lineId?: string; search: string;
 };
 
 export default function AccountingEntries({ entries, accounts, payments, cars, docOf, entryLine, problem, onProblem, onVoid, tools }: {
@@ -69,9 +69,10 @@ export default function AccountingEntries({ entries, accounts, payments, cars, d
       const touchesBank = !isOpening(e) && (e.lines ?? []).some((l) => isBankAccount(l.accountId));
       const lineId = entryLine.get(e.id);
       const gap = entryGap(e, known);
+      const check = entryCheck(e, known);
       const moneyIn = kind === 'sold' ? bankCents(e) > 0 || (!!e.carId && moneyInCars.has(e.carId)) : null;
       const proofs = entryProofs({
-        kind, voided: !!e.voided, gapCents: gap, moneyIn,
+        kind, voided: !!e.voided, gapCents: gap, moneyIn, missingAccount: gap !== 0 && check.offCents === 0,
         bill: bill ? { paid: bill.status === 'transferred', doc: docOf ? docOf(bill) : 'unknown' } : null,
         bank: touchesBank ? (lineId ? 'matched' : 'unmatched') : 'none',
       });
@@ -83,7 +84,7 @@ export default function AccountingEntries({ entries, accounts, payments, cars, d
         : kind === 'sold' ? (moneyIn ? 'Money in' : 'Money not in yet')
         : bill ? (bill.status === 'transferred' ? 'Paid' : 'Not paid yet') : '';
       const search = `${words.title} ${sub} ${e.description} ${(Math.abs(amount) / 100).toFixed(2)} ${formatRM(Math.abs(amount) / 100)} ${bill?.recipientName ?? ''}`.toLowerCase();
-      return { e, kind, title: words.title, sub, amount, note, proofs, gap, carId: car?.id, lineId, search };
+      return { e, kind, title: words.title, sub, amount, note, proofs, gap, off: e.voided ? 0 : check.offCents, unknown: check.unknown, carId: car?.id, lineId, search };
     });
   }, [entries, accounts, payments, cars, docOf, entryLine]);
 
@@ -100,6 +101,14 @@ export default function AccountingEntries({ entries, accounts, payments, cars, d
   const count = (p: EntryProblem) => rows.filter((r) => hasProblem(r, p)).length;
   const gapRows = count('gap');
   const gapTotal = rows.reduce((s, r) => s + r.gap, 0);
+  // Two different reasons, which can partly cancel out: entries whose two sides
+  // are not equal, and entries on accounts missing from the list (they balance,
+  // but their amounts are left out of every total).
+  const unequal = rows.filter((r) => r.gap !== 0 && r.off !== 0);
+  const missing = rows.filter((r) => r.gap !== 0 && r.off === 0);
+  const missingIds = [...new Set(missing.flatMap((r) => r.unknown))];
+  const sumAbs = (xs: Row[]) => xs.reduce((s, r) => s + Math.abs(r.gap), 0);
+  const many = (n: number, one: string, more: string) => (n === 1 ? one : more);
   const today = myDay(new Date().toISOString());
 
   // Group the shown page by day.
@@ -124,9 +133,13 @@ export default function AccountingEntries({ entries, accounts, payments, cars, d
       </div>
 
       {problem === 'gap' && (
-        <p className="rounded-xl border border-[#6B3A2C] bg-[#1D1210] px-4 py-3 text-sm text-[#F3EEE2]">
-          {gapRows ? `These ${gapRows} ${gapRows === 1 ? 'entry does' : 'entries do'} not add up. Together they put the books off by ${rm(Math.abs(gapTotal))}. Ask your accountant to correct them; open one and switch on “Debit and credit” to see its lines.` : 'Every entry adds up.'}
-        </p>
+        <div className="rounded-xl border border-[#6B3A2C] bg-[#1D1210] px-4 py-3 text-sm text-[#F3EEE2] space-y-1.5">
+          {!gapRows && <p>Every entry adds up.</p>}
+          {missing.length > 0 && <p>{missing.length} {many(missing.length, 'entry uses', 'entries use')} an account that is not in the account list ({missingIds.join(', ')}). Each entry balances, but {rm(sumAbs(missing))} is left out of the totals. Putting the account back in the list fixes {many(missing.length, 'it', 'them')}.</p>}
+          {unequal.length > 0 && <p>{unequal.length} {many(unequal.length, 'entry has', 'entries have')} two sides that are not equal, by {rm(sumAbs(unequal))}{unequal.length > 1 ? ' in total' : ''}. {many(unequal.length, 'It needs', 'They need')} a correcting entry.</p>}
+          {missing.length > 0 && unequal.length > 0 && <p className="text-[#C9C2B3]">The two partly cancel out, so the books show off by {rm(Math.abs(gapTotal))}.</p>}
+          {gapRows > 0 && <p className="text-[13px] text-[#ABA597]">Open one and switch on “Debit and credit” to see its lines.</p>}
+        </div>
       )}
 
       <div className="space-y-3">
@@ -207,7 +220,12 @@ export default function AccountingEntries({ entries, accounts, payments, cars, d
                               ))}
                             </tbody>
                           </table>
-                          {r.gap !== 0 && <p className="px-3.5 py-2 border-t border-[#2A2316] text-[13px] text-[#F5A37E]">Off by {rm(Math.abs(r.gap))}: the two sides are not equal{(r.e.lines ?? []).some((l) => !byId.has(l.accountId)) ? ', or an account is missing from the list' : ''}.</p>}
+                          {r.gap !== 0 && (
+                            <p className="px-3.5 py-2 border-t border-[#2A2316] text-[13px] text-[#F5A37E]">
+                              {r.off !== 0 && `Off by ${rm(Math.abs(r.off))}: debits and credits are not equal. `}
+                              {r.unknown.length > 0 && `${r.unknown.join(', ')} is not in the account list, so ${r.off === 0 ? 'this entry balances but ' : ''}its amount is left out of the totals.`}
+                            </p>
+                          )}
                           {off && <p className="px-3.5 py-2 border-t border-[#2A2316] text-[13px] text-[#ABA597]">Voided{r.e.voidReason ? `: ${r.e.voidReason}` : ''}</p>}
                         </div>
                       )}

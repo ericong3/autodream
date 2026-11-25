@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  accountTotals, bankCents, billFinder, isOpening, entryAmount, entryEffects, entryGap, entryKind, entryProofs, entryWords,
+  accountTotals, bankCents, billFinder, entryCheck, isOpening, entryAmount, entryEffects, entryGap, entryKind, entryProofs, entryWords,
   monthRange, ownOwe, perHundred, plainAccount,
 } from '../src/lib/booksView.ts';
 
@@ -55,6 +55,10 @@ test('an entry that does not balance shows as the gap, and only that entry', () 
   assert.equal(entryGap(good, known), 0);
   assert.equal(entryGap(bad, known), 91428);
   assert.equal(entryGap({ ...bad, voided: true }, known), 0);
+  assert.deepEqual(entryCheck(bad, known), { offCents: 0, unknown: ['acct-unknown'] });
+  const unequal = E({ lines: [L('acct-ar', 57400), L('acct-inv-own', 8785.72), L('acct-rev-car-sales', 0, 62800)] });
+  assert.deepEqual(entryCheck(unequal, known), { offCents: 338572, unknown: [] });
+  assert.equal(entryGap(unequal, known), 338572);
 });
 
 test('kinds: sale, purchase, money in and out, staff, bill keyed', () => {
@@ -114,6 +118,7 @@ test('proofs: what each entry has, lacks, or waits for', () => {
   assert.equal(s(entryProofs({ ...base, kind: 'sold', moneyIn: false })), 'Sale:yes Money in:wait');
   assert.equal(s(entryProofs({ ...base, kind: 'cost', voided: true })), 'Cancelled, no longer counts:wait');
   assert.equal(s(entryProofs({ ...base, kind: 'other', gapCents: 5 })), "Doesn't add up:no");
+  assert.equal(s(entryProofs({ ...base, kind: 'other', gapCents: 5, missingAccount: true })), 'Account not in list:no');
 });
 
 test('per RM 100: adds to exactly RM 100 when the parts make the total', () => {
