@@ -84,7 +84,7 @@ export const hasDraft = (l: BankCheckLine) => !!l.details.answer || !!l.details.
 // How much of the line its drafts explain: linked books entries, ticked bills and bills to add.
 export function explainedCents(l: BankCheckLine, billCents: (id: string) => number, moveCents: (id: string) => number | undefined): number {
   let s = 0;
-  for (const id of l.details.linkIds ?? []) s += Math.abs(moveCents(id) ?? 0);
+  for (const id of l.details.linkIds ?? []) s += l.details.linkCents?.[id] ?? Math.abs(moveCents(id) ?? 0);
   if (l.cents < 0) {
     for (const id of l.details.billIds ?? []) s += l.details.billCents?.[id] ?? billCents(id);
     for (const b of l.details.toAdd ?? []) s += b.cents;
@@ -99,6 +99,18 @@ export function billCover(lines: BankCheckLine[], billCents: (id: string) => num
   for (const l of lines) if (l.id !== except) for (const id of l.details.billIds ?? []) m.set(id, (m.get(id) ?? 0) + (l.details.billCents?.[id] ?? billCents(id)));
   return m;
 }
+
+// How much of each books entry the lines already stand for (one entry can be
+// several bank lines, e.g. a car's booking and then its balance).
+export function moveCover(lines: BankCheckLine[], moveCents: (id: string) => number | undefined, except?: string): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const l of lines) if (l.id !== except) for (const id of l.details.linkIds ?? []) m.set(id, (m.get(id) ?? 0) + (l.details.linkCents?.[id] ?? Math.abs(moveCents(id) ?? 0)));
+  return m;
+}
+
+// The plate in a books entry like "Car purchased — 2018 Perodua Axia (SK2246B)",
+// capitals and digits only; '' for any other entry.
+export const purchasePlate = (label: string) => (/^Car purchased\b.*\(([^()]+)\)\s*$/i.exec(label)?.[1] ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 export function historyState(l: BankCheckLine, billCents: (id: string) => number, moveCents: (id: string) => number | undefined): HistoryState {
   if (l.cents !== 0 && explainedCents(l, billCents, moveCents) === Math.abs(l.cents)) return 'linked';
@@ -142,8 +154,12 @@ export function billSplit(line: BankCheckLine, bills: BillLite[], used: Set<stri
 // suggested once, never one a draft already uses. A bill another line paid part
 // of is offered for what is left of it. Only a suggestion: the Director accepts
 // it or not.
-export function suggestions(lines: BankCheckLine[], moves: BankMove[], allBills: BillLite[], payeeOf: (l: BankCheckLine) => string | undefined): Map<string, Suggestion> {
-  const usedE = new Set(lines.flatMap((l) => l.details.linkIds ?? []));
+export function suggestions(lines: BankCheckLine[], allMoves: BankMove[], allBills: BillLite[], payeeOf: (l: BankCheckLine) => string | undefined): Map<string, Suggestion> {
+  // A books entry other lines stand for part of is offered for what is left of it.
+  const size = new Map(allMoves.map((m) => [m.id, Math.abs(m.cents)]));
+  const mcover = moveCover(lines, (id) => size.get(id));
+  const moves = allMoves.map((m) => ({ ...m, cents: Math.sign(m.cents) * (Math.abs(m.cents) - (mcover.get(m.id) ?? 0)) })).filter((m) => m.cents !== 0);
+  const usedE = new Set<string>();
   const full = new Map(allBills.map((b) => [b.id, b.cents]));
   const cover = billCover(lines, (id) => full.get(id) ?? 0);
   const bills = allBills.map((b) => ({ ...b, cents: b.cents - (cover.get(b.id) ?? 0) })).filter((b) => b.cents > 0);
@@ -215,13 +231,16 @@ export type MonthTally = {
 // One row per month, oldest first, for the months with statement lines or books entries.
 export function monthTallies(lines: BankCheckLine[], states: Map<string, HistoryState>, moves: BankMove[], noteOf: (entryId: string) => EntryNote | undefined): MonthTally[] {
   const linked = new Set(lines.flatMap((l) => l.details.linkIds ?? []));
+  // A car's "Car purchased" entry is accounted for when bank lines were answered
+  // "Car purchase" for that car (the books keyed it later, as one amount).
+  const bought = new Set(lines.filter((l) => l.cents < 0 && l.details.answer?.kind === 'car_purchase').map((l) => (l.details.answer?.car ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')).filter(Boolean));
   const months = [...new Set([...lines.map((l) => l.date.slice(0, 7)), ...moves.map((m) => m.date.slice(0, 7))])].sort();
   return months.map((month) => {
     const mine = lines.filter((l) => l.date.startsWith(month)).sort(order);
     const first = mine[0], last = mine[mine.length - 1];
     const count = (s: HistoryState) => mine.filter((l) => states.get(l.id) === s).length;
     const settled = mine.filter((l) => { const s = states.get(l.id); return s === 'answered' || s === 'linked'; });
-    const unlinked = moves.filter((m) => m.date.startsWith(month) && !linked.has(m.id));
+    const unlinked = moves.filter((m) => m.date.startsWith(month) && !linked.has(m.id) && !(m.cents < 0 && bought.has(purchasePlate(m.label))));
     const undecided = unlinked.filter((m) => !noteOf(m.id));
     const needs = count('needs'), part = count('part');
     return {

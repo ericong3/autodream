@@ -23,6 +23,7 @@ export type BankCheckDetails = {
   // Lines from before the bank's start date in the app: answered as drafts only.
   history?: boolean;
   linkIds?: string[];    // books entries a history line is the same money as
+  linkCents?: Record<string, number>; // part of a books entry this line is, when less than the whole entry (a car bought with a booking, then the balance)
   toAdd?: DraftBill[];   // bills a history line paid that were never keyed in
 };
 export type DraftBill = { plate: string; what: string; cents: number };

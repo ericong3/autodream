@@ -13,7 +13,7 @@ import { guessPayee, lineIds, toCents, type BankCheckDetails, type BankCheckLine
 import { HISTORY_IN_KINDS, HISTORY_OUT_KINDS, CARD, dayLabel, errorText, historyKindLabel, monthLabel } from '../lib/bankCheckWords';
 import { paymentBalanceCents } from '../lib/companyBankPayments';
 import {
-  billCover, carBills, explainedCents, hasDraft, historyState, linesForBill, monthTallies, readCheckedLines, suggestions,
+  billCover, carBills, moveCover, explainedCents, hasDraft, historyState, linesForBill, monthTallies, readCheckedLines, suggestions,
   type BillLite, type CheckedLine, type CheckedMonth, type EntryNote, type HistoryState, type MonthTally, type Suggestion,
 } from '../lib/bankHistory';
 import { AnswerForm } from './BankCheckParts';
@@ -32,7 +32,7 @@ const signed = (cents: number) => (cents > 0 ? '+' : '') + formatCents(cents).re
 const plain = (cents: number) => formatCents(cents).replace('RM ', '');
 const keyedDay = (iso: string) => new Date(new Date(iso).getTime() + 8 * 3600e3).toISOString().slice(0, 10);
 const order = (a: BankCheckLine, b: BankCheckLine) => a.date.localeCompare(b.date) || (a.details.seq ?? 0) - (b.details.seq ?? 0);
-const clearDraft = (d: BankCheckDetails): BankCheckDetails => { const { answer: _a, linkIds: _l, billIds: _b, billCents: _c, toAdd: _t, payee: _p, alsoPayee: _q, ...rest } = d; return rest; };
+const clearDraft = (d: BankCheckDetails): BankCheckDetails => { const { answer: _a, linkIds: _l, billIds: _b, billCents: _c, linkCents: _k, toAdd: _t, payee: _p, alsoPayee: _q, ...rest } = d; return rest; };
 const DRAFT_NOTE = 'Draft only. Nothing you save here goes into the books.';
 
 export default function BankHistory({ bank, lines, accountId, actorId, onLine, onReload }: {
@@ -107,8 +107,7 @@ export default function BankHistory({ bank, lines, accountId, actorId, onLine, o
   if (!lines.length || reloadFile) return <LoadFile bank={bank} have={lines} actorId={actorId} uploadId={uploadId} before={before} onDone={async () => { setReloadFile(false); await onReload(); }} onCancel={lines.length ? () => setReloadFile(false) : undefined} />;
 
   if (open) {
-    const usedMoves = new Map<string, string>();
-    for (const l of lines) if (l.id !== open.id) for (const id of l.details.linkIds ?? []) usedMoves.set(id, l.id);
+    const usedMoves = moveCover(lines, (id) => moveCents.get(id), open.id);
     const covered = billCover(lines, (id) => billCents.get(id) ?? 0, open.id);
     return <HistoryLine key={open.id} line={open} state={states.get(open.id)!} hint={hints.get(open.id)} moves={moves} bills={bills} covered={covered} usedMoves={usedMoves}
       billCents={billCents} moveCents={moveCents} actorId={actorId} onBack={() => setOpenId(null)} onChange={onLine} />;
@@ -384,8 +383,8 @@ function lineHint(l: BankCheckLine, s: HistoryState, hint: Suggestion | undefine
 
 // A suggested bill can be what is left of a bill another line paid part of:
 // then this line pays only that part.
-const hintPatch = (l: BankCheckLine, h: Suggestion, actorId: string, full: Map<string, number>): BankCheckDetails => {
-  if (h.kind === 'entry') return { ...l.details, linkIds: [h.move.id] };
+const hintPatch = (l: BankCheckLine, h: Suggestion, actorId: string, full: Map<string, number>, moveFull: Map<string, number>): BankCheckDetails => {
+  if (h.kind === 'entry') { const whole = Math.abs(moveFull.get(h.move.id) ?? h.move.cents), c = Math.abs(h.move.cents); return { ...l.details, linkIds: [h.move.id], ...(c < whole ? { linkCents: { [h.move.id]: c } } : {}) }; }
   const parts = Object.fromEntries(h.bills.filter((b) => b.cents < (full.get(b.id) ?? b.cents)).map((b) => [b.id, b.cents]));
   return { ...l.details, payee: h.payee, billIds: h.bills.map((b) => b.id), ...(Object.keys(parts).length ? { billCents: parts } : {}), answer: { kind: 'bills', at: new Date().toISOString(), by: actorId } };
 };
@@ -414,7 +413,7 @@ function MonthView({ tally, lines, states, hints, notes, notesSetUp, tab, setTab
       const todo = offered.filter((l) => picked.has(l.id));
       for (let i = 0; i < todo.length; i++) {
         setProgress(`Saving ${i + 1} of ${todo.length}…`);
-        onLine(await saveLine(todo[i].id, { details: hintPatch(todo[i], hints.get(todo[i].id)!, actorId, billCents) }));
+        onLine(await saveLine(todo[i].id, { details: hintPatch(todo[i], hints.get(todo[i].id)!, actorId, billCents, moveCents) }));
       }
       setReview(false);
     } catch (e) { setError(errorText(e, 'Could not save. The ones before this are saved.')); } finally { setBusy(false); setProgress(''); }
@@ -629,7 +628,7 @@ function PartInput({ cents, max, onChange }: { cents: number; max: number; onCha
 }
 
 function HistoryLine({ line, state, hint, moves, bills, covered, usedMoves, billCents, moveCents, actorId, onBack, onChange }: {
-  line: BankCheckLine; state: HistoryState; hint?: Suggestion; moves: BankMove[]; bills: BillLite[]; covered: Map<string, number>; usedMoves: Map<string, string>;
+  line: BankCheckLine; state: HistoryState; hint?: Suggestion; moves: BankMove[]; bills: BillLite[]; covered: Map<string, number>; usedMoves: Map<string, number>;
   billCents: Map<string, number>; moveCents: Map<string, number>; actorId: string; onBack: () => void; onChange: (l: BankCheckLine) => void;
 }) {
   const out = line.cents < 0;
@@ -663,10 +662,10 @@ function HistoryLine({ line, state, hint, moves, bills, covered, usedMoves, bill
       {hint.kind === 'entry'
         ? <div className="flex flex-wrap justify-between gap-3 text-sm"><span className="text-white">{dayLabel(hint.move.date)} · {hint.move.label}</span><span className="text-white">{signed(hint.move.cents)}</span></div>
         : <BillRows bills={hint.bills} />}
-      <button type="button" className="btn-gold px-5 py-2 rounded-lg text-sm" disabled={busy} onClick={() => void save(hintPatch(line, hint, actorId, billCents))}>{hint.kind === 'entry' ? 'Yes, same money' : hint.bills.length === 1 ? 'Yes, this bill' : 'Yes, these bills'}</button>
+      <button type="button" className="btn-gold px-5 py-2 rounded-lg text-sm" disabled={busy} onClick={() => void save(hintPatch(line, hint, actorId, billCents, moveCents))}>{hint.kind === 'entry' ? 'Yes, same money' : hint.bills.length === 1 ? 'Yes, this bill' : 'Yes, these bills'}</button>
     </div>}
 
-    <LinkEntries line={line} moves={moves} used={usedMoves} busy={busy} onSave={(ids) => void save({ ...line.details, linkIds: ids })} />
+    <LinkEntries line={line} moves={moves} covered={usedMoves} busy={busy} onSave={(ids, parts) => void save({ ...line.details, linkIds: ids, linkCents: Object.keys(parts).length ? parts : undefined })} />
 
     <fieldset className={`${CARD} p-4 space-y-3`}>
       <legend className="sr-only">What was this?</legend>
@@ -677,7 +676,7 @@ function HistoryLine({ line, state, hint, moves, bills, covered, usedMoves, bill
       </div>
     </fieldset>
     {out && (kind === 'bills' || kind === 'staff')
-      ? <DraftBills key={kind} line={line} kind={kind} bills={bills} covered={covered} linked={(line.details.linkIds ?? []).reduce((s, id) => s + Math.abs(moveCents.get(id) ?? 0), 0)} actorId={actorId} busy={busy} onSave={(d) => void save(d)} />
+      ? <DraftBills key={kind} line={line} kind={kind} bills={bills} covered={covered} linked={(line.details.linkIds ?? []).reduce((s, id) => s + (line.details.linkCents?.[id] ?? Math.abs(moveCents.get(id) ?? 0)), 0)} actorId={actorId} busy={busy} onSave={(d) => void save(d)} />
       : kind ? <AnswerForm key={kind} line={line} kind={kind} actorId={actorId} onChange={onChange} /> : null}
 
     {hasDraft(line) && <div className="text-xs text-gray-500">
@@ -691,32 +690,62 @@ function HistoryLine({ line, state, hint, moves, bills, covered, usedMoves, bill
 
 // Books entries with the same direction near the line's day; tick the ones that
 // are this money. The amount can differ (for example a car bought for 19,000 that
-// the books show as 18,500): the difference is fixed in the books step.
-function LinkEntries({ line, moves, used, busy, onSave }: { line: BankCheckLine; moves: BankMove[]; used: Map<string, string>; busy: boolean; onSave: (ids: string[]) => void }) {
+// the books show as 18,500): the difference is fixed in the books step. An entry
+// bigger than the line (a car's booking, then its balance) is split: this line is
+// part of it, and another line can be the rest.
+function LinkEntries({ line, moves, covered, busy, onSave }: { line: BankCheckLine; moves: BankMove[]; covered: Map<string, number>; busy: boolean; onSave: (ids: string[], parts: Record<string, number>) => void }) {
+  const size = (id: string) => Math.abs(moves.find((m) => m.id === id)?.cents ?? 0);
+  const leftOf = (id: string) => size(id) - (covered.get(id) ?? 0);
   const [ticked, setTicked] = useState<string[]>(line.details.linkIds ?? []);
+  // An entry ticked before splitting existed, bigger than the line: start it as the line's part.
+  const [parts, setParts] = useState<Record<string, number>>(() => {
+    const p = { ...(line.details.linkCents ?? {}) };
+    let room = Math.abs(line.cents);
+    for (const id of line.details.linkIds ?? []) { const c = p[id] ?? Math.min(leftOf(id), Math.max(room, 0)); if (c > 0 && c < size(id)) p[id] = c; room -= c; }
+    return p;
+  });
   const [wide, setWide] = useState(false);
   const days = (a: string) => Math.abs(Date.parse(a + 'T00:00:00Z') - Date.parse(line.date + 'T00:00:00Z')) / 864e5;
   const near = moves.filter((m) => Math.sign(m.cents) === Math.sign(line.cents) && (ticked.includes(m.id) || days(m.date) <= (wide ? 60 : 15)))
-    .sort((a, b) => Number(ticked.includes(b.id)) - Number(ticked.includes(a.id)) || Math.abs(Math.abs(a.cents) - Math.abs(line.cents)) - Math.abs(Math.abs(b.cents) - Math.abs(line.cents)) || days(a.date) - days(b.date)).slice(0, wide ? 40 : 12);
-  const total = ticked.reduce((s, id) => s + Math.abs(moves.find((m) => m.id === id)?.cents ?? 0), 0);
-  const changed = ticked.join() !== (line.details.linkIds ?? []).join();
+    .sort((a, b) => Number(ticked.includes(b.id)) - Number(ticked.includes(a.id)) || Math.abs(leftOf(a.id) - Math.abs(line.cents)) - Math.abs(leftOf(b.id) - Math.abs(line.cents)) || days(a.date) - days(b.date)).slice(0, wide ? 40 : 12);
+  const payOf = (id: string) => parts[id] ?? size(id);
+  const total = ticked.reduce((s, id) => s + payOf(id), 0);
+  const mine = (p: Record<string, number>, t: string[]) => Object.fromEntries(Object.entries(p).filter(([id]) => t.includes(id)));
+  const changed = ticked.join() !== (line.details.linkIds ?? []).join() || JSON.stringify(mine(parts, ticked)) !== JSON.stringify(line.details.linkCents ?? {});
+  const toggle = (id: string) => {
+    if (ticked.includes(id)) { setTicked((t) => t.filter((x) => x !== id)); setParts(({ [id]: _gone, ...rest }) => rest); return; }
+    const room = Math.abs(line.cents) - total, left = leftOf(id), part = room > 0 ? Math.min(left, room) : left;
+    setTicked((t) => [...t, id]);
+    if (part < size(id)) setParts((p) => ({ ...p, [id]: part }));
+  };
+  const setPart = (id: string, c: number) => setParts((p) => { if (c >= size(id)) { const { [id]: _gone, ...rest } = p; return rest; } return { ...p, [id]: c }; });
   if (!near.length && !wide) return <p className="text-xs text-gray-500">No books entries for this bank within 15 days of this line. <button type="button" className="underline" onClick={() => setWide(true)}>Look further</button></p>;
   return <div className={`${CARD} p-4 space-y-3`}>
     <div className="flex flex-wrap justify-between gap-2">
       <p className="text-white text-sm font-semibold">Is this money already in the books?</p>
       <button type="button" className="text-xs text-gold-400" onClick={() => setWide((w) => !w)}>{wide ? 'Show only 15 days around it' : 'Look up to 60 days around it'}</button>
     </div>
-    <p className="text-xs text-gray-500">Books entries for this bank around {dayLabel(line.date)}, closest amount first. Tick the ones that are this money.</p>
+    <p className="text-xs text-gray-500">Books entries for this bank around {dayLabel(line.date)}, closest amount first. Tick the ones that are this money. If this line is only part of one (a booking, then the balance), tick it anyway: this line takes its part.</p>
     <div className="rounded-lg border border-obsidian-400/60 divide-y divide-obsidian-400/40">
-      {near.map((m) => { const taken = used.has(m.id); return <label key={m.id} className={`flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 text-sm ${taken ? 'opacity-50' : 'cursor-pointer'}`}>
-        <input type="checkbox" className="w-5 h-5 accent-[#EAB820]" disabled={taken} checked={ticked.includes(m.id)} onChange={() => setTicked((t) => (t.includes(m.id) ? t.filter((x) => x !== m.id) : [...t, m.id]))} />
-        <span className="flex-1 min-w-[160px] text-gray-300">{dayLabel(m.date)} · {m.label}{taken && <span className="ml-2 text-[11px] text-amber-300">on another line</span>}</span>
-        <span className="w-28 text-right text-white">{signed(m.cents)}</span>
-      </label>; })}
+      {near.map((m) => {
+        const on = ticked.includes(m.id), elsewhere = covered.get(m.id) ?? 0, left = leftOf(m.id), taken = left <= 0 && !on, part = payOf(m.id);
+        return <div key={m.id} className="px-3 py-2.5 text-sm space-y-2">
+          <label className={`flex flex-wrap items-center gap-x-3 gap-y-1 ${taken ? 'opacity-50' : 'cursor-pointer'}`}>
+            <input type="checkbox" className="w-5 h-5 accent-[#EAB820]" disabled={taken} checked={on} onChange={() => toggle(m.id)} />
+            <span className="flex-1 min-w-[160px] text-gray-300">{dayLabel(m.date)} · {m.label}
+              {taken && <span className="ml-2 text-[11px] text-amber-300">on other lines</span>}
+              {!on && !taken && elsewhere > 0 && <span className="ml-2 text-[11px] text-amber-300">{plain(left)} left; other lines are {plain(elsewhere)}</span>}</span>
+            <span className="w-28 text-right text-white">{signed(m.cents)}</span>
+          </label>
+          {on && part < size(m.id) && <p className="pl-8 text-xs text-sky-200 flex flex-wrap items-center gap-2">This line is
+            <PartInput cents={part} max={left} onChange={(c) => setPart(m.id, c)} />
+            of this entry.{left - part > 0 ? ` ${plain(left - part)} is left for another line, e.g. the balance.` : ''}</p>}
+        </div>;
+      })}
       {!near.length && <p className="text-gray-500 text-sm text-center py-4">None.</p>}
     </div>
     {ticked.length > 0 && <p className="text-xs text-gray-400">Ticked {formatCents(total)} · this line {formatCents(Math.abs(line.cents))}{total !== Math.abs(line.cents) ? ` · differs by ${formatCents(Math.abs(total - Math.abs(line.cents)))}. Say what the line was below, and the difference is fixed in the books step.` : ' · the same.'}</p>}
-    {changed && <button type="button" className="btn-ghost px-4 py-2 rounded-lg text-sm" disabled={busy} onClick={() => onSave(ticked)}>Save links</button>}
+    {changed && <button type="button" className="btn-ghost px-4 py-2 rounded-lg text-sm" disabled={busy} onClick={() => onSave(ticked, mine(parts, ticked))}>Save links</button>}
   </div>;
 }
 

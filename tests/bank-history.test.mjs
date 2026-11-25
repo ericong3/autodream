@@ -147,3 +147,28 @@ test('one bill paid by two transfers: each line counts its part, and the rest is
   assert.equal(got.length, 1);
   assert.equal(linesForBill(bill, [second], (l) => -l.cents, () => undefined, 8000)[0].exact, true);
 });
+
+test('a car bought with a booking then the balance: both lines are parts of one books entry', async () => {
+  const { moveCover, explainedCents } = await import('../src/lib/bankHistory.ts');
+  const entry = { id: 'buy', date: '2026-04-28', label: 'Car purchased — 2018 Perodua Axia (SK2246B)', cents: -1530000 };
+  const size = (id) => (id === 'buy' ? 1530000 : undefined);
+  const booking = line('bk', '2026-04-20', -153000, { linkIds: ['buy'], linkCents: { buy: 153000 } });
+  const balance = line('bal', '2026-04-28', -1377000);
+  assert.equal(explainedCents(booking, none, size), 153000);
+  assert.equal(historyState(booking, none, size), 'linked');
+  assert.equal(moveCover([booking, balance], size).get('buy'), 153000);
+  // The balance line is offered what is left of the entry.
+  const s = suggestions([booking, balance], [entry], [], () => undefined);
+  assert.equal(s.get('bal').move.id, 'buy');
+  assert.equal(s.get('bal').move.cents, -1377000);
+});
+
+test("a car's purchase entry keyed later as one amount counts once its bank lines are answered Car purchase", () => {
+  const entry = { id: 'buy', date: '2026-04-16', label: 'Car purchased — 2021 Mitsubishi Triton (QS2647N )', cents: -6900000 };
+  const lines = [line('a', '2026-04-02', -100, { balanceCents: 0, seq: 1, answer: { kind: 'other' } }), line('jan', '2026-01-06', -6211707, { answer: { kind: 'car_purchase', car: 'Qs2647n' } })];
+  const states = new Map([['a', 'answered'], ['jan', 'answered']]);
+  const apr = monthTallies(lines, states, [entry], () => undefined).find((t) => t.month === '2026-04');
+  assert.equal(apr.unlinked.length, 0);
+  const none2 = monthTallies([lines[0]], new Map([['a', 'answered']]), [entry], () => undefined).find((t) => t.month === '2026-04');
+  assert.equal(none2.unlinked.length, 1);
+});
