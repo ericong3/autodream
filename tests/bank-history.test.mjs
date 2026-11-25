@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { billSplit, historyState, monthTallies, readCheckedLines, suggestions } from '../src/lib/bankHistory.ts';
+import { billSplit, carBills, historyState, monthTallies, readCheckedLines, suggestions } from '../src/lib/bankHistory.ts';
 
 // Made-up figures only.
 const BANK = { openingDate: '2026-11-01', openingCents: 15000 };
@@ -59,22 +59,23 @@ test('a line is matched when drafts explain it to the sen, answered when said wh
   assert.equal(historyState(line('l', '2026-09-02', 30000, { linkIds: ['e1'] }), billCents, () => 29000), 'part');
 });
 
-test('a run of one payee\'s bills keyed one after another that adds up exactly is the split', () => {
+test('a run of one payee\'s bills keyed one after another that adds up exactly is the split; keyed date does not limit it', () => {
   const bills = [
-    { id: 'a', cents: 1000, date: '2026-08-01', label: '', payee: 'W' },
-    { id: 'b', cents: 2000, date: '2026-08-03', label: '', payee: 'W' },
-    { id: 'c', cents: 3000, date: '2026-08-04', label: '', payee: 'W' },
-    { id: 'd', cents: 9000, date: '2026-09-20', label: '', payee: 'W' }, // keyed after the transfer + 3 days
+    { id: 'a', cents: 1000, date: '2026-08-01', label: '', payee: 'W', plate: '' },
+    { id: 'b', cents: 2000, date: '2026-08-03', label: '', payee: 'W', plate: '' },
+    { id: 'c', cents: 3000, date: '2026-08-04', label: '', payee: 'W', plate: '' },
+    { id: 'd', cents: 9000, date: '2027-01-20', label: '', payee: 'W', plate: '' }, // keyed months after it was paid
   ];
   assert.deepEqual(billSplit(line('l', '2026-09-05', -5000), bills).map((b) => b.id), ['b', 'c']);
-  assert.equal(billSplit(line('l', '2026-09-05', -9000), bills), null);
+  assert.deepEqual(billSplit(line('l', '2026-09-05', -9000), bills).map((b) => b.id), ['d']);
+  assert.equal(billSplit(line('l', '2026-09-05', -4500), bills), null);
   assert.equal(billSplit(line('l', '2026-09-05', -5000), bills, new Set(['b'])), null);
 });
 
 test('suggestions: books entry nearest day first, then a payee split, then one bill; each used once', () => {
   const lines = [line('in', '2026-09-02', 30000), line('o1', '2026-09-05', -3000, { who: 'A WORKSHOP' }), line('o2', '2026-09-06', -700), line('done', '2026-09-07', -700, { answer: { kind: 'other' } })];
   const moves = [{ id: 'far', date: '2026-09-20', label: '', cents: 30000 }, { id: 'near', date: '2026-09-03', label: '', cents: 30000 }];
-  const bills = [{ id: 'x', cents: 1000, date: '2026-09-01', label: '', payee: 'A Workshop' }, { id: 'y', cents: 2000, date: '2026-09-02', label: '', payee: 'A Workshop' }, { id: 'z', cents: 700, date: '2026-09-04', label: '', payee: 'Shop' }];
+  const bills = [{ id: 'x', cents: 1000, date: '2026-09-01', label: '', payee: 'A Workshop', plate: '' }, { id: 'y', cents: 2000, date: '2026-09-02', label: '', payee: 'A Workshop', plate: '' }, { id: 'z', cents: 700, date: '2026-09-04', label: '', payee: 'Shop', plate: '' }];
   const s = suggestions(lines, moves, bills, (l) => (l.details.who ? 'A Workshop' : undefined));
   assert.equal(s.get('in').move.id, 'near');
   assert.deepEqual(s.get('o1').bills.map((b) => b.id), ['x', 'y']);
@@ -97,4 +98,17 @@ test('a month is ready only when every line is answered and every books entry is
   assert.equal(t.done, false);
   [t] = monthTallies(lines, states, moves, (id) => (id === 'e2' ? { how: 'wrong', at: '', by: '' } : undefined));
   assert.equal(t.done, true);
+});
+
+test('bills for the car plate written on the line come first, whenever they were keyed', () => {
+  const l = line('l', '2026-01-06', -9000, { who: 'YONG TAT TRADING COMPANY', memo: 'QAA8563K ALZA CUSHION REPAIR' });
+  const bills = [
+    { id: 'near', cents: 9000, date: '2026-01-07', label: 'QCM4822 · Interior', payee: 'Yong Tat', plate: 'QCM4822' },
+    { id: 'car', cents: 9000, date: '2026-05-02', label: 'QAA8563K · Interior', payee: 'Yong Tat', plate: 'QAA8563K' },
+  ];
+  assert.deepEqual(carBills(l, bills).map((b) => b.id), ['car']);
+  const s = suggestions([l], [], bills, () => 'Yong Tat');
+  assert.deepEqual(s.get('l').bills.map((b) => b.id), ['car']);
+  // A plate written with a space still counts.
+  assert.deepEqual(carBills(line('m', '2026-01-06', -9000, { memo: 'qaa 8563k repair' }), bills).map((b) => b.id), ['car']);
 });

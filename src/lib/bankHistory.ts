@@ -11,7 +11,8 @@ export type CheckedMonth = { month: string; openingCents: number; closingCents: 
 // needs: nothing yet. part: started, but does not explain the whole amount.
 // answered: said what it was. linked: books entries or bills explain it to the sen.
 export type HistoryState = 'needs' | 'part' | 'answered' | 'linked';
-export type BillLite = { id: string; cents: number; date: string; label: string; payee: string };
+// plate: the car's plate, capitals and digits only ('' when the bill has no car).
+export type BillLite = { id: string; cents: number; date: string; label: string; payee: string; plate: string };
 export type Suggestion = { kind: 'entry'; move: BankMove } | { kind: 'bills'; bills: BillLite[]; payee: string };
 // What the Director said about a books entry no statement line stands for.
 export type EntryNote = { how: 'wrong' | 'elsewhere'; note?: string; at: string; by: string };
@@ -98,30 +99,40 @@ export function historyState(l: BankCheckLine, billCents: (id: string) => number
   return hasDraft(l) ? 'part' : 'needs';
 }
 
-// The run of one payee's bills, keyed one after another (oldest first), that adds
-// up exactly to a transfer: keyed up to 120 days before it or 3 days after.
+// Old bills were often keyed into the app months after they were paid (a repair
+// paid on 6 Jan keyed on 2 May), so the day a bill was keyed says little here.
+// Matching leans on the car plate written on the line and on the payee instead.
+
+// The line's words, capitals and digits only: "QAA 8563K alza" -> "QAA8563KALZA".
+export const lineKey = (l: BankCheckLine) => `${l.details.who ?? ''} ${l.details.memo ?? ''} ${l.text}`.toUpperCase().replace(/[^A-Z0-9]/g, '');
+// Bills for a car whose plate is written on the line (memo, name or type).
+export const carBills = (l: BankCheckLine, bills: BillLite[]) => { const k = lineKey(l); return bills.filter((b) => b.plate.length >= 5 && k.includes(b.plate)); };
+
+// Bills that add up exactly to a transfer: a run of bills keyed one after another
+// (in keyed order). Of all such runs, the one keyed nearest the transfer's day.
 export function billSplit(line: BankCheckLine, bills: BillLite[], used: Set<string> = new Set()): BillLite[] | null {
   const amount = -line.cents;
   if (amount <= 0) return null;
-  const near = bills.filter((b) => !used.has(b.id) && b.cents > 0 && days(line.date, b.date) <= 3 && days(b.date, line.date) <= 120)
-    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
-  for (let i = 0; i < near.length; i++) {
+  const list = bills.filter((b) => !used.has(b.id) && b.cents > 0).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+  let best: BillLite[] | null = null, gap = Infinity;
+  for (let i = 0; i < list.length; i++) {
     let s = 0;
-    for (let j = i; j < near.length; j++) {
-      s += near[j].cents;
-      if (s === amount) return near.slice(i, j + 1);
+    for (let j = i; j < list.length; j++) {
+      s += list[j].cents;
       if (s > amount) break;
+      if (s === amount) { const g = Math.min(Math.abs(days(list[i].date, line.date)), Math.abs(days(list[j].date, line.date))); if (g < gap) { best = list.slice(i, j + 1); gap = g; } break; }
     }
   }
-  return null;
+  return best;
 }
 
 // A likely partner for each line with no draft yet. First a books entry with the
 // same amount, nearest day first (same day, then 3, 10 and 45 days). Then, for
-// money out, the bills of the payee named on the line that add up exactly, and
-// last any single bill with the same amount keyed near that day. Each entry and
-// bill is suggested once, never one a draft already uses. Only a suggestion: the
-// Director accepts it or not.
+// money out: bills for the car plate written on the line that add up exactly;
+// then bills of the payee named on the line that add up exactly; last any single
+// bill with the same amount keyed within 120 days. Each entry and bill is
+// suggested once, never one a draft already uses. Only a suggestion: the Director
+// accepts it or not.
 export function suggestions(lines: BankCheckLine[], moves: BankMove[], bills: BillLite[], payeeOf: (l: BankCheckLine) => string | undefined): Map<string, Suggestion> {
   const usedE = new Set(lines.flatMap((l) => l.details.linkIds ?? []));
   const usedB = new Set(lines.flatMap((l) => l.details.billIds ?? []));
@@ -133,19 +144,32 @@ export function suggestions(lines: BankCheckLine[], moves: BankMove[], bills: Bi
     for (const m of moves) { if (m.cents !== l.cents || usedE.has(m.id)) continue; const g = Math.abs(days(m.date, l.date)); if (g <= win && g < gap) { best = m; gap = g; } }
     if (best) { usedE.add(best.id); out.set(l.id, { kind: 'entry', move: best }); }
   }
+  const take = (l: BankCheckLine, found: BillLite[] | null, payee?: string) => {
+    if (!found?.length) return false;
+    for (const b of found) usedB.add(b.id);
+    out.set(l.id, { kind: 'bills', bills: found, payee: payee || found[0].payee });
+    return true;
+  };
+  for (const l of open) {
+    if (out.has(l.id) || l.cents >= 0) continue;
+    const mine = carBills(l, bills);
+    if (!mine.length) continue;
+    const payee = payeeOf(l);
+    const samePayee = payee ? mine.filter((b) => b.payee.toLowerCase() === payee.toLowerCase()) : [];
+    if (!take(l, billSplit(l, samePayee, usedB), payee)) take(l, billSplit(l, mine, usedB));
+  }
   const byPayee = new Map<string, BillLite[]>();
   for (const b of bills) { const k = b.payee.toLowerCase(); byPayee.set(k, [...(byPayee.get(k) ?? []), b]); }
   for (const l of open) {
     if (out.has(l.id) || l.cents >= 0) continue;
     const payee = payeeOf(l);
-    const split = payee ? billSplit(l, byPayee.get(payee.toLowerCase()) ?? [], usedB) : null;
-    if (payee && split) { for (const b of split) usedB.add(b.id); out.set(l.id, { kind: 'bills', bills: split, payee }); }
+    if (payee) take(l, billSplit(l, byPayee.get(payee.toLowerCase()) ?? [], usedB), payee);
   }
   for (const win of [10, 45, 120]) for (const l of open) {
     if (out.has(l.id) || l.cents >= 0) continue;
     let best: BillLite | undefined, gap = Infinity;
     for (const b of bills) { if (b.cents !== -l.cents || usedB.has(b.id)) continue; const g = Math.abs(days(b.date, l.date)); if (g <= win && g < gap) { best = b; gap = g; } }
-    if (best) { usedB.add(best.id); out.set(l.id, { kind: 'bills', bills: [best], payee: best.payee }); }
+    if (best) take(l, [best]);
   }
   return out;
 }

@@ -13,7 +13,7 @@ import { guessPayee, lineIds, toCents, type BankCheckDetails, type BankCheckLine
 import { HISTORY_IN_KINDS, HISTORY_OUT_KINDS, CARD, dayLabel, errorText, historyKindLabel, monthLabel } from '../lib/bankCheckWords';
 import { paymentBalanceCents } from '../lib/companyBankPayments';
 import {
-  explainedCents, hasDraft, historyState, monthTallies, readCheckedLines, suggestions,
+  carBills, explainedCents, hasDraft, historyState, monthTallies, readCheckedLines, suggestions,
   type BillLite, type CheckedLine, type CheckedMonth, type EntryNote, type HistoryState, type MonthTally, type Suggestion,
 } from '../lib/bankHistory';
 import { AnswerForm } from './BankCheckParts';
@@ -64,7 +64,7 @@ export default function BankHistory({ bank, lines, accountId, actorId, onLine, o
   // Bills a line could have paid: not paid yet, or paid before the start date.
   const plateOf = useMemo(() => new Map(cars.map((c) => [c.id, c.carPlate ?? ''])), [cars]);
   const bills = useMemo<BillLite[]>(() => payments.filter((p) => !NOT_BILLS.has(p.type) && !p.obligationReplaced && (p.status === 'pending' ? paymentBalanceCents(p) > 0 : !!p.transferredAt && keyedDay(p.transferredAt) < bank.openingDate))
-    .map((p) => ({ id: p.id, cents: p.status === 'pending' ? paymentBalanceCents(p) : toCents(p.amount), date: keyedDay(p.createdAt), label: [plateOf.get(p.carId ?? '') || '', p.description || p.type].filter(Boolean).join(' · '), payee: p.recipientName || '' })), [payments, plateOf, bank.openingDate]);
+    .map((p) => ({ id: p.id, cents: p.status === 'pending' ? paymentBalanceCents(p) : toCents(p.amount), date: keyedDay(p.createdAt), label: [plateOf.get(p.carId ?? '') || '', p.description || p.type].filter(Boolean).join(' · '), payee: p.recipientName || '', plate: (plateOf.get(p.carId ?? '') || '').toUpperCase().replace(/[^A-Z0-9]/g, '') })), [payments, plateOf, bank.openingDate]);
   const billCents = useMemo(() => new Map(bills.map((b) => [b.id, b.cents])), [bills]);
   const moveCents = useMemo(() => new Map(moves.map((m) => [m.id, m.cents])), [moves]);
   const states = useMemo(() => new Map(lines.map((l) => [l.id, historyState(l, (id) => billCents.get(id) ?? 0, (id) => moveCents.get(id))])), [lines, billCents, moveCents]);
@@ -536,8 +536,16 @@ function DraftBills({ line, kind, bills, used, linked: links, actorId, busy, onS
   const [plate, setPlate] = useState(''), [what, setWhat] = useState(''), [amount, setAmount] = useState('');
   const days = (d: string) => (Date.parse(d + 'T00:00:00Z') - Date.parse(line.date + 'T00:00:00Z')) / 864e5;
   const tickedSet = new Set(ticked);
-  const list = bills.filter((b) => tickedSet.has(b.id) || (b.payee.toLowerCase() === payee.toLowerCase() && days(b.date) <= 7 && days(b.date) >= -180))
-    .sort((a, b) => Number(tickedSet.has(b.id)) - Number(tickedSet.has(a.id)) || a.date.localeCompare(b.date));
+  // Old bills were often keyed months after they were paid, so no date limit here:
+  // first the bills for the car written on the line, then the payee's other bills,
+  // closest keyed date first.
+  const [all, setAll] = useState(false);
+  const carList = useMemo(() => carBills(line, bills).sort((a, b) => Math.abs(days(a.date)) - Math.abs(days(b.date))), [line, bills]); // eslint-disable-line react-hooks/exhaustive-deps
+  const inCar = new Set(carList.map((b) => b.id));
+  const payeeList = payee ? bills.filter((b) => !inCar.has(b.id) && b.payee.toLowerCase() === payee.toLowerCase()).sort((a, b) => Number(tickedSet.has(b.id)) - Number(tickedSet.has(a.id)) || Math.abs(days(a.date)) - Math.abs(days(b.date))) : [];
+  const shownPayee = all ? payeeList : payeeList.slice(0, 25);
+  const others = bills.filter((b) => tickedSet.has(b.id) && !inCar.has(b.id) && !payeeList.includes(b));
+  const carNames = [...new Set(carList.map((b) => b.label.split(' · ')[0]))].join(', ');
   const total = ticked.reduce((s, id) => s + (bills.find((b) => b.id === id)?.cents ?? 0), 0) + toAdd.reduce((s, b) => s + b.cents, 0);
   const still = -line.cents - links - total;
   const cents = parseRinggit(amount);
@@ -553,8 +561,14 @@ function DraftBills({ line, kind, bills, used, linked: links, actorId, busy, onS
           {[...new Set([...payees, ...(payee ? [payee] : [])])].sort((a, b) => a.localeCompare(b)).map((n) => <option key={n} value={n}>{n}</option>)}
         </select></label>
     </div>
-    {payee ? (list.length ? <><p className="text-xs text-gray-500">{payee}'s bills keyed up to 6 months before this line, oldest first.</p><BillRows bills={list} ticked={tickedSet} onToggle={toggle} used={used} /></>
-      : <p className="text-sm text-gray-400">{payee} has no open bills keyed near this date.</p>) : <p className="text-sm text-gray-400">Choose who this transfer paid.</p>}
+    {carList.length > 0 && <><p className="text-xs text-gray-500">Bills for {carNames}, the car written on this line:</p><BillRows bills={carList} ticked={tickedSet} onToggle={toggle} used={used} /></>}
+    {payee ? (payeeList.length ? <>
+      <p className="text-xs text-gray-500">{payee}'s {carList.length ? 'other ' : ''}open bills, closest date first. Old bills were often keyed months after they were paid.</p>
+      <BillRows bills={shownPayee} ticked={tickedSet} onToggle={toggle} used={used} />
+      {payeeList.length > shownPayee.length && <button type="button" className="text-xs text-gold-400 min-h-[36px]" onClick={() => setAll(true)}>Show all {payeeList.length}</button>}
+    </> : <p className="text-sm text-gray-400">{payee} has no {carList.length ? 'other ' : ''}open bills in the app.</p>)
+      : !carList.length && <p className="text-sm text-gray-400">Choose who this transfer paid.</p>}
+    {others.length > 0 && <><p className="text-xs text-gray-500">Also ticked:</p><BillRows bills={others} ticked={tickedSet} onToggle={toggle} used={used} /></>}
 
     <div className="rounded-lg border border-white/10 p-3 space-y-2">
       <p className="text-xs text-gray-300">Bills that were never keyed in (kept as a draft; Claude adds them in the books step)</p>
