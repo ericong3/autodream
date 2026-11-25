@@ -112,3 +112,20 @@ test('bills for the car plate written on the line come first, whenever they were
   // A plate written with a space still counts.
   assert.deepEqual(carBills(line('m', '2026-01-06', -9000, { memo: 'qaa 8563k repair' }), bills).map((b) => b.id), ['car']);
 });
+
+test('bank lines that could have paid a bill: plate or payee on the line, room left, same amount first', async () => {
+  const { linesForBill } = await import('../src/lib/bankHistory.ts');
+  const bill = { id: 'b', cents: 3000, date: '2026-05-02', label: 'QAA8563K · Tyre', payee: 'Tai Hon', plate: 'QAA8563K' };
+  const lines = [
+    line('lump', '2026-01-05', -10000, { who: 'TAIHON TYRE & BATTERY CO', memo: 'many cars' }),
+    line('exact', '2026-01-06', -3000, { who: 'TAIHON TYRE & BATTERY CO', memo: 'ALZA QAA8563K' }),
+    line('full', '2026-01-07', -3000, { who: 'TAIHON TYRE & BATTERY CO' }),
+    line('other', '2026-01-08', -3000, { who: 'SOMEONE ELSE' }),
+    line('in', '2026-01-09', 3000, { memo: 'QAA8563K' }),
+  ];
+  const room = (l) => (l.id === 'full' ? 0 : -l.cents);
+  const got = linesForBill(bill, lines, room, () => undefined);
+  assert.deepEqual(got.map((x) => x.line.id), ['exact', 'lump']);
+  assert.equal(got[0].plate, true);
+  assert.equal(got[1].payee, true);
+});

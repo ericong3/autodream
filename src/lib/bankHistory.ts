@@ -174,6 +174,20 @@ export function suggestions(lines: BankCheckLine[], moves: BankMove[], bills: Bi
   return out;
 }
 
+// Bank lines (money out) that could have paid one bill: the car's plate or the
+// payee's name is on the line, and the line still has room for the bill. Plate
+// on the line first, then the same amount, then oldest first.
+export type BillLine = { line: BankCheckLine; exact: boolean; plate: boolean; payee: boolean };
+const squash = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
+export function linesForBill(b: BillLite, lines: BankCheckLine[], roomOf: (l: BankCheckLine) => number, payeeOf: (l: BankCheckLine) => string | undefined): BillLine[] {
+  const name = squash(b.payee);
+  return lines.filter((l) => l.cents < 0).map((l) => {
+    const key = lineKey(l);
+    return { line: l, exact: -l.cents === b.cents, plate: b.plate.length >= 5 && key.includes(b.plate), payee: (name.length >= 4 && key.includes(name)) || (payeeOf(l) ?? '').toLowerCase() === b.payee.toLowerCase() };
+  }).filter((x) => (x.plate || x.payee) && roomOf(x.line) >= b.cents)
+    .sort((x, y) => Number(y.plate) - Number(x.plate) || Number(y.exact) - Number(x.exact) || order(x.line, y.line));
+}
+
 export type MonthTally = {
   month: string; lines: number;
   needs: number; part: number; answered: number; linked: number;

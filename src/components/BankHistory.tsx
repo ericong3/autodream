@@ -13,7 +13,7 @@ import { guessPayee, lineIds, toCents, type BankCheckDetails, type BankCheckLine
 import { HISTORY_IN_KINDS, HISTORY_OUT_KINDS, CARD, dayLabel, errorText, historyKindLabel, monthLabel } from '../lib/bankCheckWords';
 import { paymentBalanceCents } from '../lib/companyBankPayments';
 import {
-  carBills, explainedCents, hasDraft, historyState, monthTallies, readCheckedLines, suggestions,
+  carBills, explainedCents, hasDraft, historyState, linesForBill, monthTallies, readCheckedLines, suggestions,
   type BillLite, type CheckedLine, type CheckedMonth, type EntryNote, type HistoryState, type MonthTally, type Suggestion,
 } from '../lib/bankHistory';
 import { AnswerForm } from './BankCheckParts';
@@ -42,7 +42,7 @@ export default function BankHistory({ bank, lines, accountId, actorId, onLine, o
   const payments = useStore((s) => s.payments), journalEntries = useStore((s) => s.journalEntries), cars = useStore((s) => s.cars);
   const booksReady = useStore((s) => s.phase2Loaded);
   const [month, setMonth] = useState(''), [openId, setOpenId] = useState<string | null>(null), [tab, setTab] = useState<Tab>('needs');
-  const [reloadFile, setReloadFile] = useState(false);
+  const [reloadFile, setReloadFile] = useState(false), [byCar, setByCar] = useState(false);
   const before = dayLabel(bank.openingDate) + ' ' + bank.openingDate.slice(0, 4);
 
   // Books entries that moved money in or out of this bank before its start date:
@@ -69,7 +69,8 @@ export default function BankHistory({ bank, lines, accountId, actorId, onLine, o
   const moveCents = useMemo(() => new Map(moves.map((m) => [m.id, m.cents])), [moves]);
   const states = useMemo(() => new Map(lines.map((l) => [l.id, historyState(l, (id) => billCents.get(id) ?? 0, (id) => moveCents.get(id))])), [lines, billCents, moveCents]);
   const payees = useMemo(() => [...new Set(bills.map((b) => b.payee).filter(Boolean))], [bills]);
-  const hints = useMemo(() => suggestions(lines, moves, bills, (l) => guessPayee(`${l.details.who ?? ''} ${l.text}`, payees)), [lines, moves, bills, payees]);
+  const linePayee = useMemo(() => new Map(lines.map((l) => [l.id, guessPayee(`${l.details.who ?? ''} ${l.text}`, payees)])), [lines, payees]);
+  const hints = useMemo(() => suggestions(lines, moves, bills, (l) => linePayee.get(l.id)), [lines, moves, bills, linePayee]);
 
   // What the Director said about books entries no line stands for, kept on the history upload.
   const uploadId = `history-${bank.id}`;
@@ -124,6 +125,12 @@ export default function BankHistory({ bank, lines, accountId, actorId, onLine, o
       <p className="text-gray-400 text-sm">{bank.name} · {lines.length.toLocaleString('en-MY')} lines from {dayLabel(lines[0].date)} {lines[0].date.slice(0, 4)}</p>
     </div>
     <p className="text-sm text-sky-100 rounded-lg border border-sky-400/30 bg-sky-400/10 p-3">{DRAFT_NOTE} When every month is ready, Claude prepares one step that connects them to the books and shows you what it will do. It runs only after you say yes.</p>
+    <div className="flex flex-wrap gap-2" role="group" aria-label="Work by">
+      {([[false, 'By month'], [true, 'By car: match its bills']] as const).map(([v, name]) => <button key={name} type="button" aria-pressed={byCar === v} onClick={() => setByCar(v)}
+        className={`min-h-[40px] px-4 rounded-full text-sm ${byCar === v ? 'bg-gold-gradient text-obsidian-950 font-semibold' : 'border border-obsidian-400/70 text-gray-200'}`}>{name}</button>)}
+    </div>
+    {byCar ? <ByCar lines={lines} bills={bills} roomOf={(l) => Math.abs(l.cents) - explainedCents(l, (id) => billCents.get(id) ?? 0, (id) => moveCents.get(id))}
+      payeeOf={(l) => linePayee.get(l.id)} actorId={actorId} onLine={onLine} /> : <>
     <div className="grid gap-3 sm:grid-cols-3">
       <div className={`${CARD} p-4`}><p className="text-xs text-gray-400">Months ready</p><p className="text-white text-xl font-semibold mt-1">{ready} of {tallies.length}</p></div>
       <div className={`${CARD} p-4`}><p className="text-xs text-gray-400">Lines answered</p><p className="text-white text-xl font-semibold mt-1">{settled.toLocaleString('en-MY')} of {lines.length.toLocaleString('en-MY')}</p></div>
@@ -143,6 +150,127 @@ export default function BankHistory({ bank, lines, accountId, actorId, onLine, o
       })}
     </div>
     <button type="button" className="text-xs text-gray-500 underline min-h-[40px]" onClick={() => setReloadFile(true)}>Load the checked file again (adds only lines that are missing)</button>
+    </>}
+  </div>;
+}
+
+// Match old bills car by car: choose a car, see all its bills from every payee,
+// and pick the bank line that paid each one. Drafts only, like everything here.
+function ByCar({ lines, bills, roomOf, payeeOf, actorId, onLine }: {
+  lines: BankCheckLine[]; bills: BillLite[]; roomOf: (l: BankCheckLine) => number; payeeOf: (l: BankCheckLine) => string | undefined;
+  actorId: string; onLine: (l: BankCheckLine) => void;
+}) {
+  const paidBy = useMemo(() => { const m = new Map<string, BankCheckLine>(); for (const l of lines) for (const id of l.details.billIds ?? []) m.set(id, l); return m; }, [lines]);
+  // Money-out lines that can take bills: not already answered as something else.
+  const outLines = useMemo(() => lines.filter((l) => l.cents < 0 && (!l.details.answer || l.details.answer.kind === 'bills' || l.details.answer.kind === 'staff')), [lines]);
+  const cars = useMemo(() => {
+    const m = new Map<string, { name: string; n: number; open: number }>();
+    for (const b of bills) if (b.plate) { const x = m.get(b.plate) ?? { name: b.label.split(' · ')[0], n: 0, open: 0 }; x.n++; if (!paidBy.has(b.id)) x.open++; m.set(b.plate, x); }
+    return m;
+  }, [bills, paidBy]);
+  const [carText, setCarText] = useState(''), [all, setAll] = useState(false);
+  const key = carText.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const car = cars.get(key);
+  const waiting = [...cars.entries()].filter(([, x]) => x.open > 0).sort((a, b) => a[1].name.localeCompare(b[1].name));
+  return <div className="space-y-4">
+    <label className="block text-xs text-gray-400">Car
+      <input className="input w-full sm:max-w-sm rounded-lg px-3 py-2 text-sm mt-1" list="bycar-plates" value={carText} maxLength={20} placeholder="Type a plate, e.g. QAA8563K" onChange={(e) => setCarText(e.target.value)} /></label>
+    <datalist id="bycar-plates">{[...cars.values()].sort((a, b) => a.name.localeCompare(b.name)).map((x) => <option key={x.name} value={x.name}>{x.n} {x.n === 1 ? 'bill' : 'bills'}, {x.open} not matched</option>)}</datalist>
+    {carText.trim() && !car && <p className="text-sm text-gray-400">No bills for {carText.trim().toUpperCase()} in the app.</p>}
+    {car ? <CarBills key={key} name={car.name} list={bills.filter((b) => b.plate === key).sort((a, b) => a.date.localeCompare(b.date) || a.label.localeCompare(b.label))}
+      lines={outLines} paidBy={paidBy} roomOf={roomOf} payeeOf={payeeOf} actorId={actorId} onLine={onLine} onBack={() => setCarText('')} />
+      : <div className="space-y-2">
+        <p className="text-xs text-gray-500">{waiting.length} cars have bills not matched to a bank line yet. Tap one, or type its plate.</p>
+        <div className="flex flex-wrap gap-2">{(all ? waiting : waiting.slice(0, 40)).map(([k, x]) => <button key={k} type="button" onClick={() => setCarText(x.name)}
+          className="min-h-[36px] px-3 rounded-full border border-obsidian-400/70 text-sm text-gray-200 hover:bg-white/5">{x.name} · {x.open}</button>)}</div>
+        {waiting.length > 40 && !all && <button type="button" className="text-xs text-gold-400 min-h-[36px]" onClick={() => setAll(true)}>Show all {waiting.length}</button>}
+      </div>}
+  </div>;
+}
+
+function CarBills({ name, list, lines, paidBy, roomOf, payeeOf, actorId, onLine, onBack }: {
+  name: string; list: BillLite[]; lines: BankCheckLine[]; paidBy: Map<string, BankCheckLine>; roomOf: (l: BankCheckLine) => number;
+  payeeOf: (l: BankCheckLine) => string | undefined; actorId: string; onLine: (l: BankCheckLine) => void; onBack: () => void;
+}) {
+  const open = list.filter((b) => !paidBy.has(b.id));
+  const cands = new Map(open.map((b) => [b.id, linesForBill(b, lines, roomOf, payeeOf).slice(0, 12)]));
+  const cents = new Map(list.map((b) => [b.id, b.cents]));
+  const [pick, setPick] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false), [error, setError] = useState(''), [done, setDone] = useState('');
+  const count = (p: Record<string, string>) => Object.values(p).filter(Boolean).length;
+  const usedOn = (p: Record<string, string>, lineId: string, except?: string) => Object.entries(p).filter(([b, l]) => l === lineId && b !== except).reduce((s, [b]) => s + (cents.get(b) ?? 0), 0);
+  // A likely line names this car: the same amount first, else a lump sum to the same payee.
+  const likely = (p: Record<string, string>) => {
+    const next = { ...p };
+    for (const b of open) {
+      if (next[b.id]) continue;
+      const cs = cands.get(b.id) ?? [], fits = (x: { line: BankCheckLine }) => roomOf(x.line) - usedOn(next, x.line.id) >= b.cents;
+      const c = cs.find((x) => x.plate && x.exact && fits(x)) ?? cs.find((x) => x.plate && x.payee && fits(x));
+      if (c) next[b.id] = c.line.id;
+    }
+    return next;
+  };
+  const canFill = count(likely(pick)) - count(pick);
+  const picked = Object.entries(pick).filter(([, l]) => l);
+  const over = [...new Set(picked.map(([, l]) => l))].some((id) => { const l = lines.find((x) => x.id === id); return !l || usedOn(pick, id) > roomOf(l); });
+  const save = async () => {
+    setBusy(true); setError(''); setDone('');
+    let n = 0;
+    try {
+      const byLine = new Map<string, string[]>();
+      for (const [b, l] of picked) byLine.set(l, [...(byLine.get(l) ?? []), b]);
+      for (const [lineId, ids] of byLine) {
+        const l = lines.find((x) => x.id === lineId)!;
+        const answer = l.details.answer ?? { kind: 'bills', at: new Date().toISOString(), by: actorId };
+        onLine(await saveLine(l.id, { details: { ...l.details, billIds: [...new Set([...(l.details.billIds ?? []), ...ids])], payee: l.details.payee || list.find((b) => b.id === ids[0])?.payee, answer } }));
+        n += ids.length;
+      }
+      setPick({}); setDone(`Saved: ${n} ${n === 1 ? 'bill' : 'bills'} matched to their bank lines.`);
+    } catch (e) { setError(errorText(e, `Could not save all of them. ${n} saved before this.`)); } finally { setBusy(false); }
+  };
+  const undo = async (b: BillLite) => {
+    const l = paidBy.get(b.id);
+    if (!l) return;
+    setBusy(true); setError(''); setDone('');
+    try { onLine(await saveLine(l.id, { details: { ...l.details, billIds: (l.details.billIds ?? []).filter((x) => x !== b.id) } })); }
+    catch (e) { setError(errorText(e, 'Could not undo.')); } finally { setBusy(false); }
+  };
+  const short = (s: string) => (s.length > 28 ? s.slice(0, 27) + '…' : s);
+  return <div className={`${CARD} p-4 space-y-3`}>
+    <div className="flex flex-wrap items-end justify-between gap-2">
+      <div>
+        <p className="text-white font-semibold">{name}</p>
+        <p className="text-xs text-gray-400">{list.length} {list.length === 1 ? 'bill' : 'bills'} · {formatCents(list.reduce((s, b) => s + b.cents, 0))} · {list.length - open.length} matched to a bank line</p>
+      </div>
+      <button type="button" className="text-xs text-gold-400 min-h-[36px]" onClick={onBack}>Choose another car</button>
+    </div>
+    <div className="rounded-lg border border-obsidian-400/60 divide-y divide-obsidian-400/40">
+      {list.map((b) => {
+        const paid = paidBy.get(b.id), cs = cands.get(b.id) ?? [];
+        return <div key={b.id} className="px-3 py-3 text-sm space-y-2">
+          <div className="flex flex-wrap justify-between gap-x-3">
+            <span className="text-white min-w-0">{b.label.split(' · ').slice(1).join(' · ') || b.label}<span className="text-gray-500"> · {b.payee || 'no payee'} · keyed {dayLabel(b.date)} {b.date.slice(0, 4)}</span></span>
+            <span className="text-white">{plain(b.cents)}</span>
+          </div>
+          {paid ? <p className="text-xs text-emerald-300">Paid by the bank line on {dayLabel(paid.date)} {paid.date.slice(0, 4)} · {paid.details.who || paid.text} · {plain(-paid.cents)}
+              <button type="button" className="underline text-gray-400 ml-2 min-h-[32px]" disabled={busy} onClick={() => void undo(b)}>Undo</button></p>
+            : cs.length ? <select className="input w-full rounded-lg px-3 py-2 text-sm" value={pick[b.id] ?? ''} aria-label={`Bank line that paid ${b.label}`} onChange={(e) => setPick((p) => ({ ...p, [b.id]: e.target.value }))}>
+              <option value="">Which bank line paid it? Choose…</option>
+              {cs.map((c) => { const room = roomOf(c.line) - usedOn(pick, c.line.id, b.id); return <option key={c.line.id} value={c.line.id} disabled={room < b.cents}>
+                {dayLabel(c.line.date)} {c.line.date.slice(0, 4)} · {c.line.details.who || c.line.text}{c.line.details.memo ? ` "${short(c.line.details.memo)}"` : ''} · {plain(-c.line.cents)}{c.exact ? ' · same amount' : ` · ${plain(Math.max(0, room))} left to explain`}</option>; })}
+            </select>
+            : <p className="text-xs text-gray-500">No bank line names this car or {b.payee || 'its payee'} with room for it. If it was paid inside a bigger transfer, open that line from its month and tick it there.</p>}
+        </div>;
+      })}
+    </div>
+    {over && <p className="text-sm text-amber-200">One bank line has more bills chosen than its amount. Change one of them.</p>}
+    {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
+    {done && <p className="text-sm text-emerald-300">{done}</p>}
+    <div className="flex flex-wrap items-center gap-2">
+      {canFill > 0 && <button type="button" className="btn-ghost px-4 py-2.5 rounded-lg text-sm" disabled={busy} onClick={() => setPick((p) => likely(p))}>Fill in the likely lines ({canFill})</button>}
+      <button type="button" className="btn-gold px-5 py-2.5 rounded-lg text-sm" disabled={busy || !picked.length || over} onClick={() => void save()}>{busy ? 'Saving…' : `Save ${picked.length} ${picked.length === 1 ? 'bill' : 'bills'}`}</button>
+    </div>
+    <p className="text-xs text-gray-500">Check each choice before you save. {DRAFT_NOTE}</p>
   </div>;
 }
 
