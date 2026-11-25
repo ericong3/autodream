@@ -172,3 +172,21 @@ test("a car's purchase entry keyed later as one amount counts once its bank line
   const none2 = monthTallies([lines[0]], new Map([['a', 'answered']]), [entry], () => undefined).find((t) => t.month === '2026-04');
   assert.equal(none2.unlinked.length, 1);
 });
+
+test('a booking line that ticked the whole car counts only as itself; the rest waits for the balance line', async () => {
+  const { moveCover } = await import('../src/lib/bankHistory.ts');
+  const entry = { id: 'buy', date: '2026-04-28', label: 'Car purchased — 2018 Perodua Axia (SK2246B)', cents: -1530000 };
+  const size = (id) => (id === 'buy' ? 1530000 : undefined);
+  const booking = line('bk', '2026-04-20', -153000, { linkIds: ['buy'], balanceCents: 0, seq: 1 }); // ticked before parts existed
+  const balance = line('bal', '2026-04-21', -1377000, { balanceCents: 0, seq: 2 });
+  assert.equal(historyState(booking, none, size), 'linked');
+  assert.equal(moveCover([booking, balance], size).get('buy'), 153000);
+  assert.equal(suggestions([booking, balance], [entry], [], () => undefined).get('bal').move.cents, -1377000);
+  // Until the balance line is linked, the month shows the 13,770 no line stands for.
+  const [t] = monthTallies([booking, balance], new Map([['bk', 'linked'], ['bal', 'needs']]), [entry], () => undefined);
+  assert.equal(t.unlinked.length, 1);
+  assert.equal(t.unlinked[0].cents, -1377000);
+  const done = { ...balance, details: { ...balance.details, linkIds: ['buy'], linkCents: { buy: 1377000 } } };
+  const [t2] = monthTallies([booking, done], new Map([['bk', 'linked'], ['bal', 'linked']]), [entry], () => undefined);
+  assert.equal(t2.unlinked.length, 0);
+});

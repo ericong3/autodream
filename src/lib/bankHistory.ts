@@ -81,10 +81,23 @@ export function readCheckedLines(raw: unknown, bank: { openingDate: string; open
 
 export const hasDraft = (l: BankCheckLine) => !!l.details.answer || !!l.details.linkIds?.length || !!l.details.billIds?.length || !!l.details.toAdd?.length;
 
+// How much of each linked books entry a line stands for. A line is never more
+// than itself: an entry bigger than the line (a car's booking, then its balance)
+// counts only up to what is left of the line, unless a part was typed.
+export function linkParts(l: BankCheckLine, moveCents: (id: string) => number | undefined): Map<string, number> {
+  const m = new Map<string, number>();
+  let room = Math.abs(l.cents);
+  for (const id of l.details.linkIds ?? []) {
+    const c = l.details.linkCents?.[id] ?? Math.min(Math.abs(moveCents(id) ?? 0), Math.max(room, 0));
+    m.set(id, c); room -= c;
+  }
+  return m;
+}
+
 // How much of the line its drafts explain: linked books entries, ticked bills and bills to add.
 export function explainedCents(l: BankCheckLine, billCents: (id: string) => number, moveCents: (id: string) => number | undefined): number {
   let s = 0;
-  for (const id of l.details.linkIds ?? []) s += l.details.linkCents?.[id] ?? Math.abs(moveCents(id) ?? 0);
+  for (const c of linkParts(l, moveCents).values()) s += c;
   if (l.cents < 0) {
     for (const id of l.details.billIds ?? []) s += l.details.billCents?.[id] ?? billCents(id);
     for (const b of l.details.toAdd ?? []) s += b.cents;
@@ -104,7 +117,7 @@ export function billCover(lines: BankCheckLine[], billCents: (id: string) => num
 // several bank lines, e.g. a car's booking and then its balance).
 export function moveCover(lines: BankCheckLine[], moveCents: (id: string) => number | undefined, except?: string): Map<string, number> {
   const m = new Map<string, number>();
-  for (const l of lines) if (l.id !== except) for (const id of l.details.linkIds ?? []) m.set(id, (m.get(id) ?? 0) + (l.details.linkCents?.[id] ?? Math.abs(moveCents(id) ?? 0)));
+  for (const l of lines) if (l.id !== except) for (const [id, c] of linkParts(l, moveCents)) m.set(id, (m.get(id) ?? 0) + c);
   return m;
 }
 
@@ -230,7 +243,8 @@ export type MonthTally = {
 
 // One row per month, oldest first, for the months with statement lines or books entries.
 export function monthTallies(lines: BankCheckLine[], states: Map<string, HistoryState>, moves: BankMove[], noteOf: (entryId: string) => EntryNote | undefined): MonthTally[] {
-  const linked = new Set(lines.flatMap((l) => l.details.linkIds ?? []));
+  const size = new Map(moves.map((m) => [m.id, Math.abs(m.cents)]));
+  const cover = moveCover(lines, (id) => size.get(id));
   // A car's "Car purchased" entry is accounted for when bank lines were answered
   // "Car purchase" for that car (the books keyed it later, as one amount).
   const bought = new Set(lines.filter((l) => l.cents < 0 && l.details.answer?.kind === 'car_purchase').map((l) => (l.details.answer?.car ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')).filter(Boolean));
@@ -240,7 +254,9 @@ export function monthTallies(lines: BankCheckLine[], states: Map<string, History
     const first = mine[0], last = mine[mine.length - 1];
     const count = (s: HistoryState) => mine.filter((l) => states.get(l.id) === s).length;
     const settled = mine.filter((l) => { const s = states.get(l.id); return s === 'answered' || s === 'linked'; });
-    const unlinked = moves.filter((m) => m.date.startsWith(month) && !linked.has(m.id) && !(m.cents < 0 && bought.has(purchasePlate(m.label))));
+    // Entries no line stands for, or only part of (shown for the part left).
+    const unlinked = moves.filter((m) => m.date.startsWith(month) && (cover.get(m.id) ?? 0) < Math.abs(m.cents) && !(m.cents < 0 && bought.has(purchasePlate(m.label))))
+      .map((m) => { const c = cover.get(m.id) ?? 0; return c ? { ...m, cents: Math.sign(m.cents) * (Math.abs(m.cents) - c), label: `${m.label} (the part no bank line stands for yet)` } : m; });
     const undecided = unlinked.filter((m) => !noteOf(m.id));
     const needs = count('needs'), part = count('part');
     return {

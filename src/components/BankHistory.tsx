@@ -13,7 +13,7 @@ import { guessPayee, lineIds, toCents, type BankCheckDetails, type BankCheckLine
 import { HISTORY_IN_KINDS, HISTORY_OUT_KINDS, CARD, dayLabel, errorText, historyKindLabel, monthLabel } from '../lib/bankCheckWords';
 import { paymentBalanceCents } from '../lib/companyBankPayments';
 import {
-  billCover, carBills, moveCover, explainedCents, hasDraft, historyState, linesForBill, monthTallies, readCheckedLines, suggestions,
+  billCover, carBills, linkParts, moveCover, explainedCents, hasDraft, historyState, linesForBill, monthTallies, readCheckedLines, suggestions,
   type BillLite, type CheckedLine, type CheckedMonth, type EntryNote, type HistoryState, type MonthTally, type Suggestion,
 } from '../lib/bankHistory';
 import { AnswerForm } from './BankCheckParts';
@@ -676,7 +676,7 @@ function HistoryLine({ line, state, hint, moves, bills, covered, usedMoves, bill
       </div>
     </fieldset>
     {out && (kind === 'bills' || kind === 'staff')
-      ? <DraftBills key={kind} line={line} kind={kind} bills={bills} covered={covered} linked={(line.details.linkIds ?? []).reduce((s, id) => s + (line.details.linkCents?.[id] ?? Math.abs(moveCents.get(id) ?? 0)), 0)} actorId={actorId} busy={busy} onSave={(d) => void save(d)} />
+      ? <DraftBills key={kind} line={line} kind={kind} bills={bills} covered={covered} linked={[...linkParts(line, (id) => moveCents.get(id)).values()].reduce((s, c) => s + c, 0)} actorId={actorId} busy={busy} onSave={(d) => void save(d)} />
       : kind ? <AnswerForm key={kind} line={line} kind={kind} actorId={actorId} onChange={onChange} /> : null}
 
     {hasDraft(line) && <div className="text-xs text-gray-500">
@@ -697,19 +697,14 @@ function LinkEntries({ line, moves, covered, busy, onSave }: { line: BankCheckLi
   const size = (id: string) => Math.abs(moves.find((m) => m.id === id)?.cents ?? 0);
   const leftOf = (id: string) => size(id) - (covered.get(id) ?? 0);
   const [ticked, setTicked] = useState<string[]>(line.details.linkIds ?? []);
-  // An entry ticked before splitting existed, bigger than the line: start it as the line's part.
-  const [parts, setParts] = useState<Record<string, number>>(() => {
-    const p = { ...(line.details.linkCents ?? {}) };
-    let room = Math.abs(line.cents);
-    for (const id of line.details.linkIds ?? []) { const c = p[id] ?? Math.min(leftOf(id), Math.max(room, 0)); if (c > 0 && c < size(id)) p[id] = c; room -= c; }
-    return p;
-  });
+  const [parts, setParts] = useState<Record<string, number>>(line.details.linkCents ?? {});
   const [wide, setWide] = useState(false);
   const days = (a: string) => Math.abs(Date.parse(a + 'T00:00:00Z') - Date.parse(line.date + 'T00:00:00Z')) / 864e5;
   const near = moves.filter((m) => Math.sign(m.cents) === Math.sign(line.cents) && (ticked.includes(m.id) || days(m.date) <= (wide ? 60 : 15)))
     .sort((a, b) => Number(ticked.includes(b.id)) - Number(ticked.includes(a.id)) || Math.abs(leftOf(a.id) - Math.abs(line.cents)) - Math.abs(leftOf(b.id) - Math.abs(line.cents)) || days(a.date) - days(b.date)).slice(0, wide ? 40 : 12);
-  const payOf = (id: string) => parts[id] ?? size(id);
-  const total = ticked.reduce((s, id) => s + payOf(id), 0);
+  const now = linkParts({ ...line, details: { ...line.details, linkIds: ticked, linkCents: parts } }, (id) => moves.find((m) => m.id === id)?.cents);
+  const payOf = (id: string) => now.get(id) ?? size(id);
+  const total = [...now.values()].reduce((s, c) => s + c, 0);
   const mine = (p: Record<string, number>, t: string[]) => Object.fromEntries(Object.entries(p).filter(([id]) => t.includes(id)));
   const changed = ticked.join() !== (line.details.linkIds ?? []).join() || JSON.stringify(mine(parts, ticked)) !== JSON.stringify(line.details.linkCents ?? {});
   const toggle = (id: string) => {
