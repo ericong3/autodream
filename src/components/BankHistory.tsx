@@ -428,7 +428,7 @@ function UnlinkedEntries({ tally, notes, notesSetUp, actorId, onNote }: { tally:
 function BillRows({ bills, ticked, onToggle, used }: { bills: BillLite[]; ticked?: Set<string>; onToggle?: (id: string) => void; used?: Map<string, string> }) {
   return <div className="rounded-lg border border-obsidian-400/60 divide-y divide-obsidian-400/40">
     {bills.map((b) => { const taken = !!used?.has(b.id) && !ticked?.has(b.id); const body = <>
-      <span className="flex-1 min-w-[160px] text-gray-300">{b.label}<span className="text-gray-500"> · keyed {dayLabel(b.date)}</span>{taken && <span className="ml-2 text-[11px] text-amber-300">on another line</span>}</span>
+      <span className="flex-1 min-w-[160px] text-gray-300">{b.label}<span className="text-gray-500">{b.payee ? ` · ${b.payee}` : ''} · keyed {dayLabel(b.date)}</span>{taken && <span className="ml-2 text-[11px] text-amber-300">on another line</span>}</span>
       <span className="w-28 text-right text-white">{plain(b.cents)}</span>
     </>; return onToggle
       ? <label key={b.id} className={`flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 text-sm ${taken ? 'opacity-50' : 'cursor-pointer'}`}><input type="checkbox" className="w-5 h-5 accent-[#EAB820]" disabled={taken} checked={!!ticked?.has(b.id)} onChange={() => onToggle(b.id)} />{body}</label>
@@ -536,16 +536,19 @@ function DraftBills({ line, kind, bills, used, linked: links, actorId, busy, onS
   const [plate, setPlate] = useState(''), [what, setWhat] = useState(''), [amount, setAmount] = useState('');
   const days = (d: string) => (Date.parse(d + 'T00:00:00Z') - Date.parse(line.date + 'T00:00:00Z')) / 864e5;
   const tickedSet = new Set(ticked);
-  // Old bills were often keyed months after they were paid, so no date limit here:
-  // first the bills for the car written on the line, then the payee's other bills,
-  // closest keyed date first.
+  // Old bills were often keyed months after they were paid, so no date limit here.
+  // Find bills by car (every bill on that car, any payee) or by payee. The car
+  // starts as the one written on the line, if any.
   const [all, setAll] = useState(false);
-  const carList = useMemo(() => carBills(line, bills).sort((a, b) => Math.abs(days(a.date)) - Math.abs(days(b.date))), [line, bills]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cars = useMemo(() => { const m = new Map<string, { name: string; n: number }>(); for (const b of bills) if (b.plate) { const x = m.get(b.plate) ?? { name: b.label.split(' · ')[0], n: 0 }; x.n++; m.set(b.plate, x); } return m; }, [bills]);
+  const [carText, setCarText] = useState(() => carBills(line, bills)[0]?.label.split(' · ')[0] ?? '');
+  const carKey = carText.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const car = cars.get(carKey);
+  const carList = car ? bills.filter((b) => b.plate === carKey).sort((a, b) => a.date.localeCompare(b.date) || a.label.localeCompare(b.label)) : [];
   const inCar = new Set(carList.map((b) => b.id));
   const payeeList = payee ? bills.filter((b) => !inCar.has(b.id) && b.payee.toLowerCase() === payee.toLowerCase()).sort((a, b) => Number(tickedSet.has(b.id)) - Number(tickedSet.has(a.id)) || Math.abs(days(a.date)) - Math.abs(days(b.date))) : [];
   const shownPayee = all ? payeeList : payeeList.slice(0, 25);
   const others = bills.filter((b) => tickedSet.has(b.id) && !inCar.has(b.id) && !payeeList.includes(b));
-  const carNames = [...new Set(carList.map((b) => b.label.split(' · ')[0]))].join(', ');
   const total = ticked.reduce((s, id) => s + (bills.find((b) => b.id === id)?.cents ?? 0), 0) + toAdd.reduce((s, b) => s + b.cents, 0);
   const still = -line.cents - links - total;
   const cents = parseRinggit(amount);
@@ -553,21 +556,25 @@ function DraftBills({ line, kind, bills, used, linked: links, actorId, busy, onS
   const field = 'input w-full rounded-lg px-3 py-2 text-sm mt-1';
   return <div className={`${CARD} p-4 space-y-3`}>
     {kind === 'staff' && <p className="text-sm text-sky-200">Choose the staff member as the payee, then tick what they paid for, or add it below.</p>}
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <p className="text-white text-sm font-semibold">Tick the bills this transfer paid</p>
-      <label className="text-xs text-gray-400 flex items-center gap-2">Payee
-        <select className="input rounded-lg px-3 py-2 text-sm max-w-[260px]" value={payee} onChange={(e) => setPayee(e.target.value)}>
+    <p className="text-white text-sm font-semibold">Tick the bills this transfer paid</p>
+    <div className="grid gap-3 sm:grid-cols-2">
+      <label className="text-xs text-gray-400">By car: all its bills
+        <input className={field} list={`cars-${line.id}`} value={carText} maxLength={20} placeholder="Type a plate, e.g. QAA8563K" onChange={(e) => setCarText(e.target.value)} /></label>
+      <label className="text-xs text-gray-400">By payee
+        <select className={field} value={payee} onChange={(e) => setPayee(e.target.value)}>
           <option value="">Choose…</option>
           {[...new Set([...payees, ...(payee ? [payee] : [])])].sort((a, b) => a.localeCompare(b)).map((n) => <option key={n} value={n}>{n}</option>)}
         </select></label>
     </div>
-    {carList.length > 0 && <><p className="text-xs text-gray-500">Bills for {carNames}, the car written on this line:</p><BillRows bills={carList} ticked={tickedSet} onToggle={toggle} used={used} /></>}
+    <datalist id={`cars-${line.id}`}>{[...cars.values()].sort((a, b) => a.name.localeCompare(b.name)).map((x) => <option key={x.name} value={x.name}>{x.n} {x.n === 1 ? 'bill' : 'bills'}</option>)}</datalist>
+    {carText.trim() && !car && <p className="text-sm text-gray-400">No bills for {carText.trim().toUpperCase()} in the app. If this transfer paid for it, add it below under "Bills that were never keyed in".</p>}
+    {car && <><p className="text-xs text-gray-500">Bills on {car.name}, any payee, oldest first:</p><BillRows bills={carList} ticked={tickedSet} onToggle={toggle} used={used} /></>}
     {payee ? (payeeList.length ? <>
-      <p className="text-xs text-gray-500">{payee}'s {carList.length ? 'other ' : ''}open bills, closest date first. Old bills were often keyed months after they were paid.</p>
+      <p className="text-xs text-gray-500">{payee}'s {car ? 'other ' : ''}open bills, closest date first.</p>
       <BillRows bills={shownPayee} ticked={tickedSet} onToggle={toggle} used={used} />
       {payeeList.length > shownPayee.length && <button type="button" className="text-xs text-gold-400 min-h-[36px]" onClick={() => setAll(true)}>Show all {payeeList.length}</button>}
-    </> : <p className="text-sm text-gray-400">{payee} has no {carList.length ? 'other ' : ''}open bills in the app.</p>)
-      : !carList.length && <p className="text-sm text-gray-400">Choose who this transfer paid.</p>}
+    </> : <p className="text-sm text-gray-400">{payee} has no {car ? 'other ' : ''}open bills in the app.</p>)
+      : !car && <p className="text-sm text-gray-400">Type the car's plate, or choose who this transfer paid.</p>}
     {others.length > 0 && <><p className="text-xs text-gray-500">Also ticked:</p><BillRows bills={others} ticked={tickedSet} onToggle={toggle} used={used} /></>}
 
     <div className="rounded-lg border border-white/10 p-3 space-y-2">
