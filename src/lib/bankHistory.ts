@@ -3,7 +3,7 @@
 // goes into the books. The books are connected later, in one step, only when
 // every old month is ready and the Director says yes.
 // Pure rules, no I/O, so they can be tested on their own. Money is in cents.
-import type { BankCheckLine, BankMove } from './bankCheckMatch';
+import type { BankCheckLine, BankMove, DraftBill } from './bankCheckMatch';
 
 export const CHECKED_FORMAT = 'autodream-bank-lines-1';
 export type CheckedLine = { date: string; cents: number; balanceCents: number; type: string; who: string; memo: string; ref: string };
@@ -13,7 +13,8 @@ export type CheckedMonth = { month: string; openingCents: number; closingCents: 
 export type HistoryState = 'needs' | 'part' | 'answered' | 'linked';
 // plate: the car's plate, capitals and digits only ('' when the bill has no car).
 export type BillLite = { id: string; cents: number; date: string; label: string; payee: string; plate: string };
-export type Suggestion = { kind: 'entry'; move: BankMove } | { kind: 'bills'; bills: BillLite[]; payee: string };
+// add: no bill in the app for it; Claude fills in a new one from the line.
+export type Suggestion = { kind: 'entry'; move: BankMove } | { kind: 'bills'; bills: BillLite[]; payee: string } | { kind: 'add'; bill: DraftBill; payee: string };
 // What the Director said about a books entry no statement line stands for.
 export type EntryNote = { how: 'wrong' | 'elsewhere'; note?: string; at: string; by: string };
 
@@ -141,6 +142,32 @@ export const lineKey = (l: BankCheckLine) => `${l.details.who ?? ''} ${l.details
 // Bills for a car whose plate is written on the line (memo, name or type).
 export const carBills = (l: BankCheckLine, bills: BillLite[]) => { const k = lineKey(l); return bills.filter((b) => b.plate.length >= 5 && k.includes(b.plate)); };
 
+// A new bill for a line that names a car the app has no bill for (a car wash,
+// Puspakom, petrol keyed nowhere). Only when the line names one car, up to
+// RM 5,000, and never when its words say it was something else: a purchase, a
+// loan, a deposit, a commission, a payout. "What for" is the line's words after
+// the plate. At the connect step it is saved on the car as paid on the bank date,
+// invoice and receipt missing.
+export const NEW_BILL_MAX = 500_000;
+const NOT_A_BILL = /\b(PURCHASE|BUY|BOUGHT|BALANCE|BAL|SETTLE\w*|LOAN|DEPOSIT|REFUND|COMM|COMMISSION|COMMISION|COM|CONSIGN\w*|PAYOUT|BOOKING|DOWN|DOWNPAYMENT|DP|FULL|FINAL|TRADE|OVERLOAN|SALARY|ALLOWANCE|BONUS|INCENTIVE|INVESTOR|PROFIT|PAYMENT|PYMT|PMT)\b/;
+const BANK_TAIL = /\bBAKI HARIAN\b.*$/i; // the statement's own footer text, cut into some memos
+export function newCarBill(l: BankCheckLine, plates: string[], cents: number): DraftBill | null {
+  if (l.cents >= 0 || cents <= 0 || cents > NEW_BILL_MAX) return null;
+  const key = lineKey(l);
+  const found = [...new Set(plates.map(squash).filter((p) => p.length >= 5 && key.includes(p)))];
+  const named = found.filter((p) => !found.some((q) => q !== p && q.includes(p)));
+  if (named.length !== 1) return null;
+  const clean = (s: string) => s.replace(BANK_TAIL, '').replace(/\s+/g, ' ').trim();
+  const who = clean(l.details.who ?? ''), memo = clean(l.details.memo ?? '');
+  if (NOT_A_BILL.test(`${who} ${memo}`.toUpperCase())) return null;
+  const plate = named[0], at = new RegExp(plate.split('').join('\\s*'), 'i');
+  // The words after the plate; in a memo, the words before it when none follow.
+  const after = (s: string) => { const m = at.exec(s); return m ? s.slice(m.index + m[0].length).trim() : null; };
+  const fromMemo = memo ? (after(memo) ?? memo) || memo.slice(0, at.exec(memo)?.index ?? 0).trim() : '';
+  const what = (fromMemo || after(who) || '').replace(/^[\s\-–:,.]+|[\s\-–:,]+$/g, '').slice(0, 200) || 'Car cost';
+  return { plate, what, cents, auto: true };
+}
+
 // Bills that add up exactly to a transfer: a run of bills keyed one after another
 // (in keyed order). Of all such runs, the one keyed nearest the transfer's day.
 export function billSplit(line: BankCheckLine, bills: BillLite[], used: Set<string> = new Set()): BillLite[] | null {
@@ -165,9 +192,11 @@ export function billSplit(line: BankCheckLine, bills: BillLite[], used: Set<stri
 // then bills of the payee named on the line that add up exactly; last any single
 // bill with the same amount keyed within 120 days. Each entry and bill is
 // suggested once, never one a draft already uses. A bill another line paid part
-// of is offered for what is left of it. Only a suggestion: the Director accepts
-// it or not.
-export function suggestions(lines: BankCheckLine[], allMoves: BankMove[], allBills: BillLite[], payeeOf: (l: BankCheckLine) => string | undefined): Map<string, Suggestion> {
+// of is offered for what is left of it. Last, for a line that names one of the
+// app's cars (`plates`) and still has money no bill explains, a new bill (see
+// newCarBill), unless that car has an open bill of that amount or from that
+// payee. Only a suggestion: the Director accepts it or not.
+export function suggestions(lines: BankCheckLine[], allMoves: BankMove[], allBills: BillLite[], payeeOf: (l: BankCheckLine) => string | undefined, plates: string[] = []): Map<string, Suggestion> {
   // A books entry other lines stand for part of is offered for what is left of it.
   const size = new Map(allMoves.map((m) => [m.id, Math.abs(m.cents)]));
   const mcover = moveCover(lines, (id) => size.get(id));
@@ -211,6 +240,18 @@ export function suggestions(lines: BankCheckLine[], allMoves: BankMove[], allBil
     let best: BillLite | undefined, gap = Infinity;
     for (const b of bills) { if (b.cents !== -l.cents || usedB.has(b.id)) continue; const g = Math.abs(days(b.date, l.date)); if (g <= win && g < gap) { best = b; gap = g; } }
     if (best) take(l, [best]);
+  }
+  if (plates.length) for (const l of [...lines].sort(order)) {
+    if (out.has(l.id) || l.cents >= 0) continue;
+    const kind = l.details.answer?.kind;
+    if (kind ? kind !== 'bills' : hasDraft(l)) continue;
+    const room = -l.cents - explainedCents(l, (id) => full.get(id) ?? 0, (id) => size.get(id));
+    const bill = newCarBill(l, plates, room);
+    if (!bill) continue;
+    const payee = squash(payeeOf(l) ?? ''), who = squash(l.details.who ?? '');
+    const open = bills.filter((b) => b.plate === bill.plate && !usedB.has(b.id));
+    if (open.some((b) => { const p = squash(b.payee); return b.cents === room || (!!p && p === payee) || (p.length >= 4 && who.includes(p)); })) continue;
+    out.set(l.id, { kind: 'add', bill, payee: l.details.who || l.text });
   }
   return out;
 }

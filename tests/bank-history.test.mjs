@@ -190,3 +190,46 @@ test('a booking line that ticked the whole car counts only as itself; the rest w
   const [t2] = monthTallies([booking, done], new Map([['bk', 'linked'], ['bal', 'linked']]), [entry], () => undefined);
   assert.equal(t2.unlinked.length, 0);
 });
+
+test('a line naming one car with no bill gets a new bill: plate, the words after it, the whole amount', async () => {
+  const { newCarBill } = await import('../src/lib/bankHistory.ts');
+  const plates = ['QS2647N', 'QS 7317 N', 'QBE3621'];
+  const wash = line('w', '2026-05-31', -3000, { who: 'QS2647N CAR WASH', memo: '' });
+  assert.deepEqual(newCarBill(wash, plates, 3000), { plate: 'QS2647N', what: 'CAR WASH', cents: 3000, auto: true });
+  // The memo's words win; the statement's own footer text is cut off.
+  const pusp = line('p', '2026-07-03', -25000, { who: 'CHONG CHUN JIEH', memo: 'qs7317n PUSPAKOM Baki Harian Dan Penutup Meliputi S' });
+  assert.equal(newCarBill(pusp, plates, 25000).what, 'PUSPAKOM');
+  assert.equal(newCarBill(pusp, plates, 25000).plate, 'QS7317N');
+  // No words after the plate: "Car cost".
+  assert.equal(newCarBill(line('n', '2026-07-03', -11500, { who: 'SKK PREMIUM AUTO SERVICE SDN.', memo: 'QBE3621' }), plates, 11500).what, 'Car cost');
+  // Never for a purchase, a loan, a commission, a final payment, two cars, or over RM 5,000.
+  for (const memo of ['QBE3621 TRADE IN COM', 'QBE3621 PURCHASE', 'QBE3621 LOAN SETTLEMENT', 'QBE3621 FINAL PYMT', 'QBE3621 DEPOSIT']) assert.equal(newCarBill(line('x', '2026-05-05', -100000, { memo }), plates, 100000), null, memo);
+  assert.equal(newCarBill(line('two', '2026-05-05', -5000, { memo: 'QBE3621 QS2647N WASH' }), plates, 5000), null);
+  assert.equal(newCarBill(line('big', '2026-05-05', -800000, { memo: 'QBE3621 MYVI' }), plates, 800000), null);
+  assert.equal(newCarBill(line('in', '2026-05-05', 5000, { memo: 'QBE3621 WASH' }), plates, 5000), null);
+});
+
+test('new bills are suggested last, never when the car has an open bill of that amount or from that payee', () => {
+  const plates = ['QS2647N'];
+  const wash = line('w', '2026-05-31', -3000, { who: 'QS2647N CAR WASH', seq: 1 });
+  assert.deepEqual(suggestions([wash], [], [], () => undefined, plates).get('w'), { kind: 'add', bill: { plate: 'QS2647N', what: 'CAR WASH', cents: 3000, auto: true }, payee: 'QS2647N CAR WASH' });
+  // Without the app's plates nothing is added.
+  assert.equal(suggestions([wash], [], [], () => undefined).has('w'), false);
+  // A bill of the same amount for the car: that bill is the suggestion, not a new one.
+  const same = [{ id: 'b', cents: 3000, date: '2026-05-30', label: 'QS2647N · Wash', payee: 'Some Wash', plate: 'QS2647N' }];
+  assert.equal(suggestions([wash], [], same, () => undefined, plates).get('w').kind, 'bills');
+  // The car's open bill from the same payee, at another amount (keyed wrong): ask, do not add.
+  const skk = line('s', '2026-06-04', -17000, { who: 'SKK PREMIUM AUTO SERVICE SDN.', memo: 'QS2647N SERVICE', seq: 2 });
+  const open = [{ id: 'o', cents: 20000, date: '2026-06-01', label: 'QS2647N · Service', payee: 'Skk Premium', plate: 'QS2647N' }];
+  assert.equal(suggestions([skk], [], open, () => 'Skk Premium', plates).has('s'), false);
+  // A line started as bills, with part ticked: the rest is offered as a new bill.
+  const part = line('pt', '2026-06-09', -5000, { who: 'QS2647N POLISHING', seq: 3, billIds: ['t'], answer: { kind: 'bills', at: '', by: '' } });
+  const ticked = [{ id: 't', cents: 2000, date: '2026-06-08', label: 'QS2647N · Polish', payee: 'A Shop', plate: 'QS2647N' }];
+  assert.equal(suggestions([part], [], ticked, () => undefined, plates).get('pt').bill.cents, 3000);
+  // A line answered as something else gets nothing.
+  const salary = line('sa', '2026-06-09', -5000, { who: 'QS2647N POLISHING', seq: 4, answer: { kind: 'office', at: '', by: '' } });
+  assert.equal(suggestions([salary], [], [], () => undefined, plates).has('sa'), false);
+  // Once added, the line is matched to the sen.
+  const added = { ...wash, details: { ...wash.details, toAdd: [{ plate: 'QS2647N', what: 'CAR WASH', cents: 3000, auto: true }], answer: { kind: 'bills', at: '', by: '' } } };
+  assert.equal(historyState(added, none, noMove), 'linked');
+});

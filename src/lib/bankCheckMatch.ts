@@ -26,7 +26,8 @@ export type BankCheckDetails = {
   linkCents?: Record<string, number>; // part of a books entry this line is, when less than the whole entry (a car bought with a booking, then the balance)
   toAdd?: DraftBill[];   // bills a history line paid that were never keyed in
 };
-export type DraftBill = { plate: string; what: string; cents: number };
+// auto: Claude filled it in from the car plate and words on the bank line.
+export type DraftBill = { plate: string; what: string; cents: number; auto?: boolean };
 export type BankCheckLine = { id: string; date: string; cents: number; text: string; status: string; details: BankCheckDetails };
 export type BankMove = { id: string; date: string; label: string; cents: number };
 export type LineState = 'done' | 'ready' | 'answered' | 'needs';
