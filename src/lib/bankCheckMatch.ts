@@ -25,6 +25,7 @@ export type BankCheckDetails = {
   linkIds?: string[];    // books entries a history line is the same money as
   linkCents?: Record<string, number>; // part of a books entry this line is, when less than the whole entry (a car bought with a booking, then the balance)
   toAdd?: DraftBill[];   // bills a history line paid that were never keyed in
+  billFix?: Record<string, number>; // a bill's right price, when the app's is wrong (the connect step corrects the bill)
 };
 // auto: Claude filled it in from the car plate and words on the bank line.
 export type DraftBill = { plate: string; what: string; cents: number; auto?: boolean };

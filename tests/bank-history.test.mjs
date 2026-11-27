@@ -233,3 +233,24 @@ test('new bills are suggested last, never when the car has an open bill of that 
   const added = { ...wash, details: { ...wash.details, toAdd: [{ plate: 'QS2647N', what: 'CAR WASH', cents: 3000, auto: true }], answer: { kind: 'bills', at: '', by: '' } } };
   assert.equal(historyState(added, none, noMove), 'linked');
 });
+
+test('a bill keyed at the wrong price takes the right price from a draft, and the line it pays then matches', async () => {
+  const { billFixes, withFixes, explainedCents } = await import('../src/lib/bankHistory.ts');
+  const bills = [{ id: 'b1', cents: 220000, date: '2026-03-01', label: 'QAA1234A · Repair', payee: 'A Shop', plate: 'QAA1234A' }, { id: 'b2', cents: 5000, date: '2026-03-01', label: 'QAA1234A · Wash', payee: 'A Shop', plate: 'QAA1234A' }];
+  const paid = line('p', '2026-03-05', -212000, { seq: 1, billIds: ['b1'], billFix: { b1: 212000 }, answer: { kind: 'bills', at: '', by: '' } });
+  const fixes = billFixes([paid]);
+  assert.deepEqual(fixes.get('b1'), { cents: 212000, lineId: 'p' });
+  const fixed = withFixes(bills, fixes);
+  assert.deepEqual(fixed[0], { ...bills[0], cents: 212000, appCents: 220000 });
+  assert.equal(fixed[1], bills[1]);
+  const price = (id) => fixed.find((b) => b.id === id)?.cents ?? 0;
+  assert.equal(explainedCents(paid, price, noMove), 212000);
+  assert.equal(historyState(paid, price, noMove), 'linked');
+  // Without the right price the line is only part done.
+  assert.equal(historyState(paid, (id) => bills.find((b) => b.id === id).cents, noMove), 'part');
+  // Two lines give one bill a price: the later line wins. Bad numbers are left out.
+  const later = line('q', '2026-04-01', -1000, { seq: 2, billFix: { b1: 210000, b2: -5, b3: 1.5 } });
+  assert.deepEqual([...billFixes([later, paid]).entries()], [['b1', { cents: 210000, lineId: 'q' }]]);
+  // The same price as the app's is no correction.
+  assert.equal(withFixes(bills, new Map([['b2', { cents: 5000 }]]))[1].appCents, undefined);
+});

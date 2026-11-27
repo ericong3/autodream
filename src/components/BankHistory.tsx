@@ -2,7 +2,7 @@
 // app, month by month. Every answer here is a DRAFT kept with the line: nothing
 // goes into the books. When every month is ready, Claude prepares one step that
 // connects them, and it runs only after the Director says yes.
-import { useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ArrowLeft, Loader2, Upload } from 'lucide-react';
 import { useStore } from '../store';
 import type { Bank } from '../lib/investorFinance';
@@ -13,10 +13,11 @@ import { guessPayee, lineIds, toCents, type BankCheckDetails, type BankCheckLine
 import { HISTORY_IN_KINDS, HISTORY_OUT_KINDS, CARD, dayLabel, errorText, historyKindLabel, monthLabel } from '../lib/bankCheckWords';
 import { paymentBalanceCents } from '../lib/companyBankPayments';
 import {
-  billCover, carBills, linkParts, moveCover, explainedCents, hasDraft, historyState, linesForBill, monthTallies, readCheckedLines, suggestions,
+  billCover, billFixes, carBills, linkParts, moveCover, explainedCents, hasDraft, historyState, linesForBill, monthTallies, readCheckedLines, suggestions, withFixes,
   type BillLite, type CheckedLine, type CheckedMonth, type EntryNote, type HistoryState, type MonthTally, type Suggestion,
 } from '../lib/bankHistory';
 import { AnswerForm } from './BankCheckParts';
+import type { Car, Payment, RepairJob } from '../types';
 
 type BankRow = Bank & { balanceCents?: number };
 type Tab = 'needs' | 'answered' | 'linked' | 'all';
@@ -40,6 +41,7 @@ export default function BankHistory({ bank, lines, accountId, actorId, onLine, o
   onLine: (l: BankCheckLine) => void; onReload: () => Promise<void>;
 }) {
   const payments = useStore((s) => s.payments), journalEntries = useStore((s) => s.journalEntries), cars = useStore((s) => s.cars);
+  const repairs = useStore((s) => s.repairs);
   const booksReady = useStore((s) => s.phase2Loaded);
   const [month, setMonth] = useState(''), [openId, setOpenId] = useState<string | null>(null), [tab, setTab] = useState<Tab>('needs');
   const [reloadFile, setReloadFile] = useState(false), [view, setView] = useState<'month' | 'car' | 'make'>('month');
@@ -63,8 +65,11 @@ export default function BankHistory({ bank, lines, accountId, actorId, onLine, o
 
   // Bills a line could have paid: not paid yet, or paid before the start date.
   const plateOf = useMemo(() => new Map(cars.map((c) => [c.id, c.carPlate ?? ''])), [cars]);
-  const bills = useMemo<BillLite[]>(() => payments.filter((p) => !NOT_BILLS.has(p.type) && !p.obligationReplaced && (p.status === 'pending' ? paymentBalanceCents(p) > 0 : !!p.transferredAt && keyedDay(p.transferredAt) < bank.openingDate))
+  const fixes = useMemo(() => billFixes(lines), [lines]);
+  const appBills = useMemo<BillLite[]>(() => payments.filter((p) => !NOT_BILLS.has(p.type) && !p.obligationReplaced && (p.status === 'pending' ? paymentBalanceCents(p) > 0 : !!p.transferredAt && keyedDay(p.transferredAt) < bank.openingDate))
     .map((p) => ({ id: p.id, cents: p.status === 'pending' ? paymentBalanceCents(p) : toCents(p.amount), date: keyedDay(p.createdAt), label: [plateOf.get(p.carId ?? '') || '', p.description || p.type].filter(Boolean).join(' · '), payee: p.recipientName || '', plate: (plateOf.get(p.carId ?? '') || '').toUpperCase().replace(/[^A-Z0-9]/g, '') })), [payments, plateOf, bank.openingDate]);
+  // Every sum uses a bill's right price when a draft gives it one.
+  const bills = useMemo(() => withFixes(appBills, fixes), [appBills, fixes]);
   const billCents = useMemo(() => new Map(bills.map((b) => [b.id, b.cents])), [bills]);
   const moveCents = useMemo(() => new Map(moves.map((m) => [m.id, m.cents])), [moves]);
   const states = useMemo(() => new Map(lines.map((l) => [l.id, historyState(l, (id) => billCents.get(id) ?? 0, (id) => moveCents.get(id))])), [lines, billCents, moveCents]);
@@ -72,6 +77,12 @@ export default function BankHistory({ bank, lines, accountId, actorId, onLine, o
   const linePayee = useMemo(() => new Map(lines.map((l) => [l.id, guessPayee(`${l.details.who ?? ''} ${l.text}`, payees)])), [lines, payees]);
   const plates = useMemo(() => cars.map((c) => c.carPlate ?? '').filter(Boolean), [cars]);
   const hints = useMemo(() => suggestions(lines, moves, bills, (l) => linePayee.get(l.id), plates), [lines, moves, bills, linePayee, plates]);
+  // What "See bill" shows, and where a right price is saved.
+  const info = useMemo<BillInfoValue>(() => {
+    const pay = new Map(payments.map((p) => [p.id, p])), car = new Map(cars.map((c) => [c.id, c])), job = new Map(repairs.map((r) => [r.id, r])), byId = new Map(lines.map((l) => [l.id, l]));
+    return { payment: (id) => pay.get(id), car: (id) => car.get(id), repair: (id) => job.get(id), fixLine: (id) => byId.get(fixes.get(id)?.lineId ?? ''), onLine };
+  }, [payments, cars, repairs, lines, fixes, onLine]);
+  const withInfo = (n: ReactNode) => <BillInfo.Provider value={info}>{n}</BillInfo.Provider>;
 
   // What the Director said about books entries no line stands for, kept on the history upload.
   const uploadId = `history-${bank.id}`;
@@ -110,8 +121,8 @@ export default function BankHistory({ bank, lines, accountId, actorId, onLine, o
   if (open) {
     const usedMoves = moveCover(lines, (id) => moveCents.get(id), open.id);
     const covered = billCover(lines, (id) => billCents.get(id) ?? 0, open.id);
-    return <HistoryLine key={open.id} line={open} state={states.get(open.id)!} hint={hints.get(open.id)} moves={moves} bills={bills} covered={covered} usedMoves={usedMoves}
-      billCents={billCents} moveCents={moveCents} actorId={actorId} onBack={() => setOpenId(null)} onChange={onLine} />;
+    return withInfo(<HistoryLine key={open.id} line={open} state={states.get(open.id)!} hint={hints.get(open.id)} moves={moves} bills={bills} covered={covered} usedMoves={usedMoves}
+      billCents={billCents} moveCents={moveCents} actorId={actorId} onBack={() => setOpenId(null)} onChange={onLine} />);
   }
 
   if (tally) return <MonthView tally={tally} lines={lines.filter((l) => l.date.startsWith(month)).sort(order)} states={states} hints={hints} notes={notes} notesSetUp={notesSetUp}
@@ -120,7 +131,7 @@ export default function BankHistory({ bank, lines, accountId, actorId, onLine, o
   const ready = tallies.filter((t) => t.done).length;
   const settled = lines.filter((l) => { const s = states.get(l.id); return s === 'answered' || s === 'linked'; }).length;
   const undecided = tallies.reduce((s, t) => s + t.undecided.length, 0);
-  return <div className="space-y-4">
+  return withInfo(<div className="space-y-4">
     <div>
       <h2 className="font-display text-white font-bold text-xl">Before {before}</h2>
       <p className="text-gray-400 text-sm">{bank.name} · {lines.length.toLocaleString('en-MY')} lines from {dayLabel(lines[0].date)} {lines[0].date.slice(0, 4)}</p>
@@ -130,7 +141,7 @@ export default function BankHistory({ bank, lines, accountId, actorId, onLine, o
       {([['month', 'By month'], ['car', 'By car: match its bills'], ['make', 'Bills to make']] as const).map(([v, name]) => <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}
         className={`min-h-[40px] px-4 rounded-full text-sm ${view === v ? 'bg-gold-gradient text-obsidian-950 font-semibold' : 'border border-obsidian-400/70 text-gray-200'}`}>{name}</button>)}
     </div>
-    {view === 'make' ? <ToMake lines={lines} hints={hints} actorId={actorId} billCents={billCents} moveCents={moveCents} onLine={onLine} onOpen={(id) => { setOpenId(id); window.scrollTo({ top: 0 }); }} />
+    {view === 'make' ? <ToMake lines={lines} bills={bills} hints={hints} actorId={actorId} billCents={billCents} moveCents={moveCents} onLine={onLine} onOpen={(id) => { setOpenId(id); window.scrollTo({ top: 0 }); }} />
     : view === 'car' ? <ByCar lines={lines} bills={bills} roomOf={(l) => Math.abs(l.cents) - explainedCents(l, (id) => billCents.get(id) ?? 0, (id) => moveCents.get(id))}
       payeeOf={(l) => linePayee.get(l.id)} actorId={actorId} onLine={onLine} /> : <>
     <div className="grid gap-3 sm:grid-cols-3">
@@ -153,7 +164,7 @@ export default function BankHistory({ bank, lines, accountId, actorId, onLine, o
     </div>
     <button type="button" className="text-xs text-gray-500 underline min-h-[40px]" onClick={() => setReloadFile(true)}>Load the checked file again (adds only lines that are missing)</button>
     </>}
-  </div>;
+  </div>);
 }
 
 // Match old bills car by car: choose a car, see all its bills from every payee,
@@ -270,6 +281,7 @@ function CarBills({ name, list, lines, paidBy, roomOf, payeeOf, actorId, onLine,
     catch (e) { setError(errorText(e, 'Could not undo.')); } finally { setBusy(false); }
   };
   const short = (s: string) => (s.length > 28 ? s.slice(0, 27) + '…' : s);
+  const [seen, setSeen] = useState<string | null>(null);
   return <div className={`${CARD} p-4 space-y-3`}>
     <div className="flex flex-wrap items-end justify-between gap-2">
       <div>
@@ -283,9 +295,10 @@ function CarBills({ name, list, lines, paidBy, roomOf, payeeOf, actorId, onLine,
         const paid = paidBy.get(b.id) ?? [], left = leftOf.get(b.id) ?? 0, cs = cands.get(b.id) ?? [];
         return <div key={b.id} className="px-3 py-3 text-sm space-y-2">
           <div className="flex flex-wrap justify-between gap-x-3">
-            <span className="text-white min-w-0">{b.label.split(' · ').slice(1).join(' · ') || b.label}<span className="text-gray-500"> · {b.payee || 'no payee'} · keyed {dayLabel(b.date)} {b.date.slice(0, 4)}</span></span>
-            <span className="text-white">{plain(b.cents)}</span>
+            <span className="text-white min-w-0">{b.label.split(' · ').slice(1).join(' · ') || b.label}<span className="text-gray-500"> · {b.payee || 'no payee'} · keyed {dayLabel(b.date)} {b.date.slice(0, 4)}</span>{b.appCents !== undefined && <span className="ml-2 text-[11px] text-sky-200">price corrected from {plain(b.appCents)}</span>}</span>
+            <span className="text-white">{plain(b.cents)} <SeeBill open={seen === b.id} onClick={() => setSeen((s) => (s === b.id ? null : b.id))} /></span>
           </div>
+          {seen === b.id && <BillSummary bill={b} line={paid[0]?.line ?? lineById.get(pick[b.id] ?? '')} elsewhere={0} />}
           {paid.map((p) => <p key={p.line.id} className="text-xs text-emerald-300">{p.cents < b.cents ? `${plain(p.cents)} paid` : 'Paid'} by the bank line on {dayLabel(p.line.date)} {p.line.date.slice(0, 4)} · {p.line.details.who || p.line.text} · {plain(-p.line.cents)}
             <button type="button" className="underline text-gray-400 ml-2 min-h-[32px]" disabled={busy} onClick={() => void undo(b, p.line)}>Undo</button></p>)}
           {left > 0 && (cs.length ? <>
@@ -616,26 +629,34 @@ function UnlinkedEntries({ tally, notes, notesSetUp, actorId, onNote }: { tally:
 
 // covered: how much of each bill other lines already pay. parts: the part of a
 // ticked bill this line pays, when less than the whole bill.
-function BillRows({ bills, ticked, onToggle, covered, parts, onPart }: {
+function BillRows({ bills, ticked, onToggle, covered, parts, onPart, line }: {
   bills: BillLite[]; ticked?: Set<string>; onToggle?: (id: string) => void; covered?: Map<string, number>;
-  parts?: Record<string, number>; onPart?: (id: string, cents: number) => void;
+  parts?: Record<string, number>; onPart?: (id: string, cents: number) => void; line?: BankCheckLine;
 }) {
+  const [seen, setSeen] = useState<string | null>(null);
   return <div className="rounded-lg border border-obsidian-400/60 divide-y divide-obsidian-400/40">
     {bills.map((b) => {
       const elsewhere = covered?.get(b.id) ?? 0, left = b.cents - elsewhere, on = !!ticked?.has(b.id), taken = left <= 0 && !on;
-      const part = parts?.[b.id] ?? b.cents;
+      const part = Math.min(parts?.[b.id] ?? b.cents, b.cents);
       const body = <>
         <span className="flex-1 min-w-[160px] text-gray-300">{b.label}<span className="text-gray-500">{b.payee ? ` · ${b.payee}` : ''} · keyed {dayLabel(b.date)}</span>
+          {b.appCents !== undefined && <span className="ml-2 text-[11px] text-sky-200">price corrected from {plain(b.appCents)}</span>}
           {taken && <span className="ml-2 text-[11px] text-amber-300">paid on another line</span>}
           {!on && !taken && elsewhere > 0 && <span className="ml-2 text-[11px] text-amber-300">{plain(left)} left; another line paid {plain(elsewhere)}</span>}</span>
         <span className="w-28 text-right text-white">{plain(b.cents)}</span>
       </>;
-      if (!onToggle) return <div key={b.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 text-sm">{body}</div>;
+      const look = <SeeBill open={seen === b.id} onClick={() => setSeen((s) => (s === b.id ? null : b.id))} />;
+      const card = seen === b.id && <BillSummary bill={b} line={line} elsewhere={elsewhere} />;
+      if (!onToggle) return <div key={b.id} className="px-3 py-2.5 text-sm space-y-2"><div className="flex flex-wrap items-center gap-x-3 gap-y-1">{body}{look}</div>{card}</div>;
       return <div key={b.id} className="px-3 py-2.5 text-sm space-y-2">
-        <label className={`flex flex-wrap items-center gap-x-3 gap-y-1 ${taken ? 'opacity-50' : 'cursor-pointer'}`}><input type="checkbox" className="w-5 h-5 accent-[#EAB820]" disabled={taken} checked={on} onChange={() => onToggle(b.id)} />{body}</label>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <label className={`flex flex-1 min-w-[220px] flex-wrap items-center gap-x-3 gap-y-1 ${taken ? 'opacity-50' : 'cursor-pointer'}`}><input type="checkbox" className="w-5 h-5 accent-[#EAB820]" disabled={taken} checked={on} onChange={() => onToggle(b.id)} />{body}</label>
+          {look}
+        </div>
         {on && part < b.cents && <p className="pl-8 text-xs text-sky-200 flex flex-wrap items-center gap-2">This line pays
           {onPart ? <PartInput cents={part} max={left} onChange={(c) => onPart(b.id, c)} /> : <span className="text-white">{plain(part)}</span>}
           of this bill.{left - part > 0 ? ` ${plain(left - part)} is left for another line.` : ''}</p>}
+        {card}
       </div>;
     })}
   </div>;
@@ -686,7 +707,7 @@ function HistoryLine({ line, state, hint, moves, bills, covered, usedMoves, bill
         : hint.kind === 'add' ? <>
           <div className="flex flex-wrap justify-between gap-3 text-sm"><span className="text-white">{hint.bill.plate} · {hint.bill.what}</span><span className="text-white">{plain(hint.bill.cents)}</span></div>
           <p className="text-xs text-gray-400">Paid to {hint.payee} on {dayLabel(line.date)} {line.date.slice(0, 4)}. At the connect step it is saved on the car as paid on this date, with the invoice and receipt marked missing.</p>
-        </> : <BillRows bills={hint.bills} />}
+        </> : <BillRows bills={hint.bills} line={line} />}
       <button type="button" className="btn-gold px-5 py-2 rounded-lg text-sm" disabled={busy} onClick={() => void save(hintPatch(line, hint, actorId, billCents, moveCents))}>{hint.kind === 'entry' ? 'Yes, same money' : hint.kind === 'add' ? 'Yes, add this bill' : hint.bills.length === 1 ? 'Yes, this bill' : 'Yes, these bills'}</button>
     </div>}
 
@@ -791,7 +812,10 @@ function DraftBills({ line, kind, bills, covered, linked: links, actorId, busy, 
   const payeeList = payee ? bills.filter((b) => !inCar.has(b.id) && b.payee.toLowerCase() === payee.toLowerCase()).sort((a, b) => Number(tickedSet.has(b.id)) - Number(tickedSet.has(a.id)) || Math.abs(days(a.date)) - Math.abs(days(b.date))) : [];
   const shownPayee = all ? payeeList : payeeList.slice(0, 25);
   const others = bills.filter((b) => tickedSet.has(b.id) && !inCar.has(b.id) && !payeeList.includes(b));
-  const total = ticked.reduce((s, id) => s + (parts[id] ?? bills.find((b) => b.id === id)?.cents ?? 0), 0) + toAdd.reduce((s, b) => s + b.cents, 0);
+  // A part never counts for more than the bill's price (its right price, when corrected).
+  const partOf = (id: string) => { const b = bills.find((x) => x.id === id); return b ? Math.min(parts[id] ?? b.cents, b.cents) : parts[id] ?? 0; };
+  const total = ticked.reduce((s, id) => s + partOf(id), 0) + toAdd.reduce((s, b) => s + b.cents, 0);
+  const keptParts = Object.fromEntries(Object.entries(parts).filter(([id, c]) => ticked.includes(id) && c < (bills.find((b) => b.id === id)?.cents ?? Infinity)));
   const still = -line.cents - links - total;
   const cents = parseRinggit(amount);
   // Ticking a bill bigger than what is left of this transfer (or one another line
@@ -805,7 +829,7 @@ function DraftBills({ line, kind, bills, covered, linked: links, actorId, busy, 
     if (part < b.cents) setParts((p) => ({ ...p, [id]: part }));
   };
   const setPart = (id: string, c: number) => setParts((p) => { const b = bills.find((x) => x.id === id); if (b && c >= b.cents) { const { [id]: _gone, ...rest } = p; return rest; } return { ...p, [id]: c }; });
-  const rowProps = { ticked: tickedSet, onToggle: toggle, covered, parts, onPart: setPart };
+  const rowProps = { ticked: tickedSet, onToggle: toggle, covered, parts, onPart: setPart, line };
   const field = 'input w-full rounded-lg px-3 py-2 text-sm mt-1';
   return <div className={`${CARD} p-4 space-y-3`}>
     {kind === 'staff' && <p className="text-sm text-sky-200">Choose the staff member as the payee, then tick what they paid for, or add it below.</p>}
@@ -848,7 +872,7 @@ function DraftBills({ line, kind, bills, covered, linked: links, actorId, busy, 
       <div><p className="text-xs text-gray-400">{still < 0 ? 'Ticked too much by' : 'Still to explain'}</p><p className={`font-semibold ${still === 0 ? 'text-emerald-300' : 'text-gold-300'}`}>{formatCents(Math.abs(still))}</p></div>
     </div>
     <button type="button" className="btn-gold px-5 py-2 rounded-lg text-sm" disabled={busy}
-      onClick={() => onSave({ ...line.details, payee: payee || undefined, billIds: ticked, billCents: Object.keys(parts).some((id) => ticked.includes(id)) ? Object.fromEntries(Object.entries(parts).filter(([id]) => ticked.includes(id))) : undefined, toAdd, answer: { kind, at: new Date().toISOString(), by: actorId } })}>{busy ? 'Saving…' : 'Save draft'}</button>
+      onClick={() => onSave({ ...line.details, payee: payee || undefined, billIds: ticked, billCents: Object.keys(keptParts).length ? keptParts : undefined, toAdd, answer: { kind, at: new Date().toISOString(), by: actorId } })}>{busy ? 'Saving…' : 'Save draft'}</button>
   </div>;
 }
 
@@ -862,11 +886,13 @@ const GENERAL: [string, string, string][] = [
   ['salary', 'Salary and director fees', ''],
   ['other', 'Other', 'Claude sorts each of these with you at the connect step: an expense, a fixed asset, money the garage owes us, or ask the accountant.'],
 ];
-function ToMake({ lines, hints, actorId, billCents, moveCents, onLine, onOpen }: {
-  lines: BankCheckLine[]; hints: Map<string, Suggestion>; actorId: string; billCents: Map<string, number>; moveCents: Map<string, number>;
+function ToMake({ lines, bills, hints, actorId, billCents, moveCents, onLine, onOpen }: {
+  lines: BankCheckLine[]; bills: BillLite[]; hints: Map<string, Suggestion>; actorId: string; billCents: Map<string, number>; moveCents: Map<string, number>;
   onLine: (l: BankCheckLine) => void; onOpen: (id: string) => void;
 }) {
   const [review, setReview] = useState(false);
+  const info = useContext(BillInfo);
+  const fixed = bills.filter((b) => b.appCents !== undefined);
   const sorted = useMemo(() => [...lines].sort(order), [lines]);
   const addable = sorted.filter((l) => hints.get(l.id)?.kind === 'add');
   const cars = useMemo(() => {
@@ -882,11 +908,12 @@ function ToMake({ lines, hints, actorId, billCents, moveCents, onLine, onOpen }:
   const summary = 'flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-3 cursor-pointer text-sm hover:bg-white/5 min-h-[44px]';
   const row = 'w-full text-left flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 text-sm hover:bg-white/5';
   return <div className="space-y-4">
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="grid gap-3 sm:grid-cols-3">
       <div className={`${CARD} p-4`}><p className="text-xs text-gray-400">Car bills to add</p><p className="text-white text-xl font-semibold mt-1">{carRows.length} · {formatCents(sum(carRows.map((r) => r.bill.cents)))}</p><p className="text-xs text-gray-500 mt-1">On {cars.length} {cars.length === 1 ? 'car' : 'cars'}</p></div>
       <div className={`${CARD} p-4`}><p className="text-xs text-gray-400">General expenses (not for a car)</p><p className="text-white text-xl font-semibold mt-1">{genLines.length} · {formatCents(-sum(genLines.map((l) => l.cents)))}</p><p className="text-xs text-gray-500 mt-1">They go to the new General expenses list</p></div>
+      <div className={`${CARD} p-4`}><p className="text-xs text-gray-400">Bill prices to correct</p><p className="text-white text-xl font-semibold mt-1">{fixed.length}</p><p className="text-xs text-gray-500 mt-1">{fixed.length ? `Bills change by ${signed(fixed.reduce((s, b) => s + b.cents - (b.appCents ?? b.cents), 0))} in all` : 'None yet'}</p></div>
     </div>
-    <p className="text-sm text-sky-100 rounded-lg border border-sky-400/30 bg-sky-400/10 p-3">At the connect step each one is saved as paid on its bank line's date, with the invoice and receipt marked missing. Attach them later on the bill when you find them. Until then, this is only a list of drafts.</p>
+    <p className="text-sm text-sky-100 rounded-lg border border-sky-400/30 bg-sky-400/10 p-3">At the connect step each one is saved as paid on its bank line's date, with the invoice and receipt marked missing. Attach them later on the bill when you find them. A bill with a corrected price is changed to that price. Until then, this is only a list of drafts.</p>
 
     {addable.length > 0 && !review && <div className="rounded-lg border border-gold-500/40 bg-gold-500/10 p-3 flex flex-wrap items-center justify-between gap-2 text-sm text-gold-100">
       <span>{addable.length} more bank {addable.length === 1 ? 'line names a car' : 'lines name a car'} with no bill in the app. Claude has filled in a bill for each from the plate and the words on the line.</span>
@@ -929,6 +956,91 @@ function ToMake({ lines, hints, actorId, billCents, moveCents, onLine, onOpen }:
         </div>
       </details>)}
     </section>
+    <section className="space-y-2" aria-labelledby="make-prices">
+      <h3 id="make-prices" className="text-white font-semibold">Bill prices to correct</h3>
+      {!fixed.length ? <p className="text-sm text-gray-500">None yet. On a bank line, tap "See bill" on a bill to give it the right price.</p>
+      : <div className="rounded-lg border border-obsidian-400/60 divide-y divide-obsidian-400/40">{fixed.map((b) => { const l = info?.fixLine(b.id);
+        return <button key={b.id} type="button" className={row} onClick={() => { if (l) onOpen(l.id); }}>
+          <span className="flex-[999_1_240px] min-w-0">
+            <span className="block text-white">{b.label}</span>
+            <span className="block text-xs text-gray-400">{b.payee || 'No payee'} · in the app {plain(b.appCents ?? b.cents)}{l ? ` · set on the bank line of ${when(l)}` : ''}</span>
+          </span>
+          <span className="w-28 text-right text-white">{plain(b.cents)}</span>
+        </button>; })}</div>}
+    </section>
     <p className="text-xs text-gray-500">Tap a line to open it and change the answer. {DRAFT_NOTE}</p>
+  </div>;
+}
+
+// "See bill": what a bill says in the app, so a wrong price can be spotted
+// against the bank or the invoice. The right price is kept as a draft on a bank
+// line; every sum on this page uses it, and the connect step corrects the bill.
+// Nothing changes in the books before that.
+type BillInfoValue = {
+  payment: (id: string) => Payment | undefined; car: (id: string) => Car | undefined; repair: (id: string) => RepairJob | undefined;
+  fixLine: (billId: string) => BankCheckLine | undefined; onLine: (l: BankCheckLine) => void;
+};
+const BillInfo = createContext<BillInfoValue | null>(null);
+const SeeBill = ({ open, onClick }: { open: boolean; onClick: () => void }) =>
+  <button type="button" className="text-xs text-gold-400 underline min-h-[32px] px-1" aria-expanded={open} onClick={onClick}>{open ? 'Hide bill' : 'See bill'}</button>;
+const ringgit = (n: number | undefined) => (typeof n === 'number' && Number.isFinite(n) ? plain(toCents(n)) : '');
+
+function BillSummary({ bill, line, elsewhere }: { bill: BillLite; line?: BankCheckLine; elsewhere: number }) {
+  const info = useContext(BillInfo);
+  const p = info?.payment(bill.id);
+  const car = p?.carId ? info?.car(p.carId) : undefined;
+  const job = p?.repairJobId ? info?.repair(p.repairJobId) : undefined;
+  const misc = p?.miscCostId ? car?.miscCosts?.find((m) => m.id === p.miscCostId) : undefined;
+  // A price already corrected is changed on the line that holds it, so a bill has one right price.
+  const holder = info?.fixLine(bill.id), target = holder ?? line;
+  const [text, setText] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const cents = parseRinggit(text);
+  const app = bill.appCents ?? bill.cents;
+  const save = async (c: number | null) => {
+    if (!target || !info) return;
+    setBusy(true); setError('');
+    const fix = { ...(target.details.billFix ?? {}) }, parts = { ...(target.details.billCents ?? {}) };
+    if (c === null || c === app) delete fix[bill.id]; else fix[bill.id] = c;
+    // A part this line pays that is now the whole bill, or more, becomes the whole bill.
+    if (c !== null && (parts[bill.id] ?? 0) >= c) delete parts[bill.id];
+    try {
+      info.onLine(await saveLine(target.id, { details: { ...target.details, billFix: Object.keys(fix).length ? fix : undefined, billCents: Object.keys(parts).length ? parts : undefined } }));
+      setText('');
+    } catch (e) { setError(errorText(e, 'Could not save the price.')); } finally { setBusy(false); }
+  };
+  const row = (k: string, v: ReactNode) => (v ? <div className="flex flex-wrap gap-x-3"><dt className="w-24 shrink-0 text-gray-500">{k}</dt><dd className="flex-1 min-w-[140px] text-gray-200 break-words">{v}</dd></div> : null);
+  const paidDay = p?.status === 'transferred' && p.transferredAt ? keyedDay(p.transferredAt) : '';
+  return <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 space-y-3 text-xs">
+    {!p && <p className="text-gray-400">This bill's details did not load. Its price is still shown above.</p>}
+    <dl className="space-y-1.5">
+      {row('Car', car ? [car.carPlate, car.make, car.model, car.year].filter(Boolean).join(' ') : bill.label.split(' · ')[0])}
+      {row('For', p ? p.description || p.type.replace(/_/g, ' ') : '')}
+      {row('Paid to', p?.recipientName)}
+      {row('Keyed', `${dayLabel(bill.date)} ${bill.date.slice(0, 4)}`)}
+      {row('In the app', p ? (paidDay ? `Marked paid on ${dayLabel(paidDay)} ${paidDay.slice(0, 4)}` : 'Not paid yet') : '')}
+      {row('Ref', p?.referenceNumber)}
+      {row('Note', p?.notes)}
+      {job && row('Repair', <>
+        {[job.typeOfRepair, job.location ? `at ${job.location}` : '', job.completedAt ? `done ${dayLabel(keyedDay(job.completedAt))} ${keyedDay(job.completedAt).slice(0, 4)}` : ''].filter(Boolean).join(' · ')}
+        {(job.parts?.length || job.labourCost) ? <ul className="mt-1 space-y-0.5">
+          {(job.parts ?? []).map((x, i) => <li key={i} className="flex justify-between gap-3"><span>{x.name}</span><span>{ringgit(x.cost)}</span></li>)}
+          {job.labourCost ? <li className="flex justify-between gap-3"><span>Labour</span><span>{ringgit(job.labourCost)}</span></li> : null}
+        </ul> : null}
+      </>)}
+      {misc && row('Cost', [misc.description, misc.merchant, misc.category].filter(Boolean).join(' · '))}
+      {row('Price in app', plain(app))}
+      {bill.appCents !== undefined && row('Right price', <span className="text-sky-200">{plain(bill.cents)} · draft{holder && holder.id !== line?.id ? `, set on the bank line of ${dayLabel(holder.date)} ${holder.date.slice(0, 4)}` : ''}</span>)}
+      {elsewhere > 0 && row('Other lines', `${plain(elsewhere)} paid by other bank lines`)}
+    </dl>
+    {target ? <div className="space-y-2">
+      <p className="text-gray-400">Price wrong? Type the right price from the bank or the invoice. It is kept as a draft. At the connect step Claude changes the bill to it.</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <input className="input w-32 rounded-lg px-2 py-1.5 text-sm text-right" inputMode="decimal" placeholder={plain(bill.cents)} value={text} aria-label="Right price (RM)"
+          onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && cents && cents !== bill.cents) void save(cents); }} />
+        <button type="button" className="btn-ghost px-3 py-1.5 rounded-lg" disabled={busy || !cents || cents === bill.cents} onClick={() => void save(cents)}>{busy ? 'Saving…' : 'Save right price'}</button>
+        {bill.appCents !== undefined && <button type="button" className="underline text-gray-400 min-h-[32px]" disabled={busy} onClick={() => void save(null)}>Use the app's price again</button>}
+      </div>
+      {error && <p role="alert" className="text-red-300">{error}</p>}
+    </div> : <p className="text-gray-500">To correct its price, first choose the bank line that paid it.</p>}
   </div>;
 }

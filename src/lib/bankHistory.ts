@@ -12,7 +12,8 @@ export type CheckedMonth = { month: string; openingCents: number; closingCents: 
 // answered: said what it was. linked: books entries or bills explain it to the sen.
 export type HistoryState = 'needs' | 'part' | 'answered' | 'linked';
 // plate: the car's plate, capitals and digits only ('' when the bill has no car).
-export type BillLite = { id: string; cents: number; date: string; label: string; payee: string; plate: string };
+// appCents: the price keyed in the app, when a draft gives the bill another price.
+export type BillLite = { id: string; cents: number; date: string; label: string; payee: string; plate: string; appCents?: number };
 // add: no bill in the app for it; Claude fills in a new one from the line.
 export type Suggestion = { kind: 'entry'; move: BankMove } | { kind: 'bills'; bills: BillLite[]; payee: string } | { kind: 'add'; bill: DraftBill; payee: string };
 // What the Director said about a books entry no statement line stands for.
@@ -132,6 +133,17 @@ export function historyState(l: BankCheckLine, billCents: (id: string) => number
   if (kind && !BILL_KINDS.has(kind)) return 'answered';
   return hasDraft(l) ? 'part' : 'needs';
 }
+
+// A bill keyed at the wrong price (RM 2,200 for a bill the bank paid 2,120): the
+// right price is a draft on a bank line, and every sum here uses it. The connect
+// step corrects the bill itself. A price set on two lines: the later line wins.
+export function billFixes(lines: BankCheckLine[]): Map<string, { cents: number; lineId: string }> {
+  const m = new Map<string, { cents: number; lineId: string }>();
+  for (const l of [...lines].sort(order)) for (const [id, c] of Object.entries(l.details.billFix ?? {})) if (Number.isSafeInteger(c) && c > 0) m.set(id, { cents: c, lineId: l.id });
+  return m;
+}
+export const withFixes = (bills: BillLite[], fixes: Map<string, { cents: number }>): BillLite[] =>
+  bills.map((b) => { const f = fixes.get(b.id); return f && f.cents !== b.cents ? { ...b, cents: f.cents, appCents: b.cents } : b; });
 
 // Old bills were often keyed into the app months after they were paid (a repair
 // paid on 6 Jan keyed on 2 May), so the day a bill was keyed says little here.
