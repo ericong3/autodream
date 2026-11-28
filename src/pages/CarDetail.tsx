@@ -750,7 +750,9 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
     if (!editForm.make?.trim()) e.make = 'Required';
     if (!editForm.model?.trim()) e.model = 'Required';
     if (!editForm.colour?.trim()) e.colour = 'Required';
-    if (!editForm.consignment && (!editForm.purchasePrice || editForm.purchasePrice <= 0)) e.purchasePrice = 'Required';
+    // A car saved with no price gets it from Record purchase on the car page; its locked box is not asked for here.
+    const priceFromRecordPurchase = companyBankPaymentsEnabled && !(car.purchasePrice > 0) && !car.consignment && !car.investorFunded && !car.tradeInSourceCarId;
+    if (!editForm.consignment && !priceFromRecordPurchase && (!editForm.purchasePrice || editForm.purchasePrice <= 0)) e.purchasePrice = 'Required';
     if (editForm.salesCommission != null && (!Number.isFinite(editForm.salesCommission) || editForm.salesCommission < 0 || editForm.salesCommission > 100000 || Math.abs(editForm.salesCommission * 100 - Math.round(editForm.salesCommission * 100)) > 0.00001)) e.salesCommission = 'Enter an amount from 0 to 100,000 with at most 2 decimal places.';
     if(editForm.consignment?.terms==='profit_split'){try{consignmentBasisPoints(editForm.consignment.splitPercent??50);}catch{e.consignment='Enter a dealer percentage from 0 to 100, with at most two decimal places.';}}
     if(consignmentTermsLocked && (JSON.stringify(editForm.consignment)!==JSON.stringify(car.consignment)||editForm.purchasePrice!==car.purchasePrice||editForm.settlementAmount!==car.settlementAmount))e.consignment='This dealer settlement has payments. Review a correction before changing its agreed terms.';
@@ -1232,7 +1234,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
       {companyBankPaymentsEnabled && car.outgoingConsignment && isDirector && currentUser && payments.filter(p=>p.carId===car.id&&p.type==='consignment_collection'&&!p.obligationReplaced).map(p=><details key={p.id} className="rounded-xl border border-orange-500/30 p-4"><summary className="text-sm font-medium text-orange-300 cursor-pointer">Dealer collection &amp; car costs</summary><div className="mt-3"><OutgoingCollectionApproval paymentId={p.id} actorId={currentUser.id} onApproved={()=>{}}/></div></details>)}
       {companyBankPaymentsEnabled&&currentUser&&outgoingAction.pending.filter(p=>p.slot==='outgoing-send:'+car.id).map(p=><button key={p.slot} type="button" disabled={!!outgoingAction.busy} className="text-amber-300 underline py-2 text-sm" onClick={()=>void outgoingAction.retry<{payments:Record<string,unknown>[];journals:Record<string,unknown>[];car:Record<string,unknown>}>(p.slot).then(saved=>{if(saved){useStore.getState().applyCompanyBankPayment(currentUser.id,saved);setOutgoingConsignModal(null);}})}>Retry original dealer sale</button>)}
       {outgoingAction.error&&<p role="alert" className="text-red-400 text-sm">{outgoingAction.error.message}</p>}
-      {companyBankPaymentsEnabled && isDirector && !car.companyPurchaseRecorded && !car.investorFunded && !car.investorId && !car.consignment && !car.outgoingConsignment && !car.tradeInSourceCarId && !(car.purchasePrice>0) && ['coming_soon','available','in_workshop','ready','photo_complete','submitted'].includes(car.status) && <CompanyPurchaseStart key={currentUser.id+':'+car.id} car={car} actorId={currentUser.id}/>}
+
       {car.tradeInSourceCarId && isDirector && import.meta.env.VITE_INVESTOR_FINANCE === '1' && <TradeInFundingChoice key={car.id + ':' + currentUser?.id} incomingCarId={car.id} />}
       {/* Back + actions */}
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -2849,7 +2851,12 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           </FormField>
           <FormField label="Purchase Price (RM)" error={editErrors.purchasePrice}>
             <input type="number" disabled={car.companyPurchaseRecorded || companyBankPaymentsEnabled && !(car.purchasePrice>0) && !car.consignment && !car.investorFunded && !car.tradeInSourceCarId} className={inputCls(editErrors.purchasePrice)} value={editForm.purchasePrice ?? ''} onChange={(e) => setEditForm({ ...editForm, purchasePrice: Number(e.target.value) })} />
-            {companyBankPaymentsEnabled && !(car.purchasePrice>0) && !car.companyPurchaseRecorded && <p className="text-gray-400 text-xs mt-1">Use Record purchase on the car page when the agreed price is known.</p>}
+            {companyBankPaymentsEnabled && !(car.purchasePrice>0) && !car.companyPurchaseRecorded && !car.consignment && !car.investorFunded && !car.tradeInSourceCarId && (
+              isDirector && currentUser && !car.investorId && !car.outgoingConsignment && ['coming_soon','available','in_workshop','ready','photo_complete','submitted'].includes(car.status)
+                // After the purchase is recorded the form takes the saved price, so Save car does not change it back.
+                ? <CompanyPurchaseStart key={currentUser.id+':'+car.id} inline car={car} actorId={currentUser.id} onSaved={() => { const c = useStore.getState().cars.find((x) => x.id === car.id); if (c) setEditForm((f) => ({ ...f, purchasePrice: c.purchasePrice, settlementAmount: c.settlementAmount, settlementRecipient: c.settlementRecipient, investorSplit: c.investorSplit })); }} />
+                : <p className="text-gray-400 text-xs mt-1">The Director records the purchase price here while the car is in stock.</p>
+            )}
             {car.companyPurchaseRecorded && <p className="text-gray-400 text-xs mt-1">The purchase and its bills are recorded. A price correction needs review.</p>}
           </FormField>
           {(() => {
