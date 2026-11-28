@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { Car } from '../types';
 import { carToRow, useStore } from '../store';
-import { REGISTRATION_KEYS } from '../lib/companyPurchases';
+import { existingCarPurchaseFields } from '../lib/companyPurchases';
 import { formatCents, parseRinggit, useInvestorAction } from '../lib/investorFinance';
 import { PendingSaves } from './InvestorFinanceCar';
 import Modal from './Modal';
@@ -18,7 +18,7 @@ export default function CompanyPurchaseStart({car,actorId,inline,onSaved}:{car:C
   const problem=!purchase?'Type the purchase price.':!seller.trim()?'Type the seller name.':settle&&!debt?'Type the loan amount, or turn off "The car still has a loan".':settle&&!lenderName.trim()?'Type who the loan is paid to.':debt&&debt>purchase?'The loan cannot be more than the purchase price.':'';
   if(problem||!purchase||debt===null){setError(problem);return;}
   setError('');const row=carToRow({...car,purchasePrice:purchase/100}) as Record<string,unknown>;
-  const data={car:Object.fromEntries(Object.entries(row).filter(([k,v])=>REGISTRATION_KEYS.has(k)&&v!==undefined&&v!==null)),sellerName:seller.trim(),lenderCents:debt,...(debt>0?{lenderName:lenderName.trim()}:{})};
+  const data={car:existingCarPurchaseFields(row),sellerName:seller.trim(),lenderCents:debt,...(debt>0?{lenderName:lenderName.trim()}:{})};
   finish(await act.run(slot,'register_company_car',data,`Record purchase · ${car.make} ${car.model}`));
  };
  const start=<button type="button" className="g-ghost !w-auto px-6 !border-[rgba(234,184,32,0.55)] !text-[#F2CF5B]" onClick={()=>setOpen(true)}>Record purchase</button>;
