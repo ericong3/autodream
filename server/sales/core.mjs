@@ -18,7 +18,7 @@ import {handleInvestorTradeInApplication} from '../usedCar/investorTradeInApplic
 import {handleCompanyBankPayments} from '../usedCar/companyBankPayments.mjs';
 import {handleInvestorTradeInLenders} from '../usedCar/investorTradeInLenders.mjs';
 import {handleCompanyBankReceipts} from '../usedCar/companyBankReceipts.mjs';
-import {handleCompanyCarPurchase} from '../usedCar/companyCarPurchases.mjs';
+import {handleCompanyCarPurchase,handleCompanyPurchaseEdit} from '../usedCar/companyCarPurchases.mjs';
 import {handleCompanyPanel} from '../usedCar/companyPanel.mjs';
 import {handleCompanyBillAdjustments} from '../usedCar/companyBillAdjustments.mjs';
 import {handleInvestorBillAdjustments} from '../usedCar/investorBillAdjustments.mjs';
@@ -31,7 +31,7 @@ export async function handleSales(req,deps){
  let scope,action;try{const body=typeof req.body==='string'?JSON.parse(req.body):req.body;scope=body?.scope;action=body?.action;}catch{}
  if(scope==='investor_finance'&&action==='complete_repair')return handleInvestorRepairCompletion(req,deps);
  if(scope==='investor_finance'&&action==='register_car')return handleInvestorCarRegistration(req,deps);
- if(scope==='investor_finance'&&action==='register_company_car')return handleCompanyCarPurchase(req,deps);
+ if(scope==='investor_finance'&&action==='register_company_car')return handleCompanyCarPurchase(req,deps); if(scope==='investor_finance'&&action==='edit_company_purchase')return handleCompanyPurchaseEdit(req,deps);
  if(scope==='company_panel')return handleCompanyPanel(req,deps);
  if(scope==='company_bill_adjustments')return handleCompanyBillAdjustments(req,deps);
  if(scope==='investor_bill_adjustments')return handleInvestorBillAdjustments(req,deps);

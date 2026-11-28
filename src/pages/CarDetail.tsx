@@ -2826,6 +2826,12 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
         const showStatus = car.status !== 'deal_pending' && car.status !== 'delivered';
         const isSoon = (ef.status ?? car.status) === 'coming_soon';
         const bills = payments.filter(p => p.carId === car.id && p.type === 'purchase_settlement' && !p.obligationReplaced);
+        // A recorded purchase can change until money is paid on its bills (the server checks this too).
+        const purchasePaid = bills.some(p => p.status === 'transferred' || paymentBalanceCents(p) < Math.round(p.amount * 100));
+        const canChangePurchase = companyBankPaymentsEnabled && car.companyPurchaseRecorded && !purchasePaid && isDirector && !!currentUser && !car.investorId && !car.investorFunded && !car.tradeInSourceCarId
+          && !car.consignment && !car.outgoingConsignment && ['coming_soon', 'available', 'in_workshop', 'ready', 'photo_complete', 'submitted'].includes(car.status);
+        const sellerBill = bills.find(p => p.id === 'company-purchase-seller:' + car.id);
+        const takeSavedPurchase = () => { const c = useStore.getState().cars.find((x) => x.id === car.id); if (c) setEditForm((f) => ({ ...f, purchasePrice: c.purchasePrice, settlementAmount: c.settlementAmount || undefined, settlementRecipient: c.settlementRecipient || undefined, investorSplit: c.investorSplit })); };
         const STATUS: Record<string, string> = { coming_soon: 'Coming soon', in_workshop: 'In workshop', ready: 'Ready', photo_complete: 'Photo complete', submitted: 'Submitted', deal_pending: 'Deal pending', available: 'Available', reserved: 'Reserved', sold: 'Sold', delivered: 'Delivered' };
         const blank = (v: unknown) => v === undefined || v === null || v === '';
         const txt = (v: unknown) => blank(v) ? 'Blank' : String(v);
@@ -2862,7 +2868,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             <SwitchRow on={loanOn} disabled={settlementLocked} title="The car still has a loan" desc="Part of the price pays the bank or lender directly"
               onToggle={() => set({ settlementAmount: loanOn ? undefined : 0, settlementRecipient: loanOn ? undefined : ef.settlementRecipient })} />
             {loanOn && <div className="g-inset">
-              {settlementLocked && <p className="g-help !mt-0 mb-3">{car.companyPurchaseRecorded ? 'The agreed loan amount is recorded. Pay it from Payments.' : 'Already a bill in Payments. Change the amount there instead.'}</p>}
+              {settlementLocked && <p className="g-help !mt-0 mb-3">{car.companyPurchaseRecorded ? (canChangePurchase ? 'Change the loan with Change purchase below.' : 'The agreed loan amount is recorded. Pay it from Payments.') : 'Already a bill in Payments. Change the amount there instead.'}</p>}
               <GGrid>
                 <GField label="Pay the loan to"><input className={gInput(undefined, chg('settlementRecipient'))} value={ef.settlementRecipient ?? ''} disabled={settlementLocked} onChange={(e) => set({ settlementRecipient: e.target.value })} placeholder="e.g. Public Bank" /></GField>
                 <GField label="Loan amount (RM)"><input type="number" inputMode="decimal" className={`${gInput(undefined, chg('settlementAmount'))} g-num`} value={ef.settlementAmount ?? 0} disabled={settlementLocked} onChange={(e) => set({ settlementAmount: Number(e.target.value) })} /></GField>
@@ -2872,7 +2878,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
           </div>
         );
         const priceField = (label: string) => (
-          <GField label={label} error={editErrors.purchasePrice} help={car.companyPurchaseRecorded ? 'The purchase and its bills are recorded. A price correction needs review.' : undefined}>
+          <GField label={label} error={editErrors.purchasePrice} help={car.companyPurchaseRecorded ? (canChangePurchase ? 'Nothing is paid yet. Change it with Change purchase below.' : purchasePaid ? 'Money is paid on this purchase, so the price is locked. A mistake needs a reviewed correction.' : 'The purchase and its bills are recorded.') : undefined}>
             <input type="number" inputMode="decimal" disabled={priceDisabled} className={`${gInput(editErrors.purchasePrice, chg('purchasePrice'))} g-num`} value={ef.purchasePrice ?? ''} onChange={(e) => set({ purchasePrice: Number(e.target.value) })} />
           </GField>
         );
@@ -2936,7 +2942,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               {isSoon && <div className={showStatus ? 'mt-3.5' : ''}><Chips label="Coming soon type" value={ef.comingSoonType} options={COMING_SOON_TYPES} onChange={(v) => setEditForm(f => ({ ...f, comingSoonType: v }))} /></div>}
             </GSection>}
 
-            <GSection title="Whose money bought it?" lede={car.investorFunded ? 'This car is on an investor account. That is changed with Move car, not here.' : car.companyPurchaseRecorded ? 'The purchase is recorded, so the owner and price are locked.' : 'This decides which bills the app makes.'}>
+            <GSection title="Whose money bought it?" lede={car.investorFunded ? 'This car is on an investor account. That is changed with Move car, not here.' : car.companyPurchaseRecorded ? (purchasePaid ? 'Money is paid on this purchase, so the owner, price and loan are locked.' : 'The purchase is recorded. Its price, seller and loan can change until money is paid.') : 'This decides which bills the app makes.'}>
               {!car.investorFunded && <Choices label="Whose money bought it" value={owner} onChange={chooseOwner} options={[
                 { value: 'company', title: 'Company', desc: 'AutoDream pays the seller', disabled: !!car.companyPurchaseRecorded },
                 ...(legacy ? [{ value: 'investor' as const, title: 'Investor', desc: "Investor's money, profit shared", disabled: !!car.companyPurchaseRecorded }] : []),
@@ -2947,7 +2953,7 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
                 {pricePending
                   ? (canRecordPurchase && currentUser
                     // After the purchase is recorded the form takes the saved price, so Save changes does not change it back.
-                    ? <CompanyPurchaseStart key={currentUser.id + ':' + car.id} inline car={car} actorId={currentUser.id} onSaved={() => { const c = useStore.getState().cars.find((x) => x.id === car.id); if (c) setEditForm((f) => ({ ...f, purchasePrice: c.purchasePrice, settlementAmount: c.settlementAmount || undefined, settlementRecipient: c.settlementRecipient || undefined, investorSplit: c.investorSplit })); }} />
+                    ? <CompanyPurchaseStart key={currentUser.id + ':' + car.id} inline car={car} actorId={currentUser.id} onSaved={takeSavedPurchase} />
                     : <p className="g-help !mt-0">The Director records the purchase price here while the car is in stock.</p>)
                   : <GGrid>{priceField('Purchase price (RM)')}</GGrid>}
               </div>}
@@ -2989,8 +2995,10 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
               {loanBlock}
 
               {car.companyPurchaseRecorded && bills.length > 0 && <div className="mt-[18px] rounded-[18px] border border-white/10 bg-black/20 p-4 flex flex-col gap-3">
-                <span className="g-label !mb-0">Bills made when the purchase was recorded</span>
+                <span className="g-label !mb-0">Purchase bills</span>
                 {bills.map((p) => <div key={p.id} className="flex justify-between gap-3 items-center flex-wrap"><span className="min-w-0 text-[14.5px] break-words">{p.recipientName}</span><span className="flex items-center gap-2.5"><span className="g-num text-[14.5px] font-semibold">{rm(p.amount)}</span>{billPill(p)}</span></div>)}
+                {canChangePurchase && currentUser && <CompanyPurchaseStart key={currentUser.id + ':edit:' + car.id} inline car={car} actorId={currentUser.id} onSaved={takeSavedPurchase}
+                  existing={{ priceCents: Math.round(car.purchasePrice * 100), seller: sellerBill?.recipientName ?? '', lenderCents: Math.round((car.settlementAmount ?? 0) * 100), lenderName: car.settlementRecipient ?? '' }} />}
                 <button type="button" className="self-start text-[14px] text-[#F2CF5B] min-h-[44px]" onClick={() => { close(); navigate('/payments'); }}>Open these bills in Payments</button>
               </div>}
             </GSection>
