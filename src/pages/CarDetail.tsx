@@ -2854,12 +2854,14 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
             {companyBankPaymentsEnabled && !(car.purchasePrice>0) && !car.companyPurchaseRecorded && !car.consignment && !car.investorFunded && !car.tradeInSourceCarId && (
               isDirector && currentUser && !car.investorId && !car.outgoingConsignment && ['coming_soon','available','in_workshop','ready','photo_complete','submitted'].includes(car.status)
                 // After the purchase is recorded the form takes the saved price, so Save car does not change it back.
-                ? <CompanyPurchaseStart key={currentUser.id+':'+car.id} inline car={car} actorId={currentUser.id} onSaved={() => { const c = useStore.getState().cars.find((x) => x.id === car.id); if (c) setEditForm((f) => ({ ...f, purchasePrice: c.purchasePrice, settlementAmount: c.settlementAmount, settlementRecipient: c.settlementRecipient, investorSplit: c.investorSplit })); }} />
+                ? <CompanyPurchaseStart key={currentUser.id+':'+car.id} inline car={car} actorId={currentUser.id} onSaved={() => { const c = useStore.getState().cars.find((x) => x.id === car.id); if (c) setEditForm((f) => ({ ...f, purchasePrice: c.purchasePrice, settlementAmount: c.settlementAmount || undefined, settlementRecipient: c.settlementRecipient || undefined, investorSplit: c.investorSplit })); }} />
                 : <p className="text-gray-400 text-xs mt-1">The Director records the purchase price here while the car is in stock.</p>
             )}
             {car.companyPurchaseRecorded && <p className="text-gray-400 text-xs mt-1">The purchase and its bills are recorded. A price correction needs review.</p>}
           </FormField>
           {(() => {
+            // While the price waits for Record purchase, the settlement is typed there instead.
+            if (companyBankPaymentsEnabled && !(car.purchasePrice>0) && !car.companyPurchaseRecorded && !car.consignment && !car.investorFunded && !car.tradeInSourceCarId) return null;
             const settlementLocked = car.companyPurchaseRecorded || payments.some(p => p.type === 'purchase_settlement' && p.carId === car.id);
             return (
               <div className="col-span-2">
