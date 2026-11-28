@@ -59,7 +59,6 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import Modal from '../components/Modal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { formatRM, formatMileage, generateId } from '../utils/format';
 import { buildCarPurchaseEntry } from '../utils/generateJournalEntries';
@@ -67,6 +66,7 @@ import { companyBankPaymentsEnabled } from '../lib/companyBankPayments';
 import { REGISTRATION_KEYS as INVESTOR_REGISTRATION_KEYS } from '../lib/companyPurchases';
 import { consignmentBasisPoints } from '../../shared/consignmentRules.mjs';
 import { SkeletonCard, SkeletonRow } from '../components/Skeleton';
+import { GlassSheet, GSection, GField, GGrid, Seg, Choices, SwitchRow, Chips, COMING_SOON_TYPES, Plate, Slip, SlipRule, SlipCaption, SlipBill, SlipTotal, Checklist, gInput, rm } from '../components/carForm/Glass';
 
 
 // Loan/deal pipeline badge — based purely on case/loan progress, not car location
@@ -216,6 +216,8 @@ export default function Inventory() {
   const [funding, setFunding] = useState<{ potId: string; percent: string; advanceReason?: string }>({ potId: '', percent: '40' });
   const investorAct = useInvestorAction(investorFinanceOn || companyBankPaymentsEnabled ? currentUser?.id : undefined);
   const [companySeller, setCompanySeller] = useState('');
+  // Add car: "Investor" picked under Whose money bought it (the account itself is chosen below it).
+  const [addOwnerInvestor, setAddOwnerInvestor] = useState(false);
   const pendingRegistrations = investorAct.pending.filter((p) => p.slot.startsWith('car-registration:'));
   const canAddCar = currentUser?.role === 'director' || currentUser?.role === 'salesperson';
   const viewKey = `${currentUser?.id}-inventory`;
@@ -243,6 +245,8 @@ export default function Inventory() {
   const [filterComingSoonType, setFilterComingSoonType] = useState<string>('all');
   const [sortBy, setSortBy] = useState('dateAdded-desc');
   const [showModal, setShowModal] = useState(false);
+  // Each time Add car opens it starts as a company car, so an investor picked last time is not used by mistake.
+  useEffect(() => { if (showModal) { setAddOwnerInvestor(false); setFunding({ potId: '', percent: '40' }); } }, [showModal]);
   const investorProfiles = useInvestorQuery<ProfileList>(investorFinanceOn && showModal ? `inventory-profiles:${currentUser?.id}` : null, () => investorRequest<ProfileList>('list_profiles', {}));
   const [deleteCarId, setDeleteCarId] = useState<string | null>(null);
   const [woViewCar, setWoViewCar] = useState<{ car: Car; buyer: Customer } | null>(null);
@@ -2027,668 +2031,312 @@ export default function Inventory() {
         itemName={(() => { const c = cars.find((c) => c.id === deleteCarId); return c ? `${c.year} ${c.make} ${c.model}` : 'this car'; })()}
       />
 
-      {/* Add Car Modal */}
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Add New Car" maxWidth="max-w-2xl">
-        <div className="grid grid-cols-2 gap-4">
-          <FormField label="Vehicle type" className={form.isRecon ? '' : 'col-span-2'}>
-            <select aria-label="Vehicle type" className={inputCls()} value={form.isRecon ? 'recon' : 'used'} onChange={e => setForm({ ...form, isRecon: e.target.value === 'recon', salesCommission: e.target.value === 'recon' ? RECON_COMMISSION_DEFAULT : undefined })}>
-              <option value="used">Used</option>
-              <option value="recon">Recon</option>
-            </select>
-          </FormField>
-          {form.isRecon && <FormField label="Sales commission per unit (RM)" error={errors.salesCommission}>
-            <input aria-label="Sales commission per unit (RM)" type="number" min="0" max="100000" step="0.01" className={inputCls(errors.salesCommission)} value={form.salesCommission ?? ''} readOnly={!isDirector} onChange={e => isDirector && setForm({ ...form, salesCommission: e.target.value === '' ? undefined : Number(e.target.value) })} />
-            <p className="text-gray-500 text-xs mt-1">Default RM2,000. Director can adjust.</p>
-          </FormField>}
-          <FormField label="Make" error={errors.make}>
-            <input
-              className={inputCls(errors.make)}
-              value={form.make}
-              onChange={(e) => setForm({ ...form, make: e.target.value })}
-              placeholder="e.g. Perodua"
-            />
-          </FormField>
-          <FormField label="Model" error={errors.model}>
-            <input
-              className={inputCls(errors.model)}
-              value={form.model}
-              onChange={(e) => setForm({ ...form, model: e.target.value })}
-              placeholder="e.g. Myvi"
-            />
-          </FormField>
-          <FormField label="Variant" className="col-span-2">
-            <input
-              className={inputCls()}
-              value={form.variant ?? ''}
-              onChange={(e) => setForm({ ...form, variant: e.target.value })}
-              placeholder="e.g. 1.5 Advance"
-            />
-          </FormField>
-          <FormField label="Year" error={errors.year}>
-            <input
-              type="number"
-              className={inputCls(errors.year)}
-              value={form.year}
-              onChange={(e) => setForm({ ...form, year: Number(e.target.value) })}
-            />
-          </FormField>
-          <FormField label="Car Plate">
-            <input
-              className={inputCls()}
-              value={form.carPlate ?? ''}
-              onChange={(e) => setForm({ ...form, carPlate: e.target.value.toUpperCase() })}
-              placeholder="e.g. WXX 1234"
-            />
-          </FormField>
-          <FormField label="Colour" error={errors.colour}>
-            <input
-              className={inputCls(errors.colour)}
-              value={form.colour}
-              onChange={(e) => setForm({ ...form, colour: e.target.value })}
-              placeholder="e.g. White"
-            />
-          </FormField>
-          <FormField label="Mileage (km)" error={errors.mileage}>
-            <input
-              type="number"
-              className={inputCls(errors.mileage)}
-              value={form.mileage}
-              onChange={(e) => setForm({ ...form, mileage: Number(e.target.value) })}
-            />
-          </FormField>
-          <FormField label="Purchase Price (RM)" error={errors.purchasePrice}>
-            <input
-              type="number"
-              className={inputCls(errors.purchasePrice)}
-              value={form.purchasePrice}
-              onChange={(e) => setForm({ ...form, purchasePrice: Number(e.target.value) })}
-            />
-          </FormField>
-          <div className="col-span-2">
-            <button
-              type="button"
-              onClick={() => setForm({ ...form, settlementAmount: form.settlementAmount != null ? undefined : 0, settlementRecipient: form.settlementAmount != null ? undefined : form.settlementRecipient })}
-              className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${form.settlementAmount != null ? 'bg-orange-500/10 border-orange-500/40 text-orange-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
-            >
-              <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${form.settlementAmount != null ? 'bg-orange-500 border-orange-500' : 'border-gray-600'}`}>
-                {form.settlementAmount != null && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-              </div>
-              <div>
-                <p className="text-sm font-medium">Add Settlement</p>
-                <p className="text-xs opacity-60 mt-0.5">Part of the purchase price pays off an existing loan directly to the lender</p>
-              </div>
-            </button>
-            {form.settlementAmount != null && (
-              <div className="mt-3 space-y-3 pl-2 border-l-2 border-orange-500/30">
-                <FormField label="Settle To (bank / lender)">
-                  <input
-                    className={inputCls()}
-                    value={form.settlementRecipient ?? ''}
-                    onChange={(e) => setForm({ ...form, settlementRecipient: e.target.value })}
-                    placeholder="e.g. Public Bank"
-                  />
-                </FormField>
-                <FormField label="Settlement Amount (RM)">
-                  <input
-                    type="number"
-                    className={inputCls()}
-                    value={form.settlementAmount ?? 0}
-                    onChange={(e) => setForm({ ...form, settlementAmount: Number(e.target.value) })}
-                  />
-                </FormField>
-                <div className="flex items-center justify-between bg-obsidian-700/40 border border-obsidian-400/40 rounded-lg px-3 py-2.5">
-                  <p className="text-gray-400 text-xs">Net to Seller</p>
-                  <p className="text-orange-400 font-semibold text-sm">{formatRM(Math.max(0, (form.purchasePrice || 0) - (form.settlementAmount || 0)))}</p>
+      {/* Add Car sheet */}
+      {(() => {
+        const price = form.purchasePrice || 0;
+        const loanOn = form.settlementAmount != null;
+        const loan = loanOn ? (form.settlementAmount || 0) : 0;
+        const legacyInvestors = !investorFinanceOn && isDirector ? users.filter(u => u.role === 'investor') : [];
+        const investorChoice = isDirector && (investorFinanceOn || legacyInvestors.length > 0);
+        const owner: 'company' | 'investor' | 'dealer' = form.consignment ? 'dealer' : addOwnerInvestor ? 'investor' : 'company';
+        const profile = investorProfiles.data?.profiles.find((p) => p.potId === funding.potId);
+        const investorName = investorFinanceOn ? profile?.name : users.find(u => u.id === form.investorId)?.name;
+        const shortCents = investorFinanceOn && profile ? Math.round(price * 100) - profile.position.availableCents : 0;
+        const photoMin = form.consignment ? 1 : 4;
+        const photoCount = form.photos?.length ?? 0;
+        const carName = [form.year || '', form.make, form.model, form.variant].filter(Boolean).join(' ').trim();
+        const soonLabel = COMING_SOON_TYPES.find(t => t.value === form.comingSoonType)?.label.toLowerCase();
+        const chooseOwner = (o: 'company' | 'investor' | 'dealer') => {
+          setAddOwnerInvestor(o === 'investor');
+          if (o !== 'investor') setFunding((f) => ({ ...f, potId: '' }));
+          if (o === 'investor' && investorFinanceOn && !funding.potId) { const first = investorProfiles.data?.profiles[0]; if (first) setFunding((f) => ({ ...f, potId: first.potId })); }
+          setForm((f) => ({
+            ...f,
+            consignment: o === 'dealer' ? (f.consignment ?? { dealer: '', terms: 'fixed_amount', fixedAmount: f.purchasePrice || 0 }) : undefined,
+            outgoingConsignment: o === 'dealer' ? undefined : f.outgoingConsignment,
+            investorId: o === 'investor' && !investorFinanceOn ? (f.investorId ?? legacyInvestors[0]?.id) : undefined,
+            investorSplit: o === 'investor' && !investorFinanceOn ? (f.investorSplit ?? 50) : undefined,
+            // An investor's car cannot carry a loan settlement.
+            ...(o === 'investor' ? { settlementAmount: undefined, settlementRecipient: undefined } : {}),
+          }));
+        };
+        // What saving makes, in plain words.
+        let caption = '', bills: { who: string; note?: string; amount: string }[] = [], total: { label: string; amount: string } | null = null, after = '';
+        if (owner === 'company') {
+          if (price > 0) {
+            caption = 'Unpaid bills in Payments';
+            if (price - loan > 0) bills.push({ who: companySeller.trim() || 'Seller', note: 'Seller', amount: rm(price - loan) });
+            if (loan > 0) bills.push({ who: form.settlementRecipient?.trim() || 'Bank or lender', note: 'Loan on the car', amount: rm(loan) });
+            total = { label: 'Total owed', amount: rm(price) };
+            after = bills.length > 1 ? 'Press Transfer on each bill in Payments when the bank pays it.' : 'Press Transfer on the bill in Payments when the bank pays it.';
+          } else {
+            caption = 'No price yet';
+            after = 'No bills are made. Add the price later in Edit car.';
+          }
+        } else if (owner === 'investor') {
+          caption = investorName ? `Added to ${investorName}'s investor account` : 'Choose the investor';
+          if (price > 0) bills.push({ who: investorName || 'Investor', note: `Investor's money, ${investorFinanceOn ? funding.percent : form.investorSplit ?? 50}% of the profit to them`, amount: rm(price) });
+          total = price > 0 ? { label: shortCents > 0 ? 'Company pays first' : 'From the investor’s money', amount: rm(shortCents > 0 ? shortCents / 100 : price) } : null;
+          after = shortCents > 0 && profile ? `${profile.name} has ${formatCents(profile.position.availableCents)} available, so the company pays first until the capital comes in. No withdrawals until then.` : 'Record the bank payment later on the car’s investor page.';
+        } else {
+          caption = 'No bills now';
+          const dealer = form.consignment?.dealer || 'Dealer';
+          if (form.consignment?.terms === 'profit_split') {
+            bills.push({ who: dealer, note: 'Paid when the car is delivered', amount: `${form.consignment.splitPercent ?? 50}% of profit` });
+          } else {
+            bills.push({ who: dealer, note: 'Fixed amount, paid when the car is delivered', amount: rm(Math.max(0, price - loan)) });
+            total = { label: 'We pay the dealer when it sells', amount: rm(Math.max(0, price - loan)) };
+          }
+          after = 'The car stays theirs until it sells.';
+        }
+        const checks = [
+          { text: 'Car details', done: !!(form.make.trim() && form.model.trim() && form.colour.trim()) },
+          owner === 'company'
+            ? { text: price <= 0 ? 'Price: can be added later' : companyBankPaymentsEnabled ? 'Price and seller' : 'Price', done: price <= 0 || !companyBankPaymentsEnabled || !!companySeller.trim() }
+            : owner === 'investor'
+              ? investorFinanceOn
+                ? { text: shortCents > 0 && (funding.advanceReason ?? '').trim().length < 3 ? 'Why the company pays first' : 'Investor, share and price', done: !!funding.potId && price > 0 && parsePercentToBasisPoints(funding.percent) !== null && (shortCents <= 0 || (funding.advanceReason ?? '').trim().length >= 3) }
+                : { text: 'Investor and share', done: !!form.investorId }
+              : { text: 'Dealer and terms', done: !!form.consignment?.dealer },
+          ...(loanOn ? [loan > price && loan > 0
+            ? { text: 'Loan must not be more than the price', done: false }
+            : { text: 'Loan details', done: !!form.settlementRecipient?.trim() && loan > 0 }] : []),
+          isComingSoon
+            ? { text: 'Photos: not needed yet', done: true }
+            : photoCount >= photoMin ? { text: `Photos: ${photoCount} added`, done: true } : { text: `Add ${photoMin - photoCount} more photo${photoMin - photoCount > 1 ? 's' : ''}`, done: false },
+        ];
+        const missing = checks.find(c => !c.done);
+        const busy = submitting || uploadingPhotos;
+        const saveLabel = submitting ? 'Saving…' : uploadingPhotos ? 'Uploading photos…' : 'Add car';
+        const problems = <>
+          {submitError && <p role="alert" className="g-error m-0 flex items-start gap-1.5"><AlertCircle size={14} className="mt-0.5 shrink-0" />{submitError}</p>}
+          {companyBankPaymentsEnabled && !investorFinanceOn && <PendingSaves pending={pendingRegistrations} busy={investorAct.busy} onRetry={s=>void retryInvestorRegistration(s)} onDiscard={investorAct.discard}/>}
+          {investorFinanceOn && <PendingSaves pending={pendingRegistrations} busy={investorAct.busy} onRetry={(s) => void retryInvestorRegistration(s)} onDiscard={investorAct.discard} />}
+          {investorAct.error && <p role="alert" className="g-error m-0">{investorAct.error.message}{investorAct.error.retryable && investorAct.error.slot.startsWith('car-registration:') ? ' Use Retry above. It resends the same car, never a new one.' : ''}</p>}
+        </>;
+        return (
+          <GlassSheet
+            open={showModal}
+            onClose={() => !submitting && setShowModal(false)}
+            title="Add a car"
+            subtitle="Fill in what you know. The slip shows what the app will make."
+            slip={
+              <Slip>
+                <SlipCaption>When you press Add car</SlipCaption>
+                <div className="flex flex-col gap-2 items-start">
+                  <Plate text={form.carPlate} />
+                  <span className="text-[16px] font-medium">{carName || 'New car'}</span>
+                  <span className="text-[13.5px] text-[#A7ACB6]">{isComingSoon ? `Goes to the stock list as coming soon${soonLabel ? `, ${soonLabel}` : ''}.` : 'Goes to the stock list as available.'}</span>
                 </div>
+                <SlipRule />
+                <SlipCaption>{caption}</SlipCaption>
+                {bills.map((b) => <SlipBill key={b.who + b.note} {...b} />)}
+                {total && <><SlipRule /><SlipTotal {...total} /></>}
+                {after && <p className="m-0 text-[13px] leading-relaxed text-[#C3C7CF]">{after}</p>}
+                <SlipRule />
+                <Checklist items={checks} />
+                {problems}
+              </Slip>
+            }
+            actions={<>
+              <button type="button" className="g-gold" onClick={handleSubmit} disabled={busy || !!missing}>{saveLabel}</button>
+              <p className="m-0 text-center text-[13px] text-[#A7ACB6]">{missing ? `Still needed: ${missing.text.charAt(0).toLowerCase()}${missing.text.slice(1)}.` : 'Everything needed is filled in.'}</p>
+            </>}
+            bar={<>
+              <div className="flex items-end justify-between gap-3">
+                <span className="min-w-0"><span className="block text-[12.5px] text-[#A7ACB6]">{total ? total.label : caption}</span>{total && <span className="g-total block !text-[24px]">{total.amount}</span>}</span>
+                {missing && <span className="text-[12.5px] text-[#F2B266] text-right">{missing.text}</span>}
               </div>
-            )}
-          </div>
-          <FormField label={isDirector ? 'Selling Price (RM)' : 'Selling Price (RM) — Director only'} error={errors.sellingPrice}>
-            <input
-              type="number"
-              className={inputCls(errors.sellingPrice)}
-              value={form.sellingPrice}
-              onChange={(e) => isDirector && setForm({ ...form, sellingPrice: Number(e.target.value) })}
-              readOnly={!isDirector}
-              placeholder={isDirector ? '' : 'Set by Director'}
-              style={!isDirector ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
-            />
-          </FormField>
-          {isDirector && (
-            <FormField label="Floor Price (RM) — Lowest acceptable deal" className="col-span-2">
-              <input
-                type="number"
-                className={inputCls()}
-                value={form.priceFloor ?? ''}
-                onChange={(e) => setForm({ ...form, priceFloor: e.target.value ? Number(e.target.value) : undefined })}
-                placeholder="e.g. 55800"
-              />
-              <p className="text-gray-600 text-xs mt-1">{form.isRecon ? 'Recon uses the commission per unit set above.' : 'Deal ≥ floor → 1.5k commission · Deal below floor → 1k commission'}</p>
-            </FormField>
-          )}
-          <FormField label="Transmission">
-            <select
-              className={inputCls()}
-              value={form.transmission}
-              onChange={(e) => setForm({ ...form, transmission: e.target.value as Car['transmission'] })}
-            >
-              <option value="auto">Automatic</option>
-              <option value="manual">Manual</option>
-            </select>
-          </FormField>
-          <div className="flex items-center col-span-2">
-            <button
-              type="button"
-              onClick={() => setForm({ ...form, status: isComingSoon ? 'available' : 'coming_soon' })}
-              className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${isComingSoon ? 'bg-purple-500/10 border-purple-500/40 text-purple-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
-            >
-              <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${isComingSoon ? 'bg-purple-500 border-purple-500' : 'border-gray-600'}`}>
-                {isComingSoon && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-              </div>
-              <div>
-                <p className="text-sm font-medium">Coming Soon</p>
-                <p className="text-xs opacity-60 mt-0.5">Car is confirmed but not yet in the shop</p>
-              </div>
-            </button>
-            {isComingSoon && (
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                {([
-                  { value: 'trade_in',        label: 'Trade In',           desc: 'Customer changing car' },
-                  { value: 'direct_purchase', label: 'Direct Purchase',    desc: 'Buying directly, car pending' },
-                  { value: 'pending_shipment',label: 'Pending Shipment',   desc: 'West M\'sia, not yet shipped' },
-                  { value: 'in_shipment',     label: 'In Shipment',        desc: 'Currently on the way' },
-                ] as const).map(opt => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setForm(f => ({ ...f, comingSoonType: f.comingSoonType === opt.value ? undefined : opt.value }))}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-left transition-colors ${form.comingSoonType === opt.value ? 'bg-purple-500/15 border-purple-500/50 text-purple-300' : 'bg-obsidian-700/40 border-obsidian-400/40 text-gray-500 hover:border-obsidian-400/70'}`}
-                  >
-                    <div className={`w-3 h-3 rounded-full shrink-0 ${form.comingSoonType === opt.value ? 'bg-purple-400' : 'bg-obsidian-500'}`} />
-                    <div>
-                      <p className="text-xs font-medium leading-tight">{opt.label}</p>
-                      <p className="text-[10px] opacity-60 leading-tight">{opt.desc}</p>
+              {submitError && <p role="alert" className="g-error m-0">{submitError}</p>}
+              <button type="button" className="g-gold" onClick={handleSubmit} disabled={busy || !!missing}>{saveLabel}</button>
+            </>}
+          >
+            <GSection title="What car is it?" lede="As written on the registration card.">
+              <GGrid>
+                <GField label="Make" error={errors.make}><input className={gInput(errors.make)} value={form.make} onChange={(e) => setForm({ ...form, make: e.target.value })} placeholder="e.g. Perodua" /></GField>
+                <GField label="Model" error={errors.model}><input className={gInput(errors.model)} value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} placeholder="e.g. Myvi" /></GField>
+                <GField label="Variant"><input className={gInput()} value={form.variant ?? ''} onChange={(e) => setForm({ ...form, variant: e.target.value })} placeholder="e.g. 1.5 Advance" /></GField>
+                <GField label="Year" error={errors.year}><input type="number" inputMode="numeric" className={`${gInput(errors.year)} g-num`} value={form.year} onChange={(e) => setForm({ ...form, year: Number(e.target.value) })} /></GField>
+                <GField label="Car plate"><input className={gInput()} value={form.carPlate ?? ''} onChange={(e) => setForm({ ...form, carPlate: e.target.value.toUpperCase() })} placeholder="e.g. QAA 1234 A" /></GField>
+                <GField label="Colour" error={errors.colour}><input className={gInput(errors.colour)} value={form.colour} onChange={(e) => setForm({ ...form, colour: e.target.value })} placeholder="e.g. White" /></GField>
+                <GField label="Mileage (km)" error={errors.mileage}><input type="number" inputMode="numeric" className={`${gInput(errors.mileage)} g-num`} value={form.mileage} onChange={(e) => setForm({ ...form, mileage: Number(e.target.value) })} /></GField>
+                <GField label="Gearbox" group><Seg label="Gearbox" value={form.transmission} onChange={(v) => setForm({ ...form, transmission: v })} options={[{ value: 'auto', label: 'Auto' }, { value: 'manual', label: 'Manual' }]} /></GField>
+                <GField label="Type" group><Seg label="Used or recon" value={form.isRecon ? 'recon' : 'used'} onChange={(v) => setForm({ ...form, isRecon: v === 'recon', salesCommission: v === 'recon' ? RECON_COMMISSION_DEFAULT : undefined })} options={[{ value: 'used', label: 'Used' }, { value: 'recon', label: 'Recon' }]} /></GField>
+                {form.isRecon && <GField label="Sales commission per unit (RM)" error={errors.salesCommission} help="Default RM 2,000. The Director can change it.">
+                  <input type="number" min="0" max="100000" step="0.01" className={`${gInput(errors.salesCommission)} g-num`} value={form.salesCommission ?? ''} readOnly={!isDirector} onChange={e => isDirector && setForm({ ...form, salesCommission: e.target.value === '' ? undefined : Number(e.target.value) })} />
+                </GField>}
+              </GGrid>
+            </GSection>
+
+            <GSection title="Where is the car now?" lede="A coming-soon car can be added before photos.">
+              <Seg label="Where is the car now" className="max-w-[400px]" value={isComingSoon ? 'soon' : 'shop'} onChange={(v) => setForm({ ...form, status: v === 'soon' ? 'coming_soon' : 'available' })} options={[{ value: 'shop', label: 'In the shop' }, { value: 'soon', label: 'Coming soon' }]} />
+              {isComingSoon && <div className="mt-3.5"><Chips label="Coming soon type" value={form.comingSoonType} options={COMING_SOON_TYPES} onChange={(v) => setForm(f => ({ ...f, comingSoonType: v }))} /></div>}
+            </GSection>
+
+            <GSection title="Whose money bought it?" lede="This decides which bills the app makes.">
+              <Choices label="Whose money bought it" value={owner} onChange={chooseOwner} options={[
+                { value: 'company', title: 'Company', desc: 'AutoDream pays the seller' },
+                ...(investorChoice ? [{ value: 'investor' as const, title: 'Investor', desc: "Investor's money, profit shared" }] : []),
+                { value: 'dealer', title: 'Other dealer', desc: 'We sell it for them' },
+              ]} />
+
+              {owner === 'company' && <div className="flex flex-col gap-3.5 mt-[18px]">
+                <GGrid>
+                  <GField label="Purchase price (RM)" error={errors.purchasePrice} help={companyBankPaymentsEnabled ? 'Leave blank if the price is not agreed yet.' : undefined}><input type="number" inputMode="decimal" className={`${gInput(errors.purchasePrice)} g-num`} value={form.purchasePrice || ''} onChange={(e) => setForm({ ...form, purchasePrice: Number(e.target.value) })} /></GField>
+                  {companyBankPaymentsEnabled && <GField label="Seller name"><input className={gInput()} value={companySeller} maxLength={150} onChange={e=>setCompanySeller(e.target.value)} /></GField>}
+                </GGrid>
+              </div>}
+
+              {owner === 'investor' && <div className="flex flex-col gap-3.5 mt-[18px]">
+                <GGrid>
+                  {investorFinanceOn ? <GField label="Investor" error={investorProfiles.error?.message} help={investorProfiles.loading ? 'Loading investor accounts…' : undefined}>
+                    <select className={gInput()} value={funding.potId} onChange={(e) => setFunding({ ...funding, potId: e.target.value })}>
+                      <option value="">Choose the investor</option>
+                      {(investorProfiles.data?.profiles ?? []).map((p) => <option key={p.potId} value={p.potId}>{p.name} ({formatCents(p.position.availableCents)} available)</option>)}
+                    </select>
+                  </GField> : <GField label="Investor">
+                    <select className={gInput()} value={form.investorId ?? ''} onChange={(e) => setForm({ ...form, investorId: e.target.value || undefined })}>
+                      {legacyInvestors.map(inv => <option key={inv.id} value={inv.id}>{inv.name}</option>)}
+                    </select>
+                  </GField>}
+                  {investorFinanceOn
+                    ? <GField label="Investor's share of profit (%)" help="AutoDream keeps the rest."><input type="number" min={0} max={100} step="0.01" className={`${gInput()} g-num`} value={funding.percent} onChange={(e) => setFunding({ ...funding, percent: e.target.value })} /></GField>
+                    : <GField label="Investor's share of profit (%)" help={`AutoDream keeps ${100 - (form.investorSplit ?? 50)}%.`}><input type="number" min={1} max={99} className={`${gInput()} g-num`} value={form.investorSplit ?? 50} onChange={(e) => setForm({ ...form, investorSplit: Number(e.target.value) })} /></GField>}
+                  <GField label="Purchase price (RM)" error={errors.purchasePrice}><input type="number" inputMode="decimal" className={`${gInput(errors.purchasePrice)} g-num`} value={form.purchasePrice || ''} onChange={(e) => setForm({ ...form, purchasePrice: Number(e.target.value) })} /></GField>
+                </GGrid>
+                {shortCents > 0 && profile && <div className="g-inset">
+                  <p className="m-0 mb-3 text-[14px] leading-relaxed">{profile.name} has {formatCents(profile.position.availableCents)} available, so the company pays {formatCents(shortCents)} first until the capital comes in.</p>
+                  <GField label="Why the company pays first"><input className={gInput()} maxLength={500} value={funding.advanceReason ?? ''} onChange={(e) => setFunding({ ...funding, advanceReason: e.target.value.replace(/[|]/g, '') })} placeholder="e.g. Capital coming from 2TN payouts" /></GField>
+                </div>}
+              </div>}
+
+              {owner === 'dealer' && form.consignment && <div className="flex flex-col gap-3.5 mt-[18px]">
+                <GGrid>
+                  <GField label="Dealer" help={dealers.length === 0 ? 'No dealers yet. Add them in Data, under Car Dealers.' : undefined}>
+                    <select className={gInput()} value={form.consignment.dealer} onChange={(e) => setForm({ ...form, consignment: { ...form.consignment!, dealer: e.target.value } })}>
+                      <option value="">Choose the dealer</option>
+                      {dealers.map((d) => <option key={d.id} value={d.name}>{d.name}</option>)}
+                    </select>
+                  </GField>
+                  <GField label="How we pay them" group>
+                    <Seg label="How we pay the dealer" value={form.consignment.terms} onChange={(v) => setForm({ ...form, consignment: v === 'fixed_amount' ? { ...form.consignment!, terms: 'fixed_amount', fixedAmount: form.purchasePrice || form.consignment!.fixedAmount || 0 } : { ...form.consignment!, terms: 'profit_split', splitPercent: 50 } })} options={[{ value: 'fixed_amount', label: 'Fixed amount' }, { value: 'profit_split', label: 'Share profit' }]} />
+                  </GField>
+                  <GField label={form.consignment.terms === 'fixed_amount' ? 'Amount we pay them (RM)' : 'Purchase price (RM)'} error={errors.purchasePrice}><input type="number" inputMode="decimal" className={`${gInput(errors.purchasePrice)} g-num`} value={form.purchasePrice || ''} onChange={(e) => setForm({ ...form, purchasePrice: Number(e.target.value) })} /></GField>
+                  {form.consignment.terms === 'profit_split' && <GField label="Dealer's share of profit (%)" error={errors.consignment}><input type="number" min={0} max={100} step="0.01" disabled={!isDirector} className={`${gInput(errors.consignment)} g-num`} value={form.consignment.splitPercent ?? 50} onChange={(e) => setForm({ ...form, consignment: { ...form.consignment!, splitPercent: Number(e.target.value) } })} /></GField>}
+                </GGrid>
+              </div>}
+
+              {owner !== 'investor' && <div className="flex flex-col gap-3.5 mt-3.5">
+                <SwitchRow on={loanOn} title="The car still has a loan" desc="Part of the price pays the bank or lender directly"
+                  onToggle={() => setForm({ ...form, settlementAmount: loanOn ? undefined : 0, settlementRecipient: loanOn ? undefined : form.settlementRecipient })} />
+                {loanOn && <div className="g-inset">
+                  <GGrid>
+                    <GField label="Pay the loan to"><input className={gInput()} value={form.settlementRecipient ?? ''} onChange={(e) => setForm({ ...form, settlementRecipient: e.target.value })} placeholder="e.g. Public Bank" /></GField>
+                    <GField label="Loan amount (RM)"><input type="number" inputMode="decimal" className={`${gInput()} g-num`} value={form.settlementAmount || ''} onChange={(e) => setForm({ ...form, settlementAmount: Number(e.target.value) })} /></GField>
+                  </GGrid>
+                  <p className="g-help">{owner === 'dealer' ? 'The dealer gets the rest: ' : 'The seller gets the rest: '}<span className="g-num text-[#F4F5F7] font-semibold">{rm(Math.max(0, price - loan))}</span></p>
+                </div>}
+              </div>}
+            </GSection>
+
+            <GSection title="Selling price" lede={isDirector ? 'Only the Director can set these.' : 'Set by the Director.'}>
+              <GGrid>
+                <GField label="Selling price (RM)" error={errors.sellingPrice}><input type="number" inputMode="decimal" className={`${gInput(errors.sellingPrice)} g-num`} value={form.sellingPrice || ''} readOnly={!isDirector} placeholder={isDirector ? '' : 'Set by the Director'} onChange={(e) => isDirector && setForm({ ...form, sellingPrice: Number(e.target.value) })} /></GField>
+                {isDirector && <GField label="Lowest deal allowed (RM)" help={form.isRecon ? 'Recon uses the commission per unit set above.' : 'At or above this, the salesperson earns RM 1,500. Below it, RM 1,000.'}>
+                  <input type="number" inputMode="decimal" className={`${gInput()} g-num`} value={form.priceFloor ?? ''} onChange={(e) => setForm({ ...form, priceFloor: e.target.value ? Number(e.target.value) : undefined })} placeholder="e.g. 55800" />
+                </GField>}
+              </GGrid>
+            </GSection>
+
+            <GSection title="Who brought the car in?" lede="Only if someone gets a finder's commission.">
+              <Seg label="Who brought the car in" className="max-w-[540px]" value={form.sourceType ?? 'none'}
+                onChange={(v) => setForm({ ...form, sourceType: v === 'none' ? undefined : v, externalSalesmanId: undefined, sourceSalesmanId: undefined, sourceSalesman: undefined, ...(v === 'none' ? { sourceCommission: undefined, intakeCommission: undefined } : {}) })}
+                options={[{ value: 'none', label: 'No one' }, { value: 'internal', label: 'Our salesperson' }, { value: 'external', label: 'Outside agent' }]} />
+              {form.sourceType === 'internal' && <GGrid className="mt-3.5">
+                <GField label="Salesperson"><select className={gInput()} value={form.sourceSalesmanId ?? ''} onChange={(e) => { const u = users.find(x => x.id === e.target.value); setForm({ ...form, sourceSalesmanId: e.target.value || undefined, sourceSalesman: u?.name }); }}>
+                  <option value="">Choose a salesperson</option>
+                  {users.filter(u => u.role === 'salesperson').map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select></GField>
+                <GField label="Their commission (RM)"><input type="number" inputMode="decimal" className={`${gInput()} g-num`} value={form.sourceCommission ?? ''} placeholder="e.g. 500" onChange={e => setForm({ ...form, sourceCommission: e.target.value ? Number(e.target.value) : undefined })} /></GField>
+              </GGrid>}
+              {form.sourceType === 'external' && <div className="flex flex-col gap-3.5 mt-3.5">
+                <GGrid>
+                  <GField label="Agent" help={externalSalesmen.length === 0 ? 'No agents yet. Add them in Data, under Ext. Salesmen.' : undefined}><select className={gInput()} value={form.externalSalesmanId ?? ''} onChange={(e) => { const s = externalSalesmen.find(x => x.id === e.target.value); setForm({ ...form, externalSalesmanId: e.target.value || undefined, sourceSalesman: s?.name }); }}>
+                    <option value="">Choose an agent</option>
+                    {externalSalesmen.map(s => <option key={s.id} value={s.id}>{s.name}{s.ic ? ` (${s.ic})` : ''}</option>)}
+                  </select></GField>
+                  <GField label="Their commission (RM)"><input type="number" inputMode="decimal" className={`${gInput()} g-num`} value={form.sourceCommission ?? ''} placeholder="e.g. 500" onChange={e => setForm({ ...form, sourceCommission: e.target.value ? Number(e.target.value) : undefined })} /></GField>
+                </GGrid>
+                <GField label="Bonus for our salesperson who took the car in (RM)" group>
+                  <Seg label="Intake bonus" className="max-w-[420px]" value={String(form.intakeCommission ?? 0) as '0' | '500' | '1000'} onChange={(v) => setForm({ ...form, intakeCommission: Number(v) as 0 | 500 | 1000 })} options={[{ value: '0', label: 'None' }, { value: '500', label: 'RM 500' }, { value: '1000', label: 'RM 1,000' }]} />
+                </GField>
+              </div>}
+            </GSection>
+
+            <GSection title="Photos and notes" lede={isComingSoon ? 'Photos can wait until the car arrives.' : form.consignment ? 'At least 1 photo. Drag to change the order; the first is the cover.' : 'At least 4 photos: front, back, sides and inside. Drag to change the order; the first is the cover.'}>
+              {!isComingSoon && <>
+                <div className="grid grid-cols-3 sm:grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-2.5">
+                  {(form.photos ?? []).map((src, idx) => (
+                    <div
+                      key={idx}
+                      data-photo-idx={idx}
+                      draggable
+                      onDragStart={() => { dragIndexRef.current = idx; }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        const from = dragIndexRef.current;
+                        if (from === null || from === idx) return;
+                        const updated = [...(form.photos ?? [])];
+                        const [moved] = updated.splice(from, 1);
+                        updated.splice(idx, 0, moved);
+                        dragIndexRef.current = idx;
+                        setForm((prev) => ({ ...prev, photos: updated, photo: updated[0] ?? '' }));
+                      }}
+                      onDragEnd={() => { dragIndexRef.current = null; }}
+                      onTouchStart={() => { dragIndexRef.current = idx; }}
+                      onTouchMove={handleTouchMove}
+                      onTouchEnd={() => { dragIndexRef.current = null; }}
+                      style={{ touchAction: 'none' }}
+                      className="g-photo group cursor-grab active:cursor-grabbing"
+                    >
+                      <img src={src} alt={`Photo ${idx + 1}`} className="absolute inset-0 w-full h-full object-cover pointer-events-none" />
+                      <button type="button" onClick={() => removePhoto(idx)} aria-label={`Remove photo ${idx + 1}`} className="absolute top-1.5 right-1.5 bg-black/70 rounded-full p-1 z-10"><X size={12} className="text-white" /></button>
+                      {idx === 0 && <span className="absolute bottom-0 inset-x-0 bg-black/60 text-[#F7D96A] text-[10px] text-center py-0.5">Cover</span>}
                     </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          {/* Incoming Consignment */}
-          <div className="col-span-2">
-            <button
-              type="button"
-              onClick={() => setForm({ ...form, consignment: form.consignment ? undefined : { dealer: '', terms: 'fixed_amount', fixedAmount: form.purchasePrice || 0 }, outgoingConsignment: undefined })}
-              className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${form.consignment ? 'bg-blue-500/10 border-blue-500/40 text-blue-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
-            >
-              <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${form.consignment ? 'bg-blue-500 border-blue-500' : 'border-gray-600'}`}>
-                {form.consignment && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-              </div>
-              <div>
-                <p className="text-sm font-medium">Consign In — Dealer's car, we sell it</p>
-                <p className="text-xs opacity-60 mt-0.5">Car belongs to another dealer, sold on their behalf</p>
-              </div>
-            </button>
-
-            {form.consignment && (
-              <div className="mt-3 space-y-3 pl-2 border-l-2 border-blue-500/30">
-                <FormField label="Dealer Name">
-                  <select
-                    className={inputCls()}
-                    value={form.consignment.dealer}
-                    onChange={(e) => setForm({ ...form, consignment: { ...form.consignment!, dealer: e.target.value } })}
-                  >
-                    <option value="">— Select dealer —</option>
-                    {dealers.map((d) => (
-                      <option key={d.id} value={d.name}>{d.name}</option>
-                    ))}
-                  </select>
-                  {dealers.length === 0 && (
-                    <p className="text-xs text-gray-500 mt-1">No dealers yet — add them in the Data page under Car Dealers</p>
-                  )}
-                </FormField>
-
-                <div>
-                  <label className="block text-gray-300 text-xs font-medium mb-2">Consignment Terms</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setForm({ ...form, consignment: { ...form.consignment!, terms: 'fixed_amount', fixedAmount: form.purchasePrice || form.consignment!.fixedAmount || 0 } })}
-                      className={`px-3 py-2.5 rounded-lg border text-sm transition-colors text-left ${form.consignment.terms === 'fixed_amount' ? 'bg-blue-500/15 border-blue-500/50 text-blue-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400'}`}
-                    >
-                      <p className="font-medium">Fixed Amount</p>
-                      <p className="text-xs opacity-60 mt-0.5">Dealer takes back purchase price</p>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setForm({ ...form, consignment: { ...form.consignment!, terms: 'profit_split', splitPercent: 50 } })}
-                      className={`px-3 py-2.5 rounded-lg border text-sm transition-colors text-left ${form.consignment.terms === 'profit_split' ? 'bg-blue-500/15 border-blue-500/50 text-blue-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400'}`}
-                    >
-                      <p className="font-medium">Profit Split</p>
-                      <p className="text-xs opacity-60 mt-0.5">Split profit after expenses</p>
-                    </button>
-                  </div>
-                </div>
-
-                {form.consignment.terms === 'fixed_amount' && (
-                  <div className="flex items-center justify-between bg-obsidian-700/40 border border-obsidian-400/40 rounded-lg px-3 py-2.5">
-                    <p className="text-gray-400 text-xs">Dealer Takes Back</p>
-                    <p className="text-blue-400 font-semibold text-sm">{formatRM(Math.max(0, (form.purchasePrice || 0) - (form.settlementAmount || 0)))}</p>
-                  </div>
-                )}
-
-                {form.consignment.terms === 'profit_split' && (
-                  <FormField label="Dealer's Split (%)" error={errors.consignment}>
-                    <input
-                      type="number"
-                      className={inputCls()}
-                      value={form.consignment.splitPercent ?? 50}
-                      min={0}
-                      max={100} step="0.01" disabled={!isDirector}
-                      onChange={(e) => setForm({ ...form, consignment: { ...form.consignment!, splitPercent: Number(e.target.value) } })}
-                    />
-                  </FormField>
-                )}
-              </div>
-            )}
-          </div>
-
-
-          {/* Investor-funded registration (new private accounts) — director only, behind VITE_INVESTOR_FINANCE */}
-          {companyBankPaymentsEnabled && !funding.potId && !form.consignment && !form.outgoingConsignment && <FormField label="Seller name" className="col-span-2"><input className={inputCls()} value={companySeller} maxLength={150} onChange={e=>setCompanySeller(e.target.value)} /><p className="text-gray-400 text-xs mt-1">Seller and lender payments stay unpaid until the Director records the actual bank payment.</p></FormField>}
-          {companyBankPaymentsEnabled && !investorFinanceOn && <div className="col-span-2"><PendingSaves pending={pendingRegistrations} busy={investorAct.busy} onRetry={s=>void retryInvestorRegistration(s)} onDiscard={investorAct.discard}/>{investorAct.error && <p role="alert" className="text-red-400 text-sm">{investorAct.error.message}</p>}</div>}
-          {investorFinanceOn && (
-            <div className="col-span-2 space-y-3">
-              <FormField label="Who pays for this car?">
-                <select
-                  className={inputCls()}
-                  value={funding.potId}
-                  onChange={(e) => setFunding({ ...funding, potId: e.target.value })}
-                >
-                  <option value="">Company (AutoDream pays)</option>
-                  {(investorProfiles.data?.profiles ?? []).map((p) => (
-                    <option key={p.potId} value={p.potId}>
-                      {p.name} — {formatCents(p.position.availableCents)} available
-                    </option>
                   ))}
-                </select>
-                {investorProfiles.loading && <p className="text-gray-500 text-xs mt-1">Loading investor accounts…</p>}
-                {investorProfiles.error && <p className="text-red-400 text-xs mt-1">{investorProfiles.error.message}</p>}
-              </FormField>
-              {funding.potId && (
-                <div className="pl-2 border-l-2 border-amber-500/30 space-y-2">
-                  {(form.consignment || form.outgoingConsignment || form.tradeInSourceCarId || (form.settlementAmount ?? 0) > 0) && (
-                    <p className="text-red-400 text-xs">Investor funding cannot be used for consignment cars, trade-ins or cars with a settlement to pay. Choose company funding instead.</p>
-                  )}
-                  <FormField label="Investor profit share (%)">
-                    <input
-                      type="number"
-                      className={inputCls()}
-                      value={funding.percent}
-                      min={0} max={100} step="0.01"
-                      onChange={(e) => setFunding({ ...funding, percent: e.target.value })}
-                    />
-                    <p className="text-gray-600 text-xs mt-1">AutoDream keeps the rest. The purchase price is reserved from this investor account; record the bank payment later on the investor car page.</p>
-                  </FormField>
-                  {(() => { const prof = investorProfiles.data?.profiles.find((p) => p.potId === funding.potId); const need = Math.round((form.purchasePrice || 0) * 100) - (prof?.position.availableCents ?? 0); return prof && need > 0 ? (
-                    <FormField label="Reason for fronting the money">
-                      <p className="text-amber-300 text-xs mb-1">{prof.name} has only {formatCents(prof.position.availableCents)} available. The company fronts {formatCents(need)} until {prof.name}'s capital is locked or received. No withdrawals until then.</p>
-                      <input className={inputCls()} maxLength={500} value={funding.advanceReason ?? ''} onChange={(e) => setFunding({ ...funding, advanceReason: e.target.value.replace(/[|]/g, '') })} placeholder="e.g. Capital coming from 2TN payouts" />
-                    </FormField>) : null; })()}
-                </div>
-              )}
-              <PendingSaves pending={pendingRegistrations} busy={investorAct.busy} onRetry={(s) => void retryInvestorRegistration(s)} onDiscard={investorAct.discard} />
-              {investorAct.error?.slot.startsWith('car-registration:') && (
-                <p className="text-red-400 text-xs flex items-center gap-1.5">
-                  <AlertCircle size={13} /> {investorAct.error.message}
-                  {investorAct.error.retryable && ' Use Retry above — it resends the original car, never a new one.'}
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Investor funding — director only (legacy tagging; hidden when the new investor accounts are on) */}
-          {isDirector && !investorFinanceOn && (() => {
-            const investors = users.filter(u => u.role === 'investor');
-            if (investors.length === 0) return null;
-            return (
-              <div className="col-span-2">
-                <button
-                  type="button"
-                  onClick={() => setForm({ ...form, investorId: form.investorId ? undefined : investors[0].id, investorSplit: 50 })}
-                  className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${form.investorId ? 'bg-amber-500/10 border-amber-500/40 text-amber-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
-                >
-                  <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${form.investorId ? 'bg-amber-500 border-amber-500' : 'border-gray-600'}`}>
-                    {form.investorId && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">Investor-Funded</p>
-                    <p className="text-xs opacity-60 mt-0.5">Car capital comes from an investor account</p>
-                  </div>
-                </button>
-                {form.investorId && (
-                  <div className="mt-3 space-y-3 pl-2 border-l-2 border-amber-500/30">
-                    <FormField label="Investor">
-                      <select
-                        className={inputCls()}
-                        value={form.investorId}
-                        onChange={(e) => setForm({ ...form, investorId: e.target.value })}
-                      >
-                        {investors.map(inv => (
-                          <option key={inv.id} value={inv.id}>{inv.name}</option>
-                        ))}
-                      </select>
-                    </FormField>
-                    <FormField label="Investor Profit Share (%)">
-                      <input
-                        type="number"
-                        className={inputCls()}
-                        value={form.investorSplit ?? 50}
-                        min={1} max={99}
-                        onChange={(e) => setForm({ ...form, investorSplit: Number(e.target.value) })}
-                      />
-                      <p className="text-gray-600 text-xs mt-1">AutoDream takes the remaining {100 - (form.investorSplit ?? 50)}%</p>
-                    </FormField>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* Source Salesman */}
-          <div className="col-span-2">
-            <button
-              type="button"
-              onClick={() => setForm({ ...form, sourceType: form.sourceType ? undefined : 'external', externalSalesmanId: undefined, sourceSalesmanId: undefined, sourceCommission: undefined, sourceSalesman: undefined, intakeCommission: undefined })}
-              className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${form.sourceType ? 'bg-green-500/10 border-green-500/40 text-green-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
-            >
-              <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${form.sourceType ? 'bg-green-500 border-green-500' : 'border-gray-600'}`}>
-                {form.sourceType && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-              </div>
-              <div>
-                <p className="text-sm font-medium">Has Source Salesman</p>
-                <p className="text-xs opacity-60 mt-0.5">Car was brought in by an external or internal salesperson</p>
-              </div>
-            </button>
-            {form.sourceType && (
-              <div className="mt-3 space-y-3 pl-2 border-l-2 border-green-500/30">
-                {/* External / Internal toggle */}
-                <div className="grid grid-cols-2 gap-2">
-                  {(['external', 'internal'] as const).map(t => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setForm({ ...form, sourceType: t, externalSalesmanId: undefined, sourceSalesmanId: undefined, sourceSalesman: undefined })}
-                      className={`px-3 py-2.5 rounded-lg border text-sm transition-colors ${form.sourceType === t ? 'bg-green-500/15 border-green-500/50 text-green-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
-                    >
-                      <p className="font-medium capitalize">{t}</p>
-                      <p className="text-xs opacity-60 mt-0.5">{t === 'external' ? 'Not an AutoDream staff' : 'AutoDream salesperson'}</p>
-                    </button>
-                  ))}
-                </div>
-
-                {form.sourceType === 'external' && (
-                  <>
-                    <FormField label="External Salesman">
-                      <select
-                        className={inputCls()}
-                        value={form.externalSalesmanId ?? ''}
-                        onChange={(e) => {
-                          const s = externalSalesmen.find(x => x.id === e.target.value);
-                          setForm({ ...form, externalSalesmanId: e.target.value || undefined, sourceSalesman: s?.name });
-                        }}
-                      >
-                        <option value="">— Select salesman —</option>
-                        {externalSalesmen.map(s => <option key={s.id} value={s.id}>{s.name}{s.ic ? ` (${s.ic})` : ''}</option>)}
-                      </select>
-                      {externalSalesmen.length === 0 && (
-                        <p className="text-xs text-gray-500 mt-1">No external salesmen registered — add them in Data → Ext. Salesmen</p>
-                      )}
-                    </FormField>
-                    <FormField label="Commission to External Salesman (RM)">
-                      <input type="number" className={inputCls()} value={form.sourceCommission ?? ''} placeholder="e.g. 500" onChange={e => setForm({ ...form, sourceCommission: e.target.value ? Number(e.target.value) : undefined })} />
-                    </FormField>
-                    <div>
-                      <label className="block text-gray-300 text-xs font-medium mb-2">In-house Salesman Intake Bonus (RM)</label>
-                      <div className="grid grid-cols-3 gap-2">
-                        {([0, 500, 1000] as const).map((v) => (
-                          <button key={v} type="button" onClick={() => setForm({ ...form, intakeCommission: v })}
-                            className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${form.intakeCommission === v ? 'bg-teal-500/15 border-teal-500/50 text-teal-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}>
-                            {v === 0 ? 'None' : `RM ${v.toLocaleString()}`}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {form.sourceType === 'internal' && (
-                  <>
-                    <FormField label="AutoDream Salesperson">
-                      <select
-                        className={inputCls()}
-                        value={form.sourceSalesmanId ?? ''}
-                        onChange={(e) => {
-                          const u = users.find(x => x.id === e.target.value);
-                          setForm({ ...form, sourceSalesmanId: e.target.value || undefined, sourceSalesman: u?.name });
-                        }}
-                      >
-                        <option value="">— Select salesperson —</option>
-                        {users.filter(u => u.role === 'salesperson').map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                      </select>
-                    </FormField>
-                    <FormField label="Sourcing Commission (RM)">
-                      <input type="number" className={inputCls()} value={form.sourceCommission ?? ''} placeholder="e.g. 500" onChange={e => setForm({ ...form, sourceCommission: e.target.value ? Number(e.target.value) : undefined })} />
-                    </FormField>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-
-          <FormField label="Notes" className="col-span-2">
-            <textarea
-              className={`${inputCls()} h-20 resize-none`}
-              value={form.notes ?? ''}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              placeholder="Any additional notes..."
-            />
-          </FormField>
-
-          {/* Car Photos — not required for Coming Soon */}
-          {!isComingSoon && <div className="col-span-2">
-            {(() => {
-              const photoMin = form.consignment ? 1 : 4;
-              const photoCount = form.photos?.length ?? 0;
-              return (
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-gray-300 text-xs font-medium">
-                    Car Photos
-                    <span className="ml-1.5 text-gray-500 font-normal">(minimum {photoMin} required)</span>
-                  </label>
-                  <span className={`text-xs font-medium ${photoCount >= photoMin ? 'text-green-400' : 'text-yellow-400'}`}>
-                    {photoCount} / {photoMin} min
-                  </span>
-                </div>
-              );
-            })()}
-
-            {/* Thumbnail grid — drag to reorder */}
-            <div className="flex flex-wrap gap-2 mb-2">
-              {(form.photos ?? []).map((src, idx) => (
-                <div
-                  key={idx}
-                  data-photo-idx={idx}
-                  draggable
-                  onDragStart={() => { dragIndexRef.current = idx; }}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    const from = dragIndexRef.current;
-                    if (from === null || from === idx) return;
-                    const updated = [...(form.photos ?? [])];
-                    const [moved] = updated.splice(from, 1);
-                    updated.splice(idx, 0, moved);
-                    dragIndexRef.current = idx;
-                    setForm((prev) => ({ ...prev, photos: updated, photo: updated[0] ?? '' }));
-                  }}
-                  onDragEnd={() => { dragIndexRef.current = null; }}
-                  onTouchStart={() => { dragIndexRef.current = idx; }}
-                  onTouchMove={handleTouchMove}
-                  onTouchEnd={() => { dragIndexRef.current = null; }}
-                  style={{ touchAction: 'none' }}
-                  className="relative w-20 h-20 rounded-lg overflow-hidden border border-obsidian-400/60 group cursor-grab active:cursor-grabbing"
-                >
-                  <img src={src} alt={`car-${idx + 1}`} className="w-full h-full object-cover pointer-events-none" />
-                  <button
-                    type="button"
-                    onClick={() => removePhoto(idx)}
-                    className="absolute top-1 right-1 bg-black/70 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10"
-                  >
-                    <X size={12} className="text-white" />
-                  </button>
-                  {idx === 0 && (
-                    <span className="absolute bottom-0 left-0 right-0 bg-gold-500/80 text-white text-[9px] text-center py-0.5">
-                      Cover
-                    </span>
+                  {uploadingPhotos && <div className="g-photo text-[#F2CF5B]" role="status"><svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Uploading…</div>}
+                  {!uploadingPhotos && !(form.consignment && photoCount >= 1) && (
+                    <button type="button" onClick={() => photoInputRef.current?.click()} className="g-photo g-photo-add"><ImagePlus size={20} />Add photos</button>
                   )}
                 </div>
-              ))}
+                <p className={`g-help ${photoCount >= photoMin ? '!text-[#7FD1A0]' : ''}`}>{photoCount} of {photoMin} needed</p>
+                <input ref={photoInputRef} type="file" accept="image/*" {...(!form.consignment && { multiple: true })} className="hidden" onChange={(e) => handlePhotoFiles(e.target.files)} />
+                {errors.photos && <p className="g-error" role="alert">{errors.photos}</p>}
+              </>}
 
-              {/* Uploading indicator */}
-              {uploadingPhotos && (
-                <div className="w-20 h-20 rounded-lg border border-obsidian-400/60 flex flex-col items-center justify-center gap-1 text-gold-400">
-                  <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                  </svg>
-                  <span className="text-[9px]">Uploading...</span>
-                </div>
-              )}
-
-              {/* Add photo button */}
-              {!uploadingPhotos && !(form.consignment && (form.photos?.length ?? 0) >= 1) && (
-                <button
-                  type="button"
-                  onClick={() => photoInputRef.current?.click()}
-                  className="w-20 h-20 rounded-lg border-2 border-dashed border-obsidian-400/60 hover:border-gold-500/50 flex flex-col items-center justify-center gap-1 text-gray-600 hover:text-gold-400 transition-colors"
-                >
-                  <ImagePlus size={18} />
-                  <span className="text-[10px]">Add</span>
-                </button>
-              )}
-            </div>
-
-            <input
-              ref={photoInputRef}
-              type="file"
-              accept="image/*"
-              {...(!form.consignment && { multiple: true })}
-              className="hidden"
-              onChange={(e) => handlePhotoFiles(e.target.files)}
-            />
-
-            {errors.photos && (
-              <p className="text-red-400 text-xs flex items-center gap-1">
-                <AlertCircle size={12} /> {errors.photos}
-              </p>
-            )}
-          </div>}
-
-          {/* Green Card */}
-          <div className="col-span-2">
-            <label className="block text-gray-300 text-xs font-medium mb-1.5">
-              Green Card
-              <span className="ml-1.5 text-gray-500 font-normal">(JPG, PNG or PDF)</span>
-            </label>
-
-            {form.greenCard ? (
-              <div className="flex items-center gap-3 bg-obsidian-700/60 border border-obsidian-400/60 rounded-lg p-3">
-                {form.greenCard.startsWith('data:image') ? (
-                  <img src={form.greenCard} alt="green card" className="w-16 h-12 object-cover rounded border border-obsidian-400/60" />
+              <div className="mt-[18px]">
+                <span className="g-label">Green card (JPG, PNG or PDF)</span>
+                {form.greenCard ? (
+                  <div className="flex items-center gap-3 rounded-[14px] border border-white/10 bg-black/25 p-3">
+                    {form.greenCard.startsWith('data:image')
+                      ? <img src={form.greenCard} alt="Green card" className="w-16 h-12 object-cover rounded-lg" />
+                      : <div className="w-16 h-12 rounded-lg bg-white/5 flex items-center justify-center"><FileText size={20} className="text-[#7FD1A0]" /></div>}
+                    <p className="flex-1 m-0 text-[14px]">Green card added</p>
+                    <button type="button" onClick={() => greenCardInputRef.current?.click()} className="text-[13px] text-[#F2CF5B] min-h-[44px] px-2">Replace</button>
+                    <button type="button" onClick={() => setForm((prev) => ({ ...prev, greenCard: '' }))} className="text-[13px] text-[#FF9B8A] min-h-[44px] px-2">Remove</button>
+                  </div>
                 ) : (
-                  <div className="w-16 h-12 bg-green-500/10 border border-green-500/30 rounded flex items-center justify-center">
-                    <FileText size={20} className="text-green-400" />
-                  </div>
+                  <button type="button" onClick={() => greenCardInputRef.current?.click()} className={`g-photo g-photo-add w-full !aspect-auto py-5 ${errors.greenCard ? '!border-[#FF9B8A]' : ''}`}><Upload size={20} />Upload green card</button>
                 )}
-                <div className="flex-1 min-w-0">
-                  <p className="text-white text-xs font-medium">Green card uploaded</p>
-                  <p className="text-gray-500 text-xs mt-0.5">Click replace to change</p>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => greenCardInputRef.current?.click()}
-                    className="text-xs text-gold-400 hover:text-gold-300 transition-colors"
-                  >
-                    Replace
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setForm((prev) => ({ ...prev, greenCard: '' }))}
-                    className="text-xs text-red-400 hover:text-red-300 transition-colors"
-                  >
-                    Remove
-                  </button>
-                </div>
+                <input ref={greenCardInputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => handleGreenCard(e.target.files)} />
+                {errors.greenCard && <p className="g-error" role="alert">{errors.greenCard}</p>}
               </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => greenCardInputRef.current?.click()}
-                className={`w-full border-2 border-dashed ${errors.greenCard ? 'border-red-500/50' : 'border-obsidian-400/60 hover:border-gold-500/50'} rounded-lg p-5 flex flex-col items-center gap-2 text-gray-600 hover:text-gold-400 transition-colors`}
-              >
-                <Upload size={20} />
-                <span className="text-xs">Click to upload green card</span>
-                <span className="text-[10px] text-gray-700">JPG, PNG, PDF accepted</span>
-              </button>
-            )}
 
-            <input
-              ref={greenCardInputRef}
-              type="file"
-              accept="image/*,application/pdf"
-              className="hidden"
-              onChange={(e) => handleGreenCard(e.target.files)}
-            />
-
-            {errors.greenCard && (
-              <p className="text-red-400 text-xs mt-1 flex items-center gap-1">
-                <AlertCircle size={12} /> {errors.greenCard}
-              </p>
-            )}
-          </div>
-        </div>
-
-        {submitError && (
-          <p className="mt-4 text-red-400 text-xs flex items-center gap-1.5">
-            <AlertCircle size={13} /> {submitError}
-          </p>
-        )}
-        <div className="flex gap-3 mt-4">
-          <button
-            onClick={() => setShowModal(false)}
-            disabled={submitting}
-            className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={submitting || uploadingPhotos}
-            className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm disabled:opacity-60 flex items-center justify-center gap-2"
-          >
-            {submitting ? (
-              <>
-                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                </svg>
-                Saving...
-              </>
-            ) : 'Add Car'}
-          </button>
-        </div>
-      </Modal>
+              <GField label="Notes" className="mt-[18px]"><textarea className={gInput()} value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Anything worth knowing about this car" /></GField>
+            </GSection>
+          </GlassSheet>
+        );
+      })()}
 
       {/* ── Director Deal Review Sheet (fallback: no WO on record) ── */}
       {reviewDealCar && (() => {
@@ -3867,34 +3515,6 @@ function Select({
       <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
     </div>
   );
-}
-
-function FormField({
-  label,
-  children,
-  error,
-  className,
-}: {
-  label: string;
-  children: React.ReactNode;
-  error?: string;
-  className?: string;
-}) {
-  return (
-    <div className={className}>
-      <label className="block text-gray-300 text-xs font-medium mb-1.5">{label}</label>
-      {children}
-      {error && (
-        <p className="text-red-400 text-xs mt-1 flex items-center gap-1">
-          <AlertCircle size={12} /> {error}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function inputCls(error?: string) {
-  return `input ${error ? '!border-red-500/50' : ''}`;
 }
 
 // Export Filter icon for use

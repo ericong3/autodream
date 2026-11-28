@@ -75,6 +75,7 @@ import { completeRepairJob } from '../utils/completeRepair';
 import { recordInvestorMiscCost } from '../utils/completeInvestorMisc';
 import TradeInFundingChoice from '../components/TradeInFundingChoice';
 import CompanyPurchaseStart from '../components/CompanyPurchaseStart';
+import { GlassSheet, GSection, GField, GGrid, Seg, Choices, SwitchRow, Chips, COMING_SOON_TYPES, Plate, Slip, SlipRule, SlipCaption, gInput, rm } from '../components/carForm/Glass';
 import ConsignmentFinancePanel from '../components/ConsignmentFinancePanel';
 import MoneyReceivedPanel from '../components/MoneyReceivedPanel';
 import CarCaseBadge from '../components/CarCaseBadge';
@@ -2799,469 +2800,292 @@ export function CarDetailContent({ id, onBack, backLabel = 'Back to Inventory', 
 
       </div>}{/* end two-column grid */}
 
-      {/* ── Edit Car Modal ── */}
-      <Modal isOpen={showEditModal} onClose={() => setShowEditModal(false)} title="Edit Car" maxWidth="max-w-2xl"
-        footer={
-          <div className="flex gap-3">
-            <button onClick={() => setShowEditModal(false)} className="flex-1 px-4 py-2.5 btn-ghost rounded-lg text-sm">Cancel</button>
-            <button onClick={handleEditSubmit} className="flex-1 btn-gold px-4 py-2.5 rounded-lg text-sm">Save Changes</button>
+      {/* Edit Car sheet */}
+      {(() => {
+        const ef = editForm;
+        const set = (patch: Partial<Car>) => setEditForm({ ...editForm, ...patch });
+        const norm = (v: unknown) => (v === '' || v === undefined || v === null || v === false ? null : v);
+        const chg = (k: keyof Car) => JSON.stringify(norm(ef[k])) !== JSON.stringify(norm(car[k]));
+        // Same rules as before: a company car with no price gets it from Record purchase.
+        const pricePending = companyBankPaymentsEnabled && !(car.purchasePrice > 0) && !car.companyPurchaseRecorded && !car.consignment && !car.investorFunded && !car.tradeInSourceCarId;
+        const priceDisabled = car.companyPurchaseRecorded || (companyBankPaymentsEnabled && !(car.purchasePrice > 0) && !car.consignment && !car.investorFunded && !car.tradeInSourceCarId);
+        const canRecordPurchase = isDirector && currentUser && !car.investorId && !car.outgoingConsignment && ['coming_soon', 'available', 'in_workshop', 'ready', 'photo_complete', 'submitted'].includes(car.status);
+        const settlementLocked = car.companyPurchaseRecorded || payments.some(p => p.type === 'purchase_settlement' && p.carId === car.id);
+        const legacyInvestors = isDirector && import.meta.env.VITE_INVESTOR_FINANCE !== '1' ? users.filter(u => u.role === 'investor') : [];
+        const legacy = legacyInvestors.length > 0;
+        const owner: 'company' | 'investor' | 'dealer' = ef.consignment ? 'dealer' : legacy && ef.investorId ? 'investor' : 'company';
+        const chooseOwner = (o: 'company' | 'investor' | 'dealer') => setEditForm((f) => ({
+          ...f,
+          consignment: o === 'dealer' ? (f.consignment ?? { dealer: '', terms: 'fixed_amount', fixedAmount: f.purchasePrice || 0 }) : undefined,
+          investorId: !legacy ? f.investorId : o === 'investor' ? (f.investorId ?? legacyInvestors[0]?.id) : undefined,
+          investorSplit: o === 'investor' ? (f.investorSplit ?? 50) : f.investorSplit,
+        }));
+        const price = ef.purchasePrice || 0;
+        const loanOn = ef.settlementAmount != null;
+        const loan = loanOn ? (ef.settlementAmount || 0) : 0;
+        const showStatus = car.status !== 'deal_pending' && car.status !== 'delivered';
+        const isSoon = (ef.status ?? car.status) === 'coming_soon';
+        const bills = payments.filter(p => p.carId === car.id && p.type === 'purchase_settlement' && !p.obligationReplaced);
+        const STATUS: Record<string, string> = { coming_soon: 'Coming soon', in_workshop: 'In workshop', ready: 'Ready', photo_complete: 'Photo complete', submitted: 'Submitted', deal_pending: 'Deal pending', available: 'Available', reserved: 'Reserved', sold: 'Sold', delivered: 'Delivered' };
+        const blank = (v: unknown) => v === undefined || v === null || v === '';
+        const txt = (v: unknown) => blank(v) ? 'Blank' : String(v);
+        const money = (v: unknown) => blank(v) ? 'Blank' : rm(Number(v));
+        const yn = (v: unknown) => v ? 'On' : 'Off';
+        const dealerText = (c?: Car['consignment']) => !c ? 'No' : `${c.dealer || 'No dealer'}, ${c.terms === 'profit_split' ? `${c.splitPercent ?? 50}% of profit` : 'fixed amount'}`;
+        const fields: [keyof Car, string, (v: unknown) => string][] = [
+          ['make', 'Make', txt], ['model', 'Model', txt], ['variant', 'Variant', txt], ['year', 'Year', txt], ['carPlate', 'Car plate', txt],
+          ['colour', 'Colour', txt], ['mileage', 'Mileage', (v) => blank(v) ? 'Blank' : `${Number(v).toLocaleString()} km`],
+          ['transmission', 'Gearbox', (v) => v === 'manual' ? 'Manual' : 'Auto'], ['condition', 'Condition', (v) => txt(v).replace(/^./, (c) => c.toUpperCase())],
+          ['isRecon', 'Type', (v) => v ? 'Recon' : 'Used'], ['salesCommission', 'Commission per unit', money],
+          ['status', 'Status', (v) => STATUS[String(v)] ?? txt(v)], ['comingSoonType', 'Coming soon type', (v) => COMING_SOON_TYPES.find(t => t.value === v)?.label ?? 'None'],
+          ['purchasePrice', 'Purchase price', money], ['settlementRecipient', 'Pay the loan to', txt], ['settlementAmount', 'Loan amount', money],
+          ['sellingPrice', 'Selling price', money], ['priceFloor', 'Lowest deal allowed', money],
+          ['isStaffSale', 'Staff sale', yn], ['waiveCommission', 'No commission on this deal', yn], ['commissionCreditedEarly', 'Pay commission before delivery', yn], ['commissionCreditedMonth', 'Counts toward month', txt],
+          ['investorId', 'Investor', (v) => blank(v) ? 'None' : users.find(u => u.id === v)?.name ?? 'Investor'], ['investorSplit', "Investor's share", (v) => blank(v) ? 'Blank' : `${v}%`],
+          ['sourceType', 'Who brought it in', (v) => v === 'internal' ? 'Our salesperson' : v === 'external' ? 'Outside agent' : 'No one'], ['sourceSalesman', 'Brought in by', txt],
+          ['sourceCommission', 'Finder commission', money], ['intakeCommission', 'Intake bonus', money],
+          ['notes', 'Notes', (v) => blank(v) ? 'Blank' : 'Written'], ['greenCard', 'Green card', (v) => blank(v) ? 'None' : 'Added'],
+        ];
+        const changes = fields.filter(([k]) => chg(k)).map(([k, label, show]) => ({ label, from: show(car[k]), to: show(ef[k]) }))
+          .filter((c) => c.from !== c.to);
+        if (JSON.stringify(ef.consignment ?? null) !== JSON.stringify(car.consignment ?? null) && dealerText(ef.consignment) !== dealerText(car.consignment)) changes.push({ label: 'Other dealer', from: dealerText(car.consignment), to: dealerText(ef.consignment) });
+        const hasErrors = Object.keys(editErrors).length > 0;
+        const close = () => setShowEditModal(false);
+        const billPill = (p: (typeof bills)[number]) => {
+          const left = paymentBalanceCents(p), full = Math.round(p.amount * 100);
+          return left === 0 ? <span className="g-pill bg-[rgba(127,209,160,0.12)] border-[rgba(127,209,160,0.35)] text-[#9FE0B8]">Paid</span>
+            : left < full ? <span className="g-pill bg-[rgba(242,178,102,0.12)] border-[rgba(242,178,102,0.35)] text-[#F6C88F]">Part paid</span>
+            : <span className="g-pill bg-[rgba(242,178,102,0.12)] border-[rgba(242,178,102,0.35)] text-[#F6C88F]">Not paid</span>;
+        };
+        const loanBlock = !pricePending && (
+          <div className="flex flex-col gap-3.5 mt-3.5">
+            <SwitchRow on={loanOn} disabled={settlementLocked} title="The car still has a loan" desc="Part of the price pays the bank or lender directly"
+              onToggle={() => set({ settlementAmount: loanOn ? undefined : 0, settlementRecipient: loanOn ? undefined : ef.settlementRecipient })} />
+            {loanOn && <div className="g-inset">
+              {settlementLocked && <p className="g-help !mt-0 mb-3">{car.companyPurchaseRecorded ? 'The agreed loan amount is recorded. Pay it from Payments.' : 'Already a bill in Payments. Change the amount there instead.'}</p>}
+              <GGrid>
+                <GField label="Pay the loan to"><input className={gInput(undefined, chg('settlementRecipient'))} value={ef.settlementRecipient ?? ''} disabled={settlementLocked} onChange={(e) => set({ settlementRecipient: e.target.value })} placeholder="e.g. Public Bank" /></GField>
+                <GField label="Loan amount (RM)"><input type="number" inputMode="decimal" className={`${gInput(undefined, chg('settlementAmount'))} g-num`} value={ef.settlementAmount ?? 0} disabled={settlementLocked} onChange={(e) => set({ settlementAmount: Number(e.target.value) })} /></GField>
+              </GGrid>
+              <p className="g-help">{owner === 'dealer' ? 'The dealer gets the rest: ' : 'The seller gets the rest: '}<span className="g-num text-[#F4F5F7] font-semibold">{rm(Math.max(0, price - loan))}</span></p>
+            </div>}
           </div>
-        }
-      >
-        <div className="grid grid-cols-2 gap-4">
-          <FormField label="Make" error={editErrors.make}>
-            <input className={inputCls(editErrors.make)} value={editForm.make ?? ''} onChange={(e) => setEditForm({ ...editForm, make: e.target.value })} />
-          </FormField>
-          <FormField label="Model" error={editErrors.model}>
-            <input className={inputCls(editErrors.model)} value={editForm.model ?? ''} onChange={(e) => setEditForm({ ...editForm, model: e.target.value })} />
-          </FormField>
-          <FormField label="Variant" className="col-span-2">
-            <input className={inputCls()} value={editForm.variant ?? ''} onChange={(e) => setEditForm({ ...editForm, variant: e.target.value })} placeholder="e.g. 1.5 Advance" />
-          </FormField>
-          <FormField label="Year">
-            <input type="number" className={inputCls()} value={editForm.year ?? ''} onChange={(e) => setEditForm({ ...editForm, year: Number(e.target.value) })} />
-          </FormField>
-          <FormField label="Car Plate">
-            <input className={inputCls()} value={editForm.carPlate ?? ''} onChange={(e) => setEditForm({ ...editForm, carPlate: e.target.value.toUpperCase() })} placeholder="e.g. WXX 1234" />
-          </FormField>
-          <FormField label="Colour" error={editErrors.colour}>
-            <input className={inputCls(editErrors.colour)} value={editForm.colour ?? ''} onChange={(e) => setEditForm({ ...editForm, colour: e.target.value })} />
-          </FormField>
-          <FormField label="Mileage (km)">
-            <input type="number" className={inputCls()} value={editForm.mileage ?? ''} onChange={(e) => setEditForm({ ...editForm, mileage: Number(e.target.value) })} />
-          </FormField>
-          {isDirector && <>
-            <FormField label="Vehicle type">
-              <select className={inputCls()} value={editForm.isRecon ? 'recon' : 'used'} onChange={e => setEditForm({ ...editForm, isRecon: e.target.value === 'recon' })}>
-                <option value="used">Used car</option><option value="recon">Recon car</option>
-              </select>
-            </FormField>
-            <FormField label="Sales commission per unit (RM)" error={editErrors.salesCommission}>
-              <input type="number" min="0" step="0.01" className={inputCls()} value={editForm.salesCommission ?? ''} placeholder={editForm.isRecon ? 'Default: 2000' : 'Use standard commission'} onChange={e => setEditForm({ ...editForm, salesCommission: e.target.value === '' ? undefined : Number(e.target.value) })} />
-              <p className="text-xs text-gray-500 mt-1">Blank uses the existing deal rate, or the vehicle default. Existing payment records stay unchanged.</p>
-            </FormField>
-          </>}
-          <FormField label="Condition">
-            <select className={inputCls()} value={editForm.condition ?? 'good'} onChange={(e) => setEditForm({ ...editForm, condition: e.target.value as Car['condition'] })}>
-              <option value="excellent">Excellent</option>
-              <option value="good">Good</option>
-              <option value="fair">Fair</option>
-              <option value="poor">Poor</option>
-            </select>
-          </FormField>
-          <FormField label="Purchase Price (RM)" error={editErrors.purchasePrice}>
-            <input type="number" disabled={car.companyPurchaseRecorded || companyBankPaymentsEnabled && !(car.purchasePrice>0) && !car.consignment && !car.investorFunded && !car.tradeInSourceCarId} className={inputCls(editErrors.purchasePrice)} value={editForm.purchasePrice ?? ''} onChange={(e) => setEditForm({ ...editForm, purchasePrice: Number(e.target.value) })} />
-            {companyBankPaymentsEnabled && !(car.purchasePrice>0) && !car.companyPurchaseRecorded && !car.consignment && !car.investorFunded && !car.tradeInSourceCarId && (
-              isDirector && currentUser && !car.investorId && !car.outgoingConsignment && ['coming_soon','available','in_workshop','ready','photo_complete','submitted'].includes(car.status)
-                // After the purchase is recorded the form takes the saved price, so Save car does not change it back.
-                ? <CompanyPurchaseStart key={currentUser.id+':'+car.id} inline car={car} actorId={currentUser.id} onSaved={() => { const c = useStore.getState().cars.find((x) => x.id === car.id); if (c) setEditForm((f) => ({ ...f, purchasePrice: c.purchasePrice, settlementAmount: c.settlementAmount || undefined, settlementRecipient: c.settlementRecipient || undefined, investorSplit: c.investorSplit })); }} />
-                : <p className="text-gray-400 text-xs mt-1">The Director records the purchase price here while the car is in stock.</p>
-            )}
-            {car.companyPurchaseRecorded && <p className="text-gray-400 text-xs mt-1">The purchase and its bills are recorded. A price correction needs review.</p>}
-          </FormField>
-          {(() => {
-            // While the price waits for Record purchase, the settlement is typed there instead.
-            if (companyBankPaymentsEnabled && !(car.purchasePrice>0) && !car.companyPurchaseRecorded && !car.consignment && !car.investorFunded && !car.tradeInSourceCarId) return null;
-            const settlementLocked = car.companyPurchaseRecorded || payments.some(p => p.type === 'purchase_settlement' && p.carId === car.id);
-            return (
-              <div className="col-span-2">
-                <button
-                  type="button"
-                  disabled={settlementLocked}
-                  onClick={() => setEditForm({ ...editForm, settlementAmount: editForm.settlementAmount != null ? undefined : 0, settlementRecipient: editForm.settlementAmount != null ? undefined : editForm.settlementRecipient })}
-                  className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${editForm.settlementAmount != null ? 'bg-orange-500/10 border-orange-500/40 text-orange-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'} ${settlementLocked ? 'opacity-70 cursor-not-allowed' : ''}`}
-                >
-                  <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${editForm.settlementAmount != null ? 'bg-orange-500 border-orange-500' : 'border-gray-600'}`}>
-                    {editForm.settlementAmount != null && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">Add Settlement</p>
-                    <p className="text-xs opacity-60 mt-0.5">Part of the purchase price pays off an existing loan directly to the lender</p>
-                  </div>
-                </button>
-                {editForm.settlementAmount != null && (
-                  <div className="mt-3 space-y-3 pl-2 border-l-2 border-orange-500/30">
-                    {settlementLocked && <p className="text-xs text-orange-400/80">{car.companyPurchaseRecorded ? 'The agreed lender balance is recorded. Open Payments to record a payment.' : 'Already recorded as a pending payment — edit the amount from Payments instead.'}</p>}
-                    <FormField label="Settle To (bank / lender)">
-                      <input
-                        className={inputCls()}
-                        value={editForm.settlementRecipient ?? ''}
-                        onChange={(e) => setEditForm({ ...editForm, settlementRecipient: e.target.value })}
-                        placeholder="e.g. Public Bank"
-                        disabled={settlementLocked}
-                      />
-                    </FormField>
-                    <FormField label="Settlement Amount (RM)">
-                      <input
-                        type="number"
-                        className={inputCls()}
-                        value={editForm.settlementAmount ?? 0}
-                        onChange={(e) => setEditForm({ ...editForm, settlementAmount: Number(e.target.value) })}
-                        disabled={settlementLocked}
-                      />
-                    </FormField>
-                    <div className="flex items-center justify-between bg-obsidian-700/40 border border-obsidian-400/40 rounded-lg px-3 py-2.5">
-                      <p className="text-gray-400 text-xs">Net to Seller</p>
-                      <p className="text-orange-400 font-semibold text-sm">{formatRM(Math.max(0, (editForm.purchasePrice || 0) - (editForm.settlementAmount || 0)))}</p>
-                    </div>
-                  </div>
-                )}
+        );
+        const priceField = (label: string) => (
+          <GField label={label} error={editErrors.purchasePrice} help={car.companyPurchaseRecorded ? 'The purchase and its bills are recorded. A price correction needs review.' : undefined}>
+            <input type="number" inputMode="decimal" disabled={priceDisabled} className={`${gInput(editErrors.purchasePrice, chg('purchasePrice'))} g-num`} value={ef.purchasePrice ?? ''} onChange={(e) => set({ purchasePrice: Number(e.target.value) })} />
+          </GField>
+        );
+        const saveBtn = <button type="button" className="g-gold" onClick={handleEditSubmit}>Save changes</button>;
+        return (
+          <GlassSheet
+            open={showEditModal}
+            onClose={close}
+            title="Edit car"
+            headerLeft={car.photo ? <img src={thumbUrl(car.photo, 200, 70)!} alt="" className="hidden sm:block w-[88px] h-[66px] rounded-2xl object-cover border border-white/15 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.8)]" /> : undefined}
+            subtitle={<span className="flex flex-wrap items-center gap-2.5"><Plate text={car.carPlate} /><span>{car.year} {car.make} {car.model}{car.variant ? ` ${car.variant}` : ''}</span></span>}
+            slip={
+              <Slip>
+                <SlipCaption>When you press Save changes</SlipCaption>
+                {changes.length === 0
+                  ? <p className="m-0 text-[14px] text-[#C3C7CF]">No changes yet. Changed boxes glow gold.</p>
+                  : <ul className="m-0 p-0 list-none flex flex-col gap-3">
+                    {changes.map((c) => <li key={c.label}><b className="block text-[14px] font-medium">{c.label}</b><span className="block text-[13px] text-[#A7ACB6] break-words">{c.from} <span aria-hidden="true">→</span><span className="sr-only">to</span> <span className="text-[#F4F5F7]">{c.to}</span></span></li>)}
+                  </ul>}
+                {pricePending && <><SlipRule /><p className="m-0 text-[13px] leading-relaxed text-[#C3C7CF]">{canRecordPurchase ? 'The purchase price is saved with Record purchase in the money box. It makes the unpaid bills in Payments.' : 'The Director records the purchase price while the car is in stock.'}</p></>}
+                {hasErrors && <p role="alert" className="g-error m-0 flex items-start gap-1.5"><AlertCircle size={14} className="mt-0.5 shrink-0" />Fix the boxes marked in red, then save again.</p>}
+              </Slip>
+            }
+            actions={<>{saveBtn}<button type="button" className="g-ghost" onClick={close}>Cancel</button></>}
+            bar={<>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[13.5px] text-[#C3C7CF]">{changes.length === 0 ? 'No changes yet' : `${changes.length} change${changes.length > 1 ? 's' : ''}`}</span>
+                {hasErrors && <span className="text-[12.5px] text-[#FF9B8A]">Fix the red boxes</span>}
               </div>
-            );
-          })()}
-          <FormField label="Selling Price (RM)" error={editErrors.sellingPrice}>
-            <input type="number" className={inputCls(editErrors.sellingPrice)} value={editForm.sellingPrice ?? ''} onChange={(e) => setEditForm({ ...editForm, sellingPrice: Number(e.target.value) })} />
-          </FormField>
-          {isDirector && (
-            <FormField label="Floor Price (RM) — Lowest acceptable deal" className="col-span-2">
-              <input
-                type="number"
-                className={inputCls()}
-                value={editForm.priceFloor ?? ''}
-                onChange={(e) => setEditForm({ ...editForm, priceFloor: e.target.value ? Number(e.target.value) : undefined })}
-                placeholder="e.g. 55800 — below this = RM1k commission"
-              />
-              <p className="text-gray-600 text-xs mt-1">Deal ≥ floor → 1.5k commission · Deal below floor → 1k commission</p>
-            </FormField>
-          )}
-          {isDirector && (
-            <div className="col-span-2 space-y-2">
-              <button
-                type="button"
-                onClick={() => setEditForm({ ...editForm, isStaffSale: !editForm.isStaffSale })}
-                className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${editForm.isStaffSale ? 'bg-amber-500/10 border-amber-500/40 text-amber-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
-              >
-                <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${editForm.isStaffSale ? 'bg-amber-500 border-amber-500' : 'border-gray-600'}`}>
-                  {editForm.isStaffSale && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                </div>
-                <div>
-                  <p className="text-sm font-medium">Staff Sale — Sold at cost, no commission</p>
-                  <p className="text-xs opacity-60 mt-0.5">No salesman commission will be charged for this deal</p>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditForm({ ...editForm, waiveCommission: !editForm.waiveCommission })}
-                className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${editForm.waiveCommission ? 'bg-blue-500/10 border-blue-500/40 text-blue-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
-              >
-                <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${editForm.waiveCommission ? 'bg-blue-500 border-blue-500' : 'border-gray-600'}`}>
-                  {editForm.waiveCommission && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                </div>
-                <div>
-                  <p className="text-sm font-medium">Waive Commission — Break even deal</p>
-                  <p className="text-xs opacity-60 mt-0.5">Commission set to RM 0, profit calculated normally</p>
-                </div>
-              </button>
-              {car.status !== 'delivered' && (
-                <button
-                  type="button"
-                  onClick={() => setEditForm({
-                    ...editForm,
-                    commissionCreditedEarly: !editForm.commissionCreditedEarly,
-                    commissionCreditedMonth: !editForm.commissionCreditedEarly
-                      ? (editForm.commissionCreditedMonth ?? new Date().toISOString().slice(0, 7))
-                      : editForm.commissionCreditedMonth,
-                  })}
-                  className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${editForm.commissionCreditedEarly ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
-                >
-                  <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${editForm.commissionCreditedEarly ? 'bg-emerald-500 border-emerald-500' : 'border-gray-600'}`}>
-                    {editForm.commissionCreditedEarly && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">Credit Commission Early — Before Delivery</p>
-                    <p className="text-xs opacity-60 mt-0.5">Counts toward this salesman's commission the month the deal closed, even though the car hasn't been delivered yet</p>
-                  </div>
-                </button>
-              )}
-              {car.status !== 'delivered' && editForm.commissionCreditedEarly && (() => {
-                const monthVal = editForm.commissionCreditedMonth ?? new Date().toISOString().slice(0, 7);
-                const shiftMonth = (dir: 1 | -1) => {
-                  const [y, m] = monthVal.split('-').map(Number);
-                  const d = new Date(y, m - 1 + dir, 1);
-                  setEditForm({ ...editForm, commissionCreditedMonth: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` });
-                };
-                const monthLabel = new Date(monthVal + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-                return (
-                  <FormField label="Counts Toward Month">
-                    <div className="flex items-center gap-1 bg-obsidian-700/60 border border-obsidian-400/60 rounded-lg px-1 py-1">
-                      <button type="button" onClick={() => shiftMonth(-1)} className="p-1.5 text-gray-500 hover:text-white hover:bg-obsidian-500/60 rounded-md transition-colors">
-                        <ChevronLeft size={15} />
-                      </button>
-                      <span className="flex-1 text-white text-sm font-medium text-center">{monthLabel}</span>
-                      <button type="button" onClick={() => shiftMonth(1)} className="p-1.5 text-gray-500 hover:text-white hover:bg-obsidian-500/60 rounded-md transition-colors">
-                        <ChevronRight size={15} />
-                      </button>
-                    </div>
-                  </FormField>
-                );
-              })()}
-            </div>
-          )}
-          <FormField label="Transmission">
-            <select className={inputCls()} value={editForm.transmission ?? 'auto'} onChange={(e) => setEditForm({ ...editForm, transmission: e.target.value as Car['transmission'] })}>
-              <option value="auto">Automatic</option>
-              <option value="manual">Manual</option>
-            </select>
-          </FormField>
-          {car.status !== 'deal_pending' && car.status !== 'delivered' && (
-            <FormField label="Status">
-              <select className={inputCls()} value={editForm.status ?? 'coming_soon'} onChange={(e) => setEditForm({ ...editForm, status: e.target.value as Car['status'] })}>
-                <option value="coming_soon">Coming Soon</option>
-                <option value="in_workshop">In Workshop</option>
-                <option value="ready">Ready</option>
-                <option value="photo_complete">Photo Complete</option>
-                <option value="submitted">Submitted</option>
-                <option value="deal_pending">Deal Pending</option>
-                <option value="available">Available</option>
-                <option value="reserved">Reserved</option>
-                <option value="sold">Sold</option>
-                <option value="delivered">Delivered</option>
-              </select>
-            </FormField>
-          )}
-
-          {/* Coming Soon Type — shown right after Status when applicable */}
-          {(editForm.status ?? car.status) === 'coming_soon' && (
-            <div className="col-span-2">
-              <label className="block text-gray-300 text-xs font-medium mb-1.5">Coming Soon Type</label>
-              <div className="grid grid-cols-2 gap-2">
-                {([
-                  { value: 'trade_in',         label: 'Trade In',          desc: 'Customer changing car' },
-                  { value: 'direct_purchase',  label: 'Direct Purchase',   desc: 'Buying directly, car pending' },
-                  { value: 'pending_shipment', label: 'Pending Shipment',  desc: "West M'sia, not yet shipped" },
-                  { value: 'in_shipment',      label: 'In Shipment',       desc: 'Currently on the way' },
-                ] as const).map(opt => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setEditForm(f => ({ ...f, comingSoonType: f.comingSoonType === opt.value ? undefined : opt.value }))}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-left transition-colors ${editForm.comingSoonType === opt.value ? 'bg-purple-500/15 border-purple-500/50 text-purple-300' : 'bg-obsidian-700/40 border-obsidian-400/40 text-gray-500 hover:border-obsidian-400/70'}`}
-                  >
-                    <div className={`w-3 h-3 rounded-full shrink-0 ${editForm.comingSoonType === opt.value ? 'bg-purple-400' : 'bg-obsidian-500'}`} />
-                    <div>
-                      <p className="text-xs font-medium leading-tight">{opt.label}</p>
-                      <p className="text-[10px] opacity-60 leading-tight">{opt.desc}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {isDirector && import.meta.env.VITE_INVESTOR_FINANCE !== '1' && (() => {
-            const investors = users.filter(u => u.role === 'investor');
-            if (investors.length === 0) return null;
-            return (
-              <div className="col-span-2 space-y-3">
-                <FormField label="Investor">
-                  <select
-                    className={inputCls()}
-                    value={editForm.investorId ?? ''}
-                    onChange={(e) => setEditForm({ ...editForm, investorId: e.target.value || undefined, investorSplit: editForm.investorSplit ?? 50 })}
-                  >
-                    <option value="">— AutoDream (no investor) —</option>
-                    {investors.map(inv => (
-                      <option key={inv.id} value={inv.id}>{inv.name}</option>
-                    ))}
+              {saveBtn}
+            </>}
+          >
+            <GSection title="What car is it?">
+              <GGrid>
+                <GField label="Make" error={editErrors.make}><input className={gInput(editErrors.make, chg('make'))} value={ef.make ?? ''} onChange={(e) => set({ make: e.target.value })} /></GField>
+                <GField label="Model" error={editErrors.model}><input className={gInput(editErrors.model, chg('model'))} value={ef.model ?? ''} onChange={(e) => set({ model: e.target.value })} /></GField>
+                <GField label="Variant"><input className={gInput(undefined, chg('variant'))} value={ef.variant ?? ''} onChange={(e) => set({ variant: e.target.value })} placeholder="e.g. 1.5 Advance" /></GField>
+                <GField label="Year"><input type="number" inputMode="numeric" className={`${gInput(undefined, chg('year'))} g-num`} value={ef.year ?? ''} onChange={(e) => set({ year: Number(e.target.value) })} /></GField>
+                <GField label="Car plate"><input className={gInput(undefined, chg('carPlate'))} value={ef.carPlate ?? ''} onChange={(e) => set({ carPlate: e.target.value.toUpperCase() })} placeholder="e.g. QAA 1234 A" /></GField>
+                <GField label="Colour" error={editErrors.colour}><input className={gInput(editErrors.colour, chg('colour'))} value={ef.colour ?? ''} onChange={(e) => set({ colour: e.target.value })} /></GField>
+                <GField label="Mileage (km)"><input type="number" inputMode="numeric" className={`${gInput(undefined, chg('mileage'))} g-num`} value={ef.mileage ?? ''} onChange={(e) => set({ mileage: Number(e.target.value) })} /></GField>
+                <GField label="Condition">
+                  <select className={gInput(undefined, chg('condition'))} value={ef.condition ?? 'good'} onChange={(e) => set({ condition: e.target.value as Car['condition'] })}>
+                    <option value="excellent">Excellent</option><option value="good">Good</option><option value="fair">Fair</option><option value="poor">Poor</option>
                   </select>
-                </FormField>
-                {editForm.investorId && (
-                  <FormField label="Investor Profit Share (%)">
-                    <input
-                      type="number"
-                      className={inputCls()}
-                      value={editForm.investorSplit ?? 50}
-                      min={1} max={99}
-                      onChange={(e) => setEditForm({ ...editForm, investorSplit: Number(e.target.value) })}
-                    />
-                    <p className="text-gray-600 text-xs mt-1">AutoDream takes {100 - (editForm.investorSplit ?? 50)}%</p>
-                  </FormField>
-                )}
-              </div>
-            );
-          })()}
-          {/* Source Salesman */}
-          <div className="col-span-2 space-y-3">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setEditForm({ ...editForm, sourceType: editForm.sourceType ? undefined : 'external', externalSalesmanId: undefined, sourceSalesmanId: undefined, sourceSalesman: undefined, sourceCommission: undefined, intakeCommission: undefined })}
-                className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${editForm.sourceType ? 'bg-green-500/10 border-green-500/40 text-green-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
-              >
-                <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${editForm.sourceType ? 'bg-green-500 border-green-500' : 'border-gray-600'}`}>
-                  {editForm.sourceType && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                </div>
-                <p className="text-sm font-medium">Has Source Salesman</p>
-              </button>
-            </div>
-            {editForm.sourceType && (
-              <div className="space-y-3 pl-2 border-l-2 border-green-500/30">
-                <div className="grid grid-cols-2 gap-2">
-                  {(['external', 'internal'] as const).map(t => (
-                    <button key={t} type="button"
-                      onClick={() => setEditForm({ ...editForm, sourceType: t, externalSalesmanId: undefined, sourceSalesmanId: undefined, sourceSalesman: undefined })}
-                      className={`px-3 py-2 rounded-lg border text-sm transition-colors ${editForm.sourceType === t ? 'bg-green-500/15 border-green-500/50 text-green-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400'}`}>
-                      <p className="font-medium capitalize">{t}</p>
-                    </button>
-                  ))}
-                </div>
-                {editForm.sourceType === 'external' && (
-                  <>
-                    <FormField label="External Salesman">
-                      <select className={inputCls()} value={editForm.externalSalesmanId ?? ''}
-                        onChange={(e) => { const s = externalSalesmen.find(x => x.id === e.target.value); setEditForm({ ...editForm, externalSalesmanId: e.target.value || undefined, sourceSalesman: s?.name }); }}>
-                        <option value="">— Select salesman —</option>
-                        {externalSalesmen.map(s => <option key={s.id} value={s.id}>{s.name}{s.ic ? ` (${s.ic})` : ''}</option>)}
-                      </select>
-                    </FormField>
-                    <FormField label="Commission to External (RM)">
-                      <input type="number" className={inputCls()} value={editForm.sourceCommission ?? ''} placeholder="e.g. 500" onChange={e => setEditForm({ ...editForm, sourceCommission: e.target.value ? Number(e.target.value) : undefined })} />
-                    </FormField>
-                    <div>
-                      <label className="block text-gray-300 text-xs font-medium mb-2">In-house Intake Bonus (RM)</label>
-                      <div className="grid grid-cols-3 gap-2">
-                        {([0, 500, 1000] as const).map(v => (
-                          <button key={v} type="button" onClick={() => setEditForm({ ...editForm, intakeCommission: v })}
-                            className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${(editForm.intakeCommission ?? 0) === v ? 'bg-teal-500/15 border-teal-500/50 text-teal-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400'}`}>
-                            {v === 0 ? 'None' : `RM ${v.toLocaleString()}`}
-                          </button>
-                        ))}
+                </GField>
+                <GField label="Gearbox" group><Seg label="Gearbox" value={ef.transmission ?? 'auto'} onChange={(v) => set({ transmission: v })} options={[{ value: 'auto', label: 'Auto' }, { value: 'manual', label: 'Manual' }]} /></GField>
+                {isDirector && <GField label="Type" group><Seg label="Used or recon" value={ef.isRecon ? 'recon' : 'used'} onChange={(v) => set({ isRecon: v === 'recon' })} options={[{ value: 'used', label: 'Used' }, { value: 'recon', label: 'Recon' }]} /></GField>}
+                {isDirector && <GField label="Sales commission per unit (RM)" error={editErrors.salesCommission} help="Blank uses the deal rate already set, or the car type's default. Bills already made stay the same.">
+                  <input type="number" min="0" step="0.01" className={`${gInput(editErrors.salesCommission, chg('salesCommission'))} g-num`} value={ef.salesCommission ?? ''} placeholder={ef.isRecon ? 'Default: 2000' : 'Standard commission'} onChange={e => set({ salesCommission: e.target.value === '' ? undefined : Number(e.target.value) })} />
+                </GField>}
+              </GGrid>
+            </GSection>
+
+            {(showStatus || isSoon) && <GSection title="Where is the car now?">
+              {showStatus && <GField label="Status" className="max-w-[360px]">
+                <select className={gInput(undefined, chg('status'))} value={ef.status ?? 'coming_soon'} onChange={(e) => set({ status: e.target.value as Car['status'] })}>
+                  {Object.entries(STATUS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              </GField>}
+              {isSoon && <div className={showStatus ? 'mt-3.5' : ''}><Chips label="Coming soon type" value={ef.comingSoonType} options={COMING_SOON_TYPES} onChange={(v) => setEditForm(f => ({ ...f, comingSoonType: v }))} /></div>}
+            </GSection>}
+
+            <GSection title="Whose money bought it?" lede={car.investorFunded ? 'This car is on an investor account. That is changed with Move car, not here.' : car.companyPurchaseRecorded ? 'The purchase is recorded, so the owner and price are locked.' : 'This decides which bills the app makes.'}>
+              {!car.investorFunded && <Choices label="Whose money bought it" value={owner} onChange={chooseOwner} options={[
+                { value: 'company', title: 'Company', desc: 'AutoDream pays the seller', disabled: !!car.companyPurchaseRecorded },
+                ...(legacy ? [{ value: 'investor' as const, title: 'Investor', desc: "Investor's money, profit shared", disabled: !!car.companyPurchaseRecorded }] : []),
+                { value: 'dealer', title: 'Other dealer', desc: 'We sell it for them', disabled: !!car.companyPurchaseRecorded },
+              ]} />}
+
+              {owner === 'company' && !car.investorFunded && <div className="mt-[18px]">
+                {pricePending
+                  ? (canRecordPurchase && currentUser
+                    // After the purchase is recorded the form takes the saved price, so Save changes does not change it back.
+                    ? <CompanyPurchaseStart key={currentUser.id + ':' + car.id} inline car={car} actorId={currentUser.id} onSaved={() => { const c = useStore.getState().cars.find((x) => x.id === car.id); if (c) setEditForm((f) => ({ ...f, purchasePrice: c.purchasePrice, settlementAmount: c.settlementAmount || undefined, settlementRecipient: c.settlementRecipient || undefined, investorSplit: c.investorSplit })); }} />
+                    : <p className="g-help !mt-0">The Director records the purchase price here while the car is in stock.</p>)
+                  : <GGrid>{priceField('Purchase price (RM)')}</GGrid>}
+              </div>}
+
+              {owner === 'investor' && !car.investorFunded && <div className="mt-[18px]">
+                <GGrid>
+                  <GField label="Investor">
+                    <select className={gInput(undefined, chg('investorId'))} value={ef.investorId ?? ''} onChange={(e) => set({ investorId: e.target.value || undefined, investorSplit: ef.investorSplit ?? 50 })}>
+                      {legacyInvestors.map(inv => <option key={inv.id} value={inv.id}>{inv.name}</option>)}
+                    </select>
+                  </GField>
+                  <GField label="Investor's share of profit (%)" help={`AutoDream keeps ${100 - (ef.investorSplit ?? 50)}%.`}>
+                    <input type="number" min={1} max={99} className={`${gInput(undefined, chg('investorSplit'))} g-num`} value={ef.investorSplit ?? 50} onChange={(e) => set({ investorSplit: Number(e.target.value) })} />
+                  </GField>
+                  {priceField('Purchase price (RM)')}
+                </GGrid>
+              </div>}
+
+              {owner === 'dealer' && ef.consignment && !car.investorFunded && <div className="mt-[18px]">
+                <GGrid>
+                  <GField label="Dealer" help={dealers.length === 0 ? 'No dealers yet. Add them in Data, under Car Dealers.' : undefined}>
+                    <select className={gInput()} value={ef.consignment.dealer} onChange={(e) => set({ consignment: { ...ef.consignment!, dealer: e.target.value } })}>
+                      <option value="">Choose the dealer</option>
+                      {dealers.map((d) => <option key={d.id} value={d.name}>{d.name}</option>)}
+                    </select>
+                  </GField>
+                  <GField label="How we pay them" group>
+                    <Seg label="How we pay the dealer" value={ef.consignment.terms} onChange={(v) => set({ consignment: v === 'fixed_amount' ? { ...ef.consignment!, terms: 'fixed_amount', fixedAmount: ef.purchasePrice || ef.consignment!.fixedAmount || 0 } : { ...ef.consignment!, terms: 'profit_split', splitPercent: 50 } })} options={[{ value: 'fixed_amount', label: 'Fixed amount' }, { value: 'profit_split', label: 'Share profit' }]} />
+                  </GField>
+                  {priceField(ef.consignment.terms === 'fixed_amount' ? 'Amount we pay them (RM)' : 'Purchase price (RM)')}
+                  {ef.consignment.terms === 'profit_split' && <GField label="Dealer's share of profit (%)">
+                    <input type="number" min={0} max={100} step="0.01" disabled={!isDirector || consignmentTermsLocked} className={`${gInput(editErrors.consignment)} g-num`} value={ef.consignment.splitPercent ?? 50} onChange={(e) => set({ consignment: { ...ef.consignment!, splitPercent: Number(e.target.value) } })} />
+                  </GField>}
+                </GGrid>
+              </div>}
+
+              {car.investorFunded && <div className="mt-[18px]"><GGrid>{priceField('Purchase price (RM)')}</GGrid></div>}
+              {editErrors.consignment && <p className="g-error" role="alert">{editErrors.consignment}</p>}
+              {loanBlock}
+
+              {car.companyPurchaseRecorded && bills.length > 0 && <div className="mt-[18px] rounded-[18px] border border-white/10 bg-black/20 p-4 flex flex-col gap-3">
+                <span className="g-label !mb-0">Bills made when the purchase was recorded</span>
+                {bills.map((p) => <div key={p.id} className="flex justify-between gap-3 items-center flex-wrap"><span className="min-w-0 text-[14.5px] break-words">{p.recipientName}</span><span className="flex items-center gap-2.5"><span className="g-num text-[14.5px] font-semibold">{rm(p.amount)}</span>{billPill(p)}</span></div>)}
+                <button type="button" className="self-start text-[14px] text-[#F2CF5B] min-h-[44px]" onClick={() => { close(); navigate('/payments'); }}>Open these bills in Payments</button>
+              </div>}
+            </GSection>
+
+            <GSection title="Selling price">
+              <GGrid>
+                <GField label="Selling price (RM)" error={editErrors.sellingPrice}><input type="number" inputMode="decimal" className={`${gInput(editErrors.sellingPrice, chg('sellingPrice'))} g-num`} value={ef.sellingPrice ?? ''} onChange={(e) => set({ sellingPrice: Number(e.target.value) })} /></GField>
+                {isDirector && <GField label="Lowest deal allowed (RM)" help="At or above this, the salesperson earns RM 1,500. Below it, RM 1,000.">
+                  <input type="number" inputMode="decimal" className={`${gInput(undefined, chg('priceFloor'))} g-num`} value={ef.priceFloor ?? ''} onChange={(e) => set({ priceFloor: e.target.value ? Number(e.target.value) : undefined })} placeholder="e.g. 55800" />
+                </GField>}
+              </GGrid>
+            </GSection>
+
+            {isDirector && <GSection title="Special deals" lede="Only for this car's sale.">
+              <div className="flex flex-col gap-2.5">
+                <SwitchRow on={!!ef.isStaffSale} onToggle={() => set({ isStaffSale: !ef.isStaffSale })} title="Staff sale" desc="Sold at cost. No salesperson commission." />
+                <SwitchRow on={!!ef.waiveCommission} onToggle={() => set({ waiveCommission: !ef.waiveCommission })} title="No commission on this deal" desc="Commission is RM 0. Profit is counted as normal." />
+                {car.status !== 'delivered' && <SwitchRow on={!!ef.commissionCreditedEarly} title="Pay commission before delivery" desc="Counts in the month the deal closed, even before the car is delivered."
+                  onToggle={() => set({ commissionCreditedEarly: !ef.commissionCreditedEarly, commissionCreditedMonth: !ef.commissionCreditedEarly ? (ef.commissionCreditedMonth ?? new Date().toISOString().slice(0, 7)) : ef.commissionCreditedMonth })} />}
+                {car.status !== 'delivered' && ef.commissionCreditedEarly && (() => {
+                  const monthVal = ef.commissionCreditedMonth ?? new Date().toISOString().slice(0, 7);
+                  const shiftMonth = (dir: 1 | -1) => {
+                    const [y, m] = monthVal.split('-').map(Number);
+                    const d = new Date(y, m - 1 + dir, 1);
+                    set({ commissionCreditedMonth: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` });
+                  };
+                  const monthLabel = new Date(monthVal + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+                  return (
+                    <div className="g-inset mt-1">
+                      <span className="g-label">Counts toward month</span>
+                      <div className="g-seg items-center max-w-[340px]">
+                        <button type="button" className="!flex-none w-11" aria-label="Previous month" onClick={() => shiftMonth(-1)}><ChevronLeft size={16} className="mx-auto" /></button>
+                        <span className="flex-1 text-center text-[15px] font-medium" aria-live="polite">{monthLabel}</span>
+                        <button type="button" className="!flex-none w-11" aria-label="Next month" onClick={() => shiftMonth(1)}><ChevronRight size={16} className="mx-auto" /></button>
                       </div>
                     </div>
-                  </>
-                )}
-                {editForm.sourceType === 'internal' && (
-                  <>
-                    <FormField label="AutoDream Salesperson">
-                      <select className={inputCls()} value={editForm.sourceSalesmanId ?? ''}
-                        onChange={(e) => { const u = users.find(x => x.id === e.target.value); setEditForm({ ...editForm, sourceSalesmanId: e.target.value || undefined, sourceSalesman: u?.name }); }}>
-                        <option value="">— Select salesperson —</option>
-                        {salespeople.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                      </select>
-                    </FormField>
-                    <FormField label="Sourcing Commission (RM)">
-                      <input type="number" className={inputCls()} value={editForm.sourceCommission ?? ''} placeholder="e.g. 500" onChange={e => setEditForm({ ...editForm, sourceCommission: e.target.value ? Number(e.target.value) : undefined })} />
-                    </FormField>
-                  </>
-                )}
+                  );
+                })()}
               </div>
-            )}
-          </div>
+            </GSection>}
 
-          {/* Incoming Consignment */}
-          <div className="col-span-2">
-            <button
-              type="button"
-              disabled={car.companyPurchaseRecorded}
-              onClick={() => setEditForm({ ...editForm, consignment: editForm.consignment ? undefined : { dealer: '', terms: 'fixed_amount', fixedAmount: editForm.purchasePrice || 0 } })}
-              className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border transition-colors text-left ${editForm.consignment ? 'bg-blue-500/10 border-blue-500/40 text-blue-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400 hover:border-gold-500/40'}`}
-            >
-              <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${editForm.consignment ? 'bg-blue-500 border-blue-500' : 'border-gray-600'}`}>
-                {editForm.consignment && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-              </div>
-              <div>
-                <p className="text-sm font-medium">Consign In — Dealer's car, we sell it</p>
-                <p className="text-xs opacity-60 mt-0.5">Car belongs to another dealer, sold on their behalf</p>
-              </div>
-            </button>
-            {editForm.consignment && (
-              <div className="mt-3 space-y-3 pl-2 border-l-2 border-blue-500/30">
-                <FormField label="Dealer Name">
-                  <select
-                    className={inputCls()}
-                    value={editForm.consignment.dealer}
-                    onChange={(e) => setEditForm({ ...editForm, consignment: { ...editForm.consignment!, dealer: e.target.value } })}
-                  >
-                    <option value="">— Select dealer —</option>
-                    {dealers.map((d) => (
-                      <option key={d.id} value={d.name}>{d.name}</option>
-                    ))}
-                  </select>
-                  {dealers.length === 0 && (
-                    <p className="text-xs text-gray-500 mt-1">No dealers yet — add them in the Data page under Car Dealers</p>
-                  )}
-                </FormField>
-                <div>
-                  <label className="block text-gray-300 text-xs font-medium mb-2">Consignment Terms</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button type="button"
-                      onClick={() => setEditForm({ ...editForm, consignment: { ...editForm.consignment!, terms: 'fixed_amount', fixedAmount: editForm.purchasePrice || editForm.consignment!.fixedAmount || 0 } })}
-                      className={`px-3 py-2.5 rounded-lg border text-sm transition-colors text-left ${editForm.consignment.terms === 'fixed_amount' ? 'bg-blue-500/15 border-blue-500/50 text-blue-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400'}`}
-                    >
-                      <p className="font-medium">Fixed Amount</p>
-                      <p className="text-xs opacity-60 mt-0.5">Dealer takes back purchase price</p>
-                    </button>
-                    <button type="button"
-                      onClick={() => setEditForm({ ...editForm, consignment: { ...editForm.consignment!, terms: 'profit_split', splitPercent: 50 } })}
-                      className={`px-3 py-2.5 rounded-lg border text-sm transition-colors text-left ${editForm.consignment.terms === 'profit_split' ? 'bg-blue-500/15 border-blue-500/50 text-blue-300' : 'bg-obsidian-700/60 border-obsidian-400/60 text-gray-400'}`}
-                    >
-                      <p className="font-medium">Profit Split</p>
-                      <p className="text-xs opacity-60 mt-0.5">Split profit after expenses</p>
-                    </button>
-                  </div>
+            <GSection title="Who brought the car in?" lede="Only if someone gets a finder's commission.">
+              <Seg label="Who brought the car in" className="max-w-[540px]" value={ef.sourceType ?? 'none'}
+                onChange={(v) => set({ sourceType: v === 'none' ? undefined : v, externalSalesmanId: undefined, sourceSalesmanId: undefined, sourceSalesman: undefined, ...(v === 'none' ? { sourceCommission: undefined, intakeCommission: undefined } : {}) })}
+                options={[{ value: 'none', label: 'No one' }, { value: 'internal', label: 'Our salesperson' }, { value: 'external', label: 'Outside agent' }]} />
+              {ef.sourceType === 'internal' && <GGrid className="mt-3.5">
+                <GField label="Salesperson"><select className={gInput(undefined, chg('sourceSalesmanId'))} value={ef.sourceSalesmanId ?? ''} onChange={(e) => { const u = users.find(x => x.id === e.target.value); set({ sourceSalesmanId: e.target.value || undefined, sourceSalesman: u?.name }); }}>
+                  <option value="">Choose a salesperson</option>
+                  {salespeople.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select></GField>
+                <GField label="Their commission (RM)"><input type="number" inputMode="decimal" className={`${gInput(undefined, chg('sourceCommission'))} g-num`} value={ef.sourceCommission ?? ''} placeholder="e.g. 500" onChange={e => set({ sourceCommission: e.target.value ? Number(e.target.value) : undefined })} /></GField>
+              </GGrid>}
+              {ef.sourceType === 'external' && <div className="flex flex-col gap-3.5 mt-3.5">
+                <GGrid>
+                  <GField label="Agent" help={externalSalesmen.length === 0 ? 'No agents yet. Add them in Data, under Ext. Salesmen.' : undefined}><select className={gInput(undefined, chg('externalSalesmanId'))} value={ef.externalSalesmanId ?? ''} onChange={(e) => { const s = externalSalesmen.find(x => x.id === e.target.value); set({ externalSalesmanId: e.target.value || undefined, sourceSalesman: s?.name }); }}>
+                    <option value="">Choose an agent</option>
+                    {externalSalesmen.map(s => <option key={s.id} value={s.id}>{s.name}{s.ic ? ` (${s.ic})` : ''}</option>)}
+                  </select></GField>
+                  <GField label="Their commission (RM)"><input type="number" inputMode="decimal" className={`${gInput(undefined, chg('sourceCommission'))} g-num`} value={ef.sourceCommission ?? ''} placeholder="e.g. 500" onChange={e => set({ sourceCommission: e.target.value ? Number(e.target.value) : undefined })} /></GField>
+                </GGrid>
+                <GField label="Bonus for our salesperson who took the car in (RM)" group>
+                  <Seg label="Intake bonus" className="max-w-[420px]" value={String(ef.intakeCommission ?? 0) as '0' | '500' | '1000'} onChange={(v) => set({ intakeCommission: Number(v) })} options={[{ value: '0', label: 'None' }, { value: '500', label: 'RM 500' }, { value: '1000', label: 'RM 1,000' }]} />
+                </GField>
+              </div>}
+            </GSection>
+
+            <GSection title="Papers and notes">
+              <span className="g-label">Green card (JPG, PNG or PDF)</span>
+              {ef.greenCard ? (
+                <div className={`flex items-center gap-3 rounded-[14px] border bg-black/25 p-3 ${chg('greenCard') ? 'border-[rgba(234,184,32,0.7)]' : 'border-white/10'}`}>
+                  <div className="w-12 h-10 rounded-lg bg-white/5 flex items-center justify-center shrink-0"><FileText size={18} className="text-[#7FD1A0]" /></div>
+                  <p className="flex-1 m-0 text-[14px]">Green card added</p>
+                  <button type="button" onClick={() => editGreenCardRef.current?.click()} className="text-[13px] text-[#F2CF5B] min-h-[44px] px-2">Replace</button>
+                  <button type="button" onClick={() => setEditForm(f => ({ ...f, greenCard: '' }))} className="text-[13px] text-[#FF9B8A] min-h-[44px] px-2">Remove</button>
                 </div>
-                {editForm.consignment.terms === 'fixed_amount' && (
-                  <div className="flex items-center justify-between bg-obsidian-700/40 border border-obsidian-400/40 rounded-lg px-3 py-2.5">
-                    <p className="text-gray-400 text-xs">Dealer Takes Back</p>
-                    <p className="text-blue-400 font-semibold text-sm">{formatRM(editForm.purchasePrice || 0)}</p>
-                  </div>
-                )}
-                {editForm.consignment.terms === 'profit_split' && (
-                  <FormField label="Dealer's Split (%)" error={editErrors.consignment}>
-                    <input type="number" className={inputCls()}
-                      value={editForm.consignment.splitPercent ?? 50}
-                      min={0} max={100} step="0.01" disabled={!isDirector||consignmentTermsLocked}
-                      onChange={(e) => setEditForm({ ...editForm, consignment: { ...editForm.consignment!, splitPercent: Number(e.target.value) } })}
-                    />
-                  </FormField>
-                )}
-              </div>
-            )}
-          </div>
-
-          <FormField label="Notes" className="col-span-2">
-            <textarea className={`${inputCls()} h-20 resize-none`} value={editForm.notes ?? ''} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
-          </FormField>
-
-          {/* Green Card */}
-          <div className="col-span-2">
-            <label className="block text-gray-300 text-xs font-medium mb-1.5">
-              Green Card
-              <span className="ml-1.5 text-gray-500 font-normal">(JPG, PNG or PDF)</span>
-            </label>
-            {editForm.greenCard ? (
-              <div className="flex items-center gap-3 bg-obsidian-700/60 border border-obsidian-400/60 rounded-lg p-3">
-                <div className="w-12 h-10 bg-green-500/10 border border-green-500/30 rounded flex items-center justify-center shrink-0">
-                  <FileText size={18} className="text-green-400" />
-                </div>
-                <p className="text-white text-xs font-medium flex-1">Green card uploaded</p>
-                <button type="button" onClick={() => editGreenCardRef.current?.click()} className="text-xs text-gold-400 hover:text-gold-300">Replace</button>
-                <button type="button" onClick={() => setEditForm(f => ({ ...f, greenCard: '' }))} className="text-xs text-red-400 hover:text-red-300">Remove</button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => editGreenCardRef.current?.click()}
-                className="w-full border-2 border-dashed border-obsidian-400/60 hover:border-gold-500/50 rounded-lg p-4 flex items-center justify-center gap-2 text-gray-500 hover:text-gold-400 transition-colors text-sm"
-              >
-                <Upload size={16} /> Upload green card
-              </button>
-            )}
-            <input
-              ref={editGreenCardRef}
-              type="file"
-              accept="image/*,application/pdf"
-              className="hidden"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (!file || !car) return;
-                const url = await uploadToStorage(file, 'greencards');
-                setEditForm(f => ({ ...f, greenCard: url }));
-              }}
-            />
-          </div>
-        </div>
-      </Modal>
+              ) : (
+                <button type="button" onClick={() => editGreenCardRef.current?.click()} className="g-photo g-photo-add w-full !aspect-auto py-5"><Upload size={20} />Upload green card</button>
+              )}
+              <input
+                ref={editGreenCardRef}
+                type="file"
+                accept="image/*,application/pdf"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file || !car) return;
+                  const url = await uploadToStorage(file, 'greencards');
+                  setEditForm(f => ({ ...f, greenCard: url }));
+                }}
+              />
+              <GField label="Notes" className="mt-[18px]"><textarea className={gInput(undefined, chg('notes'))} value={ef.notes ?? ''} onChange={(e) => set({ notes: e.target.value })} /></GField>
+            </GSection>
+          </GlassSheet>
+        );
+      })()}
 
       {/* ── Panel Dealer Popup ── */}
       <Modal isOpen={showPanelPopup} onClose={() => setShowPanelPopup(false)} title="Panel Dealer">

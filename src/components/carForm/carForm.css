@@ -1,0 +1,131 @@
+/* Add car / Edit car: graphite liquid-glass sheet.
+   The glow behind the panels is drawn with radial gradients (no blur filter),
+   so the panels read as frosted glass even where backdrop blur is off. Real
+   backdrop blur is added only on bigger screens and capable devices. */
+
+.g-sheet {
+  --g-text: #F4F5F7;
+  --g-sub: #A7ACB6;
+  --g-faint: #8D929C;
+  --g-gold: #EAB820;
+  --g-line: rgba(255, 255, 255, 0.10);
+  position: relative;
+  background: #0B0C0F;
+  color: var(--g-text);
+  font-family: Outfit, system-ui, sans-serif;
+  isolation: isolate;
+  color-scheme: dark;
+}
+.g-orb { position: absolute; border-radius: 50%; pointer-events: none; z-index: -1; }
+.g-orb-gold { background: radial-gradient(circle at center, rgba(234, 184, 32, 0.22), rgba(234, 184, 32, 0) 68%); }
+.g-orb-steel { background: radial-gradient(circle at center, rgba(150, 170, 205, 0.20), rgba(150, 170, 205, 0) 68%); }
+
+.g-card {
+  position: relative;
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.025));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 30px 70px -30px rgba(0, 0, 0, 0.75);
+}
+/* The liquid edge: a thin highlight that fades to gold at one corner. */
+.g-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.38), rgba(255, 255, 255, 0.06) 35%, rgba(255, 255, 255, 0.02) 65%, rgba(234, 184, 32, 0.32));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+@media (min-width: 768px) {
+  .g-sheet:not(.g-lite) .g-card,
+  .g-sheet:not(.g-lite) .g-bar {
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    backdrop-filter: blur(24px) saturate(160%);
+  }
+}
+
+.g-h2 { margin: 0; font-size: 18px; font-weight: 500; letter-spacing: -0.01em; color: var(--g-text); }
+.g-lede { margin: 4px 0 18px; font-size: 13.5px; line-height: 1.45; color: var(--g-sub); }
+.g-label { display: block; margin-bottom: 7px; font-size: 13px; font-weight: 500; color: var(--g-sub); }
+.g-help { margin: 7px 0 0; font-size: 12.5px; line-height: 1.4; color: var(--g-sub); }
+.g-error { margin: 7px 0 0; font-size: 12.5px; color: #FF9B8A; }
+.g-num { font-variant-numeric: tabular-nums; }
+
+.g-input {
+  width: 100%;
+  min-height: 46px;
+  border-radius: 13px;
+  border: 1px solid var(--g-line);
+  background: rgba(0, 0, 0, 0.28);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45);
+  color: var(--g-text);
+  font: inherit;
+  font-size: 15px;
+  padding: 0 14px;
+  transition: border-color .15s, box-shadow .15s;
+}
+textarea.g-input { padding: 12px 14px; min-height: 92px; resize: vertical; }
+select.g-input { padding-right: 34px; }
+select.g-input option { background: #17191E; color: #F4F5F7; }
+.g-input::placeholder { color: #6E737D; }
+.g-input:focus { outline: none; border-color: rgba(234, 184, 32, 0.75); box-shadow: 0 0 0 3px rgba(234, 184, 32, 0.22), inset 0 1px 2px rgba(0, 0, 0, 0.45); }
+.g-input:disabled, .g-input[readonly] { opacity: .6; cursor: not-allowed; }
+.g-input.is-error { border-color: rgba(255, 120, 100, 0.7); }
+.g-input.is-changed { border-color: rgba(234, 184, 32, 0.7); box-shadow: 0 0 18px -6px rgba(234, 184, 32, 0.6), inset 0 1px 2px rgba(0, 0, 0, 0.45); }
+
+.g-seg { display: flex; gap: 4px; padding: 4px; border-radius: 15px; background: rgba(0, 0, 0, 0.30); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.07); }
+.g-seg button { flex: 1; min-height: 40px; border: 0; border-radius: 11px; background: transparent; color: #C3C7CF; font: inherit; font-size: 14px; font-weight: 500; padding: 0 10px; cursor: pointer; }
+.g-seg button[aria-pressed="true"],
+.g-gold {
+  background: linear-gradient(180deg, #F7DA72, #EAB820 55%, #C99A12);
+  color: #1A1405;
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 6px 16px -6px rgba(234, 184, 32, 0.7);
+}
+.g-seg button:disabled { opacity: .5; cursor: not-allowed; }
+
+.g-choice { display: flex; gap: 11px; align-items: flex-start; width: 100%; min-height: 64px; padding: 13px 14px; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.09); background: rgba(255, 255, 255, 0.035); color: var(--g-text); font: inherit; text-align: left; cursor: pointer; }
+.g-choice[aria-checked="true"] { border-color: rgba(234, 184, 32, 0.65); background: linear-gradient(180deg, rgba(234, 184, 32, 0.20), rgba(234, 184, 32, 0.06)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 0 28px -8px rgba(234, 184, 32, 0.55); }
+.g-choice:disabled { opacity: .5; cursor: not-allowed; }
+.g-radio { flex: none; width: 18px; height: 18px; margin-top: 1px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.35); }
+.g-choice[aria-checked="true"] .g-radio { border: 5px solid var(--g-gold); box-shadow: 0 0 10px rgba(234, 184, 32, 0.6); }
+.g-choice b, .g-switch b { display: block; font-size: 14.5px; font-weight: 600; }
+.g-choice small, .g-switch small { display: block; margin-top: 2px; font-size: 12.5px; line-height: 1.35; color: var(--g-sub); }
+
+.g-chip { min-height: 46px; padding: 9px 12px; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.09); background: rgba(255, 255, 255, 0.035); color: #C3C7CF; font: inherit; text-align: left; cursor: pointer; }
+.g-chip[aria-pressed="true"] { border-color: rgba(234, 184, 32, 0.65); background: linear-gradient(180deg, rgba(234, 184, 32, 0.18), rgba(234, 184, 32, 0.05)); color: var(--g-text); }
+
+.g-switch { display: flex; gap: 13px; align-items: center; width: 100%; min-height: 58px; padding: 11px 14px; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.09); background: rgba(255, 255, 255, 0.035); color: var(--g-text); font: inherit; text-align: left; cursor: pointer; }
+.g-switch:disabled { opacity: .55; cursor: not-allowed; }
+.g-track { flex: none; position: relative; width: 44px; height: 26px; border-radius: 13px; background: rgba(0, 0, 0, 0.4); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6); }
+.g-track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: linear-gradient(180deg, #FFFFFF, #D9DCE2); box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4); transition: left .15s; }
+.g-switch[aria-pressed="true"] .g-track { background: linear-gradient(180deg, #F7DA72, #EAB820 55%, #C99A12); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 0 14px -2px rgba(234, 184, 32, 0.6); }
+.g-switch[aria-pressed="true"] .g-track::after { left: 21px; }
+
+.g-inset { border-left: 2px solid rgba(234, 184, 32, 0.7); padding-left: 16px; }
+.g-plate { display: inline-flex; align-items: center; background: #000; color: #fff; border: 2px solid #E6E8EC; border-radius: 6px; padding: 2px 9px; font-weight: 700; letter-spacing: 0.08em; font-size: 14px; line-height: 1.4; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5); }
+.g-rule { height: 1px; background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0)); }
+.g-total { margin: 2px 0 0; font-size: 36px; font-weight: 300; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; background: linear-gradient(180deg, #FBE7A1, #EAB820 60%, #B8880A); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.g-pill { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 10px; font-size: 12.5px; font-weight: 500; border: 1px solid transparent; }
+
+.g-gold { width: 100%; min-height: 52px; border: 0; border-radius: 16px; font: inherit; font-size: 16px; cursor: pointer; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 14px 30px -12px rgba(234, 184, 32, 0.75); }
+.g-gold:disabled { background: rgba(255, 255, 255, 0.07); color: var(--g-faint); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08); cursor: not-allowed; }
+.g-ghost { width: 100%; min-height: 48px; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.12); background: rgba(255, 255, 255, 0.04); color: #E3E5EA; font: inherit; font-size: 15px; font-weight: 500; cursor: pointer; }
+.g-ghost:disabled { opacity: .5; cursor: not-allowed; }
+.g-icon-btn { display: flex; align-items: center; justify-content: center; width: 46px; height: 46px; border: 0; border-radius: 15px; color: #E3E5EA; cursor: pointer; }
+
+.g-photo { position: relative; aspect-ratio: 4 / 3; border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 12.5px; color: #C3C7CF; background: linear-gradient(160deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.03)); border: 1px solid rgba(255, 255, 255, 0.08); }
+.g-photo-add { border: 1.5px dashed rgba(234, 184, 32, 0.55); background: rgba(234, 184, 32, 0.05); color: #F2CF5B; font: inherit; cursor: pointer; }
+
+.g-bar { border-radius: 26px; background: linear-gradient(180deg, rgba(40, 42, 48, 0.86), rgba(20, 21, 25, 0.94)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 -10px 40px -10px rgba(0, 0, 0, 0.8); }
+
+.g-sheet a { color: #F2CF5B; }
+.g-sheet a:hover { color: #F7D96A; }
+.g-sheet button:focus-visible, .g-sheet a:focus-visible { outline: 2px solid #F7D96A; outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .g-track::after, .g-input { transition: none; }
+}
