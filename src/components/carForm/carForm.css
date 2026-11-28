@@ -1,7 +1,6 @@
 /* Add car / Edit car: graphite liquid-glass sheet.
    The glow behind the panels is drawn with radial gradients (no blur filter),
-   so the panels read as frosted glass even where backdrop blur is off. Real
-   backdrop blur is added only on bigger screens and capable devices. */
+   so the panels read as frosted glass without a live blur filter. */
 
 .g-sheet {
   --g-text: #F4F5F7;
@@ -39,8 +38,10 @@
   mask-composite: exclude;
   pointer-events: none;
 }
+/* Live blur only on the bottom bar, where the form scrolls behind it. Behind the
+   cards there are only soft gradients, so blurring them would cost drawing time
+   and change nothing you can see. */
 @media (min-width: 768px) {
-  .g-sheet:not(.g-lite) .g-card,
   .g-sheet:not(.g-lite) .g-bar {
     -webkit-backdrop-filter: blur(24px) saturate(160%);
     backdrop-filter: blur(24px) saturate(160%);

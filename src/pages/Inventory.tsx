@@ -2044,7 +2044,8 @@ export default function Inventory() {
         const shortCents = investorFinanceOn && profile ? Math.round(price * 100) - profile.position.availableCents : 0;
         const photoMin = form.consignment ? 1 : 4;
         const photoCount = form.photos?.length ?? 0;
-        const carName = [form.year || '', form.make, form.model, form.variant].filter(Boolean).join(' ').trim();
+        // The year alone is not a name: wait for the make or model.
+        const carName = form.make.trim() || form.model.trim() ? [form.year || '', form.make, form.model, form.variant].filter(Boolean).join(' ').trim() : '';
         const soonLabel = COMING_SOON_TYPES.find(t => t.value === form.comingSoonType)?.label.toLowerCase();
         const chooseOwner = (o: 'company' | 'investor' | 'dealer') => {
           setAddOwnerInvestor(o === 'investor');
