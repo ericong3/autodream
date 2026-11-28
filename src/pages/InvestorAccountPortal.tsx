@@ -29,19 +29,20 @@ const greeting = () => {
 function entryIcon(e: CashEntry) {
   if (e.kind === 'capital_converted' || e.kind === 'capital_in' || e.kind === 'capital_advance') return { icon: Lock, cls: 'bg-gold-500/15 text-gold-300' };
   if (e.kind === 'withdrawal_out') return { icon: ArrowUp, cls: 'bg-obsidian-700 text-gray-300' };
-  if (e.kind === 'car_purchase' || e.kind === 'car_expense') return { icon: CarIcon, cls: 'bg-obsidian-700 text-gray-300' };
+  if (e.kind === 'car_purchase' || e.kind === 'car_expense' || e.kind === 'deal_capital_out') return { icon: CarIcon, cls: 'bg-obsidian-700 text-gray-300' };
   if (e.amountCents > 0) return { icon: TrendingUp, cls: 'bg-emerald-500/15 text-emerald-400' };
   return { icon: Receipt, cls: 'bg-obsidian-700 text-gray-300' };
 }
 
-function ActivityRow({ e }: { e: CashEntry }) {
+// plate: the car the line is for, when the server names one (fronted money, delivered cars).
+function ActivityRow({ e, plate }: { e: CashEntry; plate?: string | null }) {
   const { icon: Icon, cls } = entryIcon(e);
   return (
     <div className="flex items-center gap-3 py-3 border-b border-white/5 last:border-0">
       <span className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${cls}`}><Icon size={17} /></span>
       <div className="min-w-0 flex-1">
         <p className="text-gray-100 text-sm truncate">{entryLabel(e.kind)}</p>
-        <p className="text-gray-500 text-xs">{formatDay(e.paidOn ?? e.recordedAt)}</p>
+        <p className="text-gray-500 text-xs">{plate ? `${plate} · ` : ''}{formatDay(e.paidOn ?? e.recordedAt)}</p>
       </div>
       <span className={`text-sm font-semibold shrink-0 ${e.amountCents >= 0 ? 'text-emerald-400' : 'text-gray-200'}`}>{e.amountCents >= 0 ? '+ ' : ''}{formatCents(e.amountCents)}</span>
     </div>
@@ -198,6 +199,8 @@ export default function InvestorAccountPortal({ preview }: { preview?: { potId: 
   const openWithdrawal = snap?.withdrawals.find((w) => w.state === 'requested' || w.state === 'approved');
   const latestLock = dv ? [...dv.conversions].sort((a, b) => (b.convertedOn + b.createdAt).localeCompare(a.convertedOn + a.createdAt))[0] : undefined;
   const entries = [...(snap?.entries ?? [])].sort((a, b) => (b.paidOn ?? b.recordedAt).localeCompare(a.paidOn ?? a.recordedAt) || b.recordedAt.localeCompare(a.recordedAt));
+  const plates = new Map<string, string | null>([...(snap?.cars ?? []), ...(snap?.deliveredCars ?? [])].map((c) => [c.carId, c.plate]));
+  const plateOf = (e: CashEntry) => (e.carId ? plates.get(e.carId) : null);
   const dealerStock = dv ? dv.cars.filter(dealerInStock) : [];
   const dealerSold = dv ? dv.cars.length - dealerStock.length : 0;
   const cents = parseRinggit(amount);
@@ -316,7 +319,7 @@ export default function InvestorAccountPortal({ preview }: { preview?: { potId: 
       <div className="space-y-3">
         <Heading title="Recent activity" action={entries.length > 4 ? <button type="button" onClick={() => setTab('activity')} className="text-gold-300 text-sm">See all</button> : undefined} />
         <div className="bg-card-gradient border border-obsidian-400/70 rounded-2xl px-4 py-1">
-          {entries.length === 0 ? <p className="text-gray-500 text-sm py-4">No money recorded yet.</p> : entries.slice(0, 4).map((e) => <ActivityRow key={e.id} e={e} />)}
+          {entries.length === 0 ? <p className="text-gray-500 text-sm py-4">No money recorded yet.</p> : entries.slice(0, 4).map((e) => <ActivityRow key={e.id} e={e} plate={plateOf(e)} />)}
         </div>
       </div>
     </div>
@@ -357,7 +360,7 @@ export default function InvestorAccountPortal({ preview }: { preview?: { potId: 
   const activity = snap && (
     <div className="space-y-5">
       <div className="bg-card-gradient border border-obsidian-400/70 rounded-2xl px-4 py-1">
-        {entries.length === 0 ? <p className="text-gray-500 text-sm py-4">No money recorded yet.</p> : entries.map((e) => <ActivityRow key={e.id} e={e} />)}
+        {entries.length === 0 ? <p className="text-gray-500 text-sm py-4">No money recorded yet.</p> : entries.map((e) => <ActivityRow key={e.id} e={e} plate={plateOf(e)} />)}
       </div>
       <p className="text-gray-600 text-[11px]">Recorded by AutoDream staff from bank slips. Not automatically matched to a bank statement.</p>
       <div className="bg-card-gradient border border-obsidian-400/70 rounded-2xl overflow-hidden">
